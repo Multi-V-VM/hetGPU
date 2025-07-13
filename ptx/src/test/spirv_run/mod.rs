@@ -951,7 +951,6 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     let temp_dir = std::env::temp_dir();
     // let llvm_ir_file = temp_dir.join(format!("{}_llvm.ll", kernel_name));
     let mlir_file = temp_dir.join(format!("{}.mlir", kernel_name));
-    let cpp_file = temp_dir.join(format!("{}.cpp", kernel_name));
 
     // 4. 生成TOSA MLIR代码，使用真实的PTX源代码
     let tosa_mlir = generate_tosa_mlir_from_ptx(kernel_name, ptx_text, input.len(), output.len())?;
@@ -964,80 +963,56 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
         mlir_file.display()
     );
 
-    // 5. 分步执行TOSA到TTIR的完整管道，将MLIR转换为C++
+    // 5. 分步执行TOSA到TTNN的完整管道，将MLIR转换为flatbuffer
 
-    // Step 1: TOSA to TTIR conversion
-    let ttir_file = temp_dir.join(format!("{}_ttir.mlir", kernel_name));
-    eprintln!("ZLUDA DEBUG: Step 1 - Converting TOSA to TTIR");
-    let tosa_to_ttir_output = Command::new("ttmlir-opt")
-        .arg("--convert-tosa-to-ttir")
-        .arg("--mlir-print-debuginfo")
+    // Step 1: TTIR to TTNN backend pipeline
+    let ttnn_mlir_file = temp_dir.join(format!("{}_ttnn.mlir", kernel_name));
+    eprintln!("ZLUDA DEBUG: Step 1 - Converting TOSA to TTNN backend");
+    let tosa_to_ttnn_output = Command::new("ttmlir-opt")
+        .arg("--ttir-to-ttnn-backend-pipeline=system-desc-path=/home/bubblepipe/tt/tt-mlir/ttrt-artifacts/system_desc.ttsys")
         .arg(&mlir_file)
         .output()
-        .map_err(|e| format!("Failed to execute TOSA to TTIR conversion: {}", e))?;
+        .map_err(|e| format!("Failed to execute TTIR to TTNN backend pipeline: {}", e))?;
 
-    if !tosa_to_ttir_output.status.success() {
+    if !tosa_to_ttnn_output.status.success() {
         return Err(format!(
-            "TOSA to TTIR conversion failed: {}",
-            String::from_utf8_lossy(&tosa_to_ttir_output.stderr)
+            "TTIR to TTNN backend pipeline failed: {}",
+            String::from_utf8_lossy(&tosa_to_ttnn_output.stderr)
         ));
     }
 
-    fs::write(&ttir_file, &tosa_to_ttir_output.stdout)
-        .map_err(|e| format!("Failed to write TTIR file: {}", e))?;
+    fs::write(&ttnn_mlir_file, &tosa_to_ttnn_output.stdout)
+        .map_err(|e| format!("Failed to write TTNN MLIR file: {}", e))?;
 
     eprintln!(
-        "ZLUDA DEBUG: Generated TTIR file at {}",
-        ttir_file.display()
+        "ZLUDA DEBUG: Generated TTNN MLIR file at {}",
+        ttnn_mlir_file.display()
     );
 
-    // Step 2: TTIR to EmitC conversion
-    let emitc_file = temp_dir.join(format!("{}_emitc.mlir", kernel_name));
-    eprintln!("ZLUDA DEBUG: Step 2 - Converting TTIR to EmitC");
-    let ttir_to_emitc_output = Command::new("ttmlir-opt")
-        .arg("--ttir-to-emitc-pipeline")
-        .arg(&ttir_file)
+    // Step 2: TTNN to flatbuffer conversion
+    let ttnn_file = temp_dir.join(format!("{}.ttnn", kernel_name));
+    eprintln!("ZLUDA DEBUG: Step 2 - Converting TTNN to flatbuffer");
+    let ttnn_to_flatbuffer_output = Command::new("ttmlir-translate")
+        .arg("--ttnn-to-flatbuffer")
+        .arg(&ttnn_mlir_file)
         .output()
-        .map_err(|e| format!("Failed to execute TTIR to EmitC conversion: {}", e))?;
+        .map_err(|e| format!("Failed to execute TTNN to flatbuffer conversion: {}", e))?;
 
-    if !ttir_to_emitc_output.status.success() {
+    if !ttnn_to_flatbuffer_output.status.success() {
         return Err(format!(
-            "TTIR to EmitC conversion failed: {}",
-            String::from_utf8_lossy(&ttir_to_emitc_output.stderr)
+            "TTNN to flatbuffer conversion failed: {}",
+            String::from_utf8_lossy(&ttnn_to_flatbuffer_output.stderr)
         ));
     }
 
-    fs::write(&emitc_file, &ttir_to_emitc_output.stdout)
-        .map_err(|e| format!("Failed to write EmitC file: {}", e))?;
+    // Write flatbuffer data to file
+    fs::write(&ttnn_file, &ttnn_to_flatbuffer_output.stdout)
+        .map_err(|e| format!("Failed to write TTNN flatbuffer to file: {}", e))?;
 
+    eprintln!("ZLUDA DEBUG: Generated TTNN flatbuffer file at {}", ttnn_file.display());
     eprintln!(
-        "ZLUDA DEBUG: Generated EmitC file at {}",
-        emitc_file.display()
-    );
-
-    // Step 3: EmitC to C++ conversion
-    eprintln!("ZLUDA DEBUG: Step 3 - Converting EmitC to C++");
-    let emitc_to_cpp_output = Command::new("ttmlir-translate")
-        .arg("--mlir-to-cpp")
-        .arg(&emitc_file)
-        .output()
-        .map_err(|e| format!("Failed to execute EmitC to C++ conversion: {}", e))?;
-
-    if !emitc_to_cpp_output.status.success() {
-        return Err(format!(
-            "EmitC to C++ conversion failed: {}",
-            String::from_utf8_lossy(&emitc_to_cpp_output.stderr)
-        ));
-    }
-
-    // 将生成的C++代码写入文件
-    fs::write(&cpp_file, &emitc_to_cpp_output.stdout)
-        .map_err(|e| format!("Failed to write generated C++ to file: {}", e))?;
-
-    eprintln!("ZLUDA DEBUG: Generated C++ file at {}", cpp_file.display());
-    eprintln!(
-        "ZLUDA DEBUG: C++ content preview: {}",
-        std::str::from_utf8(&emitc_to_cpp_output.stdout).unwrap_or("Invalid UTF-8")
+        "ZLUDA DEBUG: TTNN flatbuffer size: {} bytes",
+        ttnn_to_flatbuffer_output.stdout.len()
     );
 
     // 6. 创建tt_metal程序
