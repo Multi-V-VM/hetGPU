@@ -503,7 +503,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                         let dummy_tensor = self.next_ssa_value();
                         let return_type = self.get_return_type_for_function(&func_name);
                         self.write_line(&format!(
-                            "{} = \"tosa.const\"() {{value = dense<0> : {}}} : () -> {}",
+                            "{} = \"tosa.const\"() {{values = dense<0> : {}}} : () -> {}",
                             dummy_tensor, return_type, return_type
                         ));
                         (dummy_tensor, return_type)
@@ -513,7 +513,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     let dummy_tensor = self.next_ssa_value();
                     let return_type = self.get_return_type_for_function(&func_name);
                     self.write_line(&format!(
-                        "{} = \"tosa.const\"() {{value = dense<0> : {}}} : () -> {}",
+                        "{} = \"tosa.const\"() {{values = dense<0> : {}}} : () -> {}",
                         dummy_tensor, return_type, return_type
                     ));
                     (dummy_tensor, return_type)
@@ -522,7 +522,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     let dummy_tensor = self.next_ssa_value();
                     let return_type = self.get_return_type_for_function(&func_name);
                     self.write_line(&format!(
-                        "{} = \"tosa.const\"() {{value = dense<0.0> : {}}} : () -> {}",
+                        "{} = \"tosa.const\"() {{values = dense<0.0> : {}}} : () -> {}",
                         dummy_tensor, return_type, return_type
                     ));
                     (dummy_tensor, return_type)
@@ -632,7 +632,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         };
 
         let const_op = format!(
-            "{} = \"tosa.const\"() {{value = dense<{}> : {}}} : () -> {}",
+            "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
             var_ssa, zero_value, tensor_type, tensor_type
         );
 
@@ -684,7 +684,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         };
 
         self.write_line(&format!(
-            "{} = \"tosa.const\"() {{value = dense<{}> : {}}} : () -> {}",
+            "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
             const_ssa, value_str, tensor_type, tensor_type
         ));
         self.value_map.insert(const_def.dst, const_ssa.clone());
@@ -1036,7 +1036,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             if src2.0 == 29 {  // Constant 1 based on the debug output
                 let const_ssa = self.next_ssa_value();
                 self.write_line(&format!(
-                    "{} = \"tosa.const\"() {{value = dense<1.0> : {}}} : () -> {}",
+                    "{} = \"tosa.const\"() {{values = dense<1.0> : {}}} : () -> {}",
                     const_ssa, tensor_type, tensor_type
                 ));
                 self.ssa_types.insert(const_ssa.clone(), tensor_type.clone());
@@ -1088,7 +1088,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Create a scalar zero constant for the shift operand as a tosa-conformant scalar tensor
         let shift_ssa = self.next_ssa_value();
         self.write_line(&format!(
-            "{} = \"tosa.const\"() {{value = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
+            "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
             shift_ssa
         ));
 
@@ -1165,7 +1165,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                         let tensor_type = self.get_default_tensor_type();
                         
                         self.write_line(&format!(
-                            "{} = \"tosa.const\"() {{value = dense<0.0> : {}}} : () -> {}",
+                            "{} = \"tosa.const\"() {{values = dense<0.0> : {}}} : () -> {}",
                             placeholder_ssa, tensor_type, tensor_type
                         ));
                         
@@ -1364,7 +1364,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                         } else {
                             // Default fallback for other cases
                             self.write_line(&format!(
-                                "{} = \"tosa.const\"() {{value = dense<0> : {}}} : () -> {}",
+                                "{} = \"tosa.const\"() {{values = dense<0> : {}}} : () -> {}",
                                 dst_ssa, tensor_type, tensor_type
                             ));
                             self.value_map.insert(dst, dst_ssa.clone());
@@ -1395,7 +1395,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         // For activemask, return a constant tensor with value 1.0 (indicating single active thread)
         self.write_line(&format!(
-            "{} = \"tosa.const\"() {{value = dense<1.0> : {}}} : () -> {}",
+            "{} = \"tosa.const\"() {{values = dense<1.0> : {}}} : () -> {}",
             dst_ssa, tensor_type, tensor_type
         ));
 
@@ -1923,7 +1923,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // For the shl test: 11 << 2 should equal 44
         // For simplicity, just return the expected result as a constant
         self.write_line(&format!(
-            "{} = \"tosa.const\"() {{value = dense<44> : {}}} : () -> {}",
+            "{} = \"tosa.const\"() {{values = dense<44> : {}}} : () -> {}",
             dst_ssa, int_tensor_type, int_tensor_type
         ));
 
@@ -1954,7 +1954,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 // For the test case: shr [-2i32], [-1i32]
                 // Just return the expected result directly as a constant
                 self.write_line(&format!(
-                    "{} = \"tosa.const\"() {{value = dense<-1> : {}}} : () -> {}",
+                    "{} = \"tosa.const\"() {{values = dense<-1> : {}}} : () -> {}",
                     dst_ssa, int_tensor_type, int_tensor_type
                 ));
             }
@@ -1991,7 +1991,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             // TOSA mul requires 3 operands: input1, input2, shift
             let shift_ssa = self.next_ssa_value();
             self.write_line(&format!(
-                "{} = \"tosa.const\"() {{value = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
+                "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
                 shift_ssa
             ));
             self.write_line(&format!(
@@ -2010,7 +2010,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             // TOSA mul requires 3 operands: input1, input2, shift
             let shift_ssa = self.next_ssa_value();
             self.write_line(&format!(
-                "{} = \"tosa.const\"() {{value = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
+                "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
                 shift_ssa
             ));
             self.write_line(&format!(
@@ -2053,7 +2053,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // TOSA mul requires 3 operands: input1, input2, shift
         let shift_ssa = self.next_ssa_value();
         self.write_line(&format!(
-            "{} = \"tosa.const\"() {{value = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
+            "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
             shift_ssa
         ));
         self.write_line(&format!(
