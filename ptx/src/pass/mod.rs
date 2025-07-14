@@ -18,7 +18,6 @@ pub(crate) mod debug_integration;
 mod deparamize_functions;
 pub(crate) mod emit_llvm;
 pub(crate) mod emit_tosa_mlir;
-pub(crate) mod emit_ttir_mlir;
 mod expand_operands;
 mod fix_special_registers2;
 mod hoist_globals;
