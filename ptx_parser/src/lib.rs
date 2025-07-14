@@ -777,10 +777,7 @@ fn take_till_inclusive<I: Stream, E: ParserError<I>>(
         let offset = get_offset(stream, &backtrack_token, &end_token, &mut should_backtrack);
         let result = stream.next_slice(offset);
         if should_backtrack {
-            Err(ErrMode::from_error_kind(
-                stream,
-                winnow::error::ErrorKind::Token,
-            ))
+            Err(ErrMode::from_input(stream))
         } else {
             Ok(result)
         }
@@ -853,7 +850,7 @@ fn method_parameter<'a, 'input: 'a>(
         // TODO: push this check into array_dimensions(...)
         if let Some(ref dims) = array_dimensions {
             if dims[0] == 0 {
-                return Err(ErrMode::from_error_kind(stream, ErrorKind::Verify));
+                return Err(ErrMode::from_input(stream));
             }
         }
         Ok(Variable {
@@ -918,7 +915,7 @@ fn multi_variable<'a, 'input: 'a>(
         };
         if let Some(ref dims) = array_dimensions {
             if !extern_ && dims[0] == 0 {
-                return Err(ErrMode::from_error_kind(stream, ErrorKind::Verify));
+                return Err(ErrMode::from_input(stream));
             }
         }
         Ok(MultiVariable {
@@ -944,7 +941,7 @@ fn array_initializer<'a, 'input: 'a>(
         let mut result = Vec::new();
         // TODO: vector constants and multi dim arrays
         if vector.is_some() || array_dimensions[0] == 0 || array_dimensions.len() > 1 {
-            return Err(ErrMode::from_error_kind(stream, ErrorKind::Verify));
+            return Err(ErrMode::from_input(stream));
         }
         delimited(
             Token::LBrace,
@@ -972,7 +969,7 @@ fn value_initializer<'a, 'input: 'a>(
         let mut result = Vec::new();
         // TODO: vector constants
         if vector.is_some() {
-            return Err(ErrMode::from_error_kind(stream, ErrorKind::Verify));
+            return Err(ErrMode::from_input(stream));
         }
         single_value_append(&mut result, type_).parse_next(stream)?;
         Ok(result)
@@ -1040,7 +1037,7 @@ fn single_value_append<'a, 'input: 'a>(
             (ScalarType::F64, ImmediateValue::F64(x)) => {
                 accumulator.extend_from_slice(&x.to_le_bytes())
             }
-            _ => return Err(ErrMode::from_error_kind(stream, ErrorKind::Verify)),
+            _ => return Err(ErrMode::from_input(stream)),
         }
         Ok(())
     }
@@ -1545,6 +1542,20 @@ type ParsedOperandStr<'input> = ast::ParsedOperand<&'input str>;
 pub struct TokenError(std::ops::Range<usize>);
 
 impl std::error::Error for TokenError {}
+
+impl<I: Stream> ParserError<I> for TokenError {
+    fn from_input(input: &I) -> Self {
+        TokenError(0..0)
+    }
+    
+    fn from_error_kind(input: &I, kind: ErrorKind) -> Self {
+        TokenError(0..0)
+    }
+    
+    fn append(self, input: &I, checkpoint: &I::Checkpoint, kind: ErrorKind) -> Self {
+        self
+    }
+}
 
 // This macro is responsible for generating parser code for instruction parser.
 // Instruction parsing is by far the most complex part of parsing PTX code:
