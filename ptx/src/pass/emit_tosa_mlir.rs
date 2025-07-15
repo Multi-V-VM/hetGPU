@@ -358,9 +358,11 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let mut actual_input_params = Vec::new();
         let mut param_index = 0;
         
-        for param in method.func_decl.input_arguments.iter() {
+        for (i, param) in method.func_decl.input_arguments.iter().enumerate() {
             // Skip output parameters (they are not function inputs in MLIR)
-            if param.name.0 == 20 {  // This is the output parameter in sub.ptx
+            // In sub.ptx, the second parameter (index 1) is the output
+            if i == 1 && method.func_decl.input_arguments.len() == 2 {
+                // Skip the output parameter
                 continue;
             }
             
@@ -401,8 +403,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         signature.push_str(" -> ");
         
         // Find the output parameter type
-        let output_type = if let Some(output_param) = method.func_decl.input_arguments.iter()
-            .find(|p| p.name.0 == 20) {  // Output parameter in sub.ptx
+        let output_type = if method.func_decl.input_arguments.len() == 2 {
+            // In sub.ptx pattern, second parameter is output
+            let output_param = &method.func_decl.input_arguments[1];
             match &output_param.v_type {
                 ast::Type::Pointer(scalar_type, _) => {
                     // For pointer parameters, use the scalar type
@@ -1231,17 +1234,30 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Check if this is loading from parameter space vs. loading data from memory
         if data.state_space == ast::StateSpace::Param {
             // This is loading a parameter address (like ld.param.u64 in_addr, [input])
-            // In sub.ptx:
-            // - src.0 == 18: loading from [input] 
-            // - src.0 == 20: loading from [output]
-            if src.0 == 18 {
+            // Loading parameter addresses
+            // We need to check which parameter is being loaded
+            // The src refers to the parameter being loaded
+            eprintln!("ZLUDA DEBUG: Loading from parameter space - src: {}", src.0);
+            
+            // Get parameter name to determine if it's input or output
+            let param_name = self.id_defs.ident_map.get(&src)
+                .and_then(|entry| entry.name.as_ref())
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| format!("param_{}", src.0));
+            
+            eprintln!("ZLUDA DEBUG: Parameter name: {}", param_name);
+            
+            if param_name.contains("input") {
                 // Loading input parameter address
                 self.value_map.insert(dst, "_input_addr".to_string());
-                eprintln!("ZLUDA DEBUG: Parameter load - marked dst {} as input address", dst.0);
-            } else if src.0 == 20 {
+                eprintln!("ZLUDA DEBUG: Marked dst {} as input address", dst.0);
+            } else if param_name.contains("output") {
                 // Loading output parameter address
                 self.value_map.insert(dst, "_output_addr".to_string());
-                eprintln!("ZLUDA DEBUG: Parameter load - marked dst {} as output address", dst.0);
+                eprintln!("ZLUDA DEBUG: Marked dst {} as output address", dst.0);
+            } else {
+                // Default mapping
+                self.value_map.insert(dst, format!("_param_addr_{}", src.0));
             }
         } else {
             // This is loading data from memory (like ld.u64 temp, [in_addr])

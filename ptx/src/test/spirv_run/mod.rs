@@ -81,7 +81,7 @@ test_ptx!(
 test_ptx!(vector_extract, [1u8, 2u8, 3u8, 4u8], [3u8, 4u8, 1u8, 2u8]);
 test_ptx!(shr, [-2i32], [-1i32]);
 test_ptx!(or, [1u64, 2u64], [3u64]);
-test_ptx!(sub, [2u64], [1u64]);
+test_ptx!(sub, [2u32], [1u32]);
 test_ptx!(min, [555i32, 444i32], [444i32]);
 test_ptx!(max, [555i32, 444i32], [555i32]);
 test_ptx!(global_array, [0xDEADu32], [1u32]);
