@@ -996,10 +996,18 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     let kernel_name = name.to_str().map_err(|e| e.to_string())?;
     let core = tt_runtime_sys::CoreCoord { x: 0, y: 0 }; // 默认核心坐标
 
-    // 3. 将LLVM IR保存到临时文件
+    // 3. 将 MLIR 保存到临时文件
     let temp_dir = std::env::temp_dir();
     // let llvm_ir_file = temp_dir.join(format!("{}_llvm.ll", kernel_name));
     let mlir_file = temp_dir.join(format!("{}.mlir", kernel_name));
+
+    // TT-MLIR installation directory
+    // This directory should contain:
+    //   - build/bin/ttmlir-opt: MLIR optimizer for Tenstorrent
+    //   - build/bin/ttmlir-translate: MLIR to flatbuffer translator
+    //   - ttrt-artifacts/system_desc.ttsys: System description file for Tenstorrent hardware
+    //   - env/activate : Environment activation script for Python virtual environment, with ttrt installed 
+    let tt_mlir_dir = "/home/bubblepipe/tt/tt-mlir";
 
     // 4. 生成TOSA MLIR代码，使用真实的PTX源代码
     let tosa_mlir = generate_tosa_mlir_from_ptx(kernel_name, ptx_text, input.len(), output.len())?;
@@ -1017,9 +1025,20 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     // Step 1: TTIR to TTNN backend pipeline
     let ttnn_mlir_file = temp_dir.join(format!("{}_ttnn.mlir", kernel_name));
     eprintln!("ZLUDA DEBUG: Step 1 - Converting TOSA to TTNN backend");
-    let tosa_to_ttnn_output = Command::new("ttmlir-opt")
-        .arg("--ttir-to-ttnn-backend-pipeline=system-desc-path=/home/bubblepipe/tt/tt-mlir/ttrt-artifacts/system_desc.ttsys")
-        .arg(&mlir_file)
+    let ttmlir_opt_path = format!("{}/build/bin/ttmlir-opt", tt_mlir_dir);
+    let system_desc_path = format!("{}/ttrt-artifacts/system_desc.ttsys", tt_mlir_dir);
+    let ttmlir_opt_args = vec![            
+            "--convert-tosa-to-ttir".to_string(),
+            format!("--ttir-to-ttnn-backend-pipeline=system-desc-path={}", system_desc_path),
+            mlir_file.display().to_string(),
+        ];
+    eprintln!(
+        "ZLUDA DEBUG: Running command: {} {}",
+        ttmlir_opt_path,
+        ttmlir_opt_args.join(" ")
+    );
+    let tosa_to_ttnn_output = Command::new(&ttmlir_opt_path)
+        .args(&ttmlir_opt_args)
         .output()
         .map_err(|e| format!("Failed to execute TTIR to TTNN backend pipeline: {}", e))?;
 
@@ -1041,8 +1060,8 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     // Step 2: TTNN to flatbuffer conversion
     let ttnn_file = temp_dir.join(format!("{}.ttnn", kernel_name));
     eprintln!("ZLUDA DEBUG: Step 2 - Converting TTNN to flatbuffer");
-    let ttnn_to_flatbuffer_output = Command::new("ttmlir-translate")
-        .arg("--ttnn-to-flatbuffer")
+    let ttnn_to_flatbuffer_output = Command::new(format!("{}/build/bin/ttmlir-translate", tt_mlir_dir))
+    .arg("--ttnn-to-flatbuffer")
         .arg(&ttnn_mlir_file)
         .output()
         .map_err(|e| format!("Failed to execute TTNN to flatbuffer conversion: {}", e))?;
@@ -1075,7 +1094,8 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     
     // Build the command to execute the Python script
     let script_path = "/home/bubblepipe/hetGPU/run_ttnn_matrix.py";
-    let env_path = "/home/bubblepipe/tt/tt-mlir/env/activate";
+    let env_path = format!("{}/env/activate", tt_mlir_dir);
+
     let cmd = format!(
         "source {} && python3 {} {} \"{}\" \"{}\"",
         env_path,
