@@ -396,7 +396,11 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 if i > 0 {
                     signature.push_str(", ");
                 }
-                let ret_type = self.convert_type_to_tosa(&ret_arg.v_type)?;
+                // Override return type for bitwise functions to use correct dimensions
+                let ret_type = match self.get_function_category(&func_name) {
+                    FunctionCategory::Bitwise => self.get_return_type_for_function(&func_name),
+                    _ => self.convert_type_to_tosa(&ret_arg.v_type)?,
+                };
                 signature.push_str(&ret_type);
                 return_types.push(ret_type);
             }
@@ -459,33 +463,27 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         // Generate appropriate return statement
         if let Some(result) = result_tensor {
-            // Use the last result type if available, otherwise use function signature type
-            let return_type = if self.requires_integer_params(&func_name) {
-                match self.get_function_category(&func_name) {
-                    FunctionCategory::Bitwise => {
-                        // For bitwise operations, use the actual result type from the operation
-                        self.last_result_type
-                            .clone()
-                            .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
-                    }
-                    _ => self.get_return_type_for_function(&func_name),
+            // For bitwise functions, prefer to use the SSA type of the result value
+            let return_type = match self.get_function_category(&func_name) {
+                FunctionCategory::Bitwise => {
+                    // First try to get the type from SSA types, then last_result_type, then function return type
+                    self.ssa_types.get(&result).cloned()
+                        .or_else(|| self.last_result_type.clone())
+                        .or_else(|| self.current_function_return_type.clone())
+                        .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
                 }
-            } else {
-                // For other functions, check the function category first
-                match self.get_function_category(&func_name) {
-                    FunctionCategory::Bitwise => {
-                        // For bitwise operations, use the actual result type from the operation
-                        self.last_result_type
-                            .clone()
-                            .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
-                    }
-                    _ => {
-                        // For other functions including neg, use the actual SSA value type first
-                        // then fall back to function return type
-                        self.ssa_types.get(&result).cloned()
-                            .or_else(|| self.last_result_type.clone())
-                            .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
-                    }
+                FunctionCategory::Comparison | FunctionCategory::Shift => {
+                    // Similar handling for comparison and shift operations
+                    self.ssa_types.get(&result).cloned()
+                        .or_else(|| self.last_result_type.clone())
+                        .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
+                }
+                FunctionCategory::Default => {
+                    // For default functions, use SSA type first, then function return type
+                    self.ssa_types.get(&result).cloned()
+                        .or_else(|| self.last_result_type.clone())
+                        .or_else(|| self.current_function_return_type.clone())
+                        .unwrap_or_else(|| self.get_default_tensor_type())
                 }
             };
             self.write_line(&format!("return {} : {}", result, return_type));
@@ -559,29 +557,26 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     self.instruction_counter += 1;
                 }
 
-                // Determine result type before converting instruction
+                // Note: Don't pre-set result types here as they should be determined
+                // by the actual instruction conversion logic to ensure correct tensor dimensions
                 match &inst {
                     ast::Instruction::Xor { .. }
                     | ast::Instruction::And { .. }
                     | ast::Instruction::Or { .. }
                     | ast::Instruction::Shl { .. }
                     | ast::Instruction::Shr { .. } => {
-                        // Bitwise operations and shift operations always return integer tensors
-                        self.last_result_type = Some(self.get_integer_tensor_type());
+                        // Bitwise and shift operations will set their own result types
                     }
                     ast::Instruction::Setp { .. } => {
-                        // Comparison operations return predicate (integer) tensors
-                        self.last_result_type = Some(self.get_integer_tensor_type());
+                        // Comparison operations will set their own result types
                     }
                     ast::Instruction::Add { .. }
                     | ast::Instruction::Sub { .. }
                     | ast::Instruction::Mul { .. } => {
-                        // Arithmetic operations depend on input type
-                        self.last_result_type = Some(self.get_default_tensor_type());
+                        // Arithmetic operations will set their own result types
                     }
                     _ => {
-                        // Default to float tensor
-                        self.last_result_type = Some(self.get_default_tensor_type());
+                        // Other operations will determine their own result types
                     }
                 }
 
@@ -1436,7 +1431,6 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         if is_integer_op {
             // For integer XOR, we need to match the function's return type
-            // Check if this operation is for a function that returns tensor<32x32xf32>
             let expected_return_type = self.current_function_return_type.as_ref()
                 .map(|t| t.clone())
                 .unwrap_or_else(|| "tensor<1xi32>".to_string());
@@ -1487,30 +1481,21 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                         dst_ssa, xor_result, int_tensor_type, expected_return_type
                     ));
                     self.last_result_type = Some(expected_return_type.clone());
-                    self.ssa_types.insert(dst_ssa.clone(), expected_return_type);
+                    self.ssa_types.insert(dst_ssa.clone(), expected_return_type.clone());
                 } else {
-                    // Return type is already integer, no cast needed
-                    self.value_map.insert(dst, xor_result.clone());
+                    // Return type is already integer, use dst_ssa for final result
+                    self.value_map.insert(dst, dst_ssa.clone());
                     self.last_result_type = Some(int_tensor_type.to_string());
-                    self.ssa_types.insert(xor_result.clone(), int_tensor_type.to_string());
-                    return Ok(xor_result);
+                    self.ssa_types.insert(dst_ssa.clone(), int_tensor_type.to_string());
+                    // Store the final result for potential return
+                    self.last_result_ssa = Some(dst_ssa.clone());
                 }
             } else {
                 // For scalar XOR, check if we need to match function return type
-                let expected_return_type = self.current_function_return_type.as_ref()
-                    .map(|t| t.clone())
-                    .unwrap_or_else(|| "tensor<1xi32>".to_string());
-                
                 let scalar_tensor_type = "tensor<1xi32>";
                 
-                // Use tosa.bitwise_xor for the actual XOR operation on scalars
-                let xor_result = if expected_return_type.contains("f32") {
-                    // Need to eventually cast to float, so use intermediate SSA
-                    self.next_ssa_value()
-                } else {
-                    // Can use dst_ssa directly
-                    dst_ssa.clone()
-                };
+                // Always use intermediate SSA for XOR result
+                let xor_result = self.next_ssa_value();
                 
                 self.write_line(&format!(
                     "{} = \"tosa.bitwise_xor\"({}, {}) : ({}, {}) -> {}",
@@ -1518,17 +1503,23 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 ));
                 self.ssa_types.insert(xor_result.clone(), scalar_tensor_type.to_string());
                 
-                // If function expects float return, cast the result
+                // Handle casting to expected return type
                 if expected_return_type.contains("f32") {
+                    // Cast scalar integer result to float type
                     self.write_line(&format!(
                         "{} = \"tosa.cast\"({}) : ({}) -> {}",
                         dst_ssa, xor_result, scalar_tensor_type, expected_return_type
                     ));
                     self.last_result_type = Some(expected_return_type.clone());
-                    self.ssa_types.insert(dst_ssa.clone(), expected_return_type);
+                    self.ssa_types.insert(dst_ssa.clone(), expected_return_type.clone());
                 } else {
+                    // No cast needed, use xor_result directly
+                    self.value_map.insert(dst, xor_result.clone());
                     self.last_result_type = Some(scalar_tensor_type.to_string());
                     self.ssa_types.insert(xor_result.clone(), scalar_tensor_type.to_string());
+                    // Store the final result for potential return
+                    self.last_result_ssa = Some(xor_result.clone());
+                    return Ok(xor_result);
                 }
             }
             

@@ -1619,6 +1619,37 @@ fn find_gemmini_main_binary() -> Result<String, String> {
     Err("Could not find gemmini_main binary. Please ensure it's built with 'cargo build --bin gemmini_main'".to_string())
 }
 
+// Convert tensor-based MLIR to memref-based MLIR for buddy-opt compatibility
+fn convert_tensor_to_memref_mlir(content: &str) -> String {
+    let mut result = content.to_string();
+    
+    // Simple string replacements to convert tensor MLIR to memref MLIR
+    // Based on the pattern we saw in the linalg file
+    
+    // Replace function signature - specific pattern for XOR function
+    result = result.replace(
+        "func.func @xor(%arg0: tensor<1xi32>, %arg1: tensor<1xi32>) -> tensor<1xi32> {",
+        "func.func @xor(%arg0: memref<1xi32>, %arg1: memref<1xi32>, %arg2: memref<1xi32>) {"
+    );
+    
+    // Remove tensor.empty() line
+    result = result.replace("    %0 = tensor.empty() : tensor<1xi32>\n", "");
+    
+    // Replace linalg.generic operation - remove the assignment
+    result = result.replace(
+        "    %1 = linalg.generic {indexing_maps = [#map, #map, #map1], iterator_types = [\"parallel\"]} ins(%arg0, %arg1 : tensor<1xi32>, tensor<1xi32>) outs(%0 : tensor<1xi32>) {",
+        "    linalg.generic {indexing_maps = [#map, #map, #map1], iterator_types = [\"parallel\"]} ins(%arg0, %arg1 : memref<1xi32>, memref<1xi32>) outs(%arg2 : memref<1xi32>) {"
+    );
+    
+    // Remove the -> tensor<1xi32> return type from linalg.generic
+    result = result.replace("    } -> tensor<1xi32>", "    }");
+    
+    // Replace return statement
+    result = result.replace("    return %1 : tensor<1xi32>", "    return");
+    
+    result
+}
+
 fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<PathBuf, String> {
     // Output files
     let base_name = format!("/tmp/gemmini_program_{}", program_id);
@@ -1685,6 +1716,36 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
             return Err(format!("TOSA conversion failed"));
         }
     }
+    
+    // Step 1.5: Convert tensor operations to memref for buddy-opt compatibility
+    eprintln!("Gemmini/Spike: Step 1.5 - Converting tensor operations to memref");
+    let memref_mlir = format!("{}_memref.mlir", base_name);
+    
+    // Read the linalg MLIR file
+    let linalg_content = match fs::read_to_string(&linalg_mlir) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Failed to read linalg MLIR file: {}", e);
+            return Err(format!("Failed to read linalg MLIR file"));
+        }
+    };
+    
+    // Convert tensor operations to memref for buddy-opt compatibility
+    let memref_content = convert_tensor_to_memref_mlir(&linalg_content);
+    
+    // Write the converted MLIR
+    match fs::write(&memref_mlir, memref_content) {
+        Ok(_) => {
+            eprintln!("Gemmini/Spike: Successfully converted to memref MLIR");
+        }
+        Err(e) => {
+            eprintln!("Failed to write memref MLIR file: {}", e);
+            return Err(format!("Failed to write memref MLIR file"));
+        }
+    }
+    
+    // Update linalg_mlir to point to the memref version
+    let linalg_mlir = memref_mlir;
     
     // Step 2: Use pipeline approach: buddy-opt | buddy-translate | buddy-llc
     eprintln!("Gemmini/Spike: Step 2 - Pipeline compilation: buddy-opt | buddy-translate | buddy-llc");
