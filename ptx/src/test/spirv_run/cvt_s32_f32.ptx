@@ -3,17 +3,17 @@
 .address_size 64
 
 .visible .entry cvt_s32_f32(
-	.param .u64 input,
-	.param .u64 output
+	.param .u32 input,
+	.param .u32 output
 )
 {
-	.reg .u64 	            in_addr;
-    .reg .u64 	            out_addr;
+	.reg .u32 	            in_addr;
+    .reg .u32 	            out_addr;
     .reg .b32 	            temp1;
     .reg .b32 	            temp2;
 
-	ld.param.u64 	        in_addr, [input];
-    ld.param.u64 	        out_addr, [output];
+	ld.param.u32 	        in_addr, [input];
+    ld.param.u32 	        out_addr, [output];
 
     ld.f32                  temp1, [in_addr];
     ld.f32                  temp2, [in_addr+4];

@@ -4,40 +4,40 @@
 
 .extern .shared .b32 shared_ex[];
 
-.func (.reg .b64 out) add(.reg .u64 	    temp2)
+.func (.reg .b32 out) add(.reg .u32 	    temp2)
 {
-    .shared .align 4 .u64 shared_mod;
-    .reg .u64 	    temp1;
-    st.shared.u64   [shared_mod], temp2;
-    ld.shared.u64   temp1, [shared_mod];
-    ld.shared.u64   temp2, [shared_ex];
-	add.u64		    out, temp2, temp1;
+    .shared .align 4 .u32 shared_mod;
+    .reg .u32 	    temp1;
+    st.shared.u32   [shared_mod], temp2;
+    ld.shared.u32   temp1, [shared_mod];
+    ld.shared.u32   temp2, [shared_ex];
+	add.u32		    out, temp2, temp1;
     ret;
 }
 
-.func (.reg .b64 out) set_shared_temp1(.reg .b64 temp1, .reg .u64 	    temp2)
+.func (.reg .b32 out) set_shared_temp1(.reg .b32 temp1, .reg .u32 	    temp2)
 {
-    st.shared.u64   [shared_ex], temp1;
+    st.shared.u32   [shared_ex], temp1;
     call            (out), add, (temp2);
     ret;
 }
 
 .visible .entry shared_unify_local(
-	.param .u64 input,
-	.param .u64 output
+	.param .u32 input,
+	.param .u32 output
 )
 {
-	.reg .u64 	    in_addr;
-    .reg .u64 	    out_addr;
-    .reg .u64 	    temp1;
-    .reg .u64 	    temp2;
+	.reg .u32 	    in_addr;
+    .reg .u32 	    out_addr;
+    .reg .u32 	    temp1;
+    .reg .u32 	    temp2;
 
-	ld.param.u64 	in_addr, [input];
-    ld.param.u64 	out_addr, [output];
+	ld.param.u32 	in_addr, [input];
+    ld.param.u32 	out_addr, [output];
 
-    ld.global.u64   temp1, [in_addr];
-    ld.global.u64   temp2, [in_addr+8];
+    ld.global.u32   temp1, [in_addr];
+    ld.global.u32   temp2, [in_addr+8];
     call            (temp2), set_shared_temp1, (temp1, temp2);
-    st.u64          [out_addr], temp2;
+    st.u32          [out_addr], temp2;
 	ret;
 }

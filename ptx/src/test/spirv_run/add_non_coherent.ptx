@@ -3,20 +3,20 @@
 .address_size 64
 
 .visible .entry add_non_coherent(
-	.param .u64 input,
-	.param .u64 output
+	.param .u32 input,
+	.param .u32 output
 )
 {
-	.reg .u64 	        in_addr;
-    .reg .u64 	        out_addr;
-    .reg .u64 	        temp;
-    .reg .u64 	        temp2;
+	.reg .u32 	        in_addr;
+    .reg .u32 	        out_addr;
+    .reg .u32 	        temp;
+    .reg .u32 	        temp2;
 
-	ld.param.u64 	    in_addr, [input];
-    ld.param.u64 	    out_addr, [output];
+	ld.param.u32 	    in_addr, [input];
+    ld.param.u32 	    out_addr, [output];
 
-    ld.global.nc.u64    temp, [in_addr];
-	add.u64		        temp2, temp, 1;
-    st.global.u64       [out_addr], temp2;
+    ld.global.nc.u32    temp, [in_addr];
+	add.u32		        temp2, temp, 1;
+    st.global.u32       [out_addr], temp2;
 	ret;
 }

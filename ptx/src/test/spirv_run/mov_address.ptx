@@ -3,13 +3,13 @@
 .address_size 64
 
 .visible .entry mov_address(
-	.param .u64 input,
-	.param .u64 output
+	.param .u32 input,
+	.param .u32 output
 )
 {
     .local .b8  __local_depot0[8];
-	.reg .u64   temp;
+	.reg .u32   temp;
 
-    mov.u64     temp, __local_depot0;
+    mov.u32     temp, __local_depot0;
 	ret;
 }

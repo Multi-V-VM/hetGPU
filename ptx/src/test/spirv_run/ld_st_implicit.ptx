@@ -3,18 +3,18 @@
 .address_size 64
 
 .visible .entry ld_st_implicit(
-	.param .u64 input,
-	.param .u64 output
+	.param .u32 input,
+	.param .u32 output
 )
 {
-	.reg .u64 	    in_addr;
-    .reg .u64 	    out_addr;
-    .reg .b64 	    temp;
+	.reg .u32 	    in_addr;
+    .reg .u32 	    out_addr;
+    .reg .b32 	    temp;
 
-	ld.param.u64 	in_addr, [input];
-    ld.param.u64 	out_addr, [output];
+	ld.param.u32 	in_addr, [input];
+    ld.param.u32 	out_addr, [output];
 
-    mov.b64                 temp, 0x0123456789abcdef;
+    mov.b32                 temp, 0x0123456789abcdef;
     ld.global.f32           temp, [in_addr];
     st.global.f32           [out_addr], temp;
 	ret;
