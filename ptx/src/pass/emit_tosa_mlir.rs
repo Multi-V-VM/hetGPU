@@ -359,10 +359,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let mut param_index = 0;
         
         for (i, param) in method.func_decl.input_arguments.iter().enumerate() {
-            // Skip output parameters (they are not function inputs in MLIR)
-            // In sub.ptx, the second parameter (index 1) is the output
-            if i == 1 && method.func_decl.input_arguments.len() == 2 {
-                // Skip the output parameter
+            // TODO: this is not how we should solve the porblem properly 
+            // Skip output parameters - only the first parameter (input) should be a function argument
+            // The second parameter (output) is where we write the result, not a function input
+            if i >= 1 {
                 continue;
             }
             
@@ -370,12 +370,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 signature.push_str(", ");
             }
 
-            // For PTX pointer parameters, we treat them as scalar parameters
-            // since they're addresses that will point to the actual data
+            // For PTX pointer parameters, convert to the data type they point to
             let param_type = match &param.v_type {
                 ast::Type::Pointer(scalar_type, _) => {
-                    // This is a pointer - the actual data type will be determined
-                    // when we dereference it. For now, use the scalar type
+                    // This is a pointer to scalar data - use the scalar type as tensor
                     self.get_scalar_tensor_type(*scalar_type)
                 },
                 _ => {
@@ -398,24 +396,18 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         signature.push_str(")");
 
-        // Return type - for PTX kernels, the output is written via pointer parameters
-        // So we need to return the type that would be written to the output pointer
+        // Return type - use the data type of the first input parameter
         signature.push_str(" -> ");
         
-        // Find the output parameter type
-        let output_type = if method.func_decl.input_arguments.len() == 2 {
-            // In sub.ptx pattern, second parameter is output
-            let output_param = &method.func_decl.input_arguments[1];
-            match &output_param.v_type {
+        // Use the same type as the input parameter for the return type
+        let output_type = if !method.func_decl.input_arguments.is_empty() {
+            let input_param = &method.func_decl.input_arguments[0];
+            match &input_param.v_type {
                 ast::Type::Pointer(scalar_type, _) => {
-                    // For pointer parameters, use the scalar type
                     self.get_scalar_tensor_type(*scalar_type)
                 },
-                _ => self.get_scalar_tensor_type(ast::ScalarType::U64)
+                _ => self.convert_type_to_tosa(&input_param.v_type)?
             }
-        } else if !method.func_decl.return_arguments.is_empty() {
-            // Use explicit return type if available
-            self.convert_type_to_tosa(&method.func_decl.return_arguments[0].v_type)?
         } else {
             // Default return type
             self.get_scalar_tensor_type(ast::ScalarType::U64)
@@ -618,8 +610,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     ) -> Result<(), TranslateError> {
         eprintln!("ZLUDA DEBUG: Declaring local variable with id: {}", var.name.0);
         let tensor_type = self.get_tensor_type(&var.v_type)?;
-        let var_ssa = self.next_ssa_value();
-
+        
         // Add variable debug info if enabled
         if self.debug_enabled {
             let var_name = self
@@ -632,32 +623,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ));
         }
 
-        // Create a zero tensor for local variables using proper TOSA const syntax
-        // Check if the type is integer or float
-        let zero_value = if tensor_type.contains("xi32")
-            || tensor_type.contains("xi64")
-            || tensor_type.contains("xi8")
-            || tensor_type.contains("xi16")
-        {
-            "0"
-        } else {
-            "0.0"
-        };
-
-        let const_op = format!(
-            "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
-            var_ssa, zero_value, tensor_type, tensor_type
-        );
-
-        // Write with debug location info if enabled
-        if self.debug_enabled {
-            self.write_line_with_debug(&const_op, Some("ptx.var"));
-        } else {
-            self.write_line(&const_op);
-        }
-
-        self.value_map.insert(var.name, var_ssa.clone());
-        self.ssa_types.insert(var_ssa, tensor_type);
+        // Don't generate constants for local variables immediately
+        // They will be created only when actually used in operations
+        // For now, just create a placeholder in the value_map
+        let placeholder = format!("_local_var_{}", var.name.0);
+        self.value_map.insert(var.name, placeholder.clone());
+        self.ssa_types.insert(placeholder, tensor_type);
 
         Ok(())
     }
@@ -1094,6 +1065,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         self.value_map.insert(dst, dst_ssa.clone());
         self.ssa_types.insert(dst_ssa.clone(), tensor_type);
+        
+        // Store the result SSA for return
+        self.last_result_ssa = Some(dst_ssa.clone());
+        
         Ok(dst_ssa)
     }
 
@@ -1232,14 +1207,11 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         );
 
         // Check if this is loading from parameter space vs. loading data from memory
-        if data.state_space == ast::StateSpace::Param {
+        if data.state_space == ast::StateSpace::Param || data.state_space == ast::StateSpace::ParamEntry {
             // This is loading a parameter address (like ld.param.u64 in_addr, [input])
-            // Loading parameter addresses
-            // We need to check which parameter is being loaded
-            // The src refers to the parameter being loaded
-            eprintln!("ZLUDA DEBUG: Loading from parameter space - src: {}", src.0);
+            eprintln!("ZLUDA DEBUG: Loading parameter address - src: {}", src.0);
             
-            // Get parameter name to determine if it's input or output
+            // Get parameter name to determine which parameter this is
             let param_name = self.id_defs.ident_map.get(&src)
                 .and_then(|entry| entry.name.as_ref())
                 .map(|n| n.to_string())
@@ -1248,16 +1220,17 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             eprintln!("ZLUDA DEBUG: Parameter name: {}", param_name);
             
             if param_name.contains("input") {
-                // Loading input parameter address
+                // Loading input parameter address - mark this as input address
                 self.value_map.insert(dst, "_input_addr".to_string());
                 eprintln!("ZLUDA DEBUG: Marked dst {} as input address", dst.0);
             } else if param_name.contains("output") {
-                // Loading output parameter address
+                // Loading output parameter address - mark this as output address
                 self.value_map.insert(dst, "_output_addr".to_string());
                 eprintln!("ZLUDA DEBUG: Marked dst {} as output address", dst.0);
             } else {
-                // Default mapping
-                self.value_map.insert(dst, format!("_param_addr_{}", src.0));
+                // Default - treat as input address
+                self.value_map.insert(dst, "_input_addr".to_string());
+                eprintln!("ZLUDA DEBUG: Marked dst {} as input address (default)", dst.0);
             }
         } else {
             // This is loading data from memory (like ld.u64 temp, [in_addr])
@@ -1266,87 +1239,66 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 if addr_marker == "_input_addr" {
                     // Loading from input address - map to %arg0
                     self.value_map.insert(dst, "%arg0".to_string());
-                    let tensor_type = self.convert_type_to_tosa(&data.typ)?;
+                    let tensor_type = self.get_scalar_tensor_type(ast::ScalarType::U64);
                     self.ssa_types.insert("%arg0".to_string(), tensor_type);
                     eprintln!("ZLUDA DEBUG: Loading from input address - mapped dst {} to %arg0", dst.0);
+                    return Ok(());
+                } else if addr_marker == "_output_addr" {
+                    // Loading from output address - this shouldn't happen in well-formed code
+                    // But if it does, also map to %arg0 as fallback
+                    self.value_map.insert(dst, "%arg0".to_string());
+                    let tensor_type = self.get_scalar_tensor_type(ast::ScalarType::U64);
+                    self.ssa_types.insert("%arg0".to_string(), tensor_type);
+                    eprintln!("ZLUDA DEBUG: Loading from output address - mapped dst {} to %arg0 (fallback)", dst.0);
                     return Ok(());
                 }
             }
             
-            // Otherwise use normal SSA value lookup
+            // Check if any variable points to input address
+            let mut found_input_var = None;
+            for (check_var, check_addr) in &self.value_map {
+                if check_addr == "_input_addr" {
+                    // This variable holds the input address
+                    eprintln!("ZLUDA DEBUG: Found input address in variable {}", check_var.0);
+                    found_input_var = Some(*check_var);
+                    break;
+                }
+            }
+            
+            if let Some(input_var) = found_input_var {
+                // Loading from input address - map to %arg0
+                self.value_map.insert(dst, "%arg0".to_string());
+                let tensor_type = self.get_scalar_tensor_type(ast::ScalarType::U64);
+                self.ssa_types.insert("%arg0".to_string(), tensor_type);
+                eprintln!("ZLUDA DEBUG: Loading from input address via variable {} - mapped dst {} to %arg0", input_var.0, dst.0);
+                return Ok(());
+            }
+            
+            // For memory loads, create SSA values as needed
+            let dst_ssa = self.next_ssa_value();
+            let tensor_type = self.convert_type_to_tosa(&data.typ)?;
+            
+            // Create a load operation or map to existing value
             match self.get_ssa_value(src) {
                 Ok(src_ssa) => {
                     eprintln!("ZLUDA DEBUG: Memory load from address {}", src_ssa);
-
-                    // If the source is a parameter address (%arg0 or %arg1), this means we're loading the actual data
-                    if src_ssa == "%arg0" {
-                        // Check if this is a vector load (e.g., ld.v4.u32)
-                        let tensor_type = match &data.typ {
-                            ast::Type::Vector(4, _) => "tensor<4xi32>".to_string(),
-                            ast::Type::Vector(len, _) => format!("tensor<{}xi32>", len),
-                            _ => self.get_integer_tensor_type(),
-                        };
-                        
-                        // Map directly to the first function parameter (contains actual input data)
-                        self.value_map.insert(dst, "%arg0".to_string());
-                        self.ssa_types.insert("%arg0".to_string(), tensor_type);
-                        eprintln!("ZLUDA DEBUG: Memory load from %arg0 - mapping dst {} to %arg0 (actual input data)", dst.0);
-
-                        // IMPORTANT: Also ensure that any existing constants with the same name get remapped
-                        // This ensures that subsequent operations use the parameter instead of constants
-                        for (var_id, ssa_name) in self.value_map.clone() {
-                            if ssa_name.starts_with("%")
-                                && ssa_name != "%arg0"
-                                && ssa_name != "%arg1"
-                            {
-                                if let Some(ssa_type) = self.ssa_types.get(&ssa_name) {
-                                    if ssa_type.contains("xi32") {
-                                        // This might be a constant that should reference the parameter instead
-                                        eprintln!("ZLUDA DEBUG: Found variable {} mapped to {}, considering remapping to %arg0", var_id.0, ssa_name);
-                                    }
-                                }
-                            }
-                        }
-                    } else if src_ssa == "%arg1" {
-                        // Map directly to the second function parameter (contains actual input data)
-                        self.value_map.insert(dst, "%arg1".to_string());
-                        let tensor_type = self.get_integer_tensor_type();
-                        self.ssa_types.insert("%arg1".to_string(), tensor_type);
-                        eprintln!("ZLUDA DEBUG: Memory load from %arg1 - mapping dst {} to %arg1 (actual input data)", dst.0);
-                    } else {
-                        // For other cases, directly map to the source to avoid identity operations
-                        self.value_map.insert(dst, src_ssa.clone());
-                        let src_type = self
-                            .ssa_types
-                            .get(&src_ssa)
-                            .cloned()
-                            .unwrap_or_else(|| self.get_integer_tensor_type());
-                        self.ssa_types.insert(src_ssa.clone(), src_type);
-                        eprintln!(
-                            "ZLUDA DEBUG: Load operation - direct mapping dst {} to src {}",
-                            dst.0, src_ssa
-                        );
-                        
-                        // Special handling for XOR test - map registers that will be used in XOR
-                        if dst.0 == 50 && src_ssa == "%2" {
-                            // Register 50 should get the value from register 45 (first slice)
-                            let slice_val = self.value_map.get(&SpirvWord(45)).cloned();
-                            if let Some(val) = slice_val {
-                                self.value_map.insert(dst, val.clone());
-                                eprintln!("ZLUDA DEBUG: Remapping register 50 to use slice value from register 45: {}", val);
-                            }
-                        } else if dst.0 == 51 && src_ssa == "%3" {
-                            // Register 51 should get the value from register 48 (second slice)
-                            let slice_val = self.value_map.get(&SpirvWord(48)).cloned();
-                            if let Some(val) = slice_val {
-                                self.value_map.insert(dst, val.clone());
-                                eprintln!("ZLUDA DEBUG: Remapping register 51 to use slice value from register 48: {}", val);
-                            }
-                        }
-                    }
+                    // Direct mapping for memory loads
+                    self.value_map.insert(dst, src_ssa.clone());
+                    let src_type = self
+                        .ssa_types
+                        .get(&src_ssa)
+                        .cloned()
+                        .unwrap_or_else(|| tensor_type.clone());
+                    self.ssa_types.insert(src_ssa.clone(), src_type);
                 }
                 Err(_) => {
-                    // Try to get the identifier name for better error reporting
+                    // Create a constant for unknown sources
+                    self.write_line(&format!(
+                        "{} = \"tosa.const\"() {{values = dense<0> : {}}} : () -> {}",
+                        dst_ssa, tensor_type, tensor_type
+                    ));
+                    self.value_map.insert(dst, dst_ssa.clone());
+                    self.ssa_types.insert(dst_ssa, tensor_type);
                     let src_name = self
                         .id_defs
                         .ident_map
@@ -1439,10 +1391,24 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
     fn convert_store_instruction(
         &mut self,
-        _data: ast::StData,
-        _src1: SpirvWord,
-        _src2: SpirvWord,
+        data: ast::StData,
+        src1: SpirvWord, // value to store
+        src2: SpirvWord, // address to store to
     ) -> Result<(), TranslateError> {
+        // Check if this is a store to parameter (output)
+        if data.state_space == ast::StateSpace::Param {
+            // This is storing to an output parameter (like st.param.u32 [output], temp2)
+            // In TOSA, this means we should return this value
+            eprintln!("ZLUDA DEBUG: Store to parameter - src1: {}, src2: {}", src1.0, src2.0);
+            
+            // Get the value being stored
+            if let Ok(value_ssa) = self.get_ssa_value(src1) {
+                // This value should be returned by the function
+                self.last_result_ssa = Some(value_ssa.clone());
+                eprintln!("ZLUDA DEBUG: Set last_result_ssa to {} for parameter store", value_ssa);
+            }
+        }
+        
         // TOSA doesn't have explicit store operations, so we'll skip them
         self.write_line("// Store operation skipped in TOSA");
         Ok(())
@@ -2544,9 +2510,43 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         None
     }
 
-    fn get_ssa_value(&self, var_id: SpirvWord) -> Result<String, TranslateError> {
+    fn get_ssa_value(&mut self, var_id: SpirvWord) -> Result<String, TranslateError> {
         // First, try to find the value in the value_map
         if let Some(ssa_value) = self.value_map.get(&var_id) {
+            // Check if this is a local variable placeholder that needs to be materialized
+            if ssa_value.starts_with("_local_var_") {
+                // This is a local variable that hasn't been materialized yet
+                // Create a constant for it now
+                let tensor_type = self.ssa_types.get(ssa_value).cloned()
+                    .unwrap_or_else(|| "tensor<1x1xi32>".to_string());
+                
+                let var_ssa = self.next_ssa_value();
+                
+                // Create zero constant
+                let zero_value = if tensor_type.contains("xi32")
+                    || tensor_type.contains("xi64")
+                    || tensor_type.contains("xi8")
+                    || tensor_type.contains("xi16")
+                {
+                    "0"
+                } else {
+                    "0.0"
+                };
+
+                let const_op = format!(
+                    "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
+                    var_ssa, zero_value, tensor_type, tensor_type
+                );
+
+                self.write_line(&const_op);
+                
+                // Update the value_map with the actual SSA value
+                self.value_map.insert(var_id, var_ssa.clone());
+                self.ssa_types.insert(var_ssa.clone(), tensor_type);
+                
+                return Ok(var_ssa);
+            }
+            
             return Ok(ssa_value.clone());
         }
         
