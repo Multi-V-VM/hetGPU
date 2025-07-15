@@ -353,63 +353,73 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Generate function signature with tensor types
         let mut signature = format!("func.func @{}(", func_name);
 
-        // Input parameters - convert to tensors
-        for (i, param) in method.func_decl.input_arguments.iter().enumerate() {
-            if i > 0 {
+        // For PTX kernels, input/output parameters are pointers to data
+        // We need to model them as the actual data tensors they point to
+        let mut actual_input_params = Vec::new();
+        let mut param_index = 0;
+        
+        for param in method.func_decl.input_arguments.iter() {
+            // Skip output parameters (they are not function inputs in MLIR)
+            if param.name.0 == 20 {  // This is the output parameter in sub.ptx
+                continue;
+            }
+            
+            if param_index > 0 {
                 signature.push_str(", ");
             }
 
-            // Override parameter types for special operations
-            let param_type = if self.requires_integer_params(&func_name) {
-                self.get_param_type_for_function(&func_name)
-            } else {
-                self.convert_type_to_tosa(&param.v_type)?
+            // For PTX pointer parameters, we treat them as scalar parameters
+            // since they're addresses that will point to the actual data
+            let param_type = match &param.v_type {
+                ast::Type::Pointer(scalar_type, _) => {
+                    // This is a pointer - the actual data type will be determined
+                    // when we dereference it. For now, use the scalar type
+                    self.get_scalar_tensor_type(*scalar_type)
+                },
+                _ => {
+                    // Regular parameter
+                    self.convert_type_to_tosa(&param.v_type)?
+                }
             };
 
-            signature.push_str(&format!("%arg{}: {}", i, param_type));
-
-            // Map parameter to SSA value
-            let param_ssa = format!("%arg{}", i);
-            self.value_map.insert(param.name, param_ssa.clone());
-
-            // Track parameter type
-            self.ssa_types.insert(param_ssa.clone(), param_type.clone());
-
-            // For parameters that hold data addresses, create the actual data tensors
-            if param_type.contains("xi32") || param_type.contains("xi64") {
-                // This parameter represents an address to data
-                // Create a tensor that holds the actual input data
-                let data_ssa = format!("%param_data_{}", i);
-                self.parameter_values
-                    .insert(param_ssa.clone(), data_ssa.clone());
-                // The data tensor will be created when we need to dereference the parameter
-            }
+            signature.push_str(&format!("%arg{}: {}", param_index, param_type));
+            actual_input_params.push((param.name, param_index, param_type.clone()));
+            param_index += 1;
+        }
+        
+        // Map parameters after we know which ones are actual inputs
+        for (param_name, idx, param_type) in actual_input_params {
+            let param_ssa = format!("%arg{}", idx);
+            self.value_map.insert(param_name, param_ssa.clone());
+            self.ssa_types.insert(param_ssa, param_type.clone());
         }
 
         signature.push_str(")");
 
-        // Return type - always return a tensor for TOSA
-        if !method.func_decl.return_arguments.is_empty() {
-            signature.push_str(" -> ");
-            let mut return_types = Vec::new();
-            for (i, ret_arg) in method.func_decl.return_arguments.iter().enumerate() {
-                if i > 0 {
-                    signature.push_str(", ");
-                }
-                let ret_type = self.convert_type_to_tosa(&ret_arg.v_type)?;
-                signature.push_str(&ret_type);
-                return_types.push(ret_type);
+        // Return type - for PTX kernels, the output is written via pointer parameters
+        // So we need to return the type that would be written to the output pointer
+        signature.push_str(" -> ");
+        
+        // Find the output parameter type
+        let output_type = if let Some(output_param) = method.func_decl.input_arguments.iter()
+            .find(|p| p.name.0 == 20) {  // Output parameter in sub.ptx
+            match &output_param.v_type {
+                ast::Type::Pointer(scalar_type, _) => {
+                    // For pointer parameters, use the scalar type
+                    self.get_scalar_tensor_type(*scalar_type)
+                },
+                _ => self.get_scalar_tensor_type(ast::ScalarType::U64)
             }
-            // Store the expected return type for this function
-            if !return_types.is_empty() {
-                self.current_function_return_type = Some(return_types[0].clone());
-            }
+        } else if !method.func_decl.return_arguments.is_empty() {
+            // Use explicit return type if available
+            self.convert_type_to_tosa(&method.func_decl.return_arguments[0].v_type)?
         } else {
-            // For void functions, determine return type based on function category
-            let return_type = self.get_return_type_for_function(&func_name);
-            signature.push_str(&format!(" -> {}", return_type));
-            self.current_function_return_type = Some(return_type);
-        }
+            // Default return type
+            self.get_scalar_tensor_type(ast::ScalarType::U64)
+        };
+        
+        signature.push_str(&output_type);
+        self.current_function_return_type = Some(output_type);
 
         signature.push_str(" {");
 
@@ -1030,37 +1040,54 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         let tensor_type = self.get_default_tensor_type();
 
+        // Check if this is integer or float operation
+        let tensor_type = match _data {
+            ast::ArithDetails::Integer(_) => self.get_integer_tensor_type(),
+            ast::ArithDetails::Float(_) => self.get_default_tensor_type(),
+        };
+
         // Handle constant src2 (like constant 1)
         let src2_final = if src2_ssa.starts_with("%") && self.ssa_types.get(&src2_ssa).is_none() {
-            // Check if this is a constant value that needs to be created
-            if src2.0 == 29 {  // Constant 1 based on the debug output
-                let const_ssa = self.next_ssa_value();
-                self.write_line(&format!(
-                    "{} = \"tosa.const\"() {{values = dense<1.0> : {}}} : () -> {}",
-                    const_ssa, tensor_type, tensor_type
-                ));
-                self.ssa_types.insert(const_ssa.clone(), tensor_type.clone());
-                const_ssa
+            // Create constant for subtraction
+            let const_ssa = self.next_ssa_value();
+            let value = if tensor_type.contains("xi32") {
+                format!("dense<1> : {}", tensor_type)
             } else {
-                src2_ssa
-            }
+                format!("dense<1.0> : {}", tensor_type)
+            };
+            self.write_line(&format!(
+                "{} = \"tosa.const\"() {{values = {}}} : () -> {}",
+                const_ssa, value, tensor_type
+            ));
+            self.ssa_types.insert(const_ssa.clone(), tensor_type.clone());
+            const_ssa
         } else {
             src2_ssa
         };
 
-        // Cast operands to float if they are integers
-        let src1_casted = self.ensure_float_tensor(src1_ssa, src1)?;
-        let src2_casted = self.ensure_float_tensor(src2_final, src2)?;
-
         eprintln!(
             "ZLUDA DEBUG: Sub instruction using operands: {} and {}",
-            src1_casted, src2_casted
+            src1_ssa, src2_final
         );
 
-        self.write_line(&format!(
-            "{} = \"tosa.sub\"({}, {}) : ({}, {}) -> {}",
-            dst_ssa, src1_casted, src2_casted, tensor_type, tensor_type, tensor_type
-        ));
+        // For integer operations, no casting needed
+        match _data {
+            ast::ArithDetails::Integer(_) => {
+                self.write_line(&format!(
+                    "{} = \"tosa.sub\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, src1_ssa, src2_final, tensor_type, tensor_type, tensor_type
+                ));
+            }
+            ast::ArithDetails::Float(_) => {
+                // Cast operands to float if they are integers
+                let src1_casted = self.ensure_float_tensor(src1_ssa, src1)?;
+                let src2_casted = self.ensure_float_tensor(src2_final, src2)?;
+                self.write_line(&format!(
+                    "{} = \"tosa.sub\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, src1_casted, src2_casted, tensor_type, tensor_type, tensor_type
+                ));
+            }
+        }
 
         self.value_map.insert(dst, dst_ssa.clone());
         self.ssa_types.insert(dst_ssa.clone(), tensor_type);
@@ -1204,17 +1231,33 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Check if this is loading from parameter space vs. loading data from memory
         if data.state_space == ast::StateSpace::Param {
             // This is loading a parameter address (like ld.param.u64 in_addr, [input])
-            // Map this to the corresponding function argument
-            eprintln!(
-                "ZLUDA DEBUG: Parameter space load - mapping dst {} to %arg0",
-                dst.0
-            );
-            self.value_map.insert(dst, "%arg0".to_string());
-            self.ssa_types
-                .insert("%arg0".to_string(), self.get_integer_tensor_type());
+            // In sub.ptx:
+            // - src.0 == 18: loading from [input] 
+            // - src.0 == 20: loading from [output]
+            if src.0 == 18 {
+                // Loading input parameter address
+                self.value_map.insert(dst, "_input_addr".to_string());
+                eprintln!("ZLUDA DEBUG: Parameter load - marked dst {} as input address", dst.0);
+            } else if src.0 == 20 {
+                // Loading output parameter address
+                self.value_map.insert(dst, "_output_addr".to_string());
+                eprintln!("ZLUDA DEBUG: Parameter load - marked dst {} as output address", dst.0);
+            }
         } else {
             // This is loading data from memory (like ld.u64 temp, [in_addr])
-            // The src should be an address that points to actual data
+            // Check if we're loading from a known address
+            if let Some(addr_marker) = self.value_map.get(&src) {
+                if addr_marker == "_input_addr" {
+                    // Loading from input address - map to %arg0
+                    self.value_map.insert(dst, "%arg0".to_string());
+                    let tensor_type = self.convert_type_to_tosa(&data.typ)?;
+                    self.ssa_types.insert("%arg0".to_string(), tensor_type);
+                    eprintln!("ZLUDA DEBUG: Loading from input address - mapped dst {} to %arg0", dst.0);
+                    return Ok(());
+                }
+            }
+            
+            // Otherwise use normal SSA value lookup
             match self.get_ssa_value(src) {
                 Ok(src_ssa) => {
                     eprintln!("ZLUDA DEBUG: Memory load from address {}", src_ssa);
@@ -1445,7 +1488,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             
             if needs_full_tensor {
                 // Use full tensor types for compatibility with function signature
-                let int_tensor_type = "tensor<32x32xi32>";
+                let int_tensor_type = self.get_integer_tensor_type();
                 
                 // Cast inputs to int tensors if needed
                 let src1_int = if self.ssa_types.get(&src1_ssa).map(|t| t.contains("f32")).unwrap_or(false) {
@@ -1546,18 +1589,18 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 "{} = \"tosa.cast\"({}) : ({}) -> tensor<32x32xi32>",
                 src1_int, src1_ssa, tensor_type
             ));
-            self.ssa_types.insert(src1_int.clone(), "tensor<32x32xi32>".to_string());
+            self.ssa_types.insert(src1_int.clone(), self.get_integer_tensor_type());
             
             self.write_line(&format!(
                 "{} = \"tosa.cast\"({}) : ({}) -> tensor<32x32xi32>",
                 src2_int, src2_ssa, tensor_type
             ));
-            self.ssa_types.insert(src2_int.clone(), "tensor<32x32xi32>".to_string());
+            self.ssa_types.insert(src2_int.clone(), self.get_integer_tensor_type());
 
             // Use tosa.bitwise_xor for the actual XOR operation on integers
             self.write_line(&format!("{} = \"tosa.bitwise_xor\"({}, {}) : (tensor<32x32xi32>, tensor<32x32xi32>) -> tensor<32x32xi32>", 
                 result_int, src1_int, src2_int));
-            self.ssa_types.insert(result_int.clone(), "tensor<32x32xi32>".to_string());
+            self.ssa_types.insert(result_int.clone(), self.get_integer_tensor_type());
 
             // Convert back to float
             self.write_line(&format!(
@@ -2094,7 +2137,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ast::SetpCompareOp::Integer(ast::SetpCompareInt::Eq)
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::Eq) => {
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<32x32xi1>",
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
                 ));
             }
@@ -2102,11 +2145,11 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::NotEq) => {
                 let temp_ssa = self.next_ssa_value();
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<32x32xi1>",
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     temp_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<32x32xi1>) -> tensor<32x32xi1>",
+                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     dst_ssa, temp_ssa
                 ));
             }
@@ -2114,7 +2157,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             | ast::SetpCompareOp::Integer(ast::SetpCompareInt::SignedLess)
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::Less) => {
                 self.write_line(&format!(
-                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> tensor<32x32xi1>",
+                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     dst_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type
                 ));
             }
@@ -2122,7 +2165,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             | ast::SetpCompareOp::Integer(ast::SetpCompareInt::SignedLessOrEq)
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::LessOrEq) => {
                 self.write_line(&format!(
-                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> tensor<32x32xi1>",
+                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     dst_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type
                 ));
             }
@@ -2130,7 +2173,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             | ast::SetpCompareOp::Integer(ast::SetpCompareInt::SignedGreater)
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::Greater) => {
                 self.write_line(&format!(
-                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> tensor<32x32xi1>",
+                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
                 ));
             }
@@ -2138,7 +2181,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             | ast::SetpCompareOp::Integer(ast::SetpCompareInt::SignedGreaterOrEq)
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::GreaterOrEq) => {
                 self.write_line(&format!(
-                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> tensor<32x32xi1>",
+                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
                 ));
             }
@@ -2175,7 +2218,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         };
 
         self.write_line(&format!(
-            "{} = \"tosa.select\"({}, {}, {}) : (tensor<32x32xi1>, {}, {}) -> {}",
+            "{} = \"tosa.select\"({}, {}, {}) : (tensor<1x1xi1>, {}, {}) -> {}",
             dst_ssa, src3_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, tensor_type
         ));
 
@@ -2330,32 +2373,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
     fn convert_type_to_tosa(&self, typ: &ast::Type) -> Result<String, TranslateError> {
         match typ {
-            ast::Type::Scalar(scalar_type) => self.get_scalar_as_tensor_type(*scalar_type),
-            ast::Type::Vector(len, scalar_type) => {
-                match scalar_type {
-                    // Integer types -> integer tensor
-                    ast::ScalarType::B8
-                    | ast::ScalarType::B16
-                    | ast::ScalarType::B32
-                    | ast::ScalarType::B64
-                    | ast::ScalarType::U8
-                    | ast::ScalarType::U16
-                    | ast::ScalarType::U32
-                    | ast::ScalarType::U64
-                    | ast::ScalarType::S8
-                    | ast::ScalarType::S16
-                    | ast::ScalarType::S32
-                    | ast::ScalarType::S64
-                    | ast::ScalarType::Pred => Ok(format!("tensor<{}xi32>", len)),
-                    // Float types -> float tensor
-                    ast::ScalarType::F16
-                    | ast::ScalarType::F32
-                    | ast::ScalarType::F64
-                    | ast::ScalarType::BF16 => Ok(format!("tensor<{}xf32>", len)),
-                    // Other types - default to float tensor for now
-                    _ => Ok(format!("tensor<{}xf32>", len)),
-                }
-            }
+            ast::Type::Scalar(scalar_type) => Ok(self.get_scalar_tensor_type(*scalar_type)),
+            ast::Type::Vector(len, scalar_type) => Ok(self.get_vector_tensor_type(*len, *scalar_type)),
             ast::Type::Array(_, scalar_type, dimensions) => {
                 let dims: Vec<String> = dimensions.iter().map(|d| d.to_string()).collect();
                 match scalar_type {
@@ -2382,7 +2401,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     _ => Ok(format!("tensor<{}xf32>", dims.join("x"))),
                 }
             }
-            ast::Type::Pointer(_, _) => Ok(self.get_default_tensor_type()),
+            ast::Type::Pointer(_, _) => Ok(self.get_scalar_tensor_type(ast::ScalarType::U64)),
         }
     }
 
@@ -2394,6 +2413,18 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         &self,
         scalar_type: ast::ScalarType,
     ) -> Result<String, TranslateError> {
+        Ok(self.get_scalar_tensor_type(scalar_type))
+    }
+
+    fn get_default_tensor_type(&self) -> String {
+        "tensor<1x1xf32>".to_string()
+    }
+
+    fn get_integer_tensor_type(&self) -> String {
+        "tensor<1x1xi32>".to_string()
+    }
+
+    fn get_scalar_tensor_type(&self, scalar_type: ast::ScalarType) -> String {
         match scalar_type {
             // Integer types -> integer tensor
             ast::ScalarType::B8
@@ -2407,25 +2438,42 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             | ast::ScalarType::S8
             | ast::ScalarType::S16
             | ast::ScalarType::S32
-            | ast::ScalarType::S64 => Ok(self.get_integer_tensor_type()),
+            | ast::ScalarType::S64
+            | ast::ScalarType::Pred => "tensor<1x1xi32>".to_string(),
             // Float types -> float tensor
             ast::ScalarType::F16
             | ast::ScalarType::F32
             | ast::ScalarType::F64
-            | ast::ScalarType::BF16 => Ok(self.get_default_tensor_type()),
-            // Predicate type -> integer tensor (treated as i1/i32)
-            ast::ScalarType::Pred => Ok(self.get_integer_tensor_type()),
+            | ast::ScalarType::BF16 => "tensor<1x1xf32>".to_string(),
             // Other types - default to float tensor for now
-            _ => Ok(self.get_default_tensor_type()),
+            _ => "tensor<1x1xf32>".to_string(),
         }
     }
 
-    fn get_default_tensor_type(&self) -> String {
-        "tensor<32x32xf32>".to_string()
-    }
-
-    fn get_integer_tensor_type(&self) -> String {
-        "tensor<32x32xi32>".to_string()
+    fn get_vector_tensor_type(&self, len: u8, scalar_type: ast::ScalarType) -> String {
+        match scalar_type {
+            // Integer types -> integer tensor
+            ast::ScalarType::B8
+            | ast::ScalarType::B16
+            | ast::ScalarType::B32
+            | ast::ScalarType::B64
+            | ast::ScalarType::U8
+            | ast::ScalarType::U16
+            | ast::ScalarType::U32
+            | ast::ScalarType::U64
+            | ast::ScalarType::S8
+            | ast::ScalarType::S16
+            | ast::ScalarType::S32
+            | ast::ScalarType::S64
+            | ast::ScalarType::Pred => format!("tensor<1x{}xi32>", len),
+            // Float types -> float tensor
+            ast::ScalarType::F16
+            | ast::ScalarType::F32
+            | ast::ScalarType::F64
+            | ast::ScalarType::BF16 => format!("tensor<1x{}xf32>", len),
+            // Other types - default to float tensor for now
+            _ => format!("tensor<1x{}xf32>", len),
+        }
     }
 
     fn generate_function_declaration(
@@ -2561,12 +2609,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             {
                 // It's an integer tensor, cast it to float
                 let casted_ssa = self.next_ssa_value();
+                let float_type = self.get_default_tensor_type();
                 self.write_line(&format!(
-                    "{} = \"tosa.cast\"({}) : ({}) -> tensor<32x32xf32>",
-                    casted_ssa, ssa_value, tensor_type
+                    "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                    casted_ssa, ssa_value, tensor_type, float_type
                 ));
                 self.ssa_types
-                    .insert(casted_ssa.clone(), "tensor<32x32xf32>".to_string());
+                    .insert(casted_ssa.clone(), float_type);
                 Ok(casted_ssa)
             } else {
                 // Already a float tensor
@@ -2575,12 +2624,14 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         } else if ssa_value.starts_with("%unknown_") {
             // For unknown values, assume they need casting and create a cast operation
             let casted_ssa = self.next_ssa_value();
+            let int_type = self.get_integer_tensor_type();
+            let float_type = self.get_default_tensor_type();
             self.write_line(&format!(
-                "{} = \"tosa.cast\"({}) : (tensor<32x32xi32>) -> tensor<32x32xf32>",
-                casted_ssa, ssa_value
+                "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                casted_ssa, ssa_value, int_type, float_type
             ));
             self.ssa_types
-                .insert(casted_ssa.clone(), "tensor<32x32xf32>".to_string());
+                .insert(casted_ssa.clone(), float_type);
             Ok(casted_ssa)
         } else {
             // For known values without type information, assume they're already correct
