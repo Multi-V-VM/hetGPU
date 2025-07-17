@@ -1372,37 +1372,47 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             
             eprintln!("ZLUDA DEBUG: Parameter name: {}", param_name);
             
-            // For direct parameter loads (like ld.param.f32), we should map to the correct argument
-            // Check if we have this parameter in our value_map already
-            if let Some(param_ssa) = self.value_map.get(&src).cloned() {
-                // We found the parameter mapping - use it directly
-                eprintln!("ZLUDA DEBUG: Found parameter {} in value_map, mapping dst {} to {}", 
-                         src.0, dst.0, param_ssa);
-                self.value_map.insert(dst, param_ssa.clone());
-                if let Some(param_type) = self.ssa_types.get(&param_ssa).cloned() {
-                    self.ssa_types.insert(param_ssa, param_type);
-                }
-            } else if param_name.contains("input1") {
-                // Loading from input1 parameter  
-                self.value_map.insert(dst, "%arg0".to_string());
-                eprintln!("ZLUDA DEBUG: Mapped dst {} to %arg0 (input1)", dst.0);
+            // For direct parameter loads (like ld.param.f32), we should update the destination variable
+            // with the value from the parameter
+            
+            // Determine which parameter we're loading from
+            let param_arg = if param_name.contains("input1") {
+                Some("%arg0".to_string())
             } else if param_name.contains("input2") {
-                // Loading from input2 parameter
-                self.value_map.insert(dst, "%arg1".to_string());
-                eprintln!("ZLUDA DEBUG: Mapped dst {} to %arg1 (input2)", dst.0);
+                Some("%arg1".to_string())
             } else if param_name.contains("input3") {
-                // Loading from input3 parameter
-                self.value_map.insert(dst, "%arg2".to_string());
-                eprintln!("ZLUDA DEBUG: Mapped dst {} to %arg2 (input3)", dst.0);
+                Some("%arg2".to_string())
+            } else if let Some(param_ssa) = self.value_map.get(&src).cloned() {
+                // We found the parameter mapping
+                Some(param_ssa)
+            } else {
+                None
+            };
+            
+            if let Some(arg_value) = param_arg {
+                // Update the destination variable with the parameter value
+                let old_value = self.value_map.get(&dst).cloned();
+                self.value_map.insert(dst, arg_value.clone());
+                
+                // If the destination had an SSA value, transfer the variable name mapping
+                if let Some(old_ssa) = &old_value {
+                    if let Some(var_name) = self.ssa_to_var_name.remove(old_ssa) {
+                        self.ssa_to_var_name.insert(arg_value.clone(), var_name);
+                    }
+                }
+                
+                eprintln!("ZLUDA DEBUG: Updated {} ({}) from {} to {}", 
+                         dst_name, dst.0, 
+                         old_value.as_deref().unwrap_or("<uninitialized>"), 
+                         &arg_value);
             } else if param_name.contains("output") {
                 // Loading output parameter address - mark this as output address
                 self.value_map.insert(dst, "_output_addr".to_string());
                 eprintln!("ZLUDA DEBUG: Marked dst {} as output address", dst.0);
             } else {
-                // Default - try to determine from parameter order
-                eprintln!("ZLUDA DEBUG: Unknown parameter pattern '{}', checking value_map", param_name);
+                // Unknown parameter pattern
+                eprintln!("ZLUDA DEBUG: Unknown parameter pattern '{}'", param_name);
                 self.value_map.insert(dst, "_input_addr".to_string());
-                eprintln!("ZLUDA DEBUG: Marked dst {} as input address (default)", dst.0);
             }
         } else {
             // This is loading data from memory (like ld.u64 temp, [in_addr])
