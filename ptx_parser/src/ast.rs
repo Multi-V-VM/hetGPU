@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{PtxError, PtxParserState};
 use bitflags::bitflags;
-use std::{alloc::Layout, cmp::Ordering, num::NonZeroU8};
+use std::{alloc::Layout, cmp::Ordering, num::NonZeroU8, fmt};
 
 pub enum Statement<P: Operand> {
     Label(P::Ident),
@@ -548,6 +548,62 @@ ptx_parser_macros::generate_instruction_type!(
         Trap { }
     }
 );
+
+impl<T: Operand> fmt::Display for Instruction<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let instruction_name = match self {
+            Instruction::Mov { .. } => "mov",
+            Instruction::Ld { .. } => "ld",
+            Instruction::Add { .. } => "add",
+            Instruction::St { .. } => "st",
+            Instruction::Mul { .. } => "mul",
+            Instruction::Setp { .. } => "setp",
+            Instruction::SetpBool { .. } => "setp",
+            Instruction::Not { .. } => "not",
+            Instruction::Or { .. } => "or",
+            Instruction::And { .. } => "and",
+            Instruction::Bra { .. } => "bra",
+            Instruction::Call { .. } => "call",
+            Instruction::Cvt { .. } => "cvt",
+            Instruction::Shr { .. } => "shr",
+            Instruction::Shl { .. } => "shl",
+            Instruction::Ret { .. } => "ret",
+            Instruction::Cvta { .. } => "cvta",
+            Instruction::Abs { .. } => "abs",
+            Instruction::Mad { .. } => "mad",
+            Instruction::Fma { .. } => "fma",
+            Instruction::Sub { .. } => "sub",
+            Instruction::Min { .. } => "min",
+            Instruction::Max { .. } => "max",
+            Instruction::Rcp { .. } => "rcp",
+            Instruction::Sqrt { .. } => "sqrt",
+            Instruction::Rsqrt { .. } => "rsqrt",
+            Instruction::Selp { .. } => "selp",
+            Instruction::Bar { .. } => "bar",
+            Instruction::Atom { .. } => "atom",
+            Instruction::AtomCas { .. } => "atom",
+            Instruction::Div { .. } => "div",
+            Instruction::Neg { .. } => "neg",
+            Instruction::Sin { .. } => "sin",
+            Instruction::Cos { .. } => "cos",
+            Instruction::Lg2 { .. } => "lg2",
+            Instruction::Ex2 { .. } => "ex2",
+            Instruction::Clz { .. } => "clz",
+            Instruction::Brev { .. } => "brev",
+            Instruction::Popc { .. } => "popc",
+            Instruction::Xor { .. } => "xor",
+            Instruction::Rem { .. } => "rem",
+            Instruction::Bfe { .. } => "bfe",
+            Instruction::Bfi { .. } => "bfi",
+            Instruction::PrmtSlow { .. } => "prmt",
+            Instruction::Prmt { .. } => "prmt",
+            Instruction::Activemask { .. } => "activemask",
+            Instruction::Membar { .. } => "membar",
+            Instruction::Trap { .. } => "trap",
+        };
+        write!(f, "{}", instruction_name)
+    }
+}
 
 pub trait Visitor<T: Operand, Err> {
     fn visit(
