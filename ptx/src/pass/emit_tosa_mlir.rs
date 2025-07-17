@@ -61,6 +61,7 @@ struct PtxToTosaConverter<'a, 'input> {
     ssa_types: HashMap<String, String>, // Track type of each SSA value
     parameter_values: HashMap<String, String>, // Track actual parameter data
     current_function_return_type: Option<String>, // Track the expected return type of current function
+    ssa_to_var_name: HashMap<String, String>, // Track SSA value to original variable name
 
     // Debug info fields
     debug_enabled: bool,
@@ -114,6 +115,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ssa_types: HashMap::new(),
             parameter_values: HashMap::new(),
             current_function_return_type: None,
+            ssa_to_var_name: HashMap::new(),
 
             // Initialize debug info
             debug_enabled: false,
@@ -661,25 +663,27 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     ) -> Result<(), TranslateError> {
         eprintln!("ZLUDA DEBUG: Declaring local variable with id: {}", var.name.0);
         let tensor_type = self.get_tensor_type(&var.v_type)?;
+        let var_name = self
+            .get_variable_name(var.name)
+            .unwrap_or_else(|_| format!("var_{}", var.name.0));
+        
+        // Create an SSA value for this local variable
+        let ssa_name = self.next_ssa_value();
+        self.value_map.insert(var.name, ssa_name.clone());
+        self.ssa_types.insert(ssa_name.clone(), tensor_type.clone());
+        // Track the SSA value to variable name mapping
+        self.ssa_to_var_name.insert(ssa_name.clone(), var_name.clone());
+        eprintln!("ZLUDA DEBUG: Registered local variable {} (id {}) as {}", 
+                 var_name, var.name.0, ssa_name);
         
         // Add variable debug info if enabled
         if self.debug_enabled {
-            let var_name = self
-                .get_variable_name(var.name)
-                .unwrap_or_else(|_| format!("var_{}", var.name.0));
             self.add_variable_debug_info(var.name, &var_name, &tensor_type, "local");
             self.write_line(&format!(
                 "// Local variable: {} : {}",
                 var_name, tensor_type
             ));
         }
-
-        // Don't generate constants for local variables immediately
-        // They will be created only when actually used in operations
-        // For now, just create a placeholder in the value_map
-        let placeholder = format!("_local_var_{}", var.name.0);
-        self.value_map.insert(var.name, placeholder.clone());
-        self.ssa_types.insert(placeholder, tensor_type);
 
         Ok(())
     }
@@ -1306,10 +1310,53 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             dst.0, src.0, data.state_space
         );
         
-        // Debug: Print current value_map state
+        // Debug: Print what we're about to do
+        let dst_name = self.id_defs.ident_map.get(&dst)
+            .and_then(|entry| entry.name.as_ref())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| {
+                // For load instructions, the dst might be an unnamed SSA value
+                // Try to infer a better name based on the context
+                format!("<load_result_{}>", dst.0)
+            });
+        let src_name = self.id_defs.ident_map.get(&src)
+            .and_then(|entry| entry.name.as_ref())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| format!("<unnamed_src_{}>", src.0));
+        
+        eprintln!("ZLUDA DEBUG: Processing load: {} ({}) <- {} ({})", 
+                 dst_name, dst.0, src_name, src.0);
+        
+        // If this is a parameter load and dst is unnamed, add a descriptive comment
+        if data.state_space == ast::StateSpace::Param && dst_name.starts_with("<load_result_") {
+            eprintln!("ZLUDA DEBUG: This appears to be loading from parameter {} into an SSA value", src_name);
+        }
+        
+        // Debug: Print current value_map state with variable names
         eprintln!("ZLUDA DEBUG: Current value_map contents:");
-        for (k, v) in &self.value_map {
-            eprintln!("  {} -> {}", k.0, v);
+        let mut entries: Vec<_> = self.value_map.iter().collect();
+        entries.sort_by_key(|(k, _)| k.0);
+        
+        for (k, v) in entries {
+            let var_name = self.id_defs.ident_map.get(k)
+                .and_then(|entry| entry.name.as_ref())
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| {
+                    // Try to provide more context for unnamed variables
+                    if v.starts_with("%arg") {
+                        format!("<load_result_for_arg{}>", v.chars().last().unwrap_or('?'))
+                    } else if v.starts_with("%") {
+                        // Check if we have a mapping from SSA value to variable name
+                        if let Some(original_name) = self.ssa_to_var_name.get(v) {
+                            format!("<{}>", original_name)
+                        } else {
+                            format!("<ssa_value>")
+                        }
+                    } else {
+                        "<unnamed>".to_string()
+                    }
+                });
+            eprintln!("  {:3} ({:20}) -> {}", k.0, var_name, v);
         }
 
         // Check if this is loading from parameter space vs. loading data from memory
@@ -1336,7 +1383,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     self.ssa_types.insert(param_ssa, param_type);
                 }
             } else if param_name.contains("input1") {
-                // Loading from input1 parameter
+                // Loading from input1 parameter  
                 self.value_map.insert(dst, "%arg0".to_string());
                 eprintln!("ZLUDA DEBUG: Mapped dst {} to %arg0 (input1)", dst.0);
             } else if param_name.contains("input2") {
@@ -2237,16 +2284,33 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         src2: SpirvWord,
         src3: SpirvWord,
     ) -> Result<String, TranslateError> {
-        eprintln!("ZLUDA DEBUG: FMA instruction - dst: {}, src1: {}, src2: {}, src3: {}",
-                 dst.0, src1.0, src2.0, src3.0);
+        let dst_name = self.id_defs.ident_map.get(&dst)
+            .and_then(|entry| entry.name.as_ref())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| format!("<unnamed_{}>", dst.0));
+        let src1_name = self.id_defs.ident_map.get(&src1)
+            .and_then(|entry| entry.name.as_ref())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| format!("<unnamed_{}>", src1.0));
+        let src2_name = self.id_defs.ident_map.get(&src2)
+            .and_then(|entry| entry.name.as_ref())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| format!("<unnamed_{}>", src2.0));
+        let src3_name = self.id_defs.ident_map.get(&src3)
+            .and_then(|entry| entry.name.as_ref())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| format!("<unnamed_{}>", src3.0));
+            
+        eprintln!("ZLUDA DEBUG: FMA instruction - dst: {} ({}), src1: {} ({}), src2: {} ({}), src3: {} ({})",
+                 dst_name, dst.0, src1_name, src1.0, src2_name, src2.0, src3_name, src3.0);
         
         let dst_ssa = self.next_ssa_value();
         let src1_ssa = self.get_ssa_value(src1)?;
         let src2_ssa = self.get_ssa_value(src2)?;
         let src3_ssa = self.get_ssa_value(src3)?;
         
-        eprintln!("ZLUDA DEBUG: FMA SSA values - src1: {}, src2: {}, src3: {}",
-                 src1_ssa, src2_ssa, src3_ssa);
+        eprintln!("ZLUDA DEBUG: FMA SSA values - dst: {}, src1: {}, src2: {}, src3: {}",
+                 dst_ssa, src1_ssa, src2_ssa, src3_ssa);
 
         // FMA is typically for floating point, but decompose into mul + add for TOSA
         let tensor_type = self.get_default_tensor_type();
@@ -2741,73 +2805,18 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
     fn get_ssa_value(&mut self, var_id: SpirvWord) -> Result<String, TranslateError> {
         // First, try to find the value in the value_map
-        if let Some(ssa_value) = self.value_map.get(&var_id) {
-            // Check if this is a local variable placeholder that needs to be materialized
-            if ssa_value.starts_with("_local_var_") {
-                // This is a local variable that hasn't been materialized yet
-                // Create a constant for it now
-                let tensor_type = self.ssa_types.get(ssa_value).cloned()
-                    .unwrap_or_else(|| "tensor<1x1xi32>".to_string());
-                
-                let var_ssa = self.next_ssa_value();
-                
-                // Create zero constant
-                let zero_value = if tensor_type.contains("xi32")
-                    || tensor_type.contains("xi64")
-                    || tensor_type.contains("xi8")
-                    || tensor_type.contains("xi16")
-                {
-                    "0"
-                } else {
-                    "0.0"
-                };
-
-                let const_op = format!(
-                    "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
-                    var_ssa, zero_value, tensor_type, tensor_type
-                );
-
-                self.write_line(&const_op);
-                
-                // Update the value_map with the actual SSA value
-                self.value_map.insert(var_id, var_ssa.clone());
-                self.ssa_types.insert(var_ssa.clone(), tensor_type);
-                
-                return Ok(var_ssa);
-            }
-            
-            return Ok(ssa_value.clone());
+        if let Some(ssa_value) = self.value_map.get(&var_id).cloned() {
+            // Return the SSA value directly
+            return Ok(ssa_value);
         }
         
-        // If not found, try to get the identifier name for better error reporting
-        let name = self
-            .id_defs
-            .ident_map
-            .get(&var_id)
+        // If not found in value_map, this is an error
+        let var_name = self.id_defs.ident_map.get(&var_id)
             .and_then(|entry| entry.name.as_ref())
-            .map(|name| name.to_string())
-            .unwrap_or_else(|| format!("unknown_{}", var_id.0));
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| format!("<unnamed_{}>", var_id.0));
             
-        eprintln!("ZLUDA DEBUG: Unknown symbol {} (id: {})", name, var_id.0);
-        
-        // Instead of immediately returning an error, check if this could be a parameter
-        // or special register that we can handle gracefully
-        if name.starts_with("%") {
-            // This looks like a parameter or special register
-            eprintln!("ZLUDA DEBUG: Treating {} as potential parameter", name);
-            // Return the name as-is for parameter references
-            return Ok(name);
-        }
-        
-        // Check if this is a function parameter based on the naming pattern
-        if name.contains("arg") || name.contains("param") {
-            eprintln!("ZLUDA DEBUG: Treating {} as function parameter", name);
-            // Generate a parameter reference
-            let param_name = format!("%arg{}", var_id.0 % 10); // Simple heuristic
-            return Ok(param_name);
-        }
-        
-        // For truly unknown symbols, still return the error
+        eprintln!("ZLUDA ERROR: Variable {} (id {}) not found in value_map", var_name, var_id.0);
         Err(TranslateError::UnknownSymbol)
     }
 
