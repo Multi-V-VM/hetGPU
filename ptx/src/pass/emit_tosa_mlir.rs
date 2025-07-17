@@ -73,6 +73,33 @@ struct PtxToTosaConverter<'a, 'input> {
 }
 
 impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
+    fn scalar_type_to_string(&self, scalar: ast::ScalarType) -> &'static str {
+        match scalar {
+            ast::ScalarType::B8 => "b8",
+            ast::ScalarType::B16 => "b16",
+            ast::ScalarType::B32 => "b32",
+            ast::ScalarType::B64 => "b64",
+            ast::ScalarType::B128 => "b128",
+            ast::ScalarType::U8 => "u8",
+            ast::ScalarType::U16 => "u16",
+            ast::ScalarType::U32 => "u32",
+            ast::ScalarType::U64 => "u64",
+            ast::ScalarType::S8 => "s8",
+            ast::ScalarType::S16 => "s16",
+            ast::ScalarType::S32 => "s32",
+            ast::ScalarType::S64 => "s64",
+            ast::ScalarType::F16 => "f16",
+            ast::ScalarType::F32 => "f32",
+            ast::ScalarType::F64 => "f64",
+            ast::ScalarType::BF16 => "bf16",
+            ast::ScalarType::Pred => "pred",
+            ast::ScalarType::F16x2 => "f16x2",
+            ast::ScalarType::BF16x2 => "bf16x2",
+            ast::ScalarType::S16x2 => "s16x2",
+            ast::ScalarType::U16x2 => "u16x2",
+        }
+    }
+    
     fn new(id_defs: &'a GlobalStringIdentResolver2<'input>) -> Self {
         Self {
             id_defs,
@@ -360,12 +387,26 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let mut actual_input_params = Vec::new();
         let mut param_index = 0;
         
+        eprintln!("ZLUDA DEBUG: Processing {} input arguments for function {}", 
+                 method.func_decl.input_arguments.len(), func_name);
+        
         for (i, param) in method.func_decl.input_arguments.iter().enumerate() {
+            // Convert type to string for debug output
+            let type_str = match &param.v_type {
+                ast::Type::Scalar(s) => format!("Scalar({})", self.scalar_type_to_string(*s)),
+                ast::Type::Vector(n, s) => format!("Vector({}, {})", n, self.scalar_type_to_string(*s)),
+                ast::Type::Array(_, s, dims) => format!("Array({} dims)", dims.len()),
+                ast::Type::Pointer(s, space) => format!("Pointer({}, {:?})", self.scalar_type_to_string(*s), space),
+            };
+            eprintln!("ZLUDA DEBUG: Parameter {}: name={}, type={}", 
+                     i, param.name.0, type_str);
+            
             // Include all input parameters except the last one (which is typically the output parameter)
             // This allows kernels like max, and, etc. to have multiple inputs
             let num_inputs = method.func_decl.input_arguments.len();
             if num_inputs > 1 && i >= num_inputs - 1 {
                 // Skip the last parameter as it's typically the output parameter
+                eprintln!("ZLUDA DEBUG: Skipping parameter {} as output parameter", i);
                 continue;
             }
             
@@ -393,6 +434,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Map parameters after we know which ones are actual inputs
         for (param_name, idx, param_type) in actual_input_params {
             let param_ssa = format!("%arg{}", idx);
+            eprintln!("ZLUDA DEBUG: Mapping parameter {} (id: {}) to SSA value {} with type {}", 
+                     self.get_variable_name(param_name).unwrap_or(format!("param_{}", param_name.0)), 
+                     param_name.0, param_ssa, param_type);
             self.value_map.insert(param_name, param_ssa.clone());
             self.ssa_types.insert(param_ssa, param_type.clone());
         }
@@ -1261,6 +1305,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             "ZLUDA DEBUG: Load instruction - dst: {}, src: {}, state_space: {:?}",
             dst.0, src.0, data.state_space
         );
+        
+        // Debug: Print current value_map state
+        eprintln!("ZLUDA DEBUG: Current value_map contents:");
+        for (k, v) in &self.value_map {
+            eprintln!("  {} -> {}", k.0, v);
+        }
 
         // Check if this is loading from parameter space vs. loading data from memory
         if data.state_space == ast::StateSpace::Param || data.state_space == ast::StateSpace::ParamEntry {
@@ -1275,16 +1325,35 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             
             eprintln!("ZLUDA DEBUG: Parameter name: {}", param_name);
             
-            if param_name.contains("input") {
-                // Loading input parameter address - mark this as input address
-                self.value_map.insert(dst, "_input_addr".to_string());
-                eprintln!("ZLUDA DEBUG: Marked dst {} as input address", dst.0);
+            // For direct parameter loads (like ld.param.f32), we should map to the correct argument
+            // Check if we have this parameter in our value_map already
+            if let Some(param_ssa) = self.value_map.get(&src).cloned() {
+                // We found the parameter mapping - use it directly
+                eprintln!("ZLUDA DEBUG: Found parameter {} in value_map, mapping dst {} to {}", 
+                         src.0, dst.0, param_ssa);
+                self.value_map.insert(dst, param_ssa.clone());
+                if let Some(param_type) = self.ssa_types.get(&param_ssa).cloned() {
+                    self.ssa_types.insert(param_ssa, param_type);
+                }
+            } else if param_name.contains("input1") {
+                // Loading from input1 parameter
+                self.value_map.insert(dst, "%arg0".to_string());
+                eprintln!("ZLUDA DEBUG: Mapped dst {} to %arg0 (input1)", dst.0);
+            } else if param_name.contains("input2") {
+                // Loading from input2 parameter
+                self.value_map.insert(dst, "%arg1".to_string());
+                eprintln!("ZLUDA DEBUG: Mapped dst {} to %arg1 (input2)", dst.0);
+            } else if param_name.contains("input3") {
+                // Loading from input3 parameter
+                self.value_map.insert(dst, "%arg2".to_string());
+                eprintln!("ZLUDA DEBUG: Mapped dst {} to %arg2 (input3)", dst.0);
             } else if param_name.contains("output") {
                 // Loading output parameter address - mark this as output address
                 self.value_map.insert(dst, "_output_addr".to_string());
                 eprintln!("ZLUDA DEBUG: Marked dst {} as output address", dst.0);
             } else {
-                // Default - treat as input address
+                // Default - try to determine from parameter order
+                eprintln!("ZLUDA DEBUG: Unknown parameter pattern '{}', checking value_map", param_name);
                 self.value_map.insert(dst, "_input_addr".to_string());
                 eprintln!("ZLUDA DEBUG: Marked dst {} as input address (default)", dst.0);
             }
@@ -2168,10 +2237,16 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         src2: SpirvWord,
         src3: SpirvWord,
     ) -> Result<String, TranslateError> {
+        eprintln!("ZLUDA DEBUG: FMA instruction - dst: {}, src1: {}, src2: {}, src3: {}",
+                 dst.0, src1.0, src2.0, src3.0);
+        
         let dst_ssa = self.next_ssa_value();
         let src1_ssa = self.get_ssa_value(src1)?;
         let src2_ssa = self.get_ssa_value(src2)?;
         let src3_ssa = self.get_ssa_value(src3)?;
+        
+        eprintln!("ZLUDA DEBUG: FMA SSA values - src1: {}, src2: {}, src3: {}",
+                 src1_ssa, src2_ssa, src3_ssa);
 
         // FMA is typically for floating point, but decompose into mul + add for TOSA
         let tensor_type = self.get_default_tensor_type();
