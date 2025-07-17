@@ -1,20 +1,21 @@
 failures:
     pass::emit_tosa_mlir::tests::test_debug_info_generation
     test::spirv_run::activemask_hip
+    test::spirv_run::add_non_coherent_hip
     test::spirv_run::and_hip
-    test::spirv_run::atom_add_float_hip
-    test::spirv_run::atom_add_hip
-    test::spirv_run::atom_cas_hip
-    test::spirv_run::atom_inc_hip
+    test::spirv_run::atom_add_float_hip // reason: load instruction has None as src_val
+    test::spirv_run::atom_add_hip // reason: load instruction has None as src_val
+    test::spirv_run::atom_cas_hip // reason: load instruction has None as src_val
+    test::spirv_run::atom_inc_hip // reason: load instruction has None as src_val
     test::spirv_run::b64tof64_hip
     test::spirv_run::bfe_hip
     test::spirv_run::bfi_hip
+    test::spirv_run::block_hip
     test::spirv_run::bra_hip
     test::spirv_run::brev_hip
     test::spirv_run::call_hip
     test::spirv_run::clz_hip
     test::spirv_run::const_hip
-    test::spirv_run::constant_f32_hip
     test::spirv_run::constant_negative_hip
     test::spirv_run::cvt_f64_f32_hip
     test::spirv_run::cvt_rni_hip
@@ -23,12 +24,10 @@ failures:
     test::spirv_run::cvt_s32_f32_hip
     test::spirv_run::cvt_s64_s32_hip
     test::spirv_run::cvt_sat_s_u_hip
-    test::spirv_run::cvta_hip
     test::spirv_run::div_approx_hip
     test::spirv_run::ex2_hip
     test::spirv_run::extern_shared_call_hip
     test::spirv_run::extern_shared_hip
-    test::spirv_run::fma_hip
     test::spirv_run::global_array_hip
     test::spirv_run::ld_st_hip
     test::spirv_run::ld_st_implicit_hip
@@ -53,6 +52,7 @@ failures:
     test::spirv_run::pred_not_hip
     test::spirv_run::prmt_hip
     test::spirv_run::rcp_hip
+    test::spirv_run::reg_local_hip
     test::spirv_run::rem_hip
     test::spirv_run::rsqrt_hip
     test::spirv_run::selp_hip
@@ -81,4 +81,4 @@ failures:
     test::spirv_run::vector_hip
     test::spirv_run::xor_hip
 
-test result: FAILED. 26 passed; 81 failed; 0 ignored; 0 measured; 0 filtered out; finished in 95.50s
+test result: FAILED. 26 passed; 81 failed; 0 ignored; 0 measured; 0 filtered out; finished in 174.17s
