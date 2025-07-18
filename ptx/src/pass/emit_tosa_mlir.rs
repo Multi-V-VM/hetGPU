@@ -360,56 +360,99 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             return Ok(());
         }
 
+        // Pre-scan the function body to count how many data loads there will be
+        let mut num_data_loads = 0;
+        let mut load_types = Vec::new();
+        if let Some(ref body) = method.body {
+            for statement in body {
+                if let Statement::Instruction(ast::Instruction::Ld { data, arguments }) = statement {
+                    // Count loads that are from generic memory (data loads, not parameter loads)
+                    if data.state_space == ast::StateSpace::Generic {
+                        num_data_loads += 1;
+                        // Track the type of each load for proper signature generation
+                        let load_type = match &data.typ {
+                            ast::Type::Scalar(ast::ScalarType::F32) => "tensor<1x1xf32>",
+                            ast::Type::Scalar(ast::ScalarType::U64) => "tensor<1x1xi32>",
+                            ast::Type::Scalar(ast::ScalarType::U32) => "tensor<1x1xi32>",
+                            _ => "tensor<1x1xi32>", // default
+                        };
+                        load_types.push(load_type.to_string());
+                        eprintln!("ZLUDA DEBUG: Found data load #{} of type {}", num_data_loads, load_type);
+                    }
+                }
+            }
+        }
+
         // Generate function signature with tensor types
         let mut signature = format!("func.func @{}(", func_name);
 
-        // For PTX kernels, input/output parameters are pointers to data
-        // We need to model them as the actual data tensors they point to
-        let mut actual_input_params = Vec::new();
+        // For TOSA MLIR, we need to generate parameters based on the actual data loads
+        // in the function body, not the PTX pointer parameters
         let mut param_index = 0;
         
-        eprintln!("ZLUDA DEBUG: Processing {} input arguments for function {}", 
-                 method.func_decl.input_arguments.len(), func_name);
+        eprintln!("ZLUDA DEBUG: Processing function {} with {} PTX parameters and {} data loads", 
+                 func_name, method.func_decl.input_arguments.len(), num_data_loads);
         
-        for (i, param) in method.func_decl.input_arguments.iter().enumerate() {
-            // Convert type to string for debug output
-            let type_str = match &param.v_type {
-                ast::Type::Scalar(s) => format!("Scalar({})", self.scalar_type_to_string(*s)),
-                ast::Type::Vector(n, s) => format!("Vector({}, {})", n, self.scalar_type_to_string(*s)),
-                ast::Type::Array(_, s, dims) => format!("Array({} dims)", dims.len()),
-                ast::Type::Pointer(s, space) => format!("Pointer({}, {:?})", self.scalar_type_to_string(*s), space),
-            };
-            eprintln!("ZLUDA DEBUG: Parameter {}: name={}, type={}", 
-                     i, param.name.0, type_str);
-            
-            // Include all input parameters except the last one (which is typically the output parameter)
-            // This allows kernels like max, and, etc. to have multiple inputs
-            let num_inputs = method.func_decl.input_arguments.len();
-            if num_inputs > 1 && i >= num_inputs - 1 {
-                // Skip the last parameter as it's typically the output parameter
-                eprintln!("ZLUDA DEBUG: Skipping parameter {} as output parameter", i);
-                continue;
-            }
-            
-            if param_index > 0 {
-                signature.push_str(", ");
-            }
-
-            // For PTX pointer parameters, convert to the data type they point to
-            let param_type = match &param.v_type {
-                ast::Type::Pointer(scalar_type, _) => {
-                    // This is a pointer to scalar data - use the scalar type as tensor
-                    self.get_scalar_tensor_type(*scalar_type)
-                },
-                _ => {
-                    // Regular parameter
-                    self.convert_type_to_tosa(&param.v_type)?
+        // Initialize actual_input_params outside the conditional
+        let mut actual_input_params = Vec::new();
+        
+        // Generate parameters based on the pre-scanned data loads
+        if num_data_loads > 0 {
+            for i in 0..num_data_loads {
+                if i > 0 {
+                    signature.push_str(", ");
                 }
-            };
+                let param_type = if i < load_types.len() {
+                    &load_types[i]
+                } else {
+                    "tensor<1x1xi32>" // default type
+                };
+                signature.push_str(&format!("%arg{}: {}", i, param_type));
+                param_index += 1;
+            }
+        } else {
+            // Fallback: If no data loads were found, use the original PTX parameter logic
+            // This handles special cases like single-parameter functions
+            
+            for (i, param) in method.func_decl.input_arguments.iter().enumerate() {
+                // Convert type to string for debug output
+                let type_str = match &param.v_type {
+                    ast::Type::Scalar(s) => format!("Scalar({})", self.scalar_type_to_string(*s)),
+                    ast::Type::Vector(n, s) => format!("Vector({}, {})", n, self.scalar_type_to_string(*s)),
+                    ast::Type::Array(_, s, dims) => format!("Array({} dims)", dims.len()),
+                    ast::Type::Pointer(s, space) => format!("Pointer({}, {:?})", self.scalar_type_to_string(*s), space),
+                };
+                eprintln!("ZLUDA DEBUG: Parameter {}: name={}, type={}", 
+                         i, param.name.0, type_str);
+                
+                // Include all input parameters except the last one (which is typically the output parameter)
+                let num_inputs = method.func_decl.input_arguments.len();
+                if num_inputs > 1 && i >= num_inputs - 1 {
+                    // Skip the last parameter as it's typically the output parameter
+                    eprintln!("ZLUDA DEBUG: Skipping parameter {} as output parameter", i);
+                    continue;
+                }
+                
+                if param_index > 0 {
+                    signature.push_str(", ");
+                }
 
-            signature.push_str(&format!("%arg{}: {}", param_index, param_type));
-            actual_input_params.push((param.name, param_index, param_type.clone()));
-            param_index += 1;
+                // For PTX pointer parameters, convert to the data type they point to
+                let param_type = match &param.v_type {
+                    ast::Type::Pointer(scalar_type, _) => {
+                        // This is a pointer to scalar data - use the scalar type as tensor
+                        self.get_scalar_tensor_type(*scalar_type)
+                    },
+                    _ => {
+                        // Regular parameter
+                        self.convert_type_to_tosa(&param.v_type)?
+                    }
+                };
+
+                signature.push_str(&format!("%arg{}: {}", param_index, param_type));
+                actual_input_params.push((param.name, param_index, param_type.clone()));
+                param_index += 1;
+            }
         }
         
         // Map parameters after we know which ones are actual inputs
@@ -449,8 +492,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         signature.push_str(")");
 
-        // Return type - use the data type from the last parameter (output parameter)
-        // or first parameter if only one parameter exists
+        // Return type - for functions with data loads, determine from the actual operations
+        // For FMA and similar operations, the return type should match the operation type
         signature.push_str(" -> ");
         
         let output_type = if !method.func_decl.input_arguments.is_empty() {
@@ -509,6 +552,11 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         self.indent_level += 1;
 
+        // Reset the next_arg_index to 0 before processing the function body
+        // This ensures that data loads will use %arg0, %arg1, etc. in order
+        self.next_arg_index = 0;
+        eprintln!("ZLUDA DEBUG: Reset next_arg_index to 0 for function body processing");
+
         // Convert function body
         let mut result_tensor = None;
         if let Some(body) = method.body {
@@ -551,6 +599,15 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 }
             };
             self.write_line(&format!("return {} : {}", result, return_type));
+        } else if let Some(last_result) = self.last_result_ssa.clone() {
+            // If we have a stored result (from store instruction), use its type
+            if let Some(result_type) = self.ssa_types.get(&last_result).cloned() {
+                self.write_line(&format!("return {} : {}", last_result, result_type));
+            } else {
+                // Fallback to creating a dummy tensor
+                let (result_tensor, tensor_type) = self.create_default_return(&func_name);
+                self.write_line(&format!("return {} : {}", result_tensor, tensor_type));
+            }
         } else {
             // Create result tensor for void functions
             let (result_tensor, tensor_type) = match self.get_function_category(&func_name) {
@@ -2732,6 +2789,17 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             // Other types - default to float tensor for now
             _ => format!("tensor<1x{}xf32>", len),
         }
+    }
+
+    fn create_default_return(&mut self, func_name: &str) -> (String, String) {
+        let dummy_tensor = self.next_ssa_value();
+        let return_type = self.get_return_type_for_function(func_name);
+        let value = if return_type.contains("xi32") { "0" } else { "0.0" };
+        self.write_line(&format!(
+            "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
+            dummy_tensor, value, return_type, return_type
+        ));
+        (dummy_tensor, return_type)
     }
 
     fn generate_function_declaration(
