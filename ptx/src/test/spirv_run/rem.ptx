@@ -3,18 +3,21 @@
 .address_size 64
 
 .visible .entry rem(
-	.param .s32 input1,
-	.param .s32 input2,
-	.param .s32 output
+	.param .u64 input,
+	.param .u64 output
 )
 {
+	.reg .u64 	    in_addr;
+    .reg .u64 	    out_addr;
     .reg .s32       temp1;
     .reg .s32       temp2;
-    .reg .s32       result;
 
-	ld.param.s32 	temp1, [input1];
-    ld.param.s32 	temp2, [input2];
-	rem.s32  		result, temp1, temp2;
-    st.param.s32    [output], result;
+	ld.param.u64 	in_addr, [input];
+    ld.param.u64 	out_addr, [output];
+
+    ld.s32          temp1, [in_addr];
+    ld.s32          temp2, [in_addr+4];
+	rem.s32  		temp1, temp1, temp2;
+    st.s32          [out_addr], temp1;
 	ret;
 }

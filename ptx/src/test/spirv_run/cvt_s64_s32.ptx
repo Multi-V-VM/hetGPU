@@ -3,15 +3,20 @@
 .address_size 64
 
 .visible .entry cvt_s64_s32(
-	.param .s32 input,
-	.param .s64 output
+	.param .u64 input,
+	.param .u64 output
 )
 {
+	.reg .u64 	    in_addr;
+    .reg .u64 	    out_addr;
     .reg .s32       r_32;
     .reg .s64       r_64;
 
-	ld.param.s32 	r_32, [input];
+	ld.param.u64 	in_addr, [input];
+    ld.param.u64 	out_addr, [output];
+
+    ld.b32          r_32, [in_addr];
 	cvt.s64.s32     r_64, r_32;
-    st.param.s64    [output], r_64;
+    st.b64          [out_addr], r_64;
 	ret;
 }

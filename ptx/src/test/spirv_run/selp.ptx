@@ -3,18 +3,21 @@
 .address_size 64
 
 .visible .entry selp(
-	.param .u16 input1,
-	.param .u16 input2,
-	.param .u16 output
+	.param .u64 input,
+	.param .u64 output
 )
 {
+	.reg .u64 	    in_addr;
+    .reg .u64 	    out_addr;
     .reg .u16 	    temp1;
     .reg .u16 	    temp2;
-    .reg .u16 	    result;
 
-	ld.param.u16 	temp1, [input1];
-    ld.param.u16 	temp2, [input2];
-    selp.u16   		result, temp1, temp2, 0;
-    st.param.u16    [output], result;
+	ld.param.u64 	in_addr, [input];
+    ld.param.u64 	out_addr, [output];
+
+    ld.u16          temp1, [in_addr];
+    ld.u16          temp2, [in_addr + 2];
+    selp.u16   		temp1, temp1, temp2, 0;
+    st.u16          [out_addr], temp1;
 	ret;
 }

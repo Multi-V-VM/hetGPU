@@ -3,18 +3,21 @@
 .address_size 64
 
 .visible .entry or(
-	.param .u32 input1,
-	.param .u32 input2,
-	.param .u32 output
+	.param .u64 input,
+	.param .u64 output
 )
 {
-    .reg .u32 	    temp1;
-    .reg .u32 	    temp2;
-    .reg .u32 	    result;
+	.reg .u64 	    in_addr;
+    .reg .u64 	    out_addr;
+    .reg .u64 	    temp1;
+    .reg .u64 	    temp2;
 
-	ld.param.u32 	temp1, [input1];
-    ld.param.u32 	temp2, [input2];
-	or.b32		    result, temp1, temp2;
-    st.param.u32    [output], result;
+	ld.param.u64 	in_addr, [input];
+    ld.param.u64 	out_addr, [output];
+
+    ld.u64          temp1, [in_addr];
+    ld.u64          temp2, [in_addr+8];
+	or.b64		    temp1, temp1, temp2;
+    st.u64          [out_addr], temp1;
 	ret;
 }

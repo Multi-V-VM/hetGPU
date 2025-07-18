@@ -3,14 +3,19 @@
 .address_size 64
 
 .visible .entry sin(
-	.param .f32 input,
-	.param .f32 output
+	.param .u64 input,
+	.param .u64 output
 )
 {
+	.reg .u64 	    in_addr;
+    .reg .u64 	    out_addr;
     .reg .f32       temp;
 
-	ld.param.f32 	temp, [input];
+	ld.param.u64 	in_addr, [input];
+    ld.param.u64 	out_addr, [output];
+
+    ld.f32          temp, [in_addr];
 	sin.approx.f32  temp, temp;
-    st.param.f32    [output], temp;
+    st.f32          [out_addr], temp;
 	ret;
 }
