@@ -250,6 +250,34 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         }
     }
 
+    fn debug_print_value_map(&self) {
+        eprintln!("ZLUDA DEBUG: Current value_map contents:");
+        let mut entries: Vec<_> = self.value_map.iter().collect();
+        entries.sort_by_key(|(k, _)| k.0);
+        
+        for (k, v) in entries {
+            let var_name = self.id_defs.ident_map.get(k)
+                .and_then(|entry| entry.name.as_ref())
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| {
+                    // Try to provide more context for unnamed variables
+                    if v.starts_with("%arg") {
+                        format!("<load_result_for_arg{}>", v.chars().last().unwrap_or('?'))
+                    } else if v.starts_with("%") {
+                        // Check if we have a mapping from SSA value to variable name
+                        if let Some(original_name) = self.ssa_to_var_name.get(v) {
+                            format!("<{}>", original_name)
+                        } else {
+                            format!("<ssa_value>")
+                        }
+                    } else {
+                        "<unnamed>".to_string()
+                    }
+                });
+            eprintln!("  {:3} ({:20}) -> {}", k.0, var_name, v);
+        }
+    }
+
     fn requires_integer_params(&self, func_name: &str) -> bool {
         matches!(
             self.get_function_category(func_name),
@@ -1378,31 +1406,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         
 
         // Debug: Print current value_map state with variable names
-        eprintln!("ZLUDA DEBUG: Current value_map contents:");
-        let mut entries: Vec<_> = self.value_map.iter().collect();
-        entries.sort_by_key(|(k, _)| k.0);
-        
-        for (k, v) in entries {
-            let var_name = self.id_defs.ident_map.get(k)
-                .and_then(|entry| entry.name.as_ref())
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| {
-                    // Try to provide more context for unnamed variables
-                    if v.starts_with("%arg") {
-                        format!("<load_result_for_arg{}>", v.chars().last().unwrap_or('?'))
-                    } else if v.starts_with("%") {
-                        // Check if we have a mapping from SSA value to variable name
-                        if let Some(original_name) = self.ssa_to_var_name.get(v) {
-                            format!("<{}>", original_name)
-                        } else {
-                            format!("<ssa_value>")
-                        }
-                    } else {
-                        "<unnamed>".to_string()
-                    }
-                });
-            eprintln!("  {:3} ({:20}) -> {}", k.0, var_name, v);
-        }
+        self.debug_print_value_map();
 
         // For param state space loads, we're loading an address
         if data.state_space == ast::StateSpace::Param || data.state_space == ast::StateSpace::ParamEntry {
