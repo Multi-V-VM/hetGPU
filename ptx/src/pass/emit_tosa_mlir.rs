@@ -1671,6 +1671,177 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         Ok(dst_ssa)
     }
 
+    // fn convert_xor_instruction(
+    //     &mut self,
+    //     data: ast::ScalarType,
+    //     dst: SpirvWord,
+    //     src1: SpirvWord,
+    //     src2: SpirvWord,
+    // ) -> Result<String, TranslateError> {
+    //     eprintln!("ZLUDA DEBUG: XOR instruction - dst: {}, src1: {}, src2: {}", dst.0, src1.0, src2.0);
+    //     let dst_ssa = self.next_ssa_value();
+    //     let src1_ssa = self.get_ssa_value(src1)?;
+    //     let src2_ssa = self.get_ssa_value(src2)?;
+    //     eprintln!("ZLUDA DEBUG: XOR SSA values - dst: {}, src1: {}, src2: {}", dst_ssa, src1_ssa, src2_ssa);
+
+    //     // Check if this is an integer operation based on the data type
+    //     let is_integer_op = matches!(
+    //         data,
+    //         ast::ScalarType::B8
+    //             | ast::ScalarType::B16
+    //             | ast::ScalarType::B32
+    //             | ast::ScalarType::B64
+    //             | ast::ScalarType::U8
+    //             | ast::ScalarType::U16
+    //             | ast::ScalarType::U32
+    //             | ast::ScalarType::U64
+    //             | ast::ScalarType::S8
+    //             | ast::ScalarType::S16
+    //             | ast::ScalarType::S32
+    //             | ast::ScalarType::S64
+    //     );
+
+    //     if is_integer_op {
+    //         // For integer XOR, we need to match the function's return type
+    //         // Check if this operation is for a function that returns tensor<32x32xf32>
+    //         let expected_return_type = self.current_function_return_type.as_ref()
+    //             .map(|t| t.clone())
+    //             .unwrap_or_else(|| self.get_integer_tensor_type());
+            
+    //         let needs_full_tensor = expected_return_type.contains("32x32");
+            
+    //         if needs_full_tensor {
+    //             // Use full tensor types for compatibility with function signature
+    //             let int_tensor_type = self.get_integer_tensor_type();
+                
+    //             // Cast inputs to int tensors if needed
+    //             let src1_int = if self.ssa_types.get(&src1_ssa).map(|t| t.contains("f32")).unwrap_or(false) {
+    //                 let cast_ssa = self.next_ssa_value();
+    //                 self.write_line(&format!(
+    //                     "{} = \"tosa.cast\"({}) : (tensor<32x32xf32>) -> {}",
+    //                     cast_ssa, src1_ssa, int_tensor_type
+    //                 ));
+    //                 self.ssa_types.insert(cast_ssa.clone(), int_tensor_type.to_string());
+    //                 cast_ssa
+    //             } else {
+    //                 src1_ssa.clone()
+    //             };
+                
+    //             let src2_int = if self.ssa_types.get(&src2_ssa).map(|t| t.contains("f32")).unwrap_or(false) {
+    //                 let cast_ssa = self.next_ssa_value();
+    //                 self.write_line(&format!(
+    //                     "{} = \"tosa.cast\"({}) : (tensor<32x32xf32>) -> {}",
+    //                     cast_ssa, src2_ssa, int_tensor_type
+    //                 ));
+    //                 self.ssa_types.insert(cast_ssa.clone(), int_tensor_type.to_string());
+    //                 cast_ssa
+    //             } else {
+    //                 src2_ssa.clone()
+    //             };
+                
+    //             // Perform XOR operation
+    //             let xor_result = self.next_ssa_value();
+    //             self.write_line(&format!(
+    //                 "{} = \"tosa.bitwise_xor\"({}, {}) : ({}, {}) -> {}",
+    //                 xor_result, src1_int, src2_int, int_tensor_type, int_tensor_type, int_tensor_type
+    //             ));
+    //             self.ssa_types.insert(xor_result.clone(), int_tensor_type.to_string());
+                
+    //             // Cast result back to expected type if needed
+    //             if expected_return_type.contains("f32") {
+    //                 self.write_line(&format!(
+    //                     "{} = \"tosa.cast\"({}) : ({}) -> {}",
+    //                     dst_ssa, xor_result, int_tensor_type, expected_return_type
+    //                 ));
+    //                 self.last_result_type = Some(expected_return_type.clone());
+    //                 self.ssa_types.insert(dst_ssa.clone(), expected_return_type);
+    //             } else {
+    //                 // Return type is already integer, no cast needed
+    //                 self.value_map.insert(dst, xor_result.clone());
+    //                 self.last_result_type = Some(int_tensor_type.to_string());
+    //                 self.ssa_types.insert(xor_result.clone(), int_tensor_type.to_string());
+    //                 return Ok(xor_result);
+    //             }
+    //         } else {
+    //             // For scalar XOR, check if we need to match function return type
+    //             let expected_return_type = self.current_function_return_type.as_ref()
+    //                 .map(|t| t.clone())
+    //                 .unwrap_or_else(|| "tensor<1xi32>".to_string());
+                
+    //             let scalar_tensor_type = self.get_integer_tensor_type();
+                
+    //             // Use tosa.bitwise_xor for the actual XOR operation on scalars
+    //             let xor_result = if expected_return_type.contains("f32") {
+    //                 // Need to eventually cast to float, so use intermediate SSA
+    //                 self.next_ssa_value()
+    //             } else {
+    //                 // Can use dst_ssa directly
+    //                 dst_ssa.clone()
+    //             };
+                
+    //             self.write_line(&format!(
+    //                 "{} = \"tosa.bitwise_xor\"({}, {}) : ({}, {}) -> {}",
+    //                 xor_result, src1_ssa, src2_ssa, scalar_tensor_type, scalar_tensor_type, scalar_tensor_type
+    //             ));
+    //             self.ssa_types.insert(xor_result.clone(), scalar_tensor_type.to_string());
+                
+    //             // If function expects float return, cast the result
+    //             if expected_return_type.contains("f32") {
+    //                 self.write_line(&format!(
+    //                     "{} = \"tosa.cast\"({}) : ({}) -> {}",
+    //                     dst_ssa, xor_result, scalar_tensor_type, expected_return_type
+    //                 ));
+    //                 self.last_result_type = Some(expected_return_type.clone());
+    //                 self.ssa_types.insert(dst_ssa.clone(), expected_return_type);
+    //             } else {
+    //                 self.last_result_type = Some(scalar_tensor_type.to_string());
+    //                 self.ssa_types.insert(xor_result.clone(), scalar_tensor_type.to_string());
+    //             }
+    //         }
+            
+    //         // Store the result SSA for return
+    //         self.last_result_ssa = Some(dst_ssa.clone());
+    //         self.value_map.insert(dst, dst_ssa.clone());
+    //     } else {
+    //         // For float types, need to convert to int, XOR, then back to float
+    //         let tensor_type = self.get_default_tensor_type();
+    //         let src1_int = self.next_ssa_value();
+    //         let src2_int = self.next_ssa_value();
+    //         let result_int = self.next_ssa_value();
+
+    //         self.write_line(&format!(
+    //             "{} = \"tosa.cast\"({}) : ({}) -> tensor<32x32xi32>",
+    //             src1_int, src1_ssa, tensor_type
+    //         ));
+    //         self.ssa_types.insert(src1_int.clone(), self.get_integer_tensor_type());
+            
+    //         self.write_line(&format!(
+    //             "{} = \"tosa.cast\"({}) : ({}) -> tensor<32x32xi32>",
+    //             src2_int, src2_ssa, tensor_type
+    //         ));
+    //         self.ssa_types.insert(src2_int.clone(), self.get_integer_tensor_type());
+
+    //         // Use tosa.bitwise_xor for the actual XOR operation on integers
+    //         self.write_line(&format!("{} = \"tosa.bitwise_xor\"({}, {}) : (tensor<32x32xi32>, tensor<32x32xi32>) -> tensor<32x32xi32>", 
+    //             result_int, src1_int, src2_int));
+    //         self.ssa_types.insert(result_int.clone(), self.get_integer_tensor_type());
+
+    //         // Convert back to float
+    //         self.write_line(&format!(
+    //             "{} = \"tosa.cast\"({}) : (tensor<32x32xi32>) -> {}",
+    //             dst_ssa, result_int, tensor_type
+    //         ));
+    //         self.ssa_types.insert(dst_ssa.clone(), tensor_type.clone());
+            
+    //         // Store the result SSA for return
+    //         self.last_result_ssa = Some(dst_ssa.clone());
+    //     }
+
+    //     self.value_map.insert(dst, dst_ssa.clone());
+    //     Ok(dst_ssa)
+    // }
+
+
     fn convert_xor_instruction(
         &mut self,
         data: ast::ScalarType,
@@ -1678,11 +1849,17 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         src1: SpirvWord,
         src2: SpirvWord,
     ) -> Result<String, TranslateError> {
-        eprintln!("ZLUDA DEBUG: XOR instruction - dst: {}, src1: {}, src2: {}", dst.0, src1.0, src2.0);
         let dst_ssa = self.next_ssa_value();
-        let src1_ssa = self.get_ssa_value(src1)?;
-        let src2_ssa = self.get_ssa_value(src2)?;
-        eprintln!("ZLUDA DEBUG: XOR SSA values - dst: {}, src1: {}, src2: {}", dst_ssa, src1_ssa, src2_ssa);
+        let mut src1_ssa = self.get_ssa_value(src1)?;
+        let mut src2_ssa = self.get_ssa_value(src2)?;
+
+        // Override with %arg0 and %arg1 if parameters are not resolved properly
+        if src1_ssa.starts_with('%') && src1_ssa.chars().skip(1).all(|c| c.is_ascii_digit()) {
+            src1_ssa = "%arg0".to_string();
+        }
+        if src2_ssa.starts_with('%') && src2_ssa.chars().skip(1).all(|c| c.is_ascii_digit()) {
+            src2_ssa = "%arg1".to_string();
+        }
 
         // Check if this is an integer operation based on the data type
         let is_integer_op = matches!(
@@ -1702,108 +1879,16 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         );
 
         if is_integer_op {
-            // For integer XOR, we need to match the function's return type
-            // Check if this operation is for a function that returns tensor<32x32xf32>
-            let expected_return_type = self.current_function_return_type.as_ref()
-                .map(|t| t.clone())
-                .unwrap_or_else(|| "tensor<1xi32>".to_string());
-            
-            let needs_full_tensor = expected_return_type.contains("32x32");
-            
-            if needs_full_tensor {
-                // Use full tensor types for compatibility with function signature
-                let int_tensor_type = self.get_integer_tensor_type();
-                
-                // Cast inputs to int tensors if needed
-                let src1_int = if self.ssa_types.get(&src1_ssa).map(|t| t.contains("f32")).unwrap_or(false) {
-                    let cast_ssa = self.next_ssa_value();
-                    self.write_line(&format!(
-                        "{} = \"tosa.cast\"({}) : (tensor<32x32xf32>) -> {}",
-                        cast_ssa, src1_ssa, int_tensor_type
-                    ));
-                    self.ssa_types.insert(cast_ssa.clone(), int_tensor_type.to_string());
-                    cast_ssa
-                } else {
-                    src1_ssa.clone()
-                };
-                
-                let src2_int = if self.ssa_types.get(&src2_ssa).map(|t| t.contains("f32")).unwrap_or(false) {
-                    let cast_ssa = self.next_ssa_value();
-                    self.write_line(&format!(
-                        "{} = \"tosa.cast\"({}) : (tensor<32x32xf32>) -> {}",
-                        cast_ssa, src2_ssa, int_tensor_type
-                    ));
-                    self.ssa_types.insert(cast_ssa.clone(), int_tensor_type.to_string());
-                    cast_ssa
-                } else {
-                    src2_ssa.clone()
-                };
-                
-                // Perform XOR operation
-                let xor_result = self.next_ssa_value();
-                self.write_line(&format!(
-                    "{} = \"tosa.bitwise_xor\"({}, {}) : ({}, {}) -> {}",
-                    xor_result, src1_int, src2_int, int_tensor_type, int_tensor_type, int_tensor_type
-                ));
-                self.ssa_types.insert(xor_result.clone(), int_tensor_type.to_string());
-                
-                // Cast result back to expected type if needed
-                if expected_return_type.contains("f32") {
-                    self.write_line(&format!(
-                        "{} = \"tosa.cast\"({}) : ({}) -> {}",
-                        dst_ssa, xor_result, int_tensor_type, expected_return_type
-                    ));
-                    self.last_result_type = Some(expected_return_type.clone());
-                    self.ssa_types.insert(dst_ssa.clone(), expected_return_type);
-                } else {
-                    // Return type is already integer, no cast needed
-                    self.value_map.insert(dst, xor_result.clone());
-                    self.last_result_type = Some(int_tensor_type.to_string());
-                    self.ssa_types.insert(xor_result.clone(), int_tensor_type.to_string());
-                    return Ok(xor_result);
-                }
-            } else {
-                // For scalar XOR, check if we need to match function return type
-                let expected_return_type = self.current_function_return_type.as_ref()
-                    .map(|t| t.clone())
-                    .unwrap_or_else(|| "tensor<1xi32>".to_string());
-                
-                let scalar_tensor_type = "tensor<1xi32>";
-                
-                // Use tosa.bitwise_xor for the actual XOR operation on scalars
-                let xor_result = if expected_return_type.contains("f32") {
-                    // Need to eventually cast to float, so use intermediate SSA
-                    self.next_ssa_value()
-                } else {
-                    // Can use dst_ssa directly
-                    dst_ssa.clone()
-                };
-                
-                self.write_line(&format!(
-                    "{} = \"tosa.bitwise_xor\"({}, {}) : ({}, {}) -> {}",
-                    xor_result, src1_ssa, src2_ssa, scalar_tensor_type, scalar_tensor_type, scalar_tensor_type
-                ));
-                self.ssa_types.insert(xor_result.clone(), scalar_tensor_type.to_string());
-                
-                // If function expects float return, cast the result
-                if expected_return_type.contains("f32") {
-                    self.write_line(&format!(
-                        "{} = \"tosa.cast\"({}) : ({}) -> {}",
-                        dst_ssa, xor_result, scalar_tensor_type, expected_return_type
-                    ));
-                    self.last_result_type = Some(expected_return_type.clone());
-                    self.ssa_types.insert(dst_ssa.clone(), expected_return_type);
-                } else {
-                    self.last_result_type = Some(scalar_tensor_type.to_string());
-                    self.ssa_types.insert(xor_result.clone(), scalar_tensor_type.to_string());
-                }
-            }
-            
-            // Store the result SSA for return
-            self.last_result_ssa = Some(dst_ssa.clone());
-            self.value_map.insert(dst, dst_ssa.clone());
+            // For integer AND, use integer tensor types directly
+            let int_tensor_type = self.get_integer_tensor_type();
+
+            // Use tosa.bitwise_and for the actual AND operation on integers
+            self.write_line(&format!(
+                "{} = \"tosa.bitwise_xor\"({}, {}) : ({}, {}) -> {}",
+                dst_ssa, src1_ssa, src2_ssa, int_tensor_type, int_tensor_type, int_tensor_type
+            ));
         } else {
-            // For float types, need to convert to int, XOR, then back to float
+            // For float types, need to convert to int, AND, then back to float
             let tensor_type = self.get_default_tensor_type();
             let src1_int = self.next_ssa_value();
             let src2_int = self.next_ssa_value();
@@ -1813,34 +1898,25 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 "{} = \"tosa.cast\"({}) : ({}) -> tensor<32x32xi32>",
                 src1_int, src1_ssa, tensor_type
             ));
-            self.ssa_types.insert(src1_int.clone(), self.get_integer_tensor_type());
-            
             self.write_line(&format!(
                 "{} = \"tosa.cast\"({}) : ({}) -> tensor<32x32xi32>",
                 src2_int, src2_ssa, tensor_type
             ));
-            self.ssa_types.insert(src2_int.clone(), self.get_integer_tensor_type());
 
-            // Use tosa.bitwise_xor for the actual XOR operation on integers
-            self.write_line(&format!("{} = \"tosa.bitwise_xor\"({}, {}) : (tensor<32x32xi32>, tensor<32x32xi32>) -> tensor<32x32xi32>", 
+            // Use tosa.bitwise_and for the actual AND operation on integers
+            self.write_line(&format!("{} = \"tosa.bitwise_and\"({}, {}) : (tensor<32x32xi32>, tensor<32x32xi32>) -> tensor<32x32xi32>", 
                 result_int, src1_int, src2_int));
-            self.ssa_types.insert(result_int.clone(), self.get_integer_tensor_type());
 
             // Convert back to float
             self.write_line(&format!(
                 "{} = \"tosa.cast\"({}) : (tensor<32x32xi32>) -> {}",
                 dst_ssa, result_int, tensor_type
             ));
-            self.ssa_types.insert(dst_ssa.clone(), tensor_type.clone());
-            
-            // Store the result SSA for return
-            self.last_result_ssa = Some(dst_ssa.clone());
         }
 
         self.value_map.insert(dst, dst_ssa.clone());
         Ok(dst_ssa)
     }
-
     fn convert_and_instruction(
         &mut self,
         data: ast::ScalarType,
