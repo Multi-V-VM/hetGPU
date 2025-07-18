@@ -86,8 +86,9 @@ pub fn to_mlir_module<'input>(ast: ast::Module<'input>) -> Result<String, Transl
     eprintln!("ZLUDA DEBUG: Completed expand_operands");
     let directives = deparamize_functions::run(&mut flat_resolver, directives)?;
     eprintln!("ZLUDA DEBUG: Completed deparamize_functions");
+    // Skip insert_explicit_load_store for TOSA MLIR - it adds unnecessary complexity
     // let directives = insert_explicit_load_store::run(&mut flat_resolver, directives)?;
-    // eprintln!("ZLUDA DEBUG: Completed insert_explicit_load_store");
+    eprintln!("ZLUDA DEBUG: Skipped insert_explicit_load_store for TOSA MLIR");
     let directives = insert_implicit_conversions2::run(&mut flat_resolver, directives)?;
     eprintln!("ZLUDA DEBUG: Completed insert_implicit_conversions2");
     let directives = replace_instructions_with_function_calls::run(&mut flat_resolver, directives)?;
