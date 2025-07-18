@@ -119,7 +119,7 @@ test_ptx!(
 );
 test_ptx!(constant_f32, [10f32], [5f32]);
 test_ptx!(constant_negative, [-101i32], [101i32]);
-test_ptx!(and, [6u32, 3u32], [2u32]);
+test_ptx!(and, [[6u32], [3u32]], [2u32]);
 test_ptx!(selp, [100u16, 200u16], [200u16]);
 test_ptx!(selp_true, [100u16, 200u16], [100u16]);
 test_ptx!(fma, [[2f32], [3f32], [5f32]], [11f32]);

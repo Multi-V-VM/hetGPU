@@ -572,7 +572,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         };
         
         signature.push_str(&output_type);
-        self.current_function_return_type = Some(output_type);
+        self.current_function_return_type = Some(output_type.clone());
 
         signature.push_str(" {");
         eprintln!("ZLUDA DEBUG: Generated function signature: {}", signature);
@@ -657,16 +657,11 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     }
                 }
             };
-            self.write_line(&format!("return {} : {}", result, return_type));
+            self.write_line(&format!("return {} : {}", result, output_type));
         } else if let Some(last_result) = self.last_result_ssa.clone() {
-            // If we have a stored result (from store instruction), use its type
-            if let Some(result_type) = self.ssa_types.get(&last_result).cloned() {
-                self.write_line(&format!("return {} : {}", last_result, result_type));
-            } else {
-                // Fallback to creating a dummy tensor
-                let (result_tensor, tensor_type) = self.create_default_return(&func_name);
-                self.write_line(&format!("return {} : {}", result_tensor, tensor_type));
-            }
+            // If we have a stored result (from store instruction), use the function's return type
+            let return_type = output_type.to_string();
+            self.write_line(&format!("return {} : {}", last_result, output_type));
         } else {
             // Create result tensor for void functions
             let (result_tensor, tensor_type) = match self.get_function_category(&func_name) {
@@ -706,7 +701,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     (dummy_tensor, return_type)
                 }
             };
-            self.write_line(&format!("return {} : {}", result_tensor, tensor_type));
+            self.write_line(&format!("return {} : {}", result_tensor, output_type));
         }
 
         self.indent_level -= 1;
