@@ -495,21 +495,51 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Return type - for functions with data loads, determine from the actual operations
         // For FMA and similar operations, the return type should match the operation type
         signature.push_str(" -> ");
-        
+
+
         let output_type = if !method.func_decl.input_arguments.is_empty() {
-            let num_inputs = method.func_decl.input_arguments.len();
-            // Use the last parameter (output) for return type, or first if only one parameter
-            let output_param_index = if num_inputs > 1 { num_inputs - 1 } else { 0 };
-            let output_param = &method.func_decl.input_arguments[output_param_index];
+            // Always scan for store instructions to determine the actual return type
+            let mut store_types = Vec::new();
             
-            match &output_param.v_type {
-                ast::Type::Pointer(scalar_type, _) => {
-                    self.get_scalar_tensor_type(*scalar_type)
-                },
-                _ => self.convert_type_to_tosa(&output_param.v_type)?
+            if let Some(ref body) = method.body {
+                for statement in body {
+                    if let Statement::Instruction(ast::Instruction::St { data, arguments }) = statement {
+                        if data.state_space == ast::StateSpace::Generic {
+                            // Track the type of each store for proper return type determination
+                            let ty = match &data.typ {
+                                ast::Type::Scalar(ast::ScalarType::F32) => "tensor<1x1xf32>",
+                                ast::Type::Scalar(ast::ScalarType::U64) => "tensor<1x1xi32>",
+                                ast::Type::Scalar(ast::ScalarType::U32) => "tensor<1x1xi32>",
+                                _ => "tensor<1x1xi32>", // default
+                            };
+                            store_types.push(ty);
+                            eprintln!("ZLUDA DEBUG: Found store instruction of type {}", ty);
+                        }
+                    }
+                }
+            }
+            
+            // If we found store instructions, use the last one's type
+            if let Some(store_type) = store_types.last() {
+                eprintln!("ZLUDA DEBUG: Using store type {} for function return type", store_type);
+                store_type.to_string()
+            } else {
+                // Fall back to output parameter type if no stores found
+                let num_inputs = method.func_decl.input_arguments.len();
+                let output_param_index = if num_inputs > 1 { num_inputs - 1 } else { 0 };
+                let output_param = &method.func_decl.input_arguments[output_param_index];
+                
+                eprintln!("ZLUDA DEBUG: No store instructions found, using output parameter type");
+                match &output_param.v_type {
+                    ast::Type::Pointer(scalar_type, _) => {
+                        self.get_scalar_tensor_type(*scalar_type)
+                    },
+                    _ => self.convert_type_to_tosa(&output_param.v_type)?
+                }
             }
         } else {
             // Default return type
+            eprintln!("ZLUDA DEBUG: No input arguments, using default return type");
             self.get_scalar_tensor_type(ast::ScalarType::U64)
         };
         
@@ -517,6 +547,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         self.current_function_return_type = Some(output_type);
 
         signature.push_str(" {");
+        eprintln!("ZLUDA DEBUG: Generated function signature: {}", signature);
 
         // Add function-level debug info
         if self.debug_enabled {

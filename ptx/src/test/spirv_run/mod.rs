@@ -902,6 +902,7 @@ fn generate_tosa_mlir_from_ptx(
         }
         Err(e) => {
             eprintln!("ZLUDA WARNING: PTX to TOSA conversion failed: {:?}", e);
+            panic!();
             eprintln!("ZLUDA DEBUG: Falling back to simple kernel generator");
             // Fallback to simple kernel
             use crate::pass::emit_tosa_mlir;
