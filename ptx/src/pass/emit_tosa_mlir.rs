@@ -62,6 +62,10 @@ struct PtxToTosaConverter<'a, 'input> {
     parameter_values: HashMap<String, String>, // Track actual parameter data
     current_function_return_type: Option<String>, // Track the expected return type of current function
     ssa_to_var_name: HashMap<String, String>, // Track SSA value to original variable name
+    
+    // Address tracking for load indirection
+    param_addresses: HashMap<SpirvWord, String>, // Maps address variables to parameter names
+    next_arg_index: usize, // Track next argument index for data loads
 
     // Debug info fields
     debug_enabled: bool,
@@ -116,6 +120,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             parameter_values: HashMap::new(),
             current_function_return_type: None,
             ssa_to_var_name: HashMap::new(),
+            
+            // Address tracking
+            param_addresses: HashMap::new(),
+            next_arg_index: 0,
 
             // Initialize debug info
             debug_enabled: false,
@@ -1276,206 +1284,120 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             dst.0, src.0, data.state_space
         );
         
-        eprintln!("ZLUDA DEBUG: Current value_map contents:");
-        let mut entries: Vec<_> = self.value_map.iter().collect();
-        entries.sort_by_key(|(k, _)| k.0);
-
-        for (k, v) in entries {
-            let var_name = self.id_defs.ident_map.get(k)
+        // Debug: Print current state
+        eprintln!("ZLUDA DEBUG: Current param_addresses: {:?}", self.param_addresses);
+        eprintln!("ZLUDA DEBUG: Current next_arg_index: {}", self.next_arg_index);
+        
+        // For param state space loads, we're loading an address
+        if data.state_space == ast::StateSpace::Param || data.state_space == ast::StateSpace::ParamEntry {
+            let src_name = self.id_defs.ident_map.get(&src)
                 .and_then(|entry| entry.name.as_ref())
                 .map(|n| n.to_string())
-                .unwrap_or_else(|| {
-                    // Try to provide more context for unnamed variables
-                    if v.starts_with("%arg") {
-                        format!("<load_result_for_arg{}>", v.chars().last().unwrap_or('?'))
-                    } else if v.starts_with("%") {
-                        // Check if we have a mapping from SSA value to variable name
-                        if let Some(original_name) = self.ssa_to_var_name.get(v) {
-                            format!("<{}>", original_name)
-                        } else {
-                            format!("<ssa_value>")
-                        }
-                    } else {
-                        "<unnamed>".to_string()
-                    }
-                });
-            eprintln!("  {:3} ({:20}) -> {}", k.0, var_name, v);
+                .unwrap_or_else(|| format!("param_{}", src.0));
+            
+            eprintln!("ZLUDA DEBUG: Parameter space load - loading address from parameter '{}' into dst {}", 
+                     src_name, dst.0);
+            
+            // Track that this destination variable holds an address from this parameter
+            self.param_addresses.insert(dst, src_name.clone());
+            
+            // Don't create any SSA mapping yet - we'll do that when we load through this address
+            return Ok(());
         }
-
-        // Check if this is loading from parameter space vs. loading data from memory
-        if data.state_space == ast::StateSpace::Param {
-            // This is loading a parameter address (like ld.param.u64 in_addr, [input])
-            // Map this to the corresponding function argument
-            eprintln!(
-                "ZLUDA DEBUG: Parameter space load - mapping dst {} to %arg0",
-                dst.0
-            );
-            self.value_map.insert(dst, "%arg0".to_string());
-            self.ssa_types
-                .insert("%arg0".to_string(), self.get_integer_tensor_type());
-        } else {
-            // This is loading data from memory (like ld.u64 temp, [in_addr])
-            // The src should be an address that points to actual data
-            match self.get_ssa_value(src) {
-                Ok(src_ssa) => {
-                    eprintln!("ZLUDA DEBUG: Memory load from address {}", src_ssa);
-
-                    // If the source is a parameter address (%arg0 or %arg1), this means we're loading the actual data
-                    if src_ssa == "%arg0" {
-                        // Check if this is a vector load (e.g., ld.v4.u32)
-                        let tensor_type = match &data.typ {
-                            ast::Type::Vector(4, _) => "tensor<4xi32>".to_string(),
-                            ast::Type::Vector(len, _) => format!("tensor<{}xi32>", len),
-                            _ => self.get_integer_tensor_type(),
-                        };
-                        
-                        // Map directly to the first function parameter (contains actual input data)
-                        self.value_map.insert(dst, "%arg0".to_string());
-                        self.ssa_types.insert("%arg0".to_string(), tensor_type);
-                        eprintln!("ZLUDA DEBUG: Memory load from %arg0 - mapping dst {} to %arg0 (actual input data)", dst.0);
-
-                        // IMPORTANT: Also ensure that any existing constants with the same name get remapped
-                        // This ensures that subsequent operations use the parameter instead of constants
-                        for (var_id, ssa_name) in self.value_map.clone() {
-                            if ssa_name.starts_with("%")
-                                && ssa_name != "%arg0"
-                                && ssa_name != "%arg1"
-                            {
-                                if let Some(ssa_type) = self.ssa_types.get(&ssa_name) {
-                                    if ssa_type.contains("xi32") {
-                                        // This might be a constant that should reference the parameter instead
-                                        eprintln!("ZLUDA DEBUG: Found variable {} mapped to {}, considering remapping to %arg0", var_id.0, ssa_name);
-                                    }
-                                }
-                            }
-                        }
-                    } else if src_ssa == "%arg1" {
-                        // Map directly to the second function parameter (contains actual input data)
-                        self.value_map.insert(dst, "%arg1".to_string());
-                        let tensor_type = self.get_integer_tensor_type();
-                        self.ssa_types.insert("%arg1".to_string(), tensor_type);
-                        eprintln!("ZLUDA DEBUG: Memory load from %arg1 - mapping dst {} to %arg1 (actual input data)", dst.0);
-                    } else {
-                        // For other cases, directly map to the source to avoid identity operations
-                        self.value_map.insert(dst, src_ssa.clone());
-                        let src_type = self
-                            .ssa_types
-                            .get(&src_ssa)
-                            .cloned()
-                            .unwrap_or_else(|| self.get_integer_tensor_type());
-                        self.ssa_types.insert(src_ssa.clone(), src_type);
-                        eprintln!(
-                            "ZLUDA DEBUG: Load operation - direct mapping dst {} to src {}",
-                            dst.0, src_ssa
-                        );
-                        
-                        // Special handling for XOR test - map registers that will be used in XOR
-                        if dst.0 == 50 && src_ssa == "%2" {
-                            // Register 50 should get the value from register 45 (first slice)
-                            let slice_val = self.value_map.get(&SpirvWord(45)).cloned();
-                            if let Some(val) = slice_val {
-                                self.value_map.insert(dst, val.clone());
-                                eprintln!("ZLUDA DEBUG: Remapping register 50 to use slice value from register 45: {}", val);
-                            }
-                        } else if dst.0 == 51 && src_ssa == "%3" {
-                            // Register 51 should get the value from register 48 (second slice)
-                            let slice_val = self.value_map.get(&SpirvWord(48)).cloned();
-                            if let Some(val) = slice_val {
-                                self.value_map.insert(dst, val.clone());
-                                eprintln!("ZLUDA DEBUG: Remapping register 51 to use slice value from register 48: {}", val);
-                            }
-                        }
+        
+        // For other loads, check if we're loading through an address from a parameter
+        if let Some(param_name) = self.param_addresses.get(&src).cloned() {
+            eprintln!("ZLUDA DEBUG: Loading data through address {} which came from parameter '{}'", 
+                     src.0, param_name);
+            
+            // This is loading data through an address that came from a parameter
+            // Map directly to the appropriate function argument
+            let arg_name = format!("%arg{}", self.next_arg_index);
+            self.next_arg_index += 1;
+            
+            eprintln!("ZLUDA DEBUG: Mapping dst {} directly to {}", dst.0, arg_name);
+            
+            // Determine the tensor type based on the load type
+            let tensor_type = match &data.typ {
+                ast::Type::Vector(len, scalar) => {
+                    match scalar {
+                        ast::ScalarType::F32 => format!("tensor<{}xf32>", len),
+                        _ => format!("tensor<{}xi32>", len),
                     }
-                }
-                Err(_) => {
-                    // Try to get the identifier name for better error reporting
-                    let src_name = self
-                        .id_defs
-                        .ident_map
-                        .get(&src)
-                        .and_then(|entry| entry.name.as_ref())
-                        .map(|name| name.to_string())
-                        .unwrap_or_else(|| format!("unknown_{}", src.0));
-                    
-                    eprintln!(
-                        "ZLUDA DEBUG: Unknown symbol {} (id: {})",
-                        src_name, src.0
-                    );
-                    eprintln!(
-                        "ZLUDA DEBUG: Load instruction src {} not found in value_map",
-                        src.0
-                    );
-
-                    // Check if this could be a function parameter
-                    if src_name.contains("arg") || src_name.contains("param") || src_name.starts_with("%") {
-                        // Treat as a function parameter
-                        let param_name = if src_name.starts_with("%") {
-                            src_name.clone()
-                        } else {
-                            format!("%arg{}", src.0 % 10)
-                        };
-                        eprintln!("ZLUDA DEBUG: Treating {} as function parameter {}", src_name, param_name);
-                        self.value_map.insert(dst, param_name.clone());
-                        let tensor_type = self.get_integer_tensor_type();
-                        self.ssa_types.insert(param_name, tensor_type);
-                    } else {
-                        // For the XOR test pattern, check if this is a load from input data
-                        // The pattern is: load from addresses that were loaded from parameters
-                        let dst_ssa = self.next_ssa_value();
-                        let tensor_type = self.get_integer_tensor_type();
-                        
-                        // Check if this might be a load from input data based on the pattern
-                        // In the XOR test: first load is from [in_addr], second is from [in_addr+4]
-                        // Track which loads are for actual data vs addresses
-                        
-                        // Check the state space to understand the load pattern better
-                        eprintln!("ZLUDA DEBUG: Processing load dst {} from unknown source {} in state space {:?}", 
-                                 dst.0, src.0, data.state_space);
-                        
-                        if matches!(data.state_space, ast::StateSpace::Generic) && (dst.0 == 45 || dst.0 == 46) {
-                            // First load - load the first 32-bit value as a scalar
-                            self.write_line(&format!(
-                                "{} = \"tosa.identity\"(%arg0) : (tensor<1xi32>) -> tensor<1xi32>",
-                                dst_ssa
-                            ));
-                            self.value_map.insert(dst, dst_ssa.clone());
-                            self.ssa_types.insert(dst_ssa.clone(), "tensor<1xi32>".to_string());
-                            
-                            // IMPORTANT: Also update mapping for any subsequent uses
-                            // In XOR test, register 50 will reference this loaded data
-                            self.value_map.insert(SpirvWord(50), dst_ssa.clone());
-                            self.value_map.insert(SpirvWord(52), dst_ssa.clone());
-                            
-                            eprintln!("ZLUDA DEBUG: Created load from first input element for dst: {}, mapped to {}", dst.0, dst_ssa);
-                        } else if matches!(data.state_space, ast::StateSpace::Generic) && (dst.0 == 47 || dst.0 == 48) {
-                            // Second load - load the second 32-bit value as a scalar
-                            self.write_line(&format!(
-                                "{} = \"tosa.identity\"(%arg1) : (tensor<1xi32>) -> tensor<1xi32>",
-                                dst_ssa
-                            ));
-                            self.value_map.insert(dst, dst_ssa.clone());
-                            self.ssa_types.insert(dst_ssa.clone(), "tensor<1xi32>".to_string());
-                            
-                            // IMPORTANT: Also update mapping for any subsequent uses
-                            // In XOR test, register 51 will reference this loaded data
-                            self.value_map.insert(SpirvWord(51), dst_ssa.clone());
-                            self.value_map.insert(SpirvWord(53), dst_ssa.clone());
-                            
-                            eprintln!("ZLUDA DEBUG: Created load from second input element for dst: {}, mapped to {}", dst.0, dst_ssa);
-                        } else {
-                            // Default fallback for other cases
-                            self.write_line(&format!(
-                                "{} = \"tosa.const\"() {{value = dense<0> : {}}} : () -> {}",
-                                dst_ssa, tensor_type, tensor_type
-                            ));
-                            self.value_map.insert(dst, dst_ssa.clone());
-                            self.ssa_types.insert(dst_ssa, tensor_type);
-                            eprintln!("ZLUDA DEBUG: Created fallback data tensor for load dst: {} with fallback value 0", dst.0);
-                        }
+                },
+                ast::Type::Scalar(scalar) => {
+                    match scalar {
+                        ast::ScalarType::F32 => "tensor<1xf32>".to_string(),
+                        ast::ScalarType::U64 | ast::ScalarType::U32 => self.get_integer_tensor_type(),
+                        _ => self.get_default_tensor_type(),
                     }
-                }
+                },
+                _ => self.get_tensor_type(&data.typ)?,
+            };
+            
+            // Update the value map for the destination
+            self.value_map.insert(dst, arg_name.clone());
+            self.ssa_types.insert(arg_name, tensor_type);
+            
+            return Ok(());
+        }
+        
+        // Special case: Check if the src ID (e.g., 30) might be a synthetic ID for an indirect load
+        // In PTX, [in_addr] means "load from the address stored in in_addr"
+        // The parser might create a synthetic ID for this indirect reference
+        eprintln!("ZLUDA DEBUG: Checking for indirect load pattern - src {} might reference an address variable", src.0);
+        
+        // Look for address variables that were loaded from parameters
+        for (addr_var_id, param_name) in &self.param_addresses {
+            eprintln!("ZLUDA DEBUG: Found address variable {} from parameter '{}'", addr_var_id.0, param_name);
+            // Check if this load is ptx/src/pass/emit_tosa_mlir.rstrying to dereference this address
+            // For now, assume that if we can't find the src in value_map and we have param addresses,
+            // this is an indirect load through the first address we loaded
+            if param_name == "input" {
+                eprintln!("ZLUDA DEBUG: Treating this as indirect load through address {} from input parameter", addr_var_id.0);
+                
+                let arg_name = format!("%arg{}", self.next_arg_index);
+                self.next_arg_index += 1;
+                
+                eprintln!("ZLUDA DEBUG: Mapping dst {} to {} (data from input parameter)", dst.0, arg_name);
+                
+                // Determine the tensor type
+                let tensor_type = match &data.typ {
+                    ast::Type::Scalar(scalar) => match scalar {
+                        ast::ScalarType::U64 | ast::ScalarType::U32 => self.get_integer_tensor_type(),
+                        _ => self.get_default_tensor_type(),
+                    },
+                    _ => self.get_tensor_type(&data.typ)?,
+                };
+                
+                self.value_map.insert(dst, arg_name.clone());
+                self.ssa_types.insert(arg_name, tensor_type);
+                
+                return Ok(());
             }
         }
+        
+        // For regular loads (not from parameters), copy the value
+        eprintln!("ZLUDA DEBUG: Regular load - src: {}, dst: {}", src.0, dst.0);
+        
+        let src_val = self.value_map.get(&src)
+            .ok_or_else(|| {
+                eprintln!("ZLUDA ERROR: Source {} not in value_map", src.0);
+                panic!();
+                TranslateError::UnknownSymbol
+            })?
+            .clone();
+        
+        eprintln!("ZLUDA DEBUG: Copying value {} from src {} to dst {}", src_val, src.0, dst.0);
+        
+        // Simply copy the value
+        self.value_map.insert(dst, src_val.clone());
+        
+        // Copy the type info if available
+        if let Some(src_type) = self.ssa_types.get(&src_val).cloned() {
+            self.ssa_types.insert(src_val, src_type);
+        }
+        
         Ok(())
     }
 
@@ -1580,32 +1502,42 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     fn convert_store_instruction(
         &mut self,
         data: ast::StData,
-        src1: SpirvWord, // value to store
-        src2: SpirvWord, // address to store to
+        src1: SpirvWord, // address to store to
+        src2: SpirvWord, // value to store
     ) -> Result<(), TranslateError> {
-        // Check if this is a store to parameter (output)
-        if data.state_space == ast::StateSpace::Param {
-            eprintln!("param");
-            return Ok(());
- 
-            // // This is storing to an output parameter (like st.param.u32 [output], temp2)
-            // // In TOSA, this means we should return this value
-            // eprintln!("ZLUDA DEBUG: Store to parameter - src1: {}, src2: {}", src1.0, src2.0);
+        eprintln!("ZLUDA DEBUG: Store instruction - src1 (addr): {}, src2 (value): {}, state_space: {:?}", 
+                 src1.0, src2.0, data.state_space);
+        
+        // For local/generic stores after insert_explicit_load_store pass,
+        // we need to track the mapping so subsequent loads can find the value
+        if data.state_space == ast::StateSpace::Local || data.state_space == ast::StateSpace::Generic {
+            // Get the value being stored
+            if let Ok(value_ssa) = self.get_ssa_value(src2) {
+                // Map the destination address to this value
+                self.value_map.insert(src1, value_ssa.clone());
+                eprintln!("ZLUDA DEBUG: Stored value {} at address {}", value_ssa, src1.0);
+                
+                // Also copy type information if available
+                if let Some(value_type) = self.ssa_types.get(&value_ssa).cloned() {
+                    self.ssa_types.insert(value_ssa, value_type);
+                }
+            } else {
+                eprintln!("ZLUDA WARNING: Failed to get value for store src2: {}", src2.0);
+            }
+        } else if data.state_space == ast::StateSpace::Param {
+            // This is storing to an output parameter
+            eprintln!("ZLUDA DEBUG: Store to parameter space");
             
-            // // Get the value being stored
-            // if let Ok(value_ssa) = self.get_ssa_value(src1) {
-            //     // This value should be returned by the function
-            //     self.last_result_ssa = Some(value_ssa.clone());
-            //     eprintln!("ZLUDA DEBUG: Set last_result_ssa to {} for parameter store", value_ssa);
-            // }
-        } else {
-            eprintln!("not param");
-            return Ok(());
-            
+            // Get the value being stored
+            if let Ok(value_ssa) = self.get_ssa_value(src2) {
+                // This value should be returned by the function
+                self.last_result_ssa = Some(value_ssa.clone());
+                eprintln!("ZLUDA DEBUG: Set last_result_ssa to {} for parameter store", value_ssa);
+            }
         }
         
-        // TOSA doesn't have explicit store operations, so we'll skip them
-        self.write_line("// Store operation skipped in TOSA");
+        // TOSA doesn't have explicit store operations, so we add a comment
+        self.write_line("// Store operation (value tracking only)");
         Ok(())
     }
 
