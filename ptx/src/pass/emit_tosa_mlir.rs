@@ -1117,6 +1117,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     arguments.src,
                 )?))
             }
+            ast::Instruction::Clz { data, arguments, .. } => {
+                eprintln!("ZLUDA DEBUG: Converting CLZ instruction!");
+                Ok(Some(self.convert_clz_instruction(
+                    arguments.dst,
+                    arguments.src,
+                )?))
+            }
             _ => {
                 eprintln!("ZLUDA DEBUG: Unsupported instruction type: {}", inst);
                 self.write_line(&format!("// Unsupported instruction: {}", inst));
@@ -2885,6 +2892,29 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         self.value_map.insert(dst, dst_ssa.clone());
         self.ssa_types.insert(dst_ssa.clone(), tensor_type);
+        Ok(dst_ssa)
+    }
+
+    fn convert_clz_instruction(
+        &mut self,
+        dst: SpirvWord,
+        src: SpirvWord,
+    ) -> Result<String, TranslateError> {
+        let dst_ssa = self.next_ssa_value();
+        let src_ssa = self.get_ssa_value(src)?;
+        
+        // CLZ operates on integer types
+        let tensor_type =  "tensor<1x1xi32>"; // Default to i32 for B32, U32, S32
+        
+
+        // TOSA clz operation
+        self.write_line(&format!(
+            "{} = \"tosa.clz\"({}) : ({}) -> {}",
+            dst_ssa, src_ssa, tensor_type, tensor_type
+        ));
+
+        self.value_map.insert(dst, dst_ssa.clone());
+        self.ssa_types.insert(dst_ssa.clone(), tensor_type.to_string());
         Ok(dst_ssa)
     }
 

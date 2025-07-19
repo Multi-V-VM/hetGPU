@@ -49,7 +49,7 @@ tests=(
     "and"
     # "selp"
     # "selp_true"
-    # "fma"
+    "fma"
     # "shared_variable"
     # "shared_ptr_32"
     # "atom_cas"
