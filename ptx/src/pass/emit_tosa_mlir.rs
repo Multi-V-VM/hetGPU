@@ -1110,6 +1110,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     arguments.src,
                 )?))
             }
+            ast::Instruction::Lg2 { arguments, .. } => {
+                eprintln!("ZLUDA DEBUG: Converting LG2 instruction!");
+                Ok(Some(self.convert_lg2_instruction(
+                    arguments.dst,
+                    arguments.src,
+                )?))
+            }
             _ => {
                 eprintln!("ZLUDA DEBUG: Unsupported instruction type: {}", inst);
                 self.write_line(&format!("// Unsupported instruction: {}", inst));
@@ -2785,6 +2792,68 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         self.write_line(&format!(
             "{} = \"tosa.cos\"({}) : ({}) -> {}",
             dst_ssa, src_ssa, tensor_type, tensor_type
+        ));
+
+        self.value_map.insert(dst, dst_ssa.clone());
+        self.ssa_types.insert(dst_ssa.clone(), tensor_type);
+        Ok(dst_ssa)
+    }
+
+    fn convert_lg2_instruction(
+        &mut self,
+        dst: SpirvWord,
+        src: SpirvWord,
+    ) -> Result<String, TranslateError> {
+        let src_ssa = self.get_ssa_value(src)?;
+        let tensor_type = self.get_default_tensor_type(); // lg2 always operates on floats
+
+        // TOSA doesn't have a log2 operation, so we use change of base formula:
+        // log2(x) = log(x) / log(2)
+        
+        // First compute log(x)
+        let log_x_ssa = self.next_ssa_value();
+        self.write_line(&format!(
+            "{} = \"tosa.log\"({}) : ({}) -> {}",
+            log_x_ssa, src_ssa, tensor_type, tensor_type
+        ));
+        self.ssa_types.insert(log_x_ssa.clone(), tensor_type.clone());
+
+        // Create constant 2.0
+        let two_const_ssa = self.next_ssa_value();
+        self.write_line(&format!(
+            "{} = \"tosa.const\"() {{values = dense<2.0> : {}}} : () -> {}",
+            two_const_ssa, tensor_type, tensor_type
+        ));
+        self.ssa_types.insert(two_const_ssa.clone(), tensor_type.clone());
+
+        // Compute log(2)
+        let log2_ssa = self.next_ssa_value();
+        self.write_line(&format!(
+            "{} = \"tosa.log\"({}) : ({}) -> {}",
+            log2_ssa, two_const_ssa, tensor_type, tensor_type
+        ));
+        self.ssa_types.insert(log2_ssa.clone(), tensor_type.clone());
+
+        // Divide log(x) by log(2) using reciprocal and multiply
+        // Since TOSA doesn't have div, we use: a/b = a * (1/b)
+        let recip_log2_ssa = self.next_ssa_value();
+        self.write_line(&format!(
+            "{} = \"tosa.reciprocal\"({}) : ({}) -> {}",
+            recip_log2_ssa, log2_ssa, tensor_type, tensor_type
+        ));
+        self.ssa_types.insert(recip_log2_ssa.clone(), tensor_type.clone());
+
+        // Multiply log(x) by reciprocal of log(2)
+        let dst_ssa = self.next_ssa_value();
+        // TOSA mul requires 3 operands: input1, input2, shift
+        let shift_ssa = self.next_ssa_value();
+        self.write_line(&format!(
+            "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
+            shift_ssa
+        ));
+        self.write_line(&format!(
+            "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, tensor<1xi8>) -> {}",
+            dst_ssa, log_x_ssa, recip_log2_ssa, shift_ssa, tensor_type, tensor_type, tensor_type
         ));
 
         self.value_map.insert(dst, dst_ssa.clone());
