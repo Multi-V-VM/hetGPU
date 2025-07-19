@@ -97,7 +97,7 @@ test_ptx!(
 );
 test_ptx!(vector_extract, [1u8, 2u8, 3u8, 4u8], [3u8, 4u8, 1u8, 2u8]);
 test_ptx!(shr, [-2i32], [-1i32]);
-test_ptx!(or, [1u32, 2u32], [3u32]);
+test_ptx!(or, [[1u32], [2u32]], [3u32]);
 test_ptx!(sub, [2u32], [1u32]);
 test_ptx!(min, [[555i32], [444i32]], [444i32]);
 test_ptx!(max, [[556i32], [444i32]], [556i32]);

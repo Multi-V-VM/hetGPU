@@ -2973,7 +2973,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             .map(|n| n.to_string())
             .unwrap_or_else(|| format!("<unnamed_{}>", var_id.0));
             
+        self.debug_print_value_map();
         eprintln!("ZLUDA ERROR: Variable {} (id {}) not found in value_map", var_name, var_id.0);
+        panic!();
         Err(TranslateError::UnknownSymbol)
     }
 
