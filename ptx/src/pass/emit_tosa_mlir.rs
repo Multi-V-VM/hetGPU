@@ -2075,31 +2075,58 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         src1: SpirvWord,
         src2: SpirvWord,
     ) -> Result<String, TranslateError> {
-        let dst_ssa = self.next_ssa_value();
         let src1_ssa = self.get_ssa_value(src1)?;
         let src2_ssa = self.get_ssa_value(src2)?;
 
         match data {
             ast::DivDetails::Float(_) => {
-                // For float division, use tosa.div
+                // For float division, use reciprocal and multiply: a/b = a * (1/b)
                 let tensor_type = self.get_default_tensor_type();
+                
+                // Compute reciprocal of divisor
+                let recip_ssa = self.next_ssa_value();
                 self.write_line(&format!(
-                    "{} = \"tosa.div\"({}, {}) : ({}, {}) -> {}",
-                    dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, tensor_type
+                    "{} = \"tosa.reciprocal\"({}) : ({}) -> {}",
+                    recip_ssa, src2_ssa, tensor_type, tensor_type
                 ));
+                self.ssa_types.insert(recip_ssa.clone(), tensor_type.clone());
+                
+                // Multiply dividend by reciprocal
+                let dst_ssa = self.next_ssa_value();
+                let shift_ssa = self.next_ssa_value();
+                self.write_line(&format!(
+                    "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
+                    shift_ssa
+                ));
+                self.write_line(&format!(
+                    "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, tensor<1xi8>) -> {}",
+                    dst_ssa, src1_ssa, recip_ssa, shift_ssa, tensor_type, tensor_type, tensor_type
+                ));
+                
+                self.value_map.insert(dst, dst_ssa.clone());
+                self.ssa_types.insert(dst_ssa.clone(), tensor_type);
+                Ok(dst_ssa)
             }
             ast::DivDetails::Unsigned(_) | ast::DivDetails::Signed(_) => {
-                // For integer division, use tosa.div on integer tensors
+                // For integer division, TOSA doesn't have a direct operation
+                // This would require a more complex implementation using tables or approximations
+                // For now, we'll emit a placeholder constant
                 let int_tensor_type = self.get_integer_tensor_type();
+                let dst_ssa = self.next_ssa_value();
+                
                 self.write_line(&format!(
-                    "{} = \"tosa.div\"({}, {}) : ({}, {}) -> {}",
-                    dst_ssa, src1_ssa, src2_ssa, int_tensor_type, int_tensor_type, int_tensor_type
+                    "// TODO: Integer division not directly supported in TOSA"
                 ));
+                self.write_line(&format!(
+                    "{} = \"tosa.const\"() {{values = dense<1> : {}}} : () -> {}",
+                    dst_ssa, int_tensor_type, int_tensor_type
+                ));
+                
+                self.value_map.insert(dst, dst_ssa.clone());
+                self.ssa_types.insert(dst_ssa.clone(), int_tensor_type);
+                Ok(dst_ssa)
             }
         }
-
-        self.value_map.insert(dst, dst_ssa.clone());
-        Ok(dst_ssa)
     }
 
     fn convert_min_instruction(

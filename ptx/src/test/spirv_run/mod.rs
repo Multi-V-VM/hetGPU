@@ -68,7 +68,7 @@ test_ptx!(mov, [1u32], [1u32]);
 test_ptx!(mul_lo, [1u32], [2u32]);
 test_ptx!(mul_hi, [u32::max_value()], [1u32]);
 test_ptx!(add, [1u32], [2u32]);
-test_ptx!(setp, [10u32, 11u32], [1u32, 0u32]);
+test_ptx!(setp, [[10u32], [11u32]], [1u32, 0u32]);
 test_ptx!(setp_gt, [f32::NAN, 1f32], [1f32]);
 test_ptx!(setp_leu, [1f32, f32::NAN], [1f32]);
 test_ptx!(bra, [10u32], [11u32]);
@@ -89,7 +89,7 @@ test_ptx!(b64tof64, [111u32], [111u32]);
 // This segfaults NV compiler
 // test_ptx!(implicit_param, [34u32], [34u32]);
 test_ptx!(pred_not, [10u32, 11u32], [2u32, 0u32]);
-test_ptx!(mad_s32, [2i32, 3i32, 4i32], [10i32, 10i32, 10i32]);
+test_ptx!(mad_s32, [[2i32], [3i32], [4i32]], [10i32, 10i32, 10i32]);
 test_ptx!(
     mul_wide,
     [0x01_00_00_00__01_00_00_00i64],
@@ -109,12 +109,12 @@ test_ptx!(rcp, [2f32], [0.5f32]);
 // 0x3f000000 is 0.5
 test_ptx!(
     mul_ftz,
-    [0b1_00000000_10000000000000000000000u32, 0x3f000000u32],
+    [[0b1_00000000_10000000000000000000000u32], [0x3f000000u32]],
     [0b1_00000000_00000000000000000000000u32]
 );
 test_ptx!(
     mul_non_ftz,
-    [0b1_00000000_10000000000000000000000u32, 0x3f000000u32],
+    [[0b1_00000000_10000000000000000000000u32], [0x3f000000u32]],
     [0b1_00000000_01000000000000000000000u32]
 );
 test_ptx!(constant_f32, [10f32], [5f32]);
@@ -128,7 +128,7 @@ test_ptx!(shared_ptr_32, [513u32], [513u32]);
 test_ptx!(atom_cas, [91u32, 91u32], [91u32, 100u32]);
 test_ptx!(atom_inc, [100u32], [100u32, 101u32, 0u32]);
 test_ptx!(atom_add, [2u32, 4u32], [2u32, 6u32]);
-test_ptx!(div_approx, [1f32, 2f32], [0.5f32]);
+test_ptx!(div_approx, [[1f32], [2f32]], [0.5f32]);
 test_ptx!(sqrt, [0.25f32], [0.5f32]);
 test_ptx!(rsqrt, [0.25f64], [2f64]);
 test_ptx!(neg, [181i32], [-181i32]);
@@ -136,8 +136,8 @@ test_ptx!(sin, [std::f32::consts::PI / 2f32], [1f32]);
 test_ptx!(cos, [std::f32::consts::PI], [-1f32]);
 test_ptx!(lg2, [512f32], [9f32]);
 test_ptx!(ex2, [10f32], [1024f32]);
-test_ptx!(cvt_rni, [9.5f32, 10.5f32], [10f32, 10f32]);
-test_ptx!(cvt_rzi, [-13.8f32, 12.9f32], [-13f32, 12f32]);
+test_ptx!(cvt_rni, [[9.5f32], [10.5f32]], [10f32, 10f32]);
+test_ptx!(cvt_rzi, [[-13.8f32], [12.9f32]], [-13f32, 12f32]);
 test_ptx!(cvt_s32_f32, [-13.8f32, 12.9f32], [-13i32, 13i32]);
 test_ptx!(clz, [0b00000101_00101101_00010011_10101011u32], [5u32]);
 test_ptx!(popc, [0b10111100_10010010_01001001_10001010u32], [14u32]);
@@ -170,7 +170,7 @@ test_ptx!(cvt_s64_s32, [-1i32], [-1i64]);
 test_ptx!(add_tuning, [2u32], [3u32]);
 test_ptx!(add_non_coherent, [3u32], [4u32]);
 test_ptx!(sign_extend, [-1i16], [-1i32]);
-test_ptx!(atom_add_float, [1.25f32, 0.5f32], [1.25f32, 1.75f32]);
+test_ptx!(atom_add_float, [[1.25f32], [0.5f32]], [1.25f32, 1.75f32]);
 test_ptx!(
     setp_nan,
     [
