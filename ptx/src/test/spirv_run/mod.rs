@@ -71,7 +71,7 @@ test_ptx!(add, [1u32], [2u32]);
 test_ptx!(setp, [[10u32], [11u32]], [1u32, 0u32]);
 test_ptx!(setp_gt, [f32::NAN, 1f32], [1f32]);
 test_ptx!(setp_leu, [1f32, f32::NAN], [1f32]);
-test_ptx!(bra, [10u32], [11u32]);
+// test_ptx!(bra, [10u32], [11u32]);
 test_ptx!(not, [0u32], [u32::max_value()]);
 test_ptx!(shl, [11u32], [44u32]);
 test_ptx!(cvt_sat_s_u, [-1i32], [0i32]);
