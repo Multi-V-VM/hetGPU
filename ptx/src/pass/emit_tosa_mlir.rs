@@ -719,7 +719,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     ) -> Result<Option<String>, TranslateError> {
         match statement {
             Statement::Label(label) => {
-                self.write_line(&format!("// Label: {}", label.0));
+                // Emit MLIR basic block syntax
+                self.write_line(&format!("^bb{}():", label.0));
             }
             Statement::Variable(var) => {
                 self.convert_local_variable(var)?;
@@ -1123,6 +1124,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     arguments.dst,
                     arguments.src,
                 )?))
+            }
+            ast::Instruction::Bra { arguments, .. } => {
+                eprintln!("ZLUDA DEBUG: Converting BRA instruction!");
+                Ok(Some(self.convert_bra_instruction(arguments.src)?))
             }
             _ => {
                 eprintln!("ZLUDA DEBUG: Unsupported instruction type: {}", inst);
@@ -2916,6 +2921,22 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         self.value_map.insert(dst, dst_ssa.clone());
         self.ssa_types.insert(dst_ssa.clone(), tensor_type.to_string());
         Ok(dst_ssa)
+    }
+
+    fn convert_bra_instruction(
+        &mut self,
+        target: SpirvWord,
+    ) -> Result<String, TranslateError> {
+        // In MLIR, branches are control flow operations
+        // We need to use cf.br (control flow branch) instead of TOSA operations
+        // The target should be a label/block identifier
+        self.write_line(&format!(
+            "cf.br ^bb{}", 
+            target
+        ));
+        
+        // Branch instructions don't produce a value
+        Ok(String::new())
     }
 
     fn convert_type_to_tosa(&self, typ: &ast::Type) -> Result<String, TranslateError> {
