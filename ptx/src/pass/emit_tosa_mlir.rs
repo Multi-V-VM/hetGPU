@@ -766,6 +766,18 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             Statement::Constant(const_def) => {
                 self.convert_constant(const_def)?;
             }
+            Statement::Conditional(cond) => {
+                // Convert predicate value to condition
+                let pred_ssa = self.get_ssa_value(cond.predicate)?;
+                
+                // Generate conditional branch
+                self.write_line(&format!(
+                    "cf.cond_br {}, ^bb{}, ^bb{}", 
+                    pred_ssa, 
+                    cond.if_true.0, 
+                    cond.if_false.0
+                ));
+            }
             _ => {
                 self.write_line(&format!("// Unsupported statement type"));
             }
@@ -2932,7 +2944,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // The target should be a label/block identifier
         self.write_line(&format!(
             "cf.br ^bb{}", 
-            target
+            target.0
         ));
         
         // Branch instructions don't produce a value
