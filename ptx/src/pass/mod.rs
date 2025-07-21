@@ -494,6 +494,7 @@ pub fn to_llvm_module_with_filename<'input>(
     })
 }
 
+#[derive(Debug, Clone)]
 pub struct KernelInfo {
     pub arguments_sizes: Vec<(usize, bool)>,
     pub uses_shared_mem: bool,
@@ -604,6 +605,7 @@ fn error_mismatched_type() -> TranslateError {
     TranslateError::InvalidSymbolFormat
 }
 
+#[derive(Debug, Clone)]
 enum Statement<I, P: ast::Operand> {
     Label(SpirvWord),
     Variable(ast::Variable<P::Ident>),
@@ -894,14 +896,14 @@ impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct BrachCondition {
     predicate: SpirvWord,
     if_true: SpirvWord,
     if_false: SpirvWord,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct ImplicitConversion {
     src: SpirvWord,
     dst: SpirvWord,
@@ -912,7 +914,7 @@ struct ImplicitConversion {
     kind: ConversionKind,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum ConversionKind {
     Default,
     // zero-extend/chop/bitcast depending on types
@@ -922,14 +924,14 @@ enum ConversionKind {
     AddressOf,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct ConstantDefinition {
     pub dst: SpirvWord,
     pub typ: ast::ScalarType,
     pub value: ast::ImmediateValue,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PtrAccess<T> {
     pub underlying_type: ast::Type,
     pub state_space: ast::StateSpace,
@@ -938,7 +940,7 @@ pub struct PtrAccess<T> {
     pub offset_src: T,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct RepackVectorDetails {
     is_extract: bool,
     typ: ast::ScalarType,
@@ -947,7 +949,7 @@ struct RepackVectorDetails {
     relaxed_type_check: bool,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct FunctionPointerDetails {
     dst: SpirvWord,
     src: SpirvWord,
@@ -985,11 +987,13 @@ type NormalizedStatement = Statement<
     ast::ParsedOperand<SpirvWord>,
 >;
 
+#[derive(Debug, Clone)]
 enum Directive2<'input, Instruction, Operand: ast::Operand> {
     Variable(ast::LinkingDirective, ast::Variable<SpirvWord>),
     Method(Function2<'input, Instruction, Operand>),
 }
 
+#[derive(Debug, Clone)]
 struct Function2<'input, Instruction, Operand: ast::Operand> {
     pub func_decl: ast::MethodDeclaration<'input, SpirvWord>,
     pub globals: Vec<ast::Variable<SpirvWord>>,
@@ -1277,7 +1281,7 @@ impl SpecialRegistersMap2 {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct VectorRead {
     pub scalar_type: ast::ScalarType,
     pub vector_width: u8,
@@ -1286,7 +1290,7 @@ pub struct VectorRead {
     pub member: u8,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct VectorWrite {
     pub scalar_type: ast::ScalarType,
     pub vector_width: u8,

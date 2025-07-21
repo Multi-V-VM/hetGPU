@@ -1715,16 +1715,16 @@ derive_parser!(
         Generic,
     }
 
-    #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     pub enum MemScope { }
 
-    #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     pub enum ScalarType { }
 
-    #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     pub enum SetpBoolPostOp { }
 
-    #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     pub enum AtomSemantics { }
 
     // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-mov
