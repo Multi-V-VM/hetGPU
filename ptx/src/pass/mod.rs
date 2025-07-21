@@ -653,8 +653,12 @@ enum Statement<I, P: ast::Operand> {
     Label(SpirvWord),
     Variable(ast::Variable<P::Ident>),
     Instruction(I),
-    // SPIR-V compatible replacement for PTX predicates
-    Conditional(BranchCondition),
+    // New: Predicated instruction execution
+    PredicatedInstruction {
+        predicate: SpirvWord,
+        negated: bool,
+        instruction: I,
+    },
     Conversion(ImplicitConversion),
     Constant(ConstantDefinition),
     RetValue(ast::RetData, Vec<(SpirvWord, ast::Type)>),
@@ -692,20 +696,19 @@ impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
                     array_init: var.array_init,
                 })
             }
-            Statement::Conditional(conditional) => {
+            Statement::PredicatedInstruction { predicate, negated, instruction } => {
                 let predicate = visitor.visit_ident(
-                    conditional.predicate,
+                    predicate,
                     Some((&ast::ScalarType::Pred.into(), ast::StateSpace::Reg)),
                     false,
                     false,
                 )?;
-                let if_true = visitor.visit_ident(conditional.if_true, None, false, false)?;
-                let if_false = visitor.visit_ident(conditional.if_false, None, false, false)?;
-                Statement::Conditional(BranchCondition {
+                let instruction = ast::visit_map(instruction, visitor)?;
+                Statement::PredicatedInstruction {
                     predicate,
-                    if_true,
-                    if_false,
-                })
+                    negated,
+                    instruction,
+                }
             }
             Statement::Conversion(ImplicitConversion {
                 src,
@@ -937,13 +940,6 @@ impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
             }
         })
     }
-}
-
-#[derive(Debug, Clone)]
-struct BranchCondition {
-    predicate: SpirvWord,
-    if_true: SpirvWord,
-    if_false: SpirvWord,
 }
 
 #[derive(Debug, Clone)]

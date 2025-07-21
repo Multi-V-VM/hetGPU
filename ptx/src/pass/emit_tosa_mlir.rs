@@ -719,8 +719,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     ) -> Result<Option<String>, TranslateError> {
         match statement {
             Statement::Label(label) => {
-                // Emit MLIR basic block syntax
-                self.write_line(&format!("^bb{}():", label.0));
+                // Emit basic block label
+                // TODO: In a proper SSA implementation, merge points would have block arguments
+                // for phi nodes. For example:
+                // ^bb17(%r3_phi: tensor<1x1xf32>):
+                // This would require tracking which variables are defined in predecessor blocks
+                self.write_line(&format!("^bb{}:", label.0));
             }
             Statement::Variable(var) => {
                 self.convert_local_variable(var)?;
@@ -766,17 +770,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             Statement::Constant(const_def) => {
                 self.convert_constant(const_def)?;
             }
-            Statement::Conditional(cond) => {
-                // Convert predicate value to condition
-                let pred_ssa = self.get_ssa_value(cond.predicate)?;
-                
-                // Generate conditional branch
-                self.write_line(&format!(
-                    "cf.cond_br {}, ^bb{}, ^bb{}", 
-                    pred_ssa, 
-                    cond.if_true.0, 
-                    cond.if_false.0
-                ));
+            Statement::PredicatedInstruction { predicate, negated, instruction } => {
+                self.convert_predicated_instruction(predicate, negated, instruction)?;
             }
             _ => {
                 self.write_line(&format!("// Unsupported statement type"));
@@ -858,6 +853,84 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         self.ssa_types.insert(const_ssa, tensor_type);
 
         Ok(())
+    }
+
+    fn convert_predicated_instruction(
+        &mut self,
+        predicate: SpirvWord,
+        negated: bool,
+        instruction: ast::Instruction<SpirvWord>,
+    ) -> Result<(), TranslateError> {
+        // Get the predicate SSA value
+        let pred_ssa = self.get_ssa_value(predicate)?;
+        
+        // For negated predicates, we need to apply logical_not
+        let actual_pred = if negated {
+            let neg_pred = self.next_ssa_value();
+            self.write_line(&format!(
+                "{} = tosa.logical_not {} : tensor<1x1xi1> -> tensor<1x1xi1>",
+                neg_pred,
+                pred_ssa
+            ));
+            self.ssa_types.insert(neg_pred.clone(), "tensor<1x1xi1>".to_string());
+            neg_pred
+        } else {
+            pred_ssa
+        };
+        
+        // Get the destination register of the instruction (if any)
+        let dst_reg = self.extract_instruction_dst(&instruction);
+        
+        // Save the old value of the destination (if it exists)
+        let old_value = if let Some(dst) = dst_reg {
+            self.value_map.get(&dst).cloned()
+        } else {
+            None
+        };
+        
+        // Execute the instruction unconditionally
+        if let Some(result_ssa) = self.convert_instruction(instruction)? {
+            // If the instruction produced a result and we have an old value,
+            // generate a select between old and new
+            if let (Some(dst), Some(old_val)) = (dst_reg, old_value) {
+                let selected = self.next_ssa_value();
+                let result_type = self.ssa_types.get(&result_ssa)
+                    .ok_or_else(|| error_unreachable())?
+                    .clone();
+                
+                self.write_line(&format!(
+                    "{} = tosa.select {}, {}, {} : (tensor<1x1xi1>, {}, {}) -> {}",
+                    selected,
+                    actual_pred,
+                    result_ssa,
+                    old_val,
+                    result_type,
+                    result_type,
+                    result_type
+                ));
+                
+                // Update the mapping to point to the selected value
+                self.value_map.insert(dst, selected.clone());
+                self.ssa_types.insert(selected, result_type);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    // Extract the destination register from an instruction
+    fn extract_instruction_dst(&self, instruction: &ast::Instruction<SpirvWord>) -> Option<SpirvWord> {
+        match instruction {
+            ast::Instruction::Mov { arguments: ast::MovArgs { dst, .. }, .. } |
+            ast::Instruction::Add { arguments: ast::AddArgs { dst, .. }, .. } |
+            ast::Instruction::Sub { arguments: ast::SubArgs { dst, .. }, .. } |
+            ast::Instruction::Mul { arguments: ast::MulArgs { dst, .. }, .. } |
+            ast::Instruction::Ld { arguments: ast::LdArgs { dst, .. }, .. } |
+            ast::Instruction::Setp { arguments: ast::SetpArgs { dst1: dst, .. }, .. } => {
+                Some(*dst)
+            }
+            _ => None,
+        }
     }
 
     fn convert_instruction(
@@ -2940,8 +3013,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         target: SpirvWord,
     ) -> Result<String, TranslateError> {
         // In MLIR, branches are control flow operations
-        // We need to use cf.br (control flow branch) instead of TOSA operations
-        // The target should be a label/block identifier
+        // For now, we emit simple branches without arguments
+        // A proper implementation would pass values for phi nodes
         self.write_line(&format!(
             "cf.br ^bb{}", 
             target.0
