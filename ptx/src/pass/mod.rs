@@ -66,14 +66,32 @@ pub fn to_mlir_module<'input>(ast: ast::Module<'input>) -> Result<String, Transl
     eprintln!("ZLUDA DEBUG: Created scoped_resolver");
     let sreg_map = SpecialRegistersMap2::new(&mut scoped_resolver)?;
     eprintln!("ZLUDA DEBUG: Created sreg_map");
+    // eprintln!("=== AST before normalize_identifiers2 ===");
+    // eprintln!("{:#?}", ast.directives);
     let directives = normalize_identifiers2::run(&mut scoped_resolver, ast.directives)?;
+    // eprintln!("=== AST after normalize_identifiers2 ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed normalize_identifiers2");
+    // eprintln!("=== AST before replace_known_functions ===");
+    // eprintln!("{:#?}", directives);
     let directives = replace_known_functions::run(&flat_resolver, directives);
+    // eprintln!("=== AST after replace_known_functions ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed replace_known_functions");
+    // eprintln!("=== AST before normalize_predicates2 ===");
+    // eprintln!("{:#?}", directives);
     let directives = normalize_predicates2::run(&mut flat_resolver, directives)?;
+    // eprintln!("=== AST after normalize_predicates2 ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed normalize_predicates2");
+    // eprintln!("=== AST before resolve_function_pointers ===");
+    // eprintln!("{:#?}", directives);
     let directives = resolve_function_pointers::run(directives)?;
+    // eprintln!("=== AST after resolve_function_pointers ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed resolve_function_pointers");
+    // eprintln!("=== AST before fix_special_registers2 ===");
+    // eprintln!("{:#?}", directives);
     let directives: Vec<
         Directive2<
             '_,
@@ -81,21 +99,46 @@ pub fn to_mlir_module<'input>(ast: ast::Module<'input>) -> Result<String, Transl
             ptx_parser::ParsedOperand<SpirvWord>,
         >,
     > = fix_special_registers2::run(&mut flat_resolver, &sreg_map, directives)?;
+    // eprintln!("=== AST after fix_special_registers2 ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed fix_special_registers2");
+    // eprintln!("=== AST before expand_operands ===");
+    // eprintln!("{:#?}", directives);
     let directives = expand_operands::run(&mut flat_resolver, directives)?;
+    // eprintln!("=== AST after expand_operands ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed expand_operands");
+    // eprintln!("=== AST before deparamize_functions ===");
+    // eprintln!("{:#?}", directives);
     let directives = deparamize_functions::run(&mut flat_resolver, directives)?;
+    // eprintln!("=== AST after deparamize_functions ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed deparamize_functions");
     // Skip insert_explicit_load_store for TOSA MLIR - it adds unnecessary complexity
     // let directives = insert_explicit_load_store::run(&mut flat_resolver, directives)?;
     eprintln!("ZLUDA DEBUG: Skipped insert_explicit_load_store for TOSA MLIR");
+    // eprintln!("=== AST before insert_implicit_conversions2 ===");
+    // eprintln!("{:#?}", directives);
     let directives = insert_implicit_conversions2::run(&mut flat_resolver, directives)?;
+    // eprintln!("=== AST after insert_implicit_conversions2 ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed insert_implicit_conversions2");
+    // eprintln!("=== AST before replace_instructions_with_function_calls ===");
+    // eprintln!("{:#?}", directives);
     let directives = replace_instructions_with_function_calls::run(&mut flat_resolver, directives)?;
+    // eprintln!("=== AST after replace_instructions_with_function_calls ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed replace_instructions_with_function_calls");
+    // eprintln!("=== AST before hoist_globals ===");
+    // eprintln!("{:#?}", directives);
     let directives = hoist_globals::run(directives)?;
+    // eprintln!("=== AST after hoist_globals ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed hoist_globals");
 
+
+    eprintln!("=== AST before mlir codegen ===");
+    eprintln!("{:#?}", directives);
     // Convert directly to Linalg MLIR
     let mlir_code = emit_tosa_mlir::run(flat_resolver, directives)?;
     eprintln!("ZLUDA DEBUG: Completed emit_linalg_mlir");
@@ -611,7 +654,7 @@ enum Statement<I, P: ast::Operand> {
     Variable(ast::Variable<P::Ident>),
     Instruction(I),
     // SPIR-V compatible replacement for PTX predicates
-    Conditional(BrachCondition),
+    Conditional(BranchCondition),
     Conversion(ImplicitConversion),
     Constant(ConstantDefinition),
     RetValue(ast::RetData, Vec<(SpirvWord, ast::Type)>),
@@ -658,7 +701,7 @@ impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
                 )?;
                 let if_true = visitor.visit_ident(conditional.if_true, None, false, false)?;
                 let if_false = visitor.visit_ident(conditional.if_false, None, false, false)?;
-                Statement::Conditional(BrachCondition {
+                Statement::Conditional(BranchCondition {
                     predicate,
                     if_true,
                     if_false,
@@ -897,7 +940,7 @@ impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
 }
 
 #[derive(Debug, Clone)]
-struct BrachCondition {
+struct BranchCondition {
     predicate: SpirvWord,
     if_true: SpirvWord,
     if_false: SpirvWord,

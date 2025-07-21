@@ -183,7 +183,7 @@ fn process_predicate_pair<'input>(
     };
     
     // Generate the conditional branch
-    let branch = BrachCondition {
+    let branch = BranchCondition {
         predicate: first_pred.label,
         if_true: true_folded_bra.unwrap_or(if_true),
         if_false: false_folded_bra.unwrap_or(if_false),
@@ -233,7 +233,7 @@ fn process_single_predicate<'input>(
         _ => None,
     };
     
-    let mut branch = BrachCondition {
+    let mut branch = BranchCondition {
         predicate: pred.label,
         if_true: folded_bra.unwrap_or(if_true),
         if_false,

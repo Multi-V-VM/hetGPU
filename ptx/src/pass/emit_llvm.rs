@@ -3235,7 +3235,7 @@ impl<'a> MethodEmitContext<'a> {
         Ok(())
     }
 
-    fn emit_conditional(&mut self, cond: BrachCondition) -> Result<(), TranslateError> {
+    fn emit_conditional(&mut self, cond: BranchCondition) -> Result<(), TranslateError> {
         let predicate = self.resolver.value(cond.predicate)?;
         let if_true = self.resolver.value(cond.if_true)?;
         let if_false = self.resolver.value(cond.if_false)?;

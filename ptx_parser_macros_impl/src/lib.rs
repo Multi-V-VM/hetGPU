@@ -28,6 +28,7 @@ impl GenerateInstructionType {
         let type_parameters = &self.type_parameters;
         let variants = self.variants.iter().map(|v| v.emit_variant());
         quote! {
+            #[derive(Debug, Clone)]
             #vis enum #type_name<#type_parameters> {
                 #(#variants),*
             }
@@ -312,6 +313,7 @@ impl InstructionVariant {
         };
         let fields = arguments.fields.iter().map(|f| f.emit_field(vis));
         quote! {
+            #[derive(Debug, Clone)]
             #vis struct #name #type_parameters {
                 #(#fields),*
             }
