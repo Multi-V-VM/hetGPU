@@ -885,11 +885,24 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         
         // Create an SSA value for this local variable
         let ssa_name = self.next_ssa_value();
+        
+        // Generate a constant initialization for the local variable
+        let init_value = if tensor_type.contains("f32") || tensor_type.contains("f64") {
+            "0.0"
+        } else {
+            "0"
+        };
+        
+        self.write_line(&format!(
+            "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
+            ssa_name, init_value, tensor_type, tensor_type
+        ));
+        
         self.value_map.insert(var.name, ssa_name.clone());
         self.ssa_types.insert(ssa_name.clone(), tensor_type.clone());
         // Track the SSA value to variable name mapping
         self.ssa_to_var_name.insert(ssa_name.clone(), var_name.clone());
-        eprintln!("ZLUDA DEBUG: Registered local variable {} (id {}) as {}", 
+        eprintln!("ZLUDA DEBUG: Registered local variable {} (id {}) as {} with zero initialization", 
                  var_name, var.name.0, ssa_name);
         
         // Add variable debug info if enabled
@@ -986,13 +999,18 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         
         // Save the old value of the destination (if it exists)
         let old_value = if let Some(dst) = dst_reg {
-            self.value_map.get(&dst).cloned()
+            let old_val = self.value_map.get(&dst).cloned();
+            eprintln!("ZLUDA DEBUG: Looking for old value of dst {} (r3)", dst.0);
+            eprintln!("  Found old value: {:?}", old_val);
+            old_val
         } else {
             None
         };
         
         // Execute the instruction unconditionally
+        eprintln!("ZLUDA DEBUG: About to convert instruction");
         if let Some(result_ssa) = self.convert_instruction(instruction)? {
+            eprintln!("ZLUDA DEBUG: Instruction produced result: {}", result_ssa);
             // If the instruction produced a result and we have an old value,
             // generate a select between old and new
             if let (Some(dst), Some(old_val)) = (dst_reg, old_value) {
@@ -1512,6 +1530,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         dst: SpirvWord,
         src: SpirvWord,
     ) -> Result<String, TranslateError> {
+        eprintln!("ZLUDA DEBUG: convert_mov_instruction - dst: {}, src: {}", dst.0, src.0);
+        
         // Try to get the source SSA value
         let src_ssa = match self.get_ssa_value(src) {
             Ok(ssa) => ssa,
