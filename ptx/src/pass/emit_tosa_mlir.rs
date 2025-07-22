@@ -547,8 +547,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         if let Some(ref body) = method.body {
             for statement in body {
                 if let Statement::Instruction(ast::Instruction::Ld { data, arguments }) = statement {
-                    // Count loads that are from generic memory (data loads, not parameter loads)
-                    if data.state_space == ast::StateSpace::Generic {
+                    // Count loads that are from generic or global memory (data loads, not parameter loads)
+                    if data.state_space == ast::StateSpace::Generic || data.state_space == ast::StateSpace::Global {
                         num_data_loads += 1;
                         // Track the type of each load for proper signature generation
                         let load_type = match &data.typ {
@@ -556,7 +556,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                             ast::Type::Vector(len, scalar) => self.get_vector_tensor_type(*len, *scalar),
                             _ => self.get_scalar_tensor_type(ast::ScalarType::U32), // default
                         };
-                        load_types.push(load_type.to_string());
+                        load_types.push(load_type.clone());
                         eprintln!("ZLUDA DEBUG: Found data load #{} of type {}", num_data_loads, load_type);
                     }
                 }
@@ -577,17 +577,26 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let mut actual_input_params = Vec::new();
         
         // Generate parameters based on the pre-scanned data loads
-        if num_data_loads > 0 {
-            for i in 0..num_data_loads {
+        if num_data_loads > 0 && !load_types.is_empty() {
+            // For functions with data loads, generate one parameter per load
+            // This handles cases where multiple values are loaded from the same pointer
+            let num_params = load_types.len();
+            
+            // Generate parameters using load types
+            for i in 0..num_params {
                 if i > 0 {
                     signature.push_str(", ");
                 }
-                let param_type = if i < load_types.len() {
-                    &load_types[i]
-                } else {
-                    &self.get_scalar_tensor_type(ast::ScalarType::U32).to_string() // default type
-                };
+                
+                let param_type = load_types[i].clone();
                 signature.push_str(&format!("%arg{}: {}", i, param_type));
+                
+                // For parameter mapping, use the first PTX input parameter
+                // Multiple loads may come from the same PTX parameter (e.g., array access)
+                if i == 0 && !method.func_decl.input_arguments.is_empty() {
+                    let param = &method.func_decl.input_arguments[0];
+                    actual_input_params.push((param.name, i, param_type));
+                }
                 param_index += 1;
             }
         } else {
@@ -684,7 +693,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             if let Some(ref body) = method.body {
                 for statement in body {
                     if let Statement::Instruction(ast::Instruction::St { data, arguments }) = statement {
-                        if data.state_space == ast::StateSpace::Generic {
+                        if data.state_space == ast::StateSpace::Generic || data.state_space == ast::StateSpace::Global {
                             // Track the type of each store for proper return type determination
                             let ty = match &data.typ {
                                 ast::Type::Scalar(ast::ScalarType::F32) => MlirType::Tensor(TensorType {
