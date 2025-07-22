@@ -8,6 +8,11 @@ use ptx_parser as ast;
 use std::collections::HashMap;
 use std::fmt::Write;
 
+// Configurable constant for tensor batch dimension
+// This allows tensor types to be polymorphic: tensor<TENSOR_BATCH_DIM x y x t>
+// where y and t depend on PTX assembly
+const TENSOR_BATCH_DIM: i64 = 1;
+
 // Debug info tracking structures
 #[derive(Debug, Clone)]
 struct MlirDebugLocation {
@@ -649,30 +654,42 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         // Convert function body
         let mut result_tensor = None;
+        let mut output_stores = Vec::new(); // Collect values being stored to output parameters
+        
         if let Some(body) = method.body {
-            // First, scan for all store instructions
+            // First, scan for all store instructions to identify output values
             eprintln!("ZLUDA DEBUG: Scanning for store instructions in function {}", func_name);
             for (idx, statement) in body.iter().enumerate() {
                 match statement {
                     Statement::Instruction(ast::Instruction::St { data, arguments, .. }) => {
-                        eprintln!("  Store #{}: st.{:?} [addr={}], value={}", 
-                                 idx, data.state_space, arguments.src1.0, arguments.src2.0);
-                        
-                        // Try to get more info about what's being stored
-                        if let Some(ident_info) = self.id_defs.ident_map.get(&arguments.src2) {
-                            if let Some(name) = &ident_info.name {
-                                eprintln!("    Value name: {}", name);
+                        // Check if this is storing to a parameter/output address
+                        if data.state_space == ast::StateSpace::Param || 
+                           data.state_space == ast::StateSpace::ParamEntry ||
+                           data.state_space == ast::StateSpace::Generic {
+                            eprintln!("  Found output store at #{}: storing value {} to addr {}", 
+                                     idx, arguments.src2.0, arguments.src1.0);
+                            
+                            // Collect information about the value being stored
+                            let value_info = (arguments.src2, arguments.src1); // (value_id, dest_addr_id)
+                            output_stores.push(value_info);
+                            
+                            if let Some(ident_info) = self.id_defs.ident_map.get(&arguments.src2) {
+                                if let Some(name) = &ident_info.name {
+                                    eprintln!("    Value name: {}", name);
+                                }
+                                if let Some((scalar_type, space)) = &ident_info.type_space {
+                                    eprintln!("    Value type: {:?} in {:?}", scalar_type, space);
+                                }
                             }
-                        }
-                        if let Some(ssa_val) = self.value_map.get(&arguments.src2) {
-                            eprintln!("    Value SSA: {}", ssa_val);
                         }
                     }
                     _ => {}
                 }
             }
-            panic!("ZLUDA DEBUG: Stopping after store instruction scan");
             
+            eprintln!("\nZLUDA DEBUG: Found {} output stores", output_stores.len());
+            eprintln!("{:?}", output_stores);
+
             for statement in body {
                 if let Some(tensor) = self.convert_statement(statement)? {
                     result_tensor = Some(tensor);
@@ -684,7 +701,25 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         eprintln!("ZLUDA DEBUG: Generating return statement");
         eprintln!("  result_tensor: {:?}", result_tensor);
         eprintln!("  last_result_ssa: {:?}", self.last_result_ssa);
+        eprintln!("  output_stores count: {}", output_stores.len());
         
+        // If we have output stores, find the SSA values for those stored values
+        if !output_stores.is_empty() {
+            // For now, handle single return value case
+            if let Some((value_id, _dest_addr)) = output_stores.first() {
+                if let Some(ssa_value) = self.value_map.get(value_id) {
+                    eprintln!("ZLUDA DEBUG: Returning SSA value {} for stored value {}", ssa_value, value_id.0);
+                    self.write_line(&format!("return {} : {}", ssa_value, output_type));
+                    self.indent_level -= 1;
+                    self.write_line("}");
+                    return Ok(());
+                } else {
+                    eprintln!("ZLUDA ERROR: Could not find SSA value for stored value {}", value_id.0);
+                }
+            }
+        }
+        
+        // Fall back to existing logic if no output stores
         if let Some(result) = result_tensor {
             // Use the last result type if available, otherwise use function signature type
             let return_type = if self.requires_integer_params(&func_name) {
