@@ -8,6 +8,7 @@ Usage: python run_ttnn_matrix.py <binary_file.ttnn> <input_matrix1> [input_matri
 Data types:
   - Default: int32 for integers (42), float32 for decimals (42.0)
   - Rust-style literals: 42i32, 42u32, 42i64, 42u64, 42f32, 42f64
+  - Special float values: NaNf32, Inff32, -Inff32 (or NaN, Inf, -Inf for default f32)
   - Supported types: i8, i16, i32, i64, u8, u16, u32, u64, f32, f64
   
 Examples:
@@ -53,10 +54,36 @@ TTNN_DTYPE_MAP = {
 }
 
 def parse_rust_literal(literal_str):
-    """Parse a Rust-style literal like '42i32' or '3.14f32'."""
+    """Parse a Rust-style literal like '42i32' or '3.14f32' or special values like 'NaNf32'."""
     literal_str = literal_str.strip()
     
-    # Check for Rust-style type suffix
+    # Check for special float values with type suffix
+    special_match = re.match(r'^(NaN|nan|Inf|inf|-Inf|-inf)([f]\d+)?$', literal_str)
+    if special_match:
+        special_value, type_suffix = special_match.groups()
+        
+        # Default to f32 if no suffix
+        if not type_suffix:
+            type_suffix = 'f32'
+            
+        if type_suffix not in TYPE_MAP:
+            raise ValueError(f"Unknown type suffix: {type_suffix}")
+        dtype = TYPE_MAP[type_suffix]
+        
+        # Parse special value
+        special_value_lower = special_value.lower()
+        if special_value_lower == 'nan':
+            value = float('nan')
+        elif special_value_lower == 'inf':
+            value = float('inf')
+        elif special_value_lower == '-inf':
+            value = float('-inf')
+        else:
+            raise ValueError(f"Unknown special value: {special_value}")
+            
+        return dtype(value), dtype
+    
+    # Check for regular Rust-style type suffix
     match = re.match(r'^(-?[\d.]+)([iuf]\d+)?$', literal_str)
     if not match:
         raise ValueError(f"Invalid literal format: {literal_str}")
@@ -278,10 +305,24 @@ def run_ttnn_with_matrix_io(binary_path, input_matrices, expected_output_matrix)
             # Compare values based on data type
             if np.issubdtype(output_dtype, np.floating):
                 # Floating point comparison
-                # Use a more relaxed tolerance for approximations (especially for division)
-                # For reciprocal-based division, errors can be around 1e-4 to 1e-3
-                tolerance = 1e-3
-                is_correct = np.allclose(output_flat, expected_flat, atol=tolerance, rtol=1e-3)
+                # Handle NaN values specially
+                nan_mask_output = np.isnan(output_flat)
+                nan_mask_expected = np.isnan(expected_flat)
+                
+                # Check if NaN positions match
+                if not np.array_equal(nan_mask_output, nan_mask_expected):
+                    is_correct = False
+                else:
+                    # Compare non-NaN values
+                    non_nan_mask = ~nan_mask_output
+                    if np.any(non_nan_mask):
+                        # Use a more relaxed tolerance for approximations (especially for division)
+                        # For reciprocal-based division, errors can be around 1e-4 to 1e-3
+                        tolerance = 1e-3
+                        is_correct = np.allclose(output_flat[non_nan_mask], expected_flat[non_nan_mask], atol=tolerance, rtol=1e-3)
+                    else:
+                        # All values are NaN and match
+                        is_correct = True
             else:
                 # Integer comparison - exact match
                 is_correct = np.array_equal(output_flat, expected_flat)
