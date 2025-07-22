@@ -13,6 +13,64 @@ use std::fmt::Write;
 // where y and t depend on PTX assembly
 const TENSOR_BATCH_DIM: i64 = 1;
 
+// Type system for MLIR types
+#[derive(Debug, Clone, PartialEq)]
+enum BasicType {
+    I1,   // Boolean
+    I8,   // 8-bit integer
+    I16,  // 16-bit integer  
+    I32,  // 32-bit integer
+    I64,  // 64-bit integer
+    F16,  // 16-bit float
+    F32,  // 32-bit float
+    F64,  // 64-bit float
+    BF16, // Brain float 16
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct TensorType {
+    x: i64,           // Batch dimension (polymorphic)
+    y: i64,           // Size dimension (1 for scalars, n for vectors)
+    ty: BasicType,    // Element type
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum MlirType {
+    Basic(BasicType),
+    Tensor(TensorType),
+}
+
+impl std::fmt::Display for BasicType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BasicType::I1 => write!(f, "i1"),
+            BasicType::I8 => write!(f, "i8"),
+            BasicType::I16 => write!(f, "i16"),
+            BasicType::I32 => write!(f, "i32"),
+            BasicType::I64 => write!(f, "i64"),
+            BasicType::F16 => write!(f, "f16"),
+            BasicType::F32 => write!(f, "f32"),
+            BasicType::F64 => write!(f, "f64"),
+            BasicType::BF16 => write!(f, "bf16"),
+        }
+    }
+}
+
+impl std::fmt::Display for TensorType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "tensor<{}x{}x{}>", self.x, self.y, self.ty)
+    }
+}
+
+impl std::fmt::Display for MlirType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MlirType::Basic(b) => write!(f, "{}", b),
+            MlirType::Tensor(t) => write!(f, "{}", t),
+        }
+    }
+}
+
 // Debug info tracking structures
 #[derive(Debug, Clone)]
 struct MlirDebugLocation {
@@ -61,11 +119,11 @@ struct PtxToTosaConverter<'a, 'input> {
     tensor_counter: u32,
     value_map: HashMap<SpirvWord, String>,
     tensor_shapes: HashMap<SpirvWord, Vec<i64>>,
-    last_result_type: Option<String>,
+    last_result_type: Option<MlirType>,
     last_result_ssa: Option<String>,
-    ssa_types: HashMap<String, String>, // Track type of each SSA value
+    ssa_types: HashMap<String, MlirType>, // Track type of each SSA value
     parameter_values: HashMap<String, String>, // Track actual parameter data
-    current_function_return_type: Option<String>, // Track the expected return type of current function
+    current_function_return_type: Option<MlirType>, // Track the expected return type of current function
     ssa_to_var_name: HashMap<String, String>, // Track SSA value to original variable name
     
     // Address tracking for load indirection
@@ -83,6 +141,33 @@ struct PtxToTosaConverter<'a, 'input> {
 }
 
 impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
+    // Helper methods for type checking
+    fn is_integer_type(mlir_type: &MlirType) -> bool {
+        match mlir_type {
+            MlirType::Basic(basic) => matches!(basic, BasicType::I1 | BasicType::I8 | BasicType::I16 | BasicType::I32 | BasicType::I64),
+            MlirType::Tensor(tensor) => matches!(tensor.ty, BasicType::I1 | BasicType::I8 | BasicType::I16 | BasicType::I32 | BasicType::I64),
+        }
+    }
+    
+    fn is_float_type(mlir_type: &MlirType) -> bool {
+        match mlir_type {
+            MlirType::Basic(basic) => matches!(basic, BasicType::F16 | BasicType::F32 | BasicType::F64 | BasicType::BF16),
+            MlirType::Tensor(tensor) => matches!(tensor.ty, BasicType::F16 | BasicType::F32 | BasicType::F64 | BasicType::BF16),
+        }
+    }
+    
+    fn get_element_type(mlir_type: &MlirType) -> BasicType {
+        match mlir_type {
+            MlirType::Basic(basic) => basic.clone(),
+            MlirType::Tensor(tensor) => tensor.ty.clone(),
+        }
+    }
+    
+    // Helper to check if type contains specific element
+    fn has_element_type(type_str: &str, elem: &str) -> bool {
+        type_str.contains(elem)
+    }
+    
     fn scalar_type_to_string(&self, scalar: ast::ScalarType) -> &'static str {
         match scalar {
             ast::ScalarType::B8 => "b8",
@@ -107,6 +192,22 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ast::ScalarType::BF16x2 => "bf16x2",
             ast::ScalarType::S16x2 => "s16x2",
             ast::ScalarType::U16x2 => "u16x2",
+        }
+    }
+    
+    fn ptx_scalar_to_basic_type(scalar: ast::ScalarType) -> BasicType {
+        match scalar {
+            ast::ScalarType::B8 | ast::ScalarType::U8 | ast::ScalarType::S8 => BasicType::I8,
+            ast::ScalarType::B16 | ast::ScalarType::U16 | ast::ScalarType::S16 => BasicType::I16,
+            ast::ScalarType::B32 | ast::ScalarType::U32 | ast::ScalarType::S32 => BasicType::I32,
+            ast::ScalarType::B64 | ast::ScalarType::U64 | ast::ScalarType::S64 => BasicType::I64,
+            ast::ScalarType::F16 => BasicType::F16,
+            ast::ScalarType::F32 => BasicType::F32,
+            ast::ScalarType::F64 => BasicType::F64,
+            ast::ScalarType::BF16 => BasicType::BF16,
+            ast::ScalarType::Pred => BasicType::I1,
+            // For vector types, default to I32
+            _ => BasicType::I32,
         }
     }
     
@@ -239,18 +340,34 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         }
     }
 
-    fn get_param_type_for_function(&self, func_name: &str) -> String {
+    fn get_param_type_for_function(&self, func_name: &str) -> MlirType {
         match self.get_function_category(func_name) {
-            FunctionCategory::Bitwise => "tensor<1xi32>".to_string(),
-            FunctionCategory::Comparison | FunctionCategory::Shift => "tensor<1xi32>".to_string(),
+            FunctionCategory::Bitwise => MlirType::Tensor(TensorType {
+                x: TENSOR_BATCH_DIM,
+                y: 1,
+                ty: BasicType::I32,
+            }),
+            FunctionCategory::Comparison | FunctionCategory::Shift => MlirType::Tensor(TensorType {
+                x: TENSOR_BATCH_DIM,
+                y: 1,
+                ty: BasicType::I32,
+            }),
             FunctionCategory::Default => self.get_default_tensor_type(),
         }
     }
 
-    fn get_return_type_for_function(&self, func_name: &str) -> String {
+    fn get_return_type_for_function(&self, func_name: &str) -> MlirType {
         match self.get_function_category(func_name) {
-            FunctionCategory::Bitwise => "tensor<1xi32>".to_string(),
-            FunctionCategory::Comparison | FunctionCategory::Shift => "tensor<1xi32>".to_string(),
+            FunctionCategory::Bitwise => MlirType::Tensor(TensorType {
+                x: TENSOR_BATCH_DIM,
+                y: 1,
+                ty: BasicType::I32,
+            }),
+            FunctionCategory::Comparison | FunctionCategory::Shift => MlirType::Tensor(TensorType {
+                x: TENSOR_BATCH_DIM,
+                y: 1,
+                ty: BasicType::I32,
+            }),
             FunctionCategory::Default => self.get_default_tensor_type(),
         }
     }
@@ -435,10 +552,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                         num_data_loads += 1;
                         // Track the type of each load for proper signature generation
                         let load_type = match &data.typ {
-                            ast::Type::Scalar(ast::ScalarType::F32) => "tensor<1x1xf32>",
-                            ast::Type::Scalar(ast::ScalarType::U64) => "tensor<1x1xi32>",
-                            ast::Type::Scalar(ast::ScalarType::U32) => "tensor<1x1xi32>",
-                            _ => "tensor<1x1xi32>", // default
+                            ast::Type::Scalar(scalar) => self.get_scalar_tensor_type(*scalar),
+                            ast::Type::Vector(len, scalar) => self.get_vector_tensor_type(*len, *scalar),
+                            _ => self.get_scalar_tensor_type(ast::ScalarType::U32), // default
                         };
                         load_types.push(load_type.to_string());
                         eprintln!("ZLUDA DEBUG: Found data load #{} of type {}", num_data_loads, load_type);
@@ -469,7 +585,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let param_type = if i < load_types.len() {
                     &load_types[i]
                 } else {
-                    "tensor<1x1xi32>" // default type
+                    &self.get_scalar_tensor_type(ast::ScalarType::U32).to_string() // default type
                 };
                 signature.push_str(&format!("%arg{}: {}", i, param_type));
                 param_index += 1;
@@ -561,7 +677,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         signature.push_str(" -> ");
 
 
-        let output_type = if !method.func_decl.input_arguments.is_empty() {
+        let output_type_mlir = if !method.func_decl.input_arguments.is_empty() {
             // Always scan for store instructions to determine the actual return type
             let mut store_types = Vec::new();
             
@@ -571,12 +687,24 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                         if data.state_space == ast::StateSpace::Generic {
                             // Track the type of each store for proper return type determination
                             let ty = match &data.typ {
-                                ast::Type::Scalar(ast::ScalarType::F32) => "tensor<1x1xf32>",
-                                ast::Type::Scalar(ast::ScalarType::U64) => "tensor<1x1xi32>",
-                                ast::Type::Scalar(ast::ScalarType::U32) => "tensor<1x1xi32>",
-                                _ => "tensor<1x1xi32>", // default
+                                ast::Type::Scalar(ast::ScalarType::F32) => MlirType::Tensor(TensorType {
+                                    x: TENSOR_BATCH_DIM,
+                                    y: 1,
+                                    ty: BasicType::F32,
+                                }),
+                                ast::Type::Scalar(ast::ScalarType::U64) | 
+                                ast::Type::Scalar(ast::ScalarType::U32) => MlirType::Tensor(TensorType {
+                                    x: TENSOR_BATCH_DIM,
+                                    y: 1,
+                                    ty: BasicType::I32,
+                                }),
+                                _ => MlirType::Tensor(TensorType {
+                                    x: TENSOR_BATCH_DIM,
+                                    y: 1,
+                                    ty: BasicType::I32,
+                                }), // default
                             };
-                            store_types.push(ty);
+                            store_types.push(ty.clone());
                             eprintln!("ZLUDA DEBUG: Found store instruction of type {}", ty);
                         }
                     }
@@ -586,7 +714,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             // If we found store instructions, use the last one's type
             if let Some(store_type) = store_types.last() {
                 eprintln!("ZLUDA DEBUG: Using store type {} for function return type", store_type);
-                store_type.to_string()
+                store_type.clone()
             } else {
                 // Fall back to output parameter type if no stores found
                 let num_inputs = method.func_decl.input_arguments.len();
@@ -607,8 +735,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             self.get_scalar_tensor_type(ast::ScalarType::U64)
         };
         
-        signature.push_str(&output_type);
-        self.current_function_return_type = Some(output_type.clone());
+        let output_type_str = output_type_mlir.to_string();
+        signature.push_str(&output_type_str);
+        self.current_function_return_type = Some(output_type_mlir);
 
         signature.push_str(" {");
         eprintln!("ZLUDA DEBUG: Generated function signature: {}", signature);
@@ -634,11 +763,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     .unwrap_or_else(|_| format!("param_{}", i));
                 let param_type = self
                     .convert_type_to_tosa(&param.v_type)
-                    .unwrap_or_else(|_| "unknown".to_string());
-                self.add_variable_debug_info(param.name, &param_name, &param_type, &func_name);
+                    .unwrap_or_else(|_| MlirType::Basic(BasicType::I32));
+                let param_type_str = param_type.to_string();
+                self.add_variable_debug_info(param.name, &param_name, &param_type_str, &func_name);
                 self.write_line(&format!(
                     "// Parameter {}: {} : {}",
-                    i, param_name, param_type
+                    i, param_name, param_type_str
                 ));
             }
         } else {
@@ -709,7 +839,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             if let Some((value_id, _dest_addr)) = output_stores.first() {
                 if let Some(ssa_value) = self.value_map.get(value_id) {
                     eprintln!("ZLUDA DEBUG: Returning SSA value {} for stored value {}", ssa_value, value_id.0);
-                    self.write_line(&format!("return {} : {}", ssa_value, output_type));
+                    self.write_line(&format!("return {} : {}", ssa_value, output_type_str));
                     self.indent_level -= 1;
                     self.write_line("}");
                     return Ok(());
@@ -750,11 +880,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     }
                 }
             };
-            self.write_line(&format!("return {} : {}", result, output_type));
+            self.write_line(&format!("return {} : {}", result, output_type_str));
         } else if let Some(last_result) = self.last_result_ssa.clone() {
             // If we have a stored result (from store instruction), use the function's return type
-            let return_type = output_type.to_string();
-            self.write_line(&format!("return {} : {}", last_result, output_type));
+            self.write_line(&format!("return {} : {}", last_result, output_type_str));
         } else {
             // Create result tensor for void functions
             let (result_tensor, tensor_type) = match self.get_function_category(&func_name) {
@@ -763,38 +892,42 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     if let Some(result_ssa) = self.last_result_ssa.clone() {
                         let return_type = self.ssa_types.get(&result_ssa).cloned()
                             .unwrap_or_else(|| self.get_return_type_for_function(&func_name));
-                        (result_ssa, return_type)
+                        let return_type_str = return_type.to_string();
+                        (result_ssa, return_type_str)
                     } else {
                         // Fallback constant if no result available
                         let dummy_tensor = self.next_ssa_value();
                         let return_type = self.get_return_type_for_function(&func_name);
+                        let return_type_str = return_type.to_string();
                         self.write_line(&format!(
                             "{} = \"tosa.const\"() {{values = dense<0> : {}}} : () -> {}",
-                            dummy_tensor, return_type, return_type
+                            dummy_tensor, return_type_str, return_type_str
                         ));
-                        (dummy_tensor, return_type)
+                        (dummy_tensor, return_type_str)
                     }
                 }
                 FunctionCategory::Comparison | FunctionCategory::Shift => {
                     let dummy_tensor = self.next_ssa_value();
                     let return_type = self.get_return_type_for_function(&func_name);
+                    let return_type_str = return_type.to_string();
                     self.write_line(&format!(
                         "{} = \"tosa.const\"() {{values = dense<0> : {}}} : () -> {}",
-                        dummy_tensor, return_type, return_type
+                        dummy_tensor, return_type_str, return_type_str
                     ));
-                    (dummy_tensor, return_type)
+                    (dummy_tensor, return_type_str)
                 }
                 FunctionCategory::Default => {
                     let dummy_tensor = self.next_ssa_value();
                     let return_type = self.get_return_type_for_function(&func_name);
+                    let return_type_str = return_type.to_string();
                     self.write_line(&format!(
                         "{} = \"tosa.const\"() {{values = dense<0.0> : {}}} : () -> {}",
-                        dummy_tensor, return_type, return_type
+                        dummy_tensor, return_type_str, return_type_str
                     ));
-                    (dummy_tensor, return_type)
+                    (dummy_tensor, return_type_str)
                 }
             };
-            self.write_line(&format!("return {} : {}", result_tensor, output_type));
+            self.write_line(&format!("return {} : {}", result_tensor, output_type_str));
         }
 
         self.indent_level -= 1;
@@ -887,15 +1020,18 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let ssa_name = self.next_ssa_value();
         
         // Generate a constant initialization for the local variable
-        let init_value = if tensor_type.contains("f32") || tensor_type.contains("f64") {
+        let init_value = if Self::is_float_type(&tensor_type) {
             "0.0"
         } else {
             "0"
         };
         
+        // Convert MlirType to string for output
+        let type_str = tensor_type.to_string();
+        
         self.write_line(&format!(
             "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
-            ssa_name, init_value, tensor_type, tensor_type
+            ssa_name, init_value, type_str, type_str
         ));
         
         self.value_map.insert(var.name, ssa_name.clone());
@@ -907,10 +1043,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         
         // Add variable debug info if enabled
         if self.debug_enabled {
-            self.add_variable_debug_info(var.name, &var_name, &tensor_type, "local");
+            self.add_variable_debug_info(var.name, &var_name, &type_str, "local");
             self.write_line(&format!(
                 "// Local variable: {} : {}",
-                var_name, tensor_type
+                var_name, type_str
             ));
         }
 
@@ -925,11 +1061,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let value_str = match const_def.value {
             ast::ImmediateValue::U64(v) => {
                 // For integer tensors, don't add .0
-                if tensor_type.contains("xi32")
-                    || tensor_type.contains("xi64")
-                    || tensor_type.contains("xi8")
-                    || tensor_type.contains("xi16")
-                {
+                if Self::is_integer_type(&tensor_type) {
                     v.to_string()
                 } else {
                     format!("{}.0", v)
@@ -937,11 +1069,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             }
             ast::ImmediateValue::S64(v) => {
                 // For integer tensors, don't add .0
-                if tensor_type.contains("xi32")
-                    || tensor_type.contains("xi64")
-                    || tensor_type.contains("xi8")
-                    || tensor_type.contains("xi16")
-                {
+                if Self::is_integer_type(&tensor_type) {
                     v.to_string()
                 } else {
                     format!("{}.0", v)
@@ -951,9 +1079,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ast::ImmediateValue::F64(v) => v.to_string(),
         };
 
+        // Convert MlirType to string for output
+        let type_str = tensor_type.to_string();
+
         self.write_line(&format!(
             "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
-            const_ssa, value_str, tensor_type, tensor_type
+            const_ssa, value_str, type_str, type_str
         ));
         self.value_map.insert(const_def.dst, const_ssa.clone());
         self.ssa_types.insert(const_ssa, tensor_type);
@@ -981,12 +1112,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             let pred_type = self.ssa_types.get(&pred_ssa)
                 .ok_or_else(|| error_unreachable())?
                 .clone();
+            let pred_type_str = pred_type.to_string();
             self.write_line(&format!(
                 "{} = tosa.logical_not {} : ({}) -> {}",
                 neg_pred,
                 pred_ssa,
-                pred_type,
-                pred_type
+                pred_type_str,
+                pred_type_str
             ));
             self.ssa_types.insert(neg_pred.clone(), pred_type);
             neg_pred
@@ -1018,16 +1150,25 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let result_type = self.ssa_types.get(&result_ssa)
                     .ok_or_else(|| error_unreachable())?
                     .clone();
+                let result_type_str = result_type.to_string();
+                
+                // Create proper i1 tensor type for predicate
+                let pred_type = MlirType::Tensor(TensorType {
+                    x: TENSOR_BATCH_DIM,
+                    y: 1,
+                    ty: BasicType::I1,
+                });
                 
                 self.write_line(&format!(
-                    "{} = tosa.select {}, {}, {} : (tensor<1x1xi1>, {}, {}) -> {}",
+                    "{} = tosa.select {}, {}, {} : ({}, {}, {}) -> {}",
                     selected,
                     actual_pred,
                     result_ssa,
                     old_val,
-                    result_type,
-                    result_type,
-                    result_type
+                    pred_type,
+                    result_type_str,
+                    result_type_str,
+                    result_type_str
                 ));
                 
                 // Update the mapping to point to the selected value
@@ -1367,14 +1508,15 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let src2_final = if src2_ssa.starts_with("%") && self.ssa_types.get(&src2_ssa).is_none() {
             // Create constant for addition
             let const_ssa = self.next_ssa_value();
-            let value = if tensor_type.contains("xi32") {
-                format!("dense<1> : {}", tensor_type)
+            let tensor_type_str = tensor_type.to_string();
+            let value = if Self::is_integer_type(&tensor_type) {
+                format!("dense<1> : {}", tensor_type_str)
             } else {
-                format!("dense<1.0> : {}", tensor_type)
+                format!("dense<1.0> : {}", tensor_type_str)
             };
             self.write_line(&format!(
                 "{} = \"tosa.const\"() {{values = {}}} : () -> {}",
-                const_ssa, value, tensor_type
+                const_ssa, value, tensor_type_str
             ));
             self.ssa_types.insert(const_ssa.clone(), tensor_type.clone());
             const_ssa
@@ -1383,11 +1525,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         };
 
         // For integer operations, no casting needed
+        let tensor_type_str = tensor_type.to_string();
         let add_op = match _data {
             ast::ArithDetails::Integer(_) => {
                 format!(
                     "{} = \"tosa.add\"({}, {}) : ({}, {}) -> {}",
-                    dst_ssa, src1_ssa, src2_final, tensor_type, tensor_type, tensor_type
+                    dst_ssa, src1_ssa, src2_final, tensor_type_str, tensor_type_str, tensor_type_str
                 )
             }
             ast::ArithDetails::Float(_) => {
@@ -1396,7 +1539,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let src2_casted = self.ensure_float_tensor(src2_final, src2)?;
                 format!(
                     "{} = \"tosa.add\"({}, {}) : ({}, {}) -> {}",
-                    dst_ssa, src1_casted, src2_casted, tensor_type, tensor_type, tensor_type
+                    dst_ssa, src1_casted, src2_casted, tensor_type_str, tensor_type_str, tensor_type_str
                 )
             }
         };
@@ -1441,14 +1584,15 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let src2_final = if src2_ssa.starts_with("%") && self.ssa_types.get(&src2_ssa).is_none() {
             // Create constant for subtraction
             let const_ssa = self.next_ssa_value();
-            let value = if tensor_type.contains("xi32") {
-                format!("dense<1> : {}", tensor_type)
+            let tensor_type_str = tensor_type.to_string();
+            let value = if Self::is_integer_type(&tensor_type) {
+                format!("dense<1> : {}", tensor_type_str)
             } else {
-                format!("dense<1.0> : {}", tensor_type)
+                format!("dense<1.0> : {}", tensor_type_str)
             };
             self.write_line(&format!(
                 "{} = \"tosa.const\"() {{values = {}}} : () -> {}",
-                const_ssa, value, tensor_type
+                const_ssa, value, tensor_type_str
             ));
             self.ssa_types.insert(const_ssa.clone(), tensor_type.clone());
             const_ssa
@@ -1462,11 +1606,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         );
 
         // For integer operations, no casting needed
+        let tensor_type_str = tensor_type.to_string();
         match _data {
             ast::ArithDetails::Integer(_) => {
                 self.write_line(&format!(
                     "{} = \"tosa.sub\"({}, {}) : ({}, {}) -> {}",
-                    dst_ssa, src1_ssa, src2_final, tensor_type, tensor_type, tensor_type
+                    dst_ssa, src1_ssa, src2_final, tensor_type_str, tensor_type_str, tensor_type_str
                 ));
             }
             ast::ArithDetails::Float(_) => {
@@ -1475,7 +1620,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let src2_casted = self.ensure_float_tensor(src2_final, src2)?;
                 self.write_line(&format!(
                     "{} = \"tosa.sub\"({}, {}) : ({}, {}) -> {}",
-                    dst_ssa, src1_casted, src2_casted, tensor_type, tensor_type, tensor_type
+                    dst_ssa, src1_casted, src2_casted, tensor_type_str, tensor_type_str, tensor_type_str
                 ));
             }
         }
@@ -1509,14 +1654,15 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // TOSA mul requires 3 operands: input1, input2, shift
         // Create a scalar zero constant for the shift operand as a tosa-conformant scalar tensor
         let shift_ssa = self.next_ssa_value();
+        let shift_type = self.get_tosa_shift_tensor_type();
         self.write_line(&format!(
-            "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
-            shift_ssa
+            "{} = \"tosa.const\"() {{values = dense<0> : {}}} : () -> {}",
+            shift_ssa, shift_type, shift_type
         ));
 
         self.write_line(&format!(
-            "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, tensor<1xi8>) -> {}",
-            dst_ssa, src1_casted, src2_casted, shift_ssa, tensor_type, tensor_type, tensor_type
+            "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, {}) -> {}",
+            dst_ssa, src1_casted, src2_casted, shift_ssa, tensor_type, tensor_type, shift_type, tensor_type
         ));
 
         self.value_map.insert(dst, dst_ssa.clone());
@@ -1571,16 +1717,21 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                         
                         // Extract the 4th element (index 3) using tosa.slice
                         let slice_ssa = self.next_ssa_value();
-                        let tensor_type = "tensor<1xi32>";
+                        let tensor_type = MlirType::Tensor(TensorType {
+                            x: TENSOR_BATCH_DIM,
+                            y: 1,
+                            ty: BasicType::I32,
+                        });
+                        let tensor_type_str = tensor_type.to_string();
                         
                         self.write_line(&format!(
                             "{} = \"tosa.slice\"({}) {{start = array<i64: 3>, size = array<i64: 1>}} : (tensor<4xi32>) -> {}",
-                            slice_ssa, vector_ssa, tensor_type
+                            slice_ssa, vector_ssa, tensor_type_str
                         ));
                         
                         // Register the slice for the source
                         self.value_map.insert(src, slice_ssa.clone());
-                        self.ssa_types.insert(slice_ssa.clone(), tensor_type.to_string());
+                        self.ssa_types.insert(slice_ssa.clone(), tensor_type);
                         
                         slice_ssa
                     } else {
@@ -1665,17 +1816,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             // Determine the tensor type based on the load type
             let tensor_type = match &data.typ {
                 ast::Type::Vector(len, scalar) => {
-                    match scalar {
-                        ast::ScalarType::F32 => format!("tensor<{}xf32>", len),
-                        _ => format!("tensor<{}xi32>", len),
-                    }
+                    self.get_vector_tensor_type(*len, *scalar)
                 },
                 ast::Type::Scalar(scalar) => {
-                    match scalar {
-                        ast::ScalarType::F32 => "tensor<1xf32>".to_string(),
-                        ast::ScalarType::U64 | ast::ScalarType::U32 => self.get_integer_tensor_type(),
-                        _ => self.get_default_tensor_type(),
-                    }
+                    self.get_scalar_tensor_type(*scalar)
                 },
                 _ => self.get_tensor_type(&data.typ)?,
             };
@@ -2636,13 +2780,14 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
             // TOSA mul requires 3 operands: input1, input2, shift
             let shift_ssa = self.next_ssa_value();
+            let shift_type = self.get_tosa_shift_tensor_type();
             self.write_line(&format!(
-                "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
-                shift_ssa
+                "{} = \"tosa.const\"() {{values = dense<0> : {}}} : () -> {}",
+                shift_ssa, shift_type, shift_type
             ));
             self.write_line(&format!(
-                "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, tensor<1xi8>) -> {}",
-                temp_ssa, src1_ssa, src2_ssa, shift_ssa, tensor_type, tensor_type, tensor_type
+                "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, {}) -> {}",
+                temp_ssa, src1_ssa, src2_ssa, shift_ssa, tensor_type, tensor_type, shift_type, tensor_type
             ));
             self.write_line(&format!(
                 "{} = \"tosa.add\"({}, {}) : ({}, {}) -> {}",
@@ -2655,18 +2800,20 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
             // TOSA mul requires 3 operands: input1, input2, shift
             let shift_ssa = self.next_ssa_value();
+            let shift_type = self.get_tosa_shift_tensor_type();
             self.write_line(&format!(
-                "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
-                shift_ssa
+                "{} = \"tosa.const\"() {{values = dense<0> : {}}} : () -> {}",
+                shift_ssa, shift_type, shift_type
             ));
             self.write_line(&format!(
-                "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, tensor<1xi8>) -> {}",
+                "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, {}) -> {}",
                 temp_ssa,
                 src1_ssa,
                 src2_ssa,
                 shift_ssa,
                 int_tensor_type,
                 int_tensor_type,
+                shift_type,
                 int_tensor_type
             ));
             self.write_line(&format!(
@@ -2817,7 +2964,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         }
 
         self.value_map.insert(dst, dst_ssa.clone());
-        self.ssa_types.insert(dst_ssa.clone(), "tensor<1x1xi1>".to_string());
+        let i1_tensor = MlirType::Tensor(TensorType {
+            x: TENSOR_BATCH_DIM,
+            y: 1,
+            ty: BasicType::I1,
+        });
+        self.ssa_types.insert(dst_ssa.clone(), i1_tensor);
         Ok(dst_ssa)
     }
 
@@ -3121,17 +3273,22 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let src_ssa = self.get_ssa_value(src)?;
         
         // CLZ operates on integer types
-        let tensor_type =  "tensor<1x1xi32>"; // Default to i32 for B32, U32, S32
-        
+        let tensor_type = self.get_scalar_tensor_type(ast::ScalarType::U32); // Default to i32 for B32, U32, S32
+        let tensor_type_str = tensor_type.to_string();
 
         // TOSA clz operation
         self.write_line(&format!(
             "{} = \"tosa.clz\"({}) : ({}) -> {}",
-            dst_ssa, src_ssa, tensor_type, tensor_type
+            dst_ssa, src_ssa, tensor_type_str, tensor_type_str
         ));
 
         self.value_map.insert(dst, dst_ssa.clone());
-        self.ssa_types.insert(dst_ssa.clone(), tensor_type.to_string());
+        let clz_type = MlirType::Tensor(TensorType {
+            x: TENSOR_BATCH_DIM,
+            y: 1,
+            ty: BasicType::I32,
+        });
+        self.ssa_types.insert(dst_ssa.clone(), clz_type);
         Ok(dst_ssa)
     }
 
@@ -3151,120 +3308,91 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         Ok(String::new())
     }
 
-    fn convert_type_to_tosa(&self, typ: &ast::Type) -> Result<String, TranslateError> {
+    fn convert_type_to_tosa(&self, typ: &ast::Type) -> Result<MlirType, TranslateError> {
         match typ {
             ast::Type::Scalar(scalar_type) => Ok(self.get_scalar_tensor_type(*scalar_type)),
             ast::Type::Vector(len, scalar_type) => Ok(self.get_vector_tensor_type(*len, *scalar_type)),
             ast::Type::Array(_, scalar_type, dimensions) => {
-                let dims: Vec<String> = dimensions.iter().map(|d| d.to_string()).collect();
-                match scalar_type {
-                    // Integer types -> integer tensor
-                    ast::ScalarType::B8
-                    | ast::ScalarType::B16
-                    | ast::ScalarType::B32
-                    | ast::ScalarType::B64
-                    | ast::ScalarType::U8
-                    | ast::ScalarType::U16
-                    | ast::ScalarType::U32
-                    | ast::ScalarType::U64
-                    | ast::ScalarType::S8
-                    | ast::ScalarType::S16
-                    | ast::ScalarType::S32
-                    | ast::ScalarType::S64
-                    | ast::ScalarType::Pred => Ok(format!("tensor<{}xi32>", dims.join("x"))),
-                    // Float types -> float tensor
-                    ast::ScalarType::F16
-                    | ast::ScalarType::F32
-                    | ast::ScalarType::F64
-                    | ast::ScalarType::BF16 => Ok(format!("tensor<{}xf32>", dims.join("x"))),
-                    // Other types - default to float tensor for now
-                    _ => Ok(format!("tensor<{}xf32>", dims.join("x"))),
-                }
+                // For arrays, we'll use the first dimension as y and multiply the rest
+                // This is a simplification for now
+                let total_size: i64 = dimensions.iter().map(|d| *d as i64).product();
+                Ok(MlirType::Tensor(TensorType {
+                    x: TENSOR_BATCH_DIM,
+                    y: total_size,
+                    ty: Self::ptx_scalar_to_basic_type(*scalar_type),
+                }))
             }
             ast::Type::Pointer(_, _) => Ok(self.get_scalar_tensor_type(ast::ScalarType::U64)),
         }
     }
 
-    fn get_tensor_type(&self, typ: &ast::Type) -> Result<String, TranslateError> {
+    fn get_tensor_type(&self, typ: &ast::Type) -> Result<MlirType, TranslateError> {
         self.convert_type_to_tosa(typ)
     }
 
     fn get_scalar_as_tensor_type(
         &self,
         scalar_type: ast::ScalarType,
-    ) -> Result<String, TranslateError> {
+    ) -> Result<MlirType, TranslateError> {
         Ok(self.get_scalar_tensor_type(scalar_type))
     }
 
-    fn get_default_tensor_type(&self) -> String {
-        "tensor<1x1xf32>".to_string()
+    fn get_default_tensor_type(&self) -> MlirType {
+        MlirType::Tensor(TensorType {
+            x: TENSOR_BATCH_DIM,
+            y: 1,
+            ty: BasicType::F32,
+        })
     }
 
-    fn get_integer_tensor_type(&self) -> String {
-        "tensor<1x1xi32>".to_string()
+    fn get_integer_tensor_type(&self) -> MlirType {
+        MlirType::Tensor(TensorType {
+            x: TENSOR_BATCH_DIM,
+            y: 1,
+            ty: BasicType::I32,
+        })
     }
 
-    fn get_scalar_tensor_type(&self, scalar_type: ast::ScalarType) -> String {
-        match scalar_type {
-            // Integer types -> integer tensor
-            ast::ScalarType::B8
-            | ast::ScalarType::B16
-            | ast::ScalarType::B32
-            | ast::ScalarType::B64
-            | ast::ScalarType::U8
-            | ast::ScalarType::U16
-            | ast::ScalarType::U32
-            | ast::ScalarType::U64
-            | ast::ScalarType::S8
-            | ast::ScalarType::S16
-            | ast::ScalarType::S32
-            | ast::ScalarType::S64
-            | ast::ScalarType::Pred => "tensor<1x1xi32>".to_string(),
-            // Float types -> float tensor
-            ast::ScalarType::F16
-            | ast::ScalarType::F32
-            | ast::ScalarType::F64
-            | ast::ScalarType::BF16 => "tensor<1x1xf32>".to_string(),
-            // Other types - default to float tensor for now
-            _ => "tensor<1x1xf32>".to_string(),
-        }
+    fn get_scalar_tensor_type(&self, scalar_type: ast::ScalarType) -> MlirType {
+        MlirType::Tensor(TensorType {
+            x: TENSOR_BATCH_DIM,
+            y: 1,
+            ty: Self::ptx_scalar_to_basic_type(scalar_type),
+        })
     }
 
-    fn get_vector_tensor_type(&self, len: u8, scalar_type: ast::ScalarType) -> String {
-        match scalar_type {
-            // Integer types -> integer tensor
-            ast::ScalarType::B8
-            | ast::ScalarType::B16
-            | ast::ScalarType::B32
-            | ast::ScalarType::B64
-            | ast::ScalarType::U8
-            | ast::ScalarType::U16
-            | ast::ScalarType::U32
-            | ast::ScalarType::U64
-            | ast::ScalarType::S8
-            | ast::ScalarType::S16
-            | ast::ScalarType::S32
-            | ast::ScalarType::S64
-            | ast::ScalarType::Pred => format!("tensor<1x{}xi32>", len),
-            // Float types -> float tensor
-            ast::ScalarType::F16
-            | ast::ScalarType::F32
-            | ast::ScalarType::F64
-            | ast::ScalarType::BF16 => format!("tensor<1x{}xf32>", len),
-            // Other types - default to float tensor for now
-            _ => format!("tensor<1x{}xf32>", len),
-        }
+    fn get_vector_tensor_type(&self, len: u8, scalar_type: ast::ScalarType) -> MlirType {
+        MlirType::Tensor(TensorType {
+            x: TENSOR_BATCH_DIM,
+            y: len as i64,
+            ty: Self::ptx_scalar_to_basic_type(scalar_type),
+        })
     }
+
+    fn get_i8_tensor_type(&self) -> MlirType {
+        MlirType::Tensor(TensorType {
+            x: TENSOR_BATCH_DIM,
+            y: 1,
+            ty: BasicType::I8,
+        })
+    }
+
+    fn get_tosa_shift_tensor_type(&self) -> String {
+        // TOSA mul shift parameter needs tensor<1xi8> format (no batch dimension)
+        format!("tensor<{}x{}>", 1, BasicType::I8)
+    }
+
 
     fn create_default_return(&mut self, func_name: &str) -> (String, String) {
         let dummy_tensor = self.next_ssa_value();
         let return_type = self.get_return_type_for_function(func_name);
-        let value = if return_type.contains("xi32") { "0" } else { "0.0" };
+        let value = if Self::is_integer_type(&return_type) { "0" } else { "0.0" };
+        let return_type_str = return_type.to_string();
         self.write_line(&format!(
             "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
-            dummy_tensor, value, return_type, return_type
+            dummy_tensor, value, return_type_str, return_type_str
         ));
-        (dummy_tensor, return_type)
+        (dummy_tensor, return_type_str)
     }
 
     fn generate_function_declaration(
@@ -3294,7 +3422,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     signature.push_str(", ");
                 }
                 let ret_type = self.convert_type_to_tosa(&ret_arg.v_type)?;
-                signature.push_str(&ret_type);
+                signature.push_str(&ret_type.to_string());
             }
         } else {
             // For void functions, we'll still return a dummy tensor using consistent shape
@@ -3358,12 +3486,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Special handling: if this SSA value comes from a constant with value 0,
         // check if there's a data tensor with value 2 that should be used instead
         if let Some(ref tensor_type) = tensor_type {
-            if tensor_type.contains("xi32") {
+            if Self::is_integer_type(tensor_type) {
                 // Check if this is a zero constant that should be replaced with loaded data
                 for (check_var, check_ssa) in &self.value_map {
                     if check_ssa != &ssa_value {
                         if let Some(check_type) = self.ssa_types.get(check_ssa) {
-                            if check_type.contains("xi32") {
+                            if Self::is_integer_type(check_type) {
                                 // If we find a data tensor that was created from a load, prefer it
                                 eprintln!("ZLUDA DEBUG: Checking if {} should use data tensor {} instead of {}", var_id.0, check_ssa, ssa_value);
                             }
@@ -3374,10 +3502,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         }
 
         if let Some(tensor_type) = tensor_type {
-            if tensor_type.contains("xi32")
-                || tensor_type.contains("xi64")
-                || tensor_type.contains("xi8")
-                || tensor_type.contains("xi16")
+            if Self::is_integer_type(&tensor_type)
             {
                 // It's an integer tensor, cast it to float
                 let casted_ssa = self.next_ssa_value();
