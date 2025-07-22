@@ -277,6 +277,37 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             eprintln!("  {:3} ({:20}) -> {}", k.0, var_name, v);
         }
     }
+    
+    fn debug_print_ssa_types(&self) {
+        eprintln!("ZLUDA DEBUG: Current ssa_types contents:");
+        let mut entries: Vec<_> = self.ssa_types.iter().collect();
+        entries.sort_by_key(|(k, _)| {
+            // Extract number from SSA value (e.g., "%0" -> 0)
+            k.strip_prefix('%')
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(u32::MAX)
+        });
+        
+        for (ssa_val, type_str) in entries {
+            // Try to find the variable name associated with this SSA value
+            let var_info = self.value_map.iter()
+                .find(|(_, v)| *v == ssa_val)
+                .and_then(|(k, _)| {
+                    self.id_defs.ident_map.get(k)
+                        .and_then(|entry| entry.name.as_ref())
+                        .map(|n| format!(" ({})", n))
+                })
+                .unwrap_or_else(|| {
+                    // Check if this SSA value has a name mapping
+                    self.ssa_to_var_name.get(ssa_val)
+                        .map(|n| format!(" ({})", n))
+                        .unwrap_or_else(|| String::new())
+                });
+            
+            eprintln!("  {} : {}{}", ssa_val, type_str, var_info);
+        }
+        eprintln!("ZLUDA DEBUG: End of ssa_types");
+    }
 
     fn requires_integer_params(&self, func_name: &str) -> bool {
         matches!(
@@ -619,6 +650,29 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Convert function body
         let mut result_tensor = None;
         if let Some(body) = method.body {
+            // First, scan for all store instructions
+            eprintln!("ZLUDA DEBUG: Scanning for store instructions in function {}", func_name);
+            for (idx, statement) in body.iter().enumerate() {
+                match statement {
+                    Statement::Instruction(ast::Instruction::St { data, arguments, .. }) => {
+                        eprintln!("  Store #{}: st.{:?} [addr={}], value={}", 
+                                 idx, data.state_space, arguments.src1.0, arguments.src2.0);
+                        
+                        // Try to get more info about what's being stored
+                        if let Some(ident_info) = self.id_defs.ident_map.get(&arguments.src2) {
+                            if let Some(name) = &ident_info.name {
+                                eprintln!("    Value name: {}", name);
+                            }
+                        }
+                        if let Some(ssa_val) = self.value_map.get(&arguments.src2) {
+                            eprintln!("    Value SSA: {}", ssa_val);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            panic!("ZLUDA DEBUG: Stopping after store instruction scan");
+            
             for statement in body {
                 if let Some(tensor) = self.convert_statement(statement)? {
                     result_tensor = Some(tensor);
@@ -627,6 +681,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         }
 
         // Generate appropriate return statement
+        eprintln!("ZLUDA DEBUG: Generating return statement");
+        eprintln!("  result_tensor: {:?}", result_tensor);
+        eprintln!("  last_result_ssa: {:?}", self.last_result_ssa);
+        
         if let Some(result) = result_tensor {
             // Use the last result type if available, otherwise use function signature type
             let return_type = if self.requires_integer_params(&func_name) {
@@ -774,7 +832,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 self.convert_predicated_instruction(predicate, negated, instruction)?;
             }
             _ => {
-                self.write_line(&format!("// Unsupported statement type"));
+                self.write_line(&format!("// Unsupported statement: {statement:?}"));
             }
         }
         Ok(None)
@@ -862,17 +920,27 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         instruction: ast::Instruction<SpirvWord>,
     ) -> Result<(), TranslateError> {
         // Get the predicate SSA value
+        eprintln!("{instruction:?}");
+        self.debug_print_value_map();
+        self.debug_print_ssa_types();
+        // Get the predicate SSA value
         let pred_ssa = self.get_ssa_value(predicate)?;
+        eprintln!("{pred_ssa:?}");
         
         // For negated predicates, we need to apply logical_not
         let actual_pred = if negated {
             let neg_pred = self.next_ssa_value();
+            let pred_type = self.ssa_types.get(&pred_ssa)
+                .ok_or_else(|| error_unreachable())?
+                .clone();
             self.write_line(&format!(
-                "{} = tosa.logical_not {} : tensor<1x1xi1> -> tensor<1x1xi1>",
+                "{} = tosa.logical_not {} : ({}) -> {}",
                 neg_pred,
-                pred_ssa
+                pred_ssa,
+                pred_type,
+                pred_type
             ));
-            self.ssa_types.insert(neg_pred.clone(), "tensor<1x1xi1>".to_string());
+            self.ssa_types.insert(neg_pred.clone(), pred_type);
             neg_pred
         } else {
             pred_ssa
@@ -911,7 +979,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 
                 // Update the mapping to point to the selected value
                 self.value_map.insert(dst, selected.clone());
-                self.ssa_types.insert(selected, result_type);
+                self.ssa_types.insert(selected.clone(), result_type);
+                
+                // Set last_result_ssa to the selected value for return
+                self.last_result_ssa = Some(selected);
             }
         }
         
@@ -2691,6 +2762,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         }
 
         self.value_map.insert(dst, dst_ssa.clone());
+        self.ssa_types.insert(dst_ssa.clone(), "tensor<1x1xi1>".to_string());
         Ok(dst_ssa)
     }
 
