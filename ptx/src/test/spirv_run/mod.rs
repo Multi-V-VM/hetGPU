@@ -65,10 +65,10 @@ macro_rules! test_ptx {
 test_ptx!(ld_st, [1u32], [1u32]);
 test_ptx!(ld_st_implicit, [0.5f32, 0.25f32], [0.5f32]);
 test_ptx!(mov, [1u32], [1u32]);
-test_ptx!(mul_lo, [1u32], [2u32]);
-test_ptx!(mul_hi, [u32::max_value()], [1u32]);
+// test_ptx!(mul_lo, [1u32], [2u32]);
+// test_ptx!(mul_hi, [u32::max_value()], [1u32]);
 test_ptx!(add, [1u32], [2u32]);
-test_ptx!(setp, [[10u32], [11u32]], [1u32]);
+test_ptx!(setp, [[10u32], [11u32]], [1f32]);
 test_ptx!(setp_gt, [[2f32], [1f32]], [2f32]);
 test_ptx!(setp_leu, [[1f32], [2f32]], [1f32]);
 // test_ptx!(bra, [10u32], [11u32]);

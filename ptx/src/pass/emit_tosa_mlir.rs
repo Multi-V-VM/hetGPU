@@ -1637,15 +1637,25 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         src1: SpirvWord,
         src2: SpirvWord,
     ) -> Result<String, TranslateError> {
-        let dst_ssa = self.next_ssa_value();
         let src1_ssa = self.get_ssa_value(src1)?;
         let src2_ssa = self.get_ssa_value(src2)?;
 
-        let tensor_type = self.get_default_tensor_type();
+        // Get the actual tensor type from the first operand
+        let src_tensor_type = self.ssa_types.get(&src1_ssa)
+            .cloned()
+            .unwrap_or_else(|| self.get_default_tensor_type());
+
+        // Check if the original type was integer
+        let needs_cast_back = Self::is_integer_type(&src_tensor_type);
 
         // Cast operands to float if they are integers
         let src1_casted = self.ensure_float_tensor(src1_ssa, src1)?;
         let src2_casted = self.ensure_float_tensor(src2_ssa, src2)?;
+
+        // Get the tensor type for the casted operands (should be float if we casted)
+        let operand_type = self.ssa_types.get(&src1_casted)
+            .cloned()
+            .unwrap_or_else(|| self.get_default_tensor_type());
 
         // TOSA mul requires 3 operands: input1, input2, shift
         // Create a scalar zero constant for the shift operand as a tosa-conformant scalar tensor
@@ -1656,14 +1666,29 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             shift_ssa, shift_type, shift_type
         ));
 
+        let mul_result_ssa = self.next_ssa_value();
         self.write_line(&format!(
             "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, {}) -> {}",
-            dst_ssa, src1_casted, src2_casted, shift_ssa, tensor_type, tensor_type, shift_type, tensor_type
+            mul_result_ssa, src1_casted, src2_casted, shift_ssa, 
+            operand_type, operand_type, shift_type, operand_type
         ));
+        self.ssa_types.insert(mul_result_ssa.clone(), operand_type.clone());
 
-        self.value_map.insert(dst, dst_ssa.clone());
-        self.ssa_types.insert(dst_ssa.clone(), tensor_type);
-        Ok(dst_ssa)
+        // Cast back to integer if the original operands were integers
+        let final_result = if needs_cast_back {
+            let cast_back_ssa = self.next_ssa_value();
+            self.write_line(&format!(
+                "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                cast_back_ssa, mul_result_ssa, operand_type, src_tensor_type
+            ));
+            self.ssa_types.insert(cast_back_ssa.clone(), src_tensor_type.clone());
+            cast_back_ssa
+        } else {
+            mul_result_ssa
+        };
+
+        self.value_map.insert(dst, final_result.clone());
+        Ok(final_result)
     }
 
     fn convert_mov_instruction(
