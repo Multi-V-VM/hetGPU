@@ -847,33 +847,27 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         
         // Fall back to existing logic if no output stores
         if let Some(result) = result_tensor {
-            // Use the last result type if available, otherwise use function signature type
-            let return_type = if self.requires_integer_params(&func_name) {
-                match self.get_function_category(&func_name) {
-                    FunctionCategory::Bitwise => {
-                        // For bitwise operations, use the actual result type from the operation
-                        self.last_result_type
-                            .clone()
-                            .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
-                    }
-                    _ => self.get_return_type_for_function(&func_name),
+            // For bitwise functions, prefer to use the SSA type of the result value
+            let return_type = match self.get_function_category(&func_name) {
+                FunctionCategory::Bitwise => {
+                    // First try to get the type from SSA types, then last_result_type, then function return type
+                    self.ssa_types.get(&result).cloned()
+                        .or_else(|| self.last_result_type.clone())
+                        .or_else(|| self.current_function_return_type.clone())
+                        .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
                 }
-            } else {
-                // For other functions, check the function category first
-                match self.get_function_category(&func_name) {
-                    FunctionCategory::Bitwise => {
-                        // For bitwise operations, use the actual result type from the operation
-                        self.last_result_type
-                            .clone()
-                            .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
-                    }
-                    _ => {
-                        // For other functions including neg, use the actual SSA value type first
-                        // then fall back to function return type
-                        self.ssa_types.get(&result).cloned()
-                            .or_else(|| self.last_result_type.clone())
-                            .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
-                    }
+                FunctionCategory::Comparison | FunctionCategory::Shift => {
+                    // Similar handling for comparison and shift operations
+                    self.ssa_types.get(&result).cloned()
+                        .or_else(|| self.last_result_type.clone())
+                        .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
+                }
+                FunctionCategory::Default => {
+                    // For default functions, use SSA type first, then function return type
+                    self.ssa_types.get(&result).cloned()
+                        .or_else(|| self.last_result_type.clone())
+                        .or_else(|| self.current_function_return_type.clone())
+                        .unwrap_or_else(|| self.get_default_tensor_type())
                 }
             };
             self.write_line(&format!("return {} : {}", result, output_type_str));
@@ -959,29 +953,26 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     self.instruction_counter += 1;
                 }
 
-                // Determine result type before converting instruction
+                // Note: Don't pre-set result types here as they should be determined
+                // by the actual instruction conversion logic to ensure correct tensor dimensions
                 match &inst {
                     ast::Instruction::Xor { .. }
                     | ast::Instruction::And { .. }
                     | ast::Instruction::Or { .. }
                     | ast::Instruction::Shl { .. }
                     | ast::Instruction::Shr { .. } => {
-                        // Bitwise operations and shift operations always return integer tensors
-                        self.last_result_type = Some(self.get_integer_tensor_type());
+                        // Bitwise and shift operations will set their own result types
                     }
                     ast::Instruction::Setp { .. } => {
-                        // Comparison operations return predicate (integer) tensors
-                        self.last_result_type = Some(self.get_integer_tensor_type());
+                        // Comparison operations will set their own result types
                     }
                     ast::Instruction::Add { .. }
                     | ast::Instruction::Sub { .. }
                     | ast::Instruction::Mul { .. } => {
-                        // Arithmetic operations depend on input type
-                        self.last_result_type = Some(self.get_default_tensor_type());
+                        // Arithmetic operations will set their own result types
                     }
                     _ => {
-                        // Default to float tensor
-                        self.last_result_type = Some(self.get_default_tensor_type());
+                        // Other operations will determine their own result types
                     }
                 }
 
