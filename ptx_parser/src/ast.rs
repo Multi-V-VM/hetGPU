@@ -4,8 +4,9 @@ use super::{
 };
 use crate::{PtxError, PtxParserState};
 use bitflags::bitflags;
-use std::{alloc::Layout, cmp::Ordering, num::NonZeroU8};
-
+use std::{alloc::Layout, cmp::Ordering, num::NonZeroU8, fmt};
+use std::fmt::Debug;  
+#[derive(Debug)]
 pub enum Statement<P: Operand> {
     Label(P::Ident),
     Variable(MultiVariable<P::Ident>),
@@ -549,6 +550,62 @@ ptx_parser_macros::generate_instruction_type!(
     }
 );
 
+impl<T: Operand> fmt::Display for Instruction<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let instruction_name = match self {
+            Instruction::Mov { .. } => "mov",
+            Instruction::Ld { .. } => "ld",
+            Instruction::Add { .. } => "add",
+            Instruction::St { .. } => "st",
+            Instruction::Mul { .. } => "mul",
+            Instruction::Setp { .. } => "setp",
+            Instruction::SetpBool { .. } => "setp",
+            Instruction::Not { .. } => "not",
+            Instruction::Or { .. } => "or",
+            Instruction::And { .. } => "and",
+            Instruction::Bra { .. } => "bra",
+            Instruction::Call { .. } => "call",
+            Instruction::Cvt { .. } => "cvt",
+            Instruction::Shr { .. } => "shr",
+            Instruction::Shl { .. } => "shl",
+            Instruction::Ret { .. } => "ret",
+            Instruction::Cvta { .. } => "cvta",
+            Instruction::Abs { .. } => "abs",
+            Instruction::Mad { .. } => "mad",
+            Instruction::Fma { .. } => "fma",
+            Instruction::Sub { .. } => "sub",
+            Instruction::Min { .. } => "min",
+            Instruction::Max { .. } => "max",
+            Instruction::Rcp { .. } => "rcp",
+            Instruction::Sqrt { .. } => "sqrt",
+            Instruction::Rsqrt { .. } => "rsqrt",
+            Instruction::Selp { .. } => "selp",
+            Instruction::Bar { .. } => "bar",
+            Instruction::Atom { .. } => "atom",
+            Instruction::AtomCas { .. } => "atom",
+            Instruction::Div { .. } => "div",
+            Instruction::Neg { .. } => "neg",
+            Instruction::Sin { .. } => "sin",
+            Instruction::Cos { .. } => "cos",
+            Instruction::Lg2 { .. } => "lg2",
+            Instruction::Ex2 { .. } => "ex2",
+            Instruction::Clz { .. } => "clz",
+            Instruction::Brev { .. } => "brev",
+            Instruction::Popc { .. } => "popc",
+            Instruction::Xor { .. } => "xor",
+            Instruction::Rem { .. } => "rem",
+            Instruction::Bfe { .. } => "bfe",
+            Instruction::Bfi { .. } => "bfi",
+            Instruction::PrmtSlow { .. } => "prmt",
+            Instruction::Prmt { .. } => "prmt",
+            Instruction::Activemask { .. } => "activemask",
+            Instruction::Membar { .. } => "membar",
+            Instruction::Trap { .. } => "trap",
+        };
+        write!(f, "{}", instruction_name)
+    }
+}
+
 pub trait Visitor<T: Operand, Err> {
     fn visit(
         &mut self,
@@ -566,11 +623,11 @@ pub trait Visitor<T: Operand, Err> {
     ) -> Result<(), Err>;
 }
 
-impl<'input> Clone for Instruction<ParsedOperand<&'input str>> {
-    fn clone(&self) -> Self {
-        unimplemented!("Clone not implemented for Instruction")
-    }
-}
+// impl<'input> Clone for Instruction<ParsedOperand<&'input str>> {
+//     fn clone(&self) -> Self {
+//         unimplemented!("Clone not implemented for Instruction")
+//     }
+// }
 
 impl<
         T: Operand,
@@ -638,7 +695,7 @@ pub trait VisitorMap<From: Operand, To: Operand, Err> {
     ) -> Result<To::Ident, Err>;
 }
 
-impl<T: Copy, U: Copy, Err, Fn> VisitorMap<ParsedOperand<T>, ParsedOperand<U>, Err> for Fn
+impl<T: Copy + std::fmt::Debug, U: Copy + std::fmt::Debug, Err, Fn> VisitorMap<ParsedOperand<T>, ParsedOperand<U>, Err> for Fn
 where
     Fn: FnMut(T, Option<(&Type, StateSpace)>, bool, bool) -> Result<U, Err>,
 {
@@ -794,12 +851,13 @@ impl<T: Operand, Err> MapOperand<Err> for Option<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct MultiVariable<ID> {
     pub var: Variable<ID>,
     pub count: Option<u32>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Variable<ID> {
     pub align: Option<u32>,
     pub v_type: Type,
@@ -808,12 +866,13 @@ pub struct Variable<ID> {
     pub array_init: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub struct PredAt<ID> {
     pub not: bool,
     pub label: ID,
 }
 
-#[derive(PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Type {
     // .param.b32 foo;
     Scalar(ScalarType),
@@ -962,7 +1021,7 @@ impl ScalarType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScalarKind {
     Bit,
     Unsigned,
@@ -976,7 +1035,7 @@ impl From<ScalarType> for Type {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MovDetails {
     pub typ: super::Type,
     pub src_is_address: bool,
@@ -999,7 +1058,7 @@ impl MovDetails {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum ParsedOperand<Ident> {
     Reg(Ident),
     RegOffset(Ident, i32),
@@ -1008,7 +1067,7 @@ pub enum ParsedOperand<Ident> {
     VecPack(Vec<Ident>),
 }
 
-impl<Ident: Copy> Operand for ParsedOperand<Ident> {
+impl<Ident: Copy + Debug> Operand for ParsedOperand<Ident> {
     type Ident = Ident;
 
     fn from_ident(ident: Self::Ident) -> Self {
@@ -1017,12 +1076,12 @@ impl<Ident: Copy> Operand for ParsedOperand<Ident> {
 }
 
 pub trait Operand: Sized {
-    type Ident: Copy;
+    type Ident: Copy + fmt::Debug;
 
     fn from_ident(ident: Self::Ident) -> Self;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ImmediateValue {
     U64(u64),
     S64(i64),
@@ -1030,7 +1089,7 @@ pub enum ImmediateValue {
     F64(f64),
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StCacheOperator {
     Writeback,
     L2Only,
@@ -1038,7 +1097,7 @@ pub enum StCacheOperator {
     Writethrough,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LdCacheOperator {
     Cached,
     L2Only,
@@ -1047,7 +1106,7 @@ pub enum LdCacheOperator {
     Uncached,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum ArithDetails {
     Integer(ArithInteger),
     Float(ArithFloat),
@@ -1062,13 +1121,13 @@ impl ArithDetails {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ArithInteger {
     pub type_: ScalarType,
     pub saturate: bool,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ArithFloat {
     pub type_: ScalarType,
     pub rounding: Option<RoundingMode>,
@@ -1076,7 +1135,7 @@ pub struct ArithFloat {
     pub saturate: bool,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LdStQualifier {
     Weak,
     Volatile,
@@ -1085,7 +1144,7 @@ pub enum LdStQualifier {
     Release(MemScope),
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoundingMode {
     NearestEven,
     Zero,
@@ -1093,6 +1152,7 @@ pub enum RoundingMode {
     PositiveInf,
 }
 
+#[derive(Debug, Clone)]
 pub struct LdDetails {
     pub qualifier: LdStQualifier,
     pub state_space: StateSpace,
@@ -1101,6 +1161,7 @@ pub struct LdDetails {
     pub non_coherent: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct StData {
     pub qualifier: LdStQualifier,
     pub state_space: StateSpace,
@@ -1108,12 +1169,12 @@ pub struct StData {
     pub typ: Type,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct RetData {
     pub uniform: bool,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TuningDirective {
     MaxNReg(u32),
     MaxNtid(u32, u32, u32),
@@ -1121,6 +1182,7 @@ pub enum TuningDirective {
     MinNCtaPerSm(u32),
 }
 
+#[derive(Debug)]
 pub struct MethodDeclaration<'input, ID> {
     pub return_arguments: Vec<Variable<ID>>,
     pub name: MethodName<'input, ID>,
@@ -1151,7 +1213,7 @@ impl<'input> MethodDeclaration<'input, &'input str> {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
 pub enum MethodName<'input, ID> {
     Kernel(&'input str),
     Func(ID),
@@ -1184,6 +1246,7 @@ bitflags! {
     }
 }
 
+#[derive(Debug)]
 pub struct Function<'a, ID, S> {
     pub func_directive: MethodDeclaration<'a, ID>,
     pub tuning: Vec<TuningDirective>,
@@ -1203,6 +1266,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub enum Directive<'input, O: Operand> {
     Variable(LinkingDirective, Variable<O::Ident>),
     Method(
@@ -1224,6 +1288,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct Module<'input> {
     pub version: (u8, u8),
     pub directives: Vec<Directive<'input, ParsedOperand<&'input str>>>,
@@ -1240,7 +1305,7 @@ impl<'input> Clone for Module<'input> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum MulDetails {
     Integer {
         type_: ScalarType,
@@ -1274,13 +1339,14 @@ impl MulDetails {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MulIntControl {
     Low,
     High,
     Wide,
 }
 
+#[derive(Debug, Clone)]
 pub struct SetpData {
     pub type_: ScalarType,
     pub flush_to_zero: Option<bool>,
@@ -1322,19 +1388,20 @@ impl SetpData {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SetpBoolData {
     pub base: SetpData,
     pub bool_op: SetpBoolPostOp,
     pub negate_src3: bool,
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetpCompareOp {
     Integer(SetpCompareInt),
     Float(SetpCompareFloat),
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetpCompareInt {
     Eq,
     NotEq,
@@ -1348,7 +1415,7 @@ pub enum SetpCompareInt {
     SignedGreaterOrEq,
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetpCompareFloat {
     Eq,
     NotEq,
@@ -1430,12 +1497,14 @@ impl From<RawSetpCompareOp> for SetpCompareFloat {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct CallDetails {
     pub uniform: bool,
     pub return_arguments: Vec<(Type, StateSpace)>,
     pub input_arguments: Vec<(Type, StateSpace)>,
 }
 
+#[derive(Debug, Clone)]
 pub struct CallArgs<T: Operand> {
     pub return_arguments: Vec<T::Ident>,
     pub func: T::Ident,
@@ -1537,12 +1606,14 @@ impl<T: Operand> CallArgs<T> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct CvtDetails {
     pub from: ScalarType,
     pub to: ScalarType,
     pub mode: CvtMode,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CvtMode {
     // int from int
     ZeroExtend,
@@ -1671,12 +1742,14 @@ impl CvtDetails {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct CvtIntToIntDesc {
     pub dst: ScalarType,
     pub src: ScalarType,
     pub saturate: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct CvtDesc {
     pub rounding: Option<RoundingMode>,
     pub flush_to_zero: Option<bool>,
@@ -1685,33 +1758,38 @@ pub struct CvtDesc {
     pub src: ScalarType,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct ShrData {
     pub type_: ScalarType,
     pub kind: RightShiftKind,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RightShiftKind {
     Arithmetic,
     Logical,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct CvtaDetails {
     pub state_space: StateSpace,
     pub direction: CvtaDirection,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CvtaDirection {
     GenericToExplicit,
     ExplicitToGeneric,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug )]
 pub struct TypeFtz {
     pub flush_to_zero: Option<bool>,
     pub type_: ScalarType,
 }
 
-#[derive(Copy, Clone)]
+
+#[derive(Debug, Clone, Copy)]
 pub enum MadDetails {
     Integer {
         control: MulIntControl,
@@ -1747,7 +1825,8 @@ impl MadDetails {
     }
 }
 
-#[derive(Copy, Clone)]
+
+#[derive(Debug, Clone, Copy)]
 pub enum MinMaxDetails {
     Signed(ScalarType),
     Unsigned(ScalarType),
@@ -1764,30 +1843,34 @@ impl MinMaxDetails {
     }
 }
 
-#[derive(Copy, Clone)]
+
+#[derive(Debug, Clone, Copy)]
 pub struct MinMaxFloat {
     pub flush_to_zero: Option<bool>,
     pub nan: bool,
     pub type_: ScalarType,
 }
 
-#[derive(Copy, Clone)]
+
+#[derive(Debug, Clone, Copy)]
 pub struct RcpData {
     pub kind: RcpKind,
     pub flush_to_zero: Option<bool>,
     pub type_: ScalarType,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum RcpKind {
     Approx,
     Compliant(RoundingMode),
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct BarData {
     pub aligned: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct AtomDetails {
     pub type_: Type,
     pub semantics: AtomSemantics,
@@ -1796,7 +1879,7 @@ pub struct AtomDetails {
     pub op: AtomicOp,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AtomicOp {
     And,
     Or,
@@ -1836,6 +1919,7 @@ impl AtomicOp {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct AtomCasDetails {
     pub type_: ScalarType,
     pub semantics: AtomSemantics,
@@ -1843,7 +1927,7 @@ pub struct AtomCasDetails {
     pub space: StateSpace,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum DivDetails {
     Unsigned(ScalarType),
     Signed(ScalarType),
@@ -1860,21 +1944,21 @@ impl DivDetails {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct DivFloatDetails {
     pub type_: ScalarType,
     pub flush_to_zero: Option<bool>,
     pub kind: DivFloatKind,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Debug,Copy, Clone, Eq, PartialEq)]
 pub enum DivFloatKind {
     Approx,
     ApproxFull,
     Rounding(RoundingMode),
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct FlushToZero {
     pub flush_to_zero: bool,
 }
