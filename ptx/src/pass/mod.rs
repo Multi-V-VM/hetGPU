@@ -66,14 +66,32 @@ pub fn to_mlir_module<'input>(ast: ast::Module<'input>) -> Result<String, Transl
     eprintln!("ZLUDA DEBUG: Created scoped_resolver");
     let sreg_map = SpecialRegistersMap2::new(&mut scoped_resolver)?;
     eprintln!("ZLUDA DEBUG: Created sreg_map");
+    // eprintln!("=== AST before normalize_identifiers2 ===");
+    // eprintln!("{:#?}", ast.directives);
     let directives = normalize_identifiers2::run(&mut scoped_resolver, ast.directives)?;
+    // eprintln!("=== AST after normalize_identifiers2 ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed normalize_identifiers2");
+    // eprintln!("=== AST before replace_known_functions ===");
+    // eprintln!("{:#?}", directives);
     let directives = replace_known_functions::run(&flat_resolver, directives);
+    // eprintln!("=== AST after replace_known_functions ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed replace_known_functions");
+    // eprintln!("=== AST before normalize_predicates2 ===");
+    // eprintln!("{:#?}", directives);
     let directives = normalize_predicates2::run(&mut flat_resolver, directives)?;
+    // eprintln!("=== AST after normalize_predicates2 ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed normalize_predicates2");
+    // eprintln!("=== AST before resolve_function_pointers ===");
+    // eprintln!("{:#?}", directives);
     let directives = resolve_function_pointers::run(directives)?;
+    // eprintln!("=== AST after resolve_function_pointers ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed resolve_function_pointers");
+    // eprintln!("=== AST before fix_special_registers2 ===");
+    // eprintln!("{:#?}", directives);
     let directives: Vec<
         Directive2<
             '_,
@@ -81,20 +99,46 @@ pub fn to_mlir_module<'input>(ast: ast::Module<'input>) -> Result<String, Transl
             ptx_parser::ParsedOperand<SpirvWord>,
         >,
     > = fix_special_registers2::run(&mut flat_resolver, &sreg_map, directives)?;
+    // eprintln!("=== AST after fix_special_registers2 ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed fix_special_registers2");
+    // eprintln!("=== AST before expand_operands ===");
+    // eprintln!("{:#?}", directives);
     let directives = expand_operands::run(&mut flat_resolver, directives)?;
+    // eprintln!("=== AST after expand_operands ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed expand_operands");
+    // eprintln!("=== AST before deparamize_functions ===");
+    // eprintln!("{:#?}", directives);
     let directives = deparamize_functions::run(&mut flat_resolver, directives)?;
+    // eprintln!("=== AST after deparamize_functions ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed deparamize_functions");
-    let directives = insert_explicit_load_store::run(&mut flat_resolver, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed insert_explicit_load_store");
+    // Skip insert_explicit_load_store for TOSA MLIR - it adds unnecessary complexity
+    // let directives = insert_explicit_load_store::run(&mut flat_resolver, directives)?;
+    eprintln!("ZLUDA DEBUG: Skipped insert_explicit_load_store for TOSA MLIR");
+    // eprintln!("=== AST before insert_implicit_conversions2 ===");
+    // eprintln!("{:#?}", directives);
     let directives = insert_implicit_conversions2::run(&mut flat_resolver, directives)?;
+    // eprintln!("=== AST after insert_implicit_conversions2 ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed insert_implicit_conversions2");
+    // eprintln!("=== AST before replace_instructions_with_function_calls ===");
+    // eprintln!("{:#?}", directives);
     let directives = replace_instructions_with_function_calls::run(&mut flat_resolver, directives)?;
+    // eprintln!("=== AST after replace_instructions_with_function_calls ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed replace_instructions_with_function_calls");
+    // eprintln!("=== AST before hoist_globals ===");
+    // eprintln!("{:#?}", directives);
     let directives = hoist_globals::run(directives)?;
+    // eprintln!("=== AST after hoist_globals ===");
+    // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed hoist_globals");
 
+
+    eprintln!("=== AST before mlir codegen ===");
+    eprintln!("{:#?}", directives);
     // Convert directly to Linalg MLIR
     let mlir_code = emit_tosa_mlir::run(flat_resolver, directives)?;
     eprintln!("ZLUDA DEBUG: Completed emit_linalg_mlir");
@@ -493,6 +537,7 @@ pub fn to_llvm_module_with_filename<'input>(
     })
 }
 
+#[derive(Debug, Clone)]
 pub struct KernelInfo {
     pub arguments_sizes: Vec<(usize, bool)>,
     pub uses_shared_mem: bool,
@@ -603,12 +648,17 @@ fn error_mismatched_type() -> TranslateError {
     TranslateError::InvalidSymbolFormat
 }
 
+#[derive(Debug, Clone)]
 enum Statement<I, P: ast::Operand> {
     Label(SpirvWord),
     Variable(ast::Variable<P::Ident>),
     Instruction(I),
-    // SPIR-V compatible replacement for PTX predicates
-    Conditional(BrachCondition),
+    // New: Predicated instruction execution
+    PredicatedInstruction {
+        predicate: SpirvWord,
+        negated: bool,
+        instruction: I,
+    },
     Conversion(ImplicitConversion),
     Constant(ConstantDefinition),
     RetValue(ast::RetData, Vec<(SpirvWord, ast::Type)>),
@@ -646,20 +696,19 @@ impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
                     array_init: var.array_init,
                 })
             }
-            Statement::Conditional(conditional) => {
+            Statement::PredicatedInstruction { predicate, negated, instruction } => {
                 let predicate = visitor.visit_ident(
-                    conditional.predicate,
+                    predicate,
                     Some((&ast::ScalarType::Pred.into(), ast::StateSpace::Reg)),
                     false,
                     false,
                 )?;
-                let if_true = visitor.visit_ident(conditional.if_true, None, false, false)?;
-                let if_false = visitor.visit_ident(conditional.if_false, None, false, false)?;
-                Statement::Conditional(BrachCondition {
+                let instruction = ast::visit_map(instruction, visitor)?;
+                Statement::PredicatedInstruction {
                     predicate,
-                    if_true,
-                    if_false,
-                })
+                    negated,
+                    instruction,
+                }
             }
             Statement::Conversion(ImplicitConversion {
                 src,
@@ -893,14 +942,7 @@ impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
     }
 }
 
-#[derive(Clone)]
-struct BrachCondition {
-    predicate: SpirvWord,
-    if_true: SpirvWord,
-    if_false: SpirvWord,
-}
-
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct ImplicitConversion {
     src: SpirvWord,
     dst: SpirvWord,
@@ -911,7 +953,7 @@ struct ImplicitConversion {
     kind: ConversionKind,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum ConversionKind {
     Default,
     // zero-extend/chop/bitcast depending on types
@@ -921,14 +963,14 @@ enum ConversionKind {
     AddressOf,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct ConstantDefinition {
     pub dst: SpirvWord,
     pub typ: ast::ScalarType,
     pub value: ast::ImmediateValue,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PtrAccess<T> {
     pub underlying_type: ast::Type,
     pub state_space: ast::StateSpace,
@@ -937,7 +979,7 @@ pub struct PtrAccess<T> {
     pub offset_src: T,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct RepackVectorDetails {
     is_extract: bool,
     typ: ast::ScalarType,
@@ -946,7 +988,7 @@ struct RepackVectorDetails {
     relaxed_type_check: bool,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct FunctionPointerDetails {
     dst: SpirvWord,
     src: SpirvWord,
@@ -984,11 +1026,13 @@ type NormalizedStatement = Statement<
     ast::ParsedOperand<SpirvWord>,
 >;
 
+#[derive(Debug, Clone)]
 enum Directive2<'input, Instruction, Operand: ast::Operand> {
     Variable(ast::LinkingDirective, ast::Variable<SpirvWord>),
     Method(Function2<'input, Instruction, Operand>),
 }
 
+#[derive(Debug, Clone)]
 struct Function2<'input, Instruction, Operand: ast::Operand> {
     pub func_decl: ast::MethodDeclaration<'input, SpirvWord>,
     pub globals: Vec<ast::Variable<SpirvWord>>,
@@ -1276,7 +1320,7 @@ impl SpecialRegistersMap2 {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct VectorRead {
     pub scalar_type: ast::ScalarType,
     pub vector_width: u8,
@@ -1285,7 +1329,7 @@ pub struct VectorRead {
     pub member: u8,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct VectorWrite {
     pub scalar_type: ast::ScalarType,
     pub vector_width: u8,
