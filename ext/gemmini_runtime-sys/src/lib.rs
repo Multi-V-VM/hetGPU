@@ -963,6 +963,67 @@ fn find_latest_object_file() -> Result<String, String> {
     Err("No valid compiled object file found".to_string())
 }
 
+fn create_input_data_assembly(path: &std::path::Path, spike_state: &SpikeState) -> Result<(), String> {
+    let mut content = String::new();
+    
+    // Create assembly file with input data embedded in data section
+    content.push_str(".section .data\n");
+    content.push_str(".align 8\n");
+    content.push_str(".global __input_data_start\n");
+    content.push_str(".global __input_data_end\n");
+    content.push_str("__input_data_start:\n");
+    
+    // Embed buffer data as bytes
+    if !spike_state.buffers.is_empty() {
+        // Get all input buffer data (typically first two buffers for binary operations)
+        let mut all_data = Vec::new();
+        
+        // Add first buffer (input1)
+        if spike_state.buffers.len() > 0 {
+            all_data.extend_from_slice(&spike_state.buffers[0].data);
+        }
+        
+        // Add second buffer (input2) if it exists
+        if spike_state.buffers.len() > 1 {
+            all_data.extend_from_slice(&spike_state.buffers[1].data);
+        }
+        
+        // Write data as .byte directives (8 bytes per line for readability)
+        for chunk in all_data.chunks(8) {
+            content.push_str("    .byte ");
+            for (i, byte) in chunk.iter().enumerate() {
+                if i > 0 {
+                    content.push_str(", ");
+                }
+                content.push_str(&format!("0x{:02x}", byte));
+            }
+            content.push('\n');
+        }
+    }
+    
+    content.push_str("__input_data_end:\n");
+    content.push_str("\n");
+    
+    // Also export the data size
+    content.push_str(".section .rodata\n");
+    content.push_str(".align 8\n");
+    content.push_str(".global __input_data_size\n");
+    content.push_str("__input_data_size:\n");
+    
+    let total_size = if spike_state.buffers.is_empty() {
+        0
+    } else {
+        spike_state.buffers.iter().take(2).map(|b| b.data.len()).sum::<usize>()
+    };
+    content.push_str(&format!("    .quad {}\n", total_size));
+    
+    std::fs::write(path, content)
+        .map_err(|e| format!("Failed to write input data assembly: {}", e))?;
+    
+    eprintln!("Gemmini/Spike: Created input data assembly with {} bytes of data", total_size);
+    Ok(())
+}
+
 fn create_linker_script(temp_dir: &std::path::Path) -> Result<String, String> {
     let linker_script = temp_dir.join("gemmini.ld");
     let script_content = r#"
@@ -1053,6 +1114,10 @@ fn create_executable_from_object(spike_state: &mut SpikeState, obj_file: &str) -
     
     eprintln!("Gemmini/Spike: Creating executable from object file: {}", obj_file);
     
+    // Create input data assembly file that embeds the buffer data
+    let input_data_s = temp_dir.join("input_data.s");
+    create_input_data_assembly(&input_data_s, spike_state)?;
+    
     // Create a simple startup code that calls the kernel function
     let startup_c = temp_dir.join("startup.c");
     let startup_content = r#"
@@ -1130,9 +1195,14 @@ extern void _mlir_ciface_matmul_kernel(memref_2d_f32_t* input1, memref_2d_f32_t*
 extern void _mlir_ciface_atom_add_float(memref_2d_f32_t* input1, memref_2d_f32_t* input2, memref_2d_f32_t* output) __attribute__((weak));
 extern void _mlir_ciface_xor(memref_2d_f32_t* result, memref_2d_f32_t* input1, memref_2d_f32_t* input2) __attribute__((weak));
 
-// Global buffers for input/output data
-static float input_buffer[1024];
-static float output_buffer[1024];
+// External symbols for input data embedded in the executable
+extern uint8_t __input_data_start[] __attribute__((weak));
+extern uint8_t __input_data_end[] __attribute__((weak));
+extern uint64_t __input_data_size __attribute__((weak));
+
+// Global buffers for input/output data (as bytes for arbitrary types)
+static uint8_t input_buffer[4096];  // 4KB for various data types
+static uint8_t output_buffer[4096]; // 4KB for various data types
 
 // Simple print functions for Spike
 void print_uint(uint32_t value) {
@@ -1156,6 +1226,21 @@ void print_uint(uint32_t value) {
     }
     
     write(1, buffer, len);
+}
+
+void print_byte_hex(uint8_t byte) {
+    char buffer[3];
+    const char* hex_digits = "0123456789abcdef";
+    buffer[0] = hex_digits[(byte >> 4) & 0xF];
+    buffer[1] = hex_digits[byte & 0xF];
+    buffer[2] = ' ';
+    write(1, buffer, 3);
+}
+
+void print_bytes_hex(const uint8_t* bytes, int count) {
+    for (int i = 0; i < count; i++) {
+        print_byte_hex(bytes[i]);
+    }
 }
 
 void print_float(float value) {
@@ -1198,43 +1283,15 @@ void print_float(float value) {
     write(1, buffer, p - buffer);
 }
 
-// File I/O functions for Spike
-void read_input_data(const char* filename, float* buffer, int size) {
-    // Check if we're running XOR test by checking for _mlir_ciface_xor symbol
-    extern void _mlir_ciface_xor(memref_2d_f32_t*, memref_2d_f32_t*, memref_2d_f32_t*) __attribute__((weak));
-    
-    if (_mlir_ciface_xor) {
-        // For XOR test, interpret buffer as uint32_t and set specific test values
-        uint32_t* int_buffer = (uint32_t*)buffer;
-        int_buffer[0] = 1377452045;  // 0b01010010_00011010_01000000_00001101
-        int_buffer[1] = 3868920867;  // 0b11100110_10011011_00001100_00100011
-        // Rest of buffer can stay as-is
-    } else {
-        // Initialize with test data for matrix multiplication
-        for (int i = 0; i < size; i++) {
-            buffer[i] = (float)(i % 100) / 10.0f;
-        }
-    }
-}
-
-void write_output_data(const char* filename, float* buffer, int size) {
-    // Print the first few output values so Spike can capture them
+// Output function for bare-metal environment
+void write_output_data(uint8_t* buffer, int size) {
+    // Print the output values as hex bytes
     const char* output_prefix = "GEMMINI_OUTPUT: ";
     write(1, output_prefix, strlen__(output_prefix));
     
-    // Check if we're running XOR test
-    extern void _mlir_ciface_xor(memref_2d_f32_t*, memref_2d_f32_t*, memref_2d_f32_t*) __attribute__((weak));
-    
-    if (_mlir_ciface_xor) {
-        // For XOR test, interpret as uint32_t and print as integer
-        uint32_t* int_buffer = (uint32_t*)buffer;
-        print_uint(int_buffer[0]);
-    } else {
-        // Print first 4 values as floats
-        for (int i = 0; i < 4 && i < size; i++) {
-            print_float(buffer[i]);
-        }
-    }
+    // Print bytes as hex (up to 16 bytes for readability)
+    int bytes_to_print = size < 16 ? size : 16;
+    print_bytes_hex(buffer, bytes_to_print);
     
     const char* newline = "\n";
     write(1, newline, 1);
@@ -1244,65 +1301,58 @@ int main() {
     const char* start_msg = "GEMMINI_START: Executing kernel\n";
     write(1, start_msg, strlen__(start_msg));
     
-    // Read input data
-    read_input_data("input.bin", input_buffer, 1024);
-    
-    // Check if we're running XOR test
-    extern void _mlir_ciface_xor(memref_2d_f32_t*, memref_2d_f32_t*, memref_2d_f32_t*) __attribute__((weak));
+    // Copy embedded input data to working buffers
+    if (__input_data_start && __input_data_end) {
+        uint64_t data_size = __input_data_end - __input_data_start;
+        uint64_t copy_size = data_size < sizeof(input_buffer) ? data_size : sizeof(input_buffer);
+        
+        for (uint64_t i = 0; i < copy_size; i++) {
+            input_buffer[i] = __input_data_start[i];
+        }
+        
+        const char* load_msg = "GEMMINI_DEBUG: Loaded ";
+        write(1, load_msg, strlen__(load_msg));
+        print_uint((uint32_t)copy_size);
+        write(1, " bytes of embedded input data\n", 31);
+    } else {
+        const char* no_data_msg = "GEMMINI_DEBUG: No embedded input data found\n";
+        write(1, no_data_msg, strlen__(no_data_msg));
+    }
     
     memref_2d_f32_t input1_desc, input2_desc, output_desc;
     
-    if (_mlir_ciface_xor) {
-        // Set up memref descriptors for XOR (1D arrays with 1 element)
-        input1_desc = (memref_2d_f32_t){
-            .data = input_buffer,
-            .aligned_data = input_buffer, 
-            .offset = 0,
-            .sizes = {1, 1},
-            .strides = {1, 1}
-        };
-        
-        input2_desc = (memref_2d_f32_t){
-            .data = input_buffer + 1,  // Second element
-            .aligned_data = input_buffer + 1,
-            .offset = 0, 
-            .sizes = {1, 1},
-            .strides = {1, 1}
-        };
-        
-        output_desc = (memref_2d_f32_t){
-            .data = output_buffer,
-            .aligned_data = output_buffer,
-            .offset = 0,
-            .sizes = {1, 1}, 
-            .strides = {1, 1}
-        };
-    } else {
-        // Set up memref descriptors for 32x32 matrices
-        input1_desc = (memref_2d_f32_t){
-            .data = input_buffer,
-            .aligned_data = input_buffer, 
-            .offset = 0,
-            .sizes = {32, 32},
-            .strides = {32, 1}
-        };
-        
-        input2_desc = (memref_2d_f32_t){
-            .data = input_buffer + 512,  // Second half of input buffer
-            .aligned_data = input_buffer + 512,
-            .offset = 0, 
-            .sizes = {32, 32},
-            .strides = {32, 1}
-        };
-        
-        output_desc = (memref_2d_f32_t){
-            .data = output_buffer,
-            .aligned_data = output_buffer,
-            .offset = 0,
-            .sizes = {32, 32}, 
-            .strides = {32, 1}
-        };
-    }
+    // Set up generic memref descriptors
+    // Default to 1x1 arrays for element-wise operations
+    // This works for XOR and other element-wise operations
+    int dim1 = 1, dim2 = 1;
+    
+    // Calculate element size based on the operation type
+    // For now, assume float32 (4 bytes) but this can be made configurable
+    int element_size = sizeof(float);
+    
+    input1_desc = (memref_2d_f32_t){
+        .data = (void*)input_buffer,
+        .aligned_data = (void*)input_buffer, 
+        .offset = 0,
+        .sizes = {dim1, dim2},
+        .strides = {dim2, 1}
+    };
+    
+    input2_desc = (memref_2d_f32_t){
+        .data = (void*)(input_buffer + (dim1 * dim2 * element_size)),  // Second buffer after first
+        .aligned_data = (void*)(input_buffer + (dim1 * dim2 * element_size)),
+        .offset = 0, 
+        .sizes = {dim1, dim2},
+        .strides = {dim2, 1}
+    };
+    
+    output_desc = (memref_2d_f32_t){
+        .data = (void*)output_buffer,
+        .aligned_data = (void*)output_buffer,
+        .offset = 0,
+        .sizes = {dim1, dim2}, 
+        .strides = {dim2, 1}
+    };
     
     // Try to call the kernel function (will try different names)
     const char* kernel_msg = "GEMMINI_KERNEL: Calling compiled kernel\n";
@@ -1320,46 +1370,22 @@ int main() {
         const char* xor_msg = "GEMMINI_KERNEL: Found xor\n";
         write(1, xor_msg, strlen__(xor_msg));
         
-        // Debug: Print input values
-        uint32_t* int_input = (uint32_t*)input_buffer;
-        const char* input_prefix = "GEMMINI_DEBUG: Input values: ";
-        write(1, input_prefix, strlen__(input_prefix));
-        
-        print_uint(int_input[0]);
-        write(1, ", ", 2);
-        print_uint(int_input[1]);
-        write(1, "\n", 1);
-        
-        // Initialize output buffer to a known value
-        uint32_t* int_output = (uint32_t*)output_buffer;
-        int_output[0] = 0xDEADBEEF;
-        
-        const char* before_msg = "GEMMINI_DEBUG: Output before XOR: ";
-        write(1, before_msg, strlen__(before_msg));
-        print_uint(int_output[0]);
-        write(1, "\n", 1);
-        
         // Call the XOR function - it returns a new memref struct
         memref_2d_f32_t result_desc;
         _mlir_ciface_xor(&result_desc, &input1_desc, &input2_desc);
         
         // The result is in the newly allocated memory pointed to by result_desc
-        // Copy it to our output buffer
-        uint32_t* result_data = (uint32_t*)result_desc.aligned_data;
-        int_output[0] = result_data[0];
-        
-        // Debug: Print output value after XOR
-        const char* output_msg = "GEMMINI_DEBUG: Output after XOR: ";
-        write(1, output_msg, strlen__(output_msg));
-        print_uint(int_output[0]);
-        write(1, "\n", 1);
-        
-        // Note: In a real implementation, we should free the allocated memory
-        // But since we're in a bare-metal environment and exiting soon, we can skip it
+        // Copy it to our output buffer (handle as raw bytes)
+        uint8_t* result_data = (uint8_t*)result_desc.aligned_data;
+        // Copy the result data (size depends on the operation)
+        int copy_size = dim1 * dim2 * sizeof(float);
+        for (int i = 0; i < copy_size; i++) {
+            output_buffer[i] = result_data[i];
+        }
     }
     
     // Write output data (this will print results to stdout)
-    write_output_data("output.bin", output_buffer, 1024);
+    write_output_data(output_buffer, sizeof(output_buffer));
     
     const char* end_msg = "GEMMINI_END: Kernel execution completed\n";
     write(1, end_msg, strlen__(end_msg));
@@ -1374,9 +1400,10 @@ int main() {
     // Compile the startup code and link with the object file
     let linker_script = create_linker_script(temp_dir)?;
     let link_cmd = format!(
-        "riscv64-none-elf-gcc -static -nostartfiles -nostdlib -mcmodel=medany -T {} {} {} -o {}",
+        "riscv64-none-elf-gcc -static -nostartfiles -nostdlib -mcmodel=medany -T {} {} {} {} -o {}",
         linker_script,
         startup_c.to_str().unwrap(),
+        input_data_s.to_str().unwrap(),
         obj_file,
         executable.display()
     );
@@ -1392,6 +1419,7 @@ int main() {
         ])
         .arg(&linker_script)
         .arg(startup_c.to_str().unwrap())
+        .arg(&input_data_s)
         .arg(obj_file)
         .arg("-o")
         .arg(&executable)
@@ -1581,30 +1609,21 @@ fn read_spike_output_from_memory(spike_state: &mut SpikeState, spike_output: &st
     
     eprintln!("Gemmini/Spike: Combined output:\n{}", combined_output);
     
-    // Look for our specific GEMMINI_OUTPUT line
-    let mut result_values = Vec::new();
-    let mut is_integer_output = false;
-    let mut u32_bytes = Vec::new();
+    // Look for our specific GEMMINI_OUTPUT line with hex bytes
+    let mut result_bytes = Vec::new();
     
     for line in combined_output.lines() {
         if line.contains("GEMMINI_OUTPUT:") {
             eprintln!("Gemmini/Spike: Found output line: {}", line);
             
-            // Extract the numbers after "GEMMINI_OUTPUT:"
-            if let Some(numbers_part) = line.split("GEMMINI_OUTPUT:").nth(1) {
-                for word in numbers_part.trim().split_whitespace() {
-                    // First try to parse as u32 for integer results (like XOR)
-                    if let Ok(uint_value) = word.parse::<u32>() {
-                        is_integer_output = true;
-                        // Store the u32 bytes directly to avoid precision loss
-                        u32_bytes.extend_from_slice(&uint_value.to_le_bytes());
-                        let float_value = uint_value as f32;
-                        result_values.push(float_value);
-                        eprintln!("Gemmini/Spike: Parsed value: {} (from u32: {})", float_value, uint_value);
-                    } else if let Ok(value) = word.parse::<f32>() {
-                        if value.is_finite() {
-                            result_values.push(value);
-                            eprintln!("Gemmini/Spike: Parsed value: {}", value);
+            // Extract the hex bytes after "GEMMINI_OUTPUT:"
+            if let Some(hex_part) = line.split("GEMMINI_OUTPUT:").nth(1) {
+                // Parse hex bytes
+                for hex_byte in hex_part.trim().split_whitespace() {
+                    if hex_byte.len() == 2 {
+                        if let Ok(byte_val) = u8::from_str_radix(hex_byte, 16) {
+                            result_bytes.push(byte_val);
+                            eprintln!("Gemmini/Spike: Parsed hex byte: 0x{:02x}", byte_val);
                         }
                     }
                 }
@@ -1613,65 +1632,28 @@ fn read_spike_output_from_memory(spike_state: &mut SpikeState, spike_output: &st
         }
     }
     
-    // If we didn't find the GEMMINI_OUTPUT line, look for any floating point numbers
-    if result_values.is_empty() {
-        eprintln!("Gemmini/Spike: No GEMMINI_OUTPUT line found, scanning for any numerical values");
-        for line in combined_output.lines() {
-            // Skip lines that are obviously debug/status messages
-            if line.contains("GEMMINI_") || line.contains("Spike") || line.contains("ERROR") || line.contains("warning") {
-                continue;
-            }
-            
-            for word in line.split_whitespace() {
-                if let Ok(value) = word.parse::<f32>() {
-                    if value.is_finite() && value.abs() > 0.001 && value.abs() < 1000000.0 {
-                        result_values.push(value);
-                        if result_values.len() >= 4 {
-                            break;
-                        }
-                    }
-                }
-            }
-            if result_values.len() >= 4 {
-                break;
-            }
-        }
-    }
-    
-    if !result_values.is_empty() {
-        eprintln!("Gemmini/Spike: Extracted {} result values from Spike output", result_values.len());
-        eprintln!("Gemmini/Spike: Values: {:?}", &result_values[..result_values.len().min(4)]);
+    if !result_bytes.is_empty() {
+        eprintln!("Gemmini/Spike: Extracted {} result bytes from Spike output", result_bytes.len());
+        eprintln!("Gemmini/Spike: First 4 bytes: {:02x} {:02x} {:02x} {:02x}", 
+                 result_bytes.get(0).unwrap_or(&0),
+                 result_bytes.get(1).unwrap_or(&0),
+                 result_bytes.get(2).unwrap_or(&0),
+                 result_bytes.get(3).unwrap_or(&0));
         
         // Store the extracted results in the output buffer
         let output_idx = if spike_state.buffers.len() >= 3 { 2 } else { 1 };
         if output_idx < spike_state.buffers.len() {
-            // Use the appropriate byte representation based on output type
-            let result_bytes = if is_integer_output && !u32_bytes.is_empty() {
-                // Use the u32 bytes directly to preserve exact integer values
-                eprintln!("Gemmini/Spike: Using u32 bytes for integer output");
-                u32_bytes
-            } else {
-                // Convert float values to bytes
-                let mut bytes = Vec::new();
-                for value in result_values {
-                    bytes.extend_from_slice(&value.to_le_bytes());
-                }
-                bytes
-            };
-            
             let copy_size = std::cmp::min(result_bytes.len(), spike_state.buffers[output_idx].data.len());
             if copy_size > 0 {
                 spike_state.buffers[output_idx].data[..copy_size].copy_from_slice(&result_bytes[..copy_size]);
                 eprintln!("Gemmini/Spike: Stored {} bytes of result data in output buffer", copy_size);
                 
-                // Print sample values for verification
-                if spike_state.buffers[output_idx].data.len() >= 16 {
-                    let values: Vec<f32> = spike_state.buffers[output_idx].data.chunks_exact(4)
-                        .take(4)
-                        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                        .collect();
-                    eprintln!("Gemmini/Spike: Stored sample values: [{:.2}, {:.2}, {:.2}, {:.2}]", 
-                             values[0], values[1], values[2], values[3]);
+                // Print sample values for verification (interpret as different types)
+                if result_bytes.len() >= 4 {
+                    let u32_value = u32::from_le_bytes([result_bytes[0], result_bytes[1], result_bytes[2], result_bytes[3]]);
+                    let f32_value = f32::from_le_bytes([result_bytes[0], result_bytes[1], result_bytes[2], result_bytes[3]]);
+                    eprintln!("Gemmini/Spike: Result interpreted as u32: {}", u32_value);
+                    eprintln!("Gemmini/Spike: Result interpreted as f32: {}", f32_value);
                 }
                 return Ok(());
             }
@@ -1848,6 +1830,7 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
     eprintln!("Gemmini/Spike: Step 1 - Converting TOSA to Linalg");
     
     // First try the pipeline pass
+    eprintln!("Gemmini/Spike: Running mlir-opt command: mlir-opt {} --tosa-to-linalg-pipeline -o {}", mlir_file, linalg_mlir);
     let mlir_opt_result = Command::new("mlir-opt")
         .args(&[
             mlir_file,
@@ -2055,74 +2038,6 @@ fn create_fallback_executable(executable_path: &str) -> Result<PathBuf, String> 
     
     eprintln!("Gemmini/Spike: Created fallback executable: {}", executable_path);
     Ok(PathBuf::from(executable_path))
-}
-
-fn convert_mlir_to_llvm(mlir: &str) -> Result<String, String> {
-    // This function is kept for backward compatibility
-    // Save MLIR to temporary file
-    // Create a subdirectory for this conversion
-    let conversion_id = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-    let temp_dir = format!("./tmp/conversion_{}", conversion_id);
-    let _ = fs::create_dir_all(&temp_dir);
-    
-    let mlir_file = PathBuf::from(&temp_dir).join("input.mlir");
-    let llvm_file = PathBuf::from(&temp_dir).join("output.ll");
-    
-    fs::write(&mlir_file, mlir)
-        .map_err(|e| format!("Failed to write MLIR file: {}", e))?;
-    
-    // Try to use buddy-opt pipeline
-    let buddy_opt_result = Command::new("buddy-opt")
-        .args(&[
-            mlir_file.to_str().unwrap(),
-            "-llvm-request-c-wrappers",
-            "-convert-linalg-to-loops",
-            "-lower-affine",
-            "-convert-scf-to-cf",
-            "-convert-vector-to-llvm",
-            "-finalize-memref-to-llvm",
-            "-convert-arith-to-llvm",
-            "-lower-gemmini",
-            "-convert-func-to-llvm",
-            "-reconcile-unrealized-casts",
-        ])
-        .output();
-    
-    match buddy_opt_result {
-        Ok(output) => {
-            if output.status.success() {
-                // Convert to LLVM IR using buddy-translate
-                let buddy_translate_result = Command::new("buddy-translate")
-                    .args(&["-buddy-to-llvmir"])
-                    .args(&["-allow-unregistered-dialect"])
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .spawn();
-                
-                match buddy_translate_result {
-                    Ok(mut child) => {
-                        if let Some(stdin) = child.stdin.take() {
-                            let mut writer = BufWriter::new(stdin);
-                            writer.write_all(&output.stdout).ok();
-                        }
-                        
-                        let output = child.wait_with_output().unwrap();
-                        if output.status.success() {
-                            return Ok(String::from_utf8_lossy(&output.stdout).to_string());
-                        }
-                    }
-                    Err(_) => {}
-                }
-            }
-        }
-        Err(_) => {}
-    }
-    
-    // Fall back to generating simple LLVM IR
-    Ok(generate_fallback_llvm_ir())
 }
 
 fn generate_fallback_llvm_ir() -> String {
