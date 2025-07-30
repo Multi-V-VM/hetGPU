@@ -1204,7 +1204,6 @@ extern uint64_t __input_data_size __attribute__((weak));
 static uint8_t input_buffer[4096];  // 4KB for various data types
 static uint8_t output_buffer[4096]; // 4KB for various data types
 
-// Simple print functions for Spike
 void print_uint(uint32_t value) {
     char buffer[32];
     int len = 0;
@@ -1212,14 +1211,12 @@ void print_uint(uint32_t value) {
     if (value == 0) {
         buffer[len++] = '0';
     } else {
-        // Convert to string (digits will be reversed)
         char temp[16];
         int temp_len = 0;
         while (value > 0) {
             temp[temp_len++] = '0' + (value % 10);
             value /= 10;
         }
-        // Reverse the digits
         while (temp_len > 0) {
             buffer[len++] = temp[--temp_len];
         }
@@ -1244,12 +1241,10 @@ void print_bytes_hex(const uint8_t* bytes, int count) {
 }
 
 void print_float(float value) {
-    // Simple float printing for RISC-V
     int int_part = (int)value;
     int frac_part = (int)((value - int_part) * 100);
     if (frac_part < 0) frac_part = -frac_part;
     
-    // Print to stdout (Spike will capture this)
     char buffer[32];
     char* p = buffer;
     
@@ -1258,7 +1253,6 @@ void print_float(float value) {
         int_part = -int_part;
     }
     
-    // Convert integer part
     if (int_part == 0) {
         *p++ = '0';
     } else {
@@ -1279,17 +1273,13 @@ void print_float(float value) {
     *p++ = ' ';
     *p = '\0';
     
-    // Write to stdout (file descriptor 1)
     write(1, buffer, p - buffer);
 }
 
-// Output function for bare-metal environment
 void write_output_data(uint8_t* buffer, int size) {
-    // Print the output values as hex bytes
     const char* output_prefix = "GEMMINI_OUTPUT: ";
     write(1, output_prefix, strlen__(output_prefix));
     
-    // Print bytes as hex (up to 16 bytes for readability)
     int bytes_to_print = size < 16 ? size : 16;
     print_bytes_hex(buffer, bytes_to_print);
     
@@ -1301,7 +1291,6 @@ int main() {
     const char* start_msg = "GEMMINI_START: Executing kernel\n";
     write(1, start_msg, strlen__(start_msg));
     
-    // Copy embedded input data to working buffers
     if (__input_data_start && __input_data_end) {
         uint64_t data_size = __input_data_end - __input_data_start;
         uint64_t copy_size = data_size < sizeof(input_buffer) ? data_size : sizeof(input_buffer);
@@ -1321,13 +1310,8 @@ int main() {
     
     memref_2d_f32_t input1_desc, input2_desc, output_desc;
     
-    // Set up generic memref descriptors
-    // Default to 1x1 arrays for element-wise operations
-    // This works for XOR and other element-wise operations
     int dim1 = 1, dim2 = 1;
     
-    // Calculate element size based on the operation type
-    // For now, assume float32 (4 bytes) but this can be made configurable
     int element_size = sizeof(float);
     
     input1_desc = (memref_2d_f32_t){
@@ -1354,7 +1338,6 @@ int main() {
         .strides = {dim2, 1}
     };
     
-    // Try to call the kernel function (will try different names)
     const char* kernel_msg = "GEMMINI_KERNEL: Calling compiled kernel\n";
     write(1, kernel_msg, strlen__(kernel_msg));
     
@@ -1370,21 +1353,16 @@ int main() {
         const char* xor_msg = "GEMMINI_KERNEL: Found xor\n";
         write(1, xor_msg, strlen__(xor_msg));
         
-        // Call the XOR function - it returns a new memref struct
         memref_2d_f32_t result_desc;
         _mlir_ciface_xor(&result_desc, &input1_desc, &input2_desc);
         
-        // The result is in the newly allocated memory pointed to by result_desc
-        // Copy it to our output buffer (handle as raw bytes)
         uint8_t* result_data = (uint8_t*)result_desc.aligned_data;
-        // Copy the result data (size depends on the operation)
         int copy_size = dim1 * dim2 * sizeof(float);
         for (int i = 0; i < copy_size; i++) {
             output_buffer[i] = result_data[i];
         }
     }
     
-    // Write output data (this will print results to stdout)
     write_output_data(output_buffer, sizeof(output_buffer));
     
     const char* end_msg = "GEMMINI_END: Kernel execution completed\n";
