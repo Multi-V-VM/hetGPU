@@ -1194,6 +1194,7 @@ typedef struct {
 extern void _mlir_ciface_matmul_kernel(memref_2d_f32_t* input1, memref_2d_f32_t* input2, memref_2d_f32_t* output) __attribute__((weak));
 extern void _mlir_ciface_atom_add_float(memref_2d_f32_t* input1, memref_2d_f32_t* input2, memref_2d_f32_t* output) __attribute__((weak));
 extern void _mlir_ciface_xor(memref_2d_f32_t* result, memref_2d_f32_t* input1, memref_2d_f32_t* input2) __attribute__((weak));
+extern void _mlir_ciface_and(memref_2d_f32_t* result, memref_2d_f32_t* input1, memref_2d_f32_t* input2) __attribute__((weak));
 
 // External symbols for input data embedded in the executable
 extern uint8_t __input_data_start[] __attribute__((weak));
@@ -1355,6 +1356,18 @@ int main() {
         
         memref_2d_f32_t result_desc;
         _mlir_ciface_xor(&result_desc, &input1_desc, &input2_desc);
+        
+        uint8_t* result_data = (uint8_t*)result_desc.aligned_data;
+        int copy_size = dim1 * dim2 * sizeof(float);
+        for (int i = 0; i < copy_size; i++) {
+            output_buffer[i] = result_data[i];
+        }
+    } else if (_mlir_ciface_and) {
+        const char* and_msg = "GEMMINI_KERNEL: Found and\n";
+        write(1, and_msg, strlen__(and_msg));
+        
+        memref_2d_f32_t result_desc;
+        _mlir_ciface_and(&result_desc, &input1_desc, &input2_desc);
         
         uint8_t* result_data = (uint8_t*)result_desc.aligned_data;
         int copy_size = dim1 * dim2 * sizeof(float);
