@@ -14,6 +14,8 @@ pub(super) mod function;
 pub(super) mod memory;
 pub(super) mod module;
 pub(super) mod pointer;
+pub(super) mod nvidia_backend;
+pub(super) mod simple_memory_tracer;
 
 #[cfg(feature = "intel")]
 pub mod ze_device;
