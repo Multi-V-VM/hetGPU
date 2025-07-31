@@ -12,6 +12,7 @@ use std::ffi::CStr;
 use std::{cell::RefCell, collections::HashMap, ptr::NonNull};
 
 use crate::r#impl::context;
+use crate::r#impl::nvidia_backend;
 
 use super::LiveCheck;
 
@@ -280,6 +281,13 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
 
 #[cfg(feature = "amd")]
 pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
+    // 首先检查是否有可用的 NVIDIA 后端
+    if nvidia_backend::is_nvidia_backend_available() {
+        eprintln!("[Driver] 检测到 NVIDIA 后端可用，转发 cuInit 调用");
+        return nvidia_backend::cu_init(flags);
+    }
+    
+    eprintln!("[Driver] 使用 AMD 后端进行初始化");
     unsafe { hipInit(flags).unwrap() };
     global_state()?;
     Ok(())
@@ -287,6 +295,13 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
 
 #[cfg(feature = "intel")]
 pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
+    // 首先检查是否有可用的 NVIDIA 后端
+    if nvidia_backend::is_nvidia_backend_available() {
+        eprintln!("[Driver] 检测到 NVIDIA 后端可用，转发 cuInit 调用");
+        return nvidia_backend::cu_init(flags);
+    }
+    
+    eprintln!("[Driver] 使用 Intel 后端进行初始化");
     unsafe {
         // Initialize Level Zero
         zeInit(0).to_cuda_result(())?;
@@ -301,6 +316,13 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
+    // 首先检查是否有可用的 NVIDIA 后端
+    if nvidia_backend::is_nvidia_backend_available() {
+        eprintln!("[Driver] 检测到 NVIDIA 后端可用，转发 cuInit 调用");
+        return nvidia_backend::cu_init(flags);
+    }
+    
+    eprintln!("[Driver] 使用 Tenstorrent 后端进行初始化");
     // Tenstorrent initialization
     // The tt_runtime_sys doesn't require explicit initialization like CUDA/HIP
     // We just ignore the flags as they don't apply to Tenstorrent

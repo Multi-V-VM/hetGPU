@@ -3,12 +3,12 @@
 //! 这个模块在检测到 NVIDIA GPU 时，直接调用系统的 CUDA 库，
 //! 但同时保持我们的动态内存跟踪功能。
 
-// Note: Memory tracking functionality would be added here if needed
-// use crate::r#impl::memory::{get_memory_tracer, AllocationType};
+// 集成完整版内存跟踪器
+use crate::r#impl::simple_memory_tracer::{get_simple_tracer, track_memory_copy, track_memory_set, AccessType, AllocationType};
 use cuda_types::cuda::*;
 use std::ffi::{c_void, CStr};
 use std::ptr;
-use std::sync::Mutex;
+use std::sync::{Mutex, Once};
 use lazy_static::lazy_static;
 use libc;
 
@@ -100,6 +100,41 @@ lazy_static! {
     /// 全局 NVIDIA CUDA 库实例
     static ref NVIDIA_CUDA: Mutex<Option<NvidiaCudaLibrary>> = Mutex::new(None);
 }
+
+/// 确保后端只初始化一次的标志
+static INIT_ONCE: Once = Once::new();
+
+/// 库构造函数实现 - 在动态库加载时自动调用
+#[no_mangle]
+#[used]
+pub extern "C" fn __zluda_lib_init() {
+    INIT_ONCE.call_once(|| {
+        eprintln!("[NvidiaBackend] LD_PRELOAD 检测到库加载，开始自动初始化 NVIDIA 后端...");
+        
+        // 尝试初始化 NVIDIA 后端
+        match initialize_nvidia_backend() {
+            Ok(()) => {
+                eprintln!("[NvidiaBackend] LD_PRELOAD 自动初始化成功！");
+                eprintln!("[NvidiaBackend] 现在所有 CUDA 调用将转发到原生 NVIDIA 库并进行内存跟踪");
+            },
+            Err(e) => {
+                eprintln!("[NvidiaBackend] LD_PRELOAD 自动初始化失败: {}", e);
+                eprintln!("[NvidiaBackend] 将使用其他后端或返回错误");
+            }
+        }
+    });
+}
+
+/// 使用 ctor 属性确保在库加载时调用初始化函数
+#[cfg_attr(any(target_os = "linux", target_os = "android"), link_section = ".init_array")]
+#[cfg_attr(target_os = "freebsd", link_section = ".init_array")]
+#[cfg_attr(target_os = "netbsd", link_section = ".init_array")]
+#[cfg_attr(target_os = "openbsd", link_section = ".init_array")]
+#[cfg_attr(target_os = "macos", link_section = "__DATA,__mod_init_func")]
+#[cfg_attr(target_os = "ios", link_section = "__DATA,__mod_init_func")]
+#[cfg_attr(target_os = "windows", link_section = ".CRT$XIB")]
+#[used]
+static LIBRARY_CTOR: extern "C" fn() = __zluda_lib_init;
 
 impl CudaFunctions {
     fn new() -> Self {
@@ -381,10 +416,9 @@ pub fn cu_mem_alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
             // 如果分配成功，添加到内存跟踪器
             if result == CUresult::SUCCESS && !dptr.is_null() {
                 let address = unsafe { (*dptr).0 as u64 };
-                // TODO: Add memory tracking when tracer is available
-                // if let Ok(mut tracer) = get_memory_tracer().try_lock() {
-                //     tracer.track_allocation(address, bytesize, 0, AllocationType::Device);
-                // }
+                if let Ok(mut tracer) = get_simple_tracer().try_lock() {
+                    tracer.track_alloc_with_type(address, bytesize, AllocationType::Device);
+                }
                 eprintln!("[NvidiaBackend] 成功分配 {} 字节在地址 0x{:x}", bytesize, address);
             }
             
@@ -401,10 +435,9 @@ pub fn cu_mem_free_v2(dptr: CUdeviceptr) -> CUresult {
     eprintln!("[NvidiaBackend] cuMemFree_v2(ptr=0x{:x})", address);
     
     // 先更新跟踪器
-    // TODO: Add memory tracking when tracer is available
-    // if let Ok(mut tracer) = get_memory_tracer().try_lock() {
-    //     tracer.track_deallocation(address);
-    // }
+    if let Ok(mut tracer) = get_simple_tracer().try_lock() {
+        tracer.track_free(address);
+    }
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
     if let Some(ref lib) = *cuda_lib {
@@ -426,10 +459,9 @@ pub fn cu_memcpy_hto_d_v2(dst_device: CUdeviceptr, src_host: *const c_void, byte
     eprintln!("[NvidiaBackend] cuMemcpyHtoD_v2(dst=0x{:x}, size={})", address, byte_count);
     
     // 跟踪内存写入
-    // TODO: Add memory tracking when tracer is available
-    // if let Ok(mut tracer) = get_memory_tracer().try_lock() {
-    //     tracer.track_memory_access(address, byte_count, true); // 写入操作
-    // }
+    if let Ok(mut tracer) = get_simple_tracer().try_lock() {
+        tracer.track_memory_access(address, byte_count, AccessType::Write);
+    }
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
     if let Some(ref lib) = *cuda_lib {
@@ -447,15 +479,33 @@ pub fn cu_memcpy_dto_h_v2(dst_host: *mut c_void, src_device: CUdeviceptr, byte_c
     eprintln!("[NvidiaBackend] cuMemcpyDtoH_v2(src=0x{:x}, size={})", address, byte_count);
     
     // 跟踪内存读取
-    // TODO: Add memory tracking when tracer is available
-    // if let Ok(mut tracer) = get_memory_tracer().try_lock() {
-    //     tracer.track_memory_access(address, byte_count, false); // 读取操作
-    // }
+    if let Ok(mut tracer) = get_simple_tracer().try_lock() {
+        tracer.track_memory_access(address, byte_count, AccessType::Read);
+    }
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
     if let Some(ref lib) = *cuda_lib {
         if let Some(func) = lib.functions.cu_memcpy_dto_h_v2 {
             return unsafe { func(dst_host, src_device, byte_count) };
+        }
+    }
+    
+    CUresult::ERROR_NOT_INITIALIZED
+}
+
+/// cuMemcpyDtoD_v2 - 设备到设备内存复制 (带跟踪)
+pub fn cu_memcpy_dto_d_v2(dst_device: CUdeviceptr, src_device: CUdeviceptr, byte_count: usize) -> CUresult {
+    let dst_address = dst_device.0 as u64;
+    let src_address = src_device.0 as u64;
+    eprintln!("[NvidiaBackend] cuMemcpyDtoD_v2(dst=0x{:x}, src=0x{:x}, size={})", dst_address, src_address, byte_count);
+    
+    // 跟踪内存复制（读源地址，写目标地址）
+    track_memory_copy(dst_address, src_address, byte_count);
+    
+    let cuda_lib = NVIDIA_CUDA.lock().unwrap();
+    if let Some(ref lib) = *cuda_lib {
+        if let Some(func) = lib.functions.cu_memcpy_dto_d_v2 {
+            return unsafe { func(dst_device, src_device, byte_count) };
         }
     }
     
@@ -483,10 +533,7 @@ pub fn cu_memset_d8_v2(dst_device: CUdeviceptr, uc: u8, n: usize) -> CUresult {
     eprintln!("[NvidiaBackend] cuMemsetD8_v2(dst=0x{:x}, value={}, count={})", address, uc, n);
     
     // 跟踪内存写入
-    // TODO: Add memory tracking when tracer is available
-    // if let Ok(mut tracer) = get_memory_tracer().try_lock() {
-    //     tracer.track_memory_access(address, n, true);
-    // }
+    track_memory_set(address, n);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
     if let Some(ref lib) = *cuda_lib {
@@ -503,16 +550,59 @@ pub fn cu_memset_d32_v2(dst_device: CUdeviceptr, ui: u32, n: usize) -> CUresult 
     let address = dst_device.0 as u64;
     eprintln!("[NvidiaBackend] cuMemsetD32_v2(dst=0x{:x}, value={}, count={})", address, ui, n);
     
-    // 跟踪内存写入
-    // TODO: Add memory tracking when tracer is available
-    // if let Ok(mut tracer) = get_memory_tracer().try_lock() {
-    //     tracer.track_memory_access(address, n * 4, true); // 32位 = 4字节
-    // }
+    // 跟踪内存写入 
+    track_memory_set(address, n * 4); // 32位 = 4字节
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
     if let Some(ref lib) = *cuda_lib {
         if let Some(func) = lib.functions.cu_memset_d32_v2 {
             return unsafe { func(dst_device, ui, n) };
+        }
+    }
+    
+    CUresult::ERROR_NOT_INITIALIZED
+}
+
+/// cuMemAllocHost_v2 - 分配主机内存
+pub fn cu_mem_alloc_host_v2(pp: *mut *mut c_void, bytesize: usize) -> CUresult {
+    eprintln!("[NvidiaBackend] cuMemAllocHost_v2(size={})", bytesize);
+    
+    let cuda_lib = NVIDIA_CUDA.lock().unwrap();
+    if let Some(ref lib) = *cuda_lib {
+        if let Some(func) = lib.functions.cu_mem_alloc_host_v2 {
+            let result = unsafe { func(pp, bytesize) };
+            
+            // 跟踪主机内存分配
+            if result == CUresult::SUCCESS && !pp.is_null() {
+                let ptr = unsafe { *pp };
+                let address = ptr as u64;
+                if let Ok(mut tracer) = get_simple_tracer().try_lock() {
+                    tracer.track_alloc_with_type(address, bytesize, AllocationType::Host);
+                }
+                eprintln!("[NvidiaBackend] 成功分配主机内存 {} 字节在地址 0x{:x}", bytesize, address);
+            }
+            
+            return result;
+        }
+    }
+    
+    CUresult::ERROR_NOT_INITIALIZED
+}
+
+/// cuMemFreeHost - 释放主机内存
+pub fn cu_mem_free_host(p: *mut c_void) -> CUresult {
+    let address = p as u64;
+    eprintln!("[NvidiaBackend] cuMemFreeHost(ptr=0x{:x})", address);
+    
+    // 跟踪主机内存释放
+    if let Ok(mut tracer) = get_simple_tracer().try_lock() {
+        tracer.track_free(address);
+    }
+    
+    let cuda_lib = NVIDIA_CUDA.lock().unwrap();
+    if let Some(ref lib) = *cuda_lib {
+        if let Some(func) = lib.functions.cu_mem_free_host {
+            return unsafe { func(p) };
         }
     }
     
@@ -609,6 +699,71 @@ pub fn cu_pointer_get_attribute(data: *mut c_void, attribute: CUpointer_attribut
 }
 
 // 其他 CUDA API 的转发函数可以按需添加...
+
+/// 内存跟踪器管理函数
+
+/// 获取内存统计信息
+pub fn get_memory_statistics() -> Option<(u64, u64, u64, u64, u64)> {
+    if let Ok(tracer) = get_simple_tracer().try_lock() {
+        Some(tracer.get_stats())
+    } else {
+        None
+    }
+}
+
+/// 执行内存泄漏检测
+pub fn detect_memory_leaks() -> u64 {
+    if let Ok(mut tracer) = get_simple_tracer().try_lock() {
+        tracer.detect_memory_leaks();
+        tracer.get_complete_stats().leak_count
+    } else {
+        0
+    }
+}
+
+/// 打印内存报告
+pub fn print_memory_report() {
+    if let Ok(tracer) = get_simple_tracer().try_lock() {
+        tracer.print_report();
+    }
+}
+
+/// 导出详细内存报告到文件
+pub fn export_memory_report(filename: &str) -> Result<(), std::io::Error> {
+    if let Ok(tracer) = get_simple_tracer().try_lock() {
+        tracer.export_report(filename)
+    } else {
+        Err(std::io::Error::new(std::io::ErrorKind::Other, "Unable to access memory tracer"))
+    }
+}
+
+/// 获取脏页面数量
+pub fn get_dirty_pages_count() -> u64 {
+    if let Ok(tracer) = get_simple_tracer().try_lock() {
+        tracer.get_dirty_pages_count()
+    } else {
+        0
+    }
+}
+
+/// 设置跟踪器配置  
+pub fn configure_memory_tracer(enable_dirty_tracking: bool, enable_leak_detection: bool, page_size: usize) {
+    if let Ok(mut tracer) = get_simple_tracer().try_lock() {
+        use crate::r#impl::simple_memory_tracer::TrackerConfig;
+        let config = TrackerConfig {
+            enable_dirty_tracking,
+            enable_access_tracking: true,
+            enable_pattern_analysis: true,
+            enable_leak_detection,
+            max_history_size: 10000,
+            page_size,
+            leak_detection_threshold: 60000, // 1 minute
+            report_interval_ms: 30000, // 30 seconds
+        };
+        tracer.set_config(config);
+        eprintln!("[NvidiaBackend] 内存跟踪器配置已更新");
+    }
+}
 
 // 上下文管理函数
 pub fn cu_ctx_set_current(ctx: CUcontext) -> CUresult {
