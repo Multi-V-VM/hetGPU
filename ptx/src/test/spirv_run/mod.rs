@@ -1150,33 +1150,90 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     eprintln!("ZLUDA DEBUG: Input arrays: {:?}", input_strings);
     eprintln!("ZLUDA DEBUG: Expected output: {}", output_str);
     
-    // Build the command to execute the Python script
-    let script_path = "/home/bubblepipe/hetGPU/run_ttnn_matrix.py";
-    let env_path = format!("{}/env/activate", tt_mlir_dir);
-
-    // Join all input strings with spaces
-    let all_inputs = input_strings.iter()
-        .map(|s| format!("\"{}\"", s))
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    let cmd = format!(
-        "source {} && python3 {} {} {} \"{}\"",
-        env_path,
-        script_path,
-        ttnn_file.display(),
-        all_inputs,
-        output_str
-    );
+    // Check if remote execution is enabled via environment variable
+    let use_remote_tt = std::env::var("ZLUDA_TT_REMOTE_EXEC").unwrap_or_default() == "1";
     
-    eprintln!("ZLUDA DEBUG: Executing command: {}", cmd);
-    
-    // Execute the command
-    let execution_output = Command::new("bash")
-        .arg("-c")
-        .arg(&cmd)
-        .output()
-        .map_err(|e| format!("Failed to execute Python script: {}", e))?;
+    let execution_output = if use_remote_tt {
+        // Remote execution on server 295k
+        eprintln!("ZLUDA DEBUG: Remote TT execution enabled");
+        
+        // Copy the TTNN file to remote server
+        let remote_ttnn_path = format!("/tmp/{}.ttnn", kernel_name);
+        let scp_cmd = format!(
+            "scp {} 295k:{}",
+            ttnn_file.display(),
+            remote_ttnn_path
+        );
+        
+        eprintln!("ZLUDA DEBUG: Copying TTNN file to remote server: {}", scp_cmd);
+        
+        let scp_output = Command::new("bash")
+            .arg("-c")
+            .arg(&scp_cmd)
+            .output()
+            .map_err(|e| format!("Failed to copy TTNN file to remote server: {}", e))?;
+        
+        if !scp_output.status.success() {
+            let stderr = String::from_utf8_lossy(&scp_output.stderr);
+            return Err(format!("Failed to copy TTNN file: {}", stderr));
+        }
+        
+        // Join all input strings with spaces
+        let all_inputs = input_strings.iter()
+            .map(|s| format!("\"{}\"", s))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // Execute on remote server with proper environment activation
+        let script_path = "/home/bubblepipe/hetGPU/run_ttnn_matrix.py";
+        let remote_cmd = format!(
+            "ssh 295k 'source /home/bubblepipe/hetGPU/env/activate && python3 {} {} {} \"{}\"'",
+            script_path,
+            remote_ttnn_path,
+            all_inputs,
+            output_str
+        );
+        
+        eprintln!("ZLUDA DEBUG: Executing command on remote server: {}", remote_cmd);
+        
+        // Execute the command
+        Command::new("bash")
+            .arg("-c")
+            .arg(&remote_cmd)
+            .output()
+            .map_err(|e| format!("Failed to execute Python script on remote server: {}", e))?
+    } else {
+        // Local execution (original code)
+        eprintln!("ZLUDA DEBUG: Local TT execution");
+        
+        // Build the command to execute the Python script
+        let script_path = "/home/bubblepipe/hetGPU/run_ttnn_matrix.py";
+        let env_path = format!("{}/env/activate", tt_mlir_dir);
+
+        // Join all input strings with spaces
+        let all_inputs = input_strings.iter()
+            .map(|s| format!("\"{}\"", s))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let cmd = format!(
+            "source {} && python3 {} {} {} \"{}\"",
+            env_path,
+            script_path,
+            ttnn_file.display(),
+            all_inputs,
+            output_str
+        );
+        
+        eprintln!("ZLUDA DEBUG: Executing command: {}", cmd);
+        
+        // Execute the command
+        Command::new("bash")
+            .arg("-c")
+            .arg(&cmd)
+            .output()
+            .map_err(|e| format!("Failed to execute Python script: {}", e))?
+    };
     
     if execution_output.status.success() {
         eprintln!("ZLUDA DEBUG: Python script executed successfully");
