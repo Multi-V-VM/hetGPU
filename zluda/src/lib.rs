@@ -154,6 +154,34 @@ macro_rules! implemented_in_function {
     };
 }
 
+#[cfg(feature = "nvidia")]
+macro_rules! implemented {
+    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* ) -> $ret_type:ty;)*) => {
+        $(
+            #[cfg_attr(not(test), no_mangle)]
+            #[allow(improper_ctypes)]
+            #[allow(improper_ctypes_definitions)]
+            pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
+                crate::r#impl::nvidia_backend::$fn_name($($arg_id),*)
+            }
+        )*
+    };
+}
+
+#[cfg(feature = "nvidia")]
+macro_rules! implemented_in_function {
+    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* ) -> $ret_type:ty;)*) => {
+        $(
+            #[cfg_attr(not(test), no_mangle)]
+            #[allow(improper_ctypes)]
+            #[allow(improper_ctypes_definitions)]
+            pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
+                crate::r#impl::nvidia_backend::$fn_name($($arg_id),*)
+            }
+        )*
+    };
+}
+
 cuda_base::cuda_function_declarations!(
     unimplemented,
     implemented
@@ -191,3 +219,34 @@ cuda_base::cuda_function_declarations!(
         ],
     implemented_in_function <= [cuLaunchKernel,]
 );
+
+// CUDA Runtime API 函数导出 (仅在 nvidia feature 启用时)
+#[cfg(feature = "nvidia")]
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaMallocHost(ptr: *mut *mut std::ffi::c_void, size: usize) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaMallocHost(ptr, size)
+}
+
+#[cfg(feature = "nvidia")]
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaFreeHost(ptr: *mut std::ffi::c_void) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaFreeHost(ptr)
+}
+
+#[cfg(feature = "nvidia")]
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaMalloc(devPtr: *mut *mut std::ffi::c_void, size: usize) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaMalloc(devPtr, size)
+}
+
+#[cfg(feature = "nvidia")]
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaFree(devPtr: *mut std::ffi::c_void) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaFree(devPtr)
+}
+
+#[cfg(feature = "nvidia")]
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaMemcpy(dst: *mut std::ffi::c_void, src: *const std::ffi::c_void, count: usize, kind: std::ffi::c_int) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaMemcpy(dst, src, count, kind)
+}

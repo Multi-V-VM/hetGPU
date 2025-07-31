@@ -106,7 +106,6 @@ static INIT_ONCE: Once = Once::new();
 
 /// 库构造函数实现 - 在动态库加载时自动调用
 #[no_mangle]
-#[used]
 pub extern "C" fn __zluda_lib_init() {
     INIT_ONCE.call_once(|| {
         eprintln!("[NvidiaBackend] LD_PRELOAD 检测到库加载，开始自动初始化 NVIDIA 后端...");
@@ -334,11 +333,144 @@ pub fn is_nvidia_backend_available() -> bool {
     cuda_lib.is_some()
 }
 
+/// 验证库句柄是否仍然有效
+fn is_library_handle_valid(handle: *mut c_void) -> bool {
+    if handle.is_null() {
+        return false;
+    }
+    
+    // 尝试获取一个简单的符号来测试句柄有效性
+    unsafe {
+        let test_symbol = libc::dlsym(handle, "cuInit\0".as_ptr() as *const i8);
+        !test_symbol.is_null()
+    }
+}
+
+/// 确保 CUDA 上下文已创建
+fn ensure_cuda_context() -> Result<(), CUresult> {
+    eprintln!("[NvidiaBackend] ensure_cuda_context()");
+    
+    // 首先确保 CUDA 已初始化
+    let init_result = cuInit(0);
+    if init_result != CUresult::SUCCESS {
+        eprintln!("[NvidiaBackend] cuInit 失败: {:?}", init_result);
+        return Err(init_result);
+    }
+    
+    // 获取设备数量和第一个设备
+    let mut device_count = 0i32;
+    let mut device: CUdevice = 0;
+    
+    let cuda_lib = NVIDIA_CUDA.lock().unwrap();
+    if let Some(ref lib) = *cuda_lib {
+        // 获取设备数量
+        if let Some(func) = lib.functions.cu_device_get_count {
+            let result = unsafe { func(&mut device_count) };
+            if result != CUresult::SUCCESS {
+                eprintln!("[NvidiaBackend] cuDeviceGetCount 失败: {:?}", result);
+                return Err(result);
+            }
+        } else {
+            eprintln!("[NvidiaBackend] cuDeviceGetCount 函数未加载");
+            return Err(CUresult::ERROR_NOT_INITIALIZED);
+        }
+        
+        if device_count == 0 {
+            eprintln!("[NvidiaBackend] 没有找到 CUDA 设备");
+            return Err(CUresult::ERROR_NO_DEVICE);
+        }
+        
+        // 获取第一个设备
+        if let Some(func) = lib.functions.cu_device_get {
+            let result = unsafe { func(&mut device, 0) };
+            if result != CUresult::SUCCESS {
+                eprintln!("[NvidiaBackend] cuDeviceGet 失败: {:?}", result);
+                return Err(result);
+            }
+        } else {
+            eprintln!("[NvidiaBackend] cuDeviceGet 函数未加载");
+            return Err(CUresult::ERROR_NOT_INITIALIZED);
+        }
+        // 获取或创建主上下文
+        let mut context: CUcontext = CUcontext(ptr::null_mut());
+        
+        // 创建主上下文
+        if let Some(func) = lib.functions.cu_device_primary_ctx_retain {
+            let result = unsafe { func(&mut context, device) };
+            if result != CUresult::SUCCESS {
+                eprintln!("[NvidiaBackend] cuDevicePrimaryCtxRetain 失败: {:?}", result);
+                return Err(result);
+            }
+        } else {
+            eprintln!("[NvidiaBackend] cuDevicePrimaryCtxRetain 函数未加载");
+            return Err(CUresult::ERROR_NOT_INITIALIZED);
+        }
+        
+        // 设置当前上下文
+        if let Some(func) = lib.functions.cu_ctx_set_current {
+            let result = unsafe { func(context) };
+            if result != CUresult::SUCCESS {
+                eprintln!("[NvidiaBackend] cuCtxSetCurrent 失败: {:?}", result);
+                return Err(result);
+            }
+        } else {
+            eprintln!("[NvidiaBackend] cuCtxSetCurrent 函数未加载");
+            return Err(CUresult::ERROR_NOT_INITIALIZED);
+        }
+    } else {
+        eprintln!("[NvidiaBackend] CUDA 库未初始化");
+        return Err(CUresult::ERROR_NOT_INITIALIZED);
+    }
+    
+    eprintln!("[NvidiaBackend] CUDA 上下文初始化成功");
+    Ok(())
+}
+
+/// 检查并重新初始化 NVIDIA 后端（如果需要）
+pub fn ensure_nvidia_backend_available() -> bool {
+    {
+        let cuda_lib = NVIDIA_CUDA.lock().unwrap();
+        if let Some(ref lib) = *cuda_lib {
+            // 检查库句柄是否仍然有效
+            if is_library_handle_valid(lib.handle.0) {
+                return true;
+            } else {
+                eprintln!("[NvidiaBackend] 检测到库句柄无效，需要重新加载");
+                // 注意：这里不能直接修改 cuda_lib，因为我们持有只读引用
+            }
+        }
+    }
+    
+    // 清理无效状态并重新初始化
+    {
+        let mut cuda_lib = NVIDIA_CUDA.lock().unwrap();
+        *cuda_lib = None;
+    }
+    
+    eprintln!("[NvidiaBackend] 后端需要重新初始化...");
+    match initialize_nvidia_backend() {
+        Ok(()) => {
+            eprintln!("[NvidiaBackend] 重新初始化成功");
+            true
+        }
+        Err(e) => {
+            eprintln!("[NvidiaBackend] 重新初始化失败: {}", e);
+            false
+        }
+    }
+}
+
 // CUDA API 转发函数实现
 
 /// cuInit - 初始化 CUDA
-pub fn cu_init(flags: u32) -> CUresult {
+pub fn cuInit(flags: u32) -> CUresult {
     eprintln!("[NvidiaBackend] cuInit(flags={})", flags);
+    
+    // 确保 NVIDIA 后端可用（处理重新加载情况）
+    if !ensure_nvidia_backend_available() {
+        eprintln!("[NvidiaBackend] 无法初始化或重新初始化 NVIDIA 后端");
+        return CUresult::ERROR_NOT_INITIALIZED;
+    }
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
     if let Some(ref lib) = *cuda_lib {
@@ -353,7 +485,7 @@ pub fn cu_init(flags: u32) -> CUresult {
 }
 
 /// cuDriverGetVersion - 获取驱动版本
-pub fn cu_driver_get_version(driver_version: *mut i32) -> CUresult {
+pub fn cuDriverGetVersion(driver_version: *mut i32) -> CUresult {
     eprintln!("[NvidiaBackend] cuDriverGetVersion()");
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -372,7 +504,7 @@ pub fn cu_driver_get_version(driver_version: *mut i32) -> CUresult {
 }
 
 /// cuDeviceGetCount - 获取设备数量
-pub fn cu_device_get_count(count: *mut i32) -> CUresult {
+pub fn cuDeviceGetCount(count: *mut i32) -> CUresult {
     eprintln!("[NvidiaBackend] cuDeviceGetCount()");
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -391,7 +523,7 @@ pub fn cu_device_get_count(count: *mut i32) -> CUresult {
 }
 
 /// cuDeviceGet - 获取设备句柄
-pub fn cu_device_get(device: *mut CUdevice, ordinal: i32) -> CUresult {
+pub fn cuDeviceGet(device: *mut CUdevice, ordinal: i32) -> CUresult {
     eprintln!("[NvidiaBackend] cuDeviceGet(ordinal={})", ordinal);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -405,7 +537,7 @@ pub fn cu_device_get(device: *mut CUdevice, ordinal: i32) -> CUresult {
 }
 
 /// cuMemAlloc_v2 - 分配设备内存 (带跟踪)
-pub fn cu_mem_alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
+pub fn cuMemAlloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
     eprintln!("[NvidiaBackend] cuMemAlloc_v2(size={})", bytesize);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -430,7 +562,7 @@ pub fn cu_mem_alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
 }
 
 /// cuMemFree_v2 - 释放设备内存 (带跟踪)
-pub fn cu_mem_free_v2(dptr: CUdeviceptr) -> CUresult {
+pub fn cuMemFree_v2(dptr: CUdeviceptr) -> CUresult {
     let address = dptr.0 as u64;
     eprintln!("[NvidiaBackend] cuMemFree_v2(ptr=0x{:x})", address);
     
@@ -454,7 +586,7 @@ pub fn cu_mem_free_v2(dptr: CUdeviceptr) -> CUresult {
 }
 
 /// cuMemcpyHtoD_v2 - 主机到设备内存复制 (带跟踪)
-pub fn cu_memcpy_hto_d_v2(dst_device: CUdeviceptr, src_host: *const c_void, byte_count: usize) -> CUresult {
+pub fn cuMemcpyHtoD_v2(dst_device: CUdeviceptr, src_host: *const c_void, byte_count: usize) -> CUresult {
     let address = dst_device.0 as u64;
     eprintln!("[NvidiaBackend] cuMemcpyHtoD_v2(dst=0x{:x}, size={})", address, byte_count);
     
@@ -474,7 +606,7 @@ pub fn cu_memcpy_hto_d_v2(dst_device: CUdeviceptr, src_host: *const c_void, byte
 }
 
 /// cuMemcpyDtoH_v2 - 设备到主机内存复制 (带跟踪)
-pub fn cu_memcpy_dto_h_v2(dst_host: *mut c_void, src_device: CUdeviceptr, byte_count: usize) -> CUresult {
+pub fn cuMemcpyDtoH_v2(dst_host: *mut c_void, src_device: CUdeviceptr, byte_count: usize) -> CUresult {
     let address = src_device.0 as u64;
     eprintln!("[NvidiaBackend] cuMemcpyDtoH_v2(src=0x{:x}, size={})", address, byte_count);
     
@@ -494,7 +626,7 @@ pub fn cu_memcpy_dto_h_v2(dst_host: *mut c_void, src_device: CUdeviceptr, byte_c
 }
 
 /// cuMemcpyDtoD_v2 - 设备到设备内存复制 (带跟踪)
-pub fn cu_memcpy_dto_d_v2(dst_device: CUdeviceptr, src_device: CUdeviceptr, byte_count: usize) -> CUresult {
+pub fn cuMemcpyDtoD_v2(dst_device: CUdeviceptr, src_device: CUdeviceptr, byte_count: usize) -> CUresult {
     let dst_address = dst_device.0 as u64;
     let src_address = src_device.0 as u64;
     eprintln!("[NvidiaBackend] cuMemcpyDtoD_v2(dst=0x{:x}, src=0x{:x}, size={})", dst_address, src_address, byte_count);
@@ -513,7 +645,7 @@ pub fn cu_memcpy_dto_d_v2(dst_device: CUdeviceptr, src_device: CUdeviceptr, byte
 }
 
 /// cuMemGetAddressRange_v2 - 获取内存地址范围
-pub fn cu_mem_get_address_range_v2(pbase: *mut CUdeviceptr, psize: *mut usize, dptr: CUdeviceptr) -> CUresult {
+pub fn cuMemGetAddressRange_v2(pbase: *mut CUdeviceptr, psize: *mut usize, dptr: CUdeviceptr) -> CUresult {
     let address = dptr.0 as u64;
     eprintln!("[NvidiaBackend] cuMemGetAddressRange_v2(ptr=0x{:x})", address);
     
@@ -528,7 +660,7 @@ pub fn cu_mem_get_address_range_v2(pbase: *mut CUdeviceptr, psize: *mut usize, d
 }
 
 /// cuMemsetD8_v2 - 设置设备内存 (8位) 
-pub fn cu_memset_d8_v2(dst_device: CUdeviceptr, uc: u8, n: usize) -> CUresult {
+pub fn cuMemsetD8_v2(dst_device: CUdeviceptr, uc: u8, n: usize) -> CUresult {
     let address = dst_device.0 as u64;
     eprintln!("[NvidiaBackend] cuMemsetD8_v2(dst=0x{:x}, value={}, count={})", address, uc, n);
     
@@ -546,7 +678,7 @@ pub fn cu_memset_d8_v2(dst_device: CUdeviceptr, uc: u8, n: usize) -> CUresult {
 }
 
 /// cuMemsetD32_v2 - 设置设备内存 (32位)
-pub fn cu_memset_d32_v2(dst_device: CUdeviceptr, ui: u32, n: usize) -> CUresult {
+pub fn cuMemsetD32_v2(dst_device: CUdeviceptr, ui: u32, n: usize) -> CUresult {
     let address = dst_device.0 as u64;
     eprintln!("[NvidiaBackend] cuMemsetD32_v2(dst=0x{:x}, value={}, count={})", address, ui, n);
     
@@ -564,7 +696,7 @@ pub fn cu_memset_d32_v2(dst_device: CUdeviceptr, ui: u32, n: usize) -> CUresult 
 }
 
 /// cuMemAllocHost_v2 - 分配主机内存
-pub fn cu_mem_alloc_host_v2(pp: *mut *mut c_void, bytesize: usize) -> CUresult {
+pub fn cuMemAllocHost_v2(pp: *mut *mut c_void, bytesize: usize) -> CUresult {
     eprintln!("[NvidiaBackend] cuMemAllocHost_v2(size={})", bytesize);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -590,7 +722,7 @@ pub fn cu_mem_alloc_host_v2(pp: *mut *mut c_void, bytesize: usize) -> CUresult {
 }
 
 /// cuMemFreeHost - 释放主机内存
-pub fn cu_mem_free_host(p: *mut c_void) -> CUresult {
+pub fn cuMemFreeHost(p: *mut c_void) -> CUresult {
     let address = p as u64;
     eprintln!("[NvidiaBackend] cuMemFreeHost(ptr=0x{:x})", address);
     
@@ -610,7 +742,7 @@ pub fn cu_mem_free_host(p: *mut c_void) -> CUresult {
 }
 
 /// cuModuleLoadData - 加载模块
-pub fn cu_module_load_data(module: *mut CUmodule, image: *const c_void) -> CUresult {
+pub fn cuModuleLoadData(module: *mut CUmodule, image: *const c_void) -> CUresult {
     eprintln!("[NvidiaBackend] cuModuleLoadData()");
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -624,7 +756,7 @@ pub fn cu_module_load_data(module: *mut CUmodule, image: *const c_void) -> CUres
 }
 
 /// cuModuleUnload - 卸载模块
-pub fn cu_module_unload(hmod: CUmodule) -> CUresult {
+pub fn cuModuleUnload(hmod: CUmodule) -> CUresult {
     eprintln!("[NvidiaBackend] cuModuleUnload()");
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -638,7 +770,7 @@ pub fn cu_module_unload(hmod: CUmodule) -> CUresult {
 }
 
 /// cuModuleGetFunction - 获取函数
-pub fn cu_module_get_function(hfunc: *mut CUfunction, hmod: CUmodule, name: *const i8) -> CUresult {
+pub fn cuModuleGetFunction(hfunc: *mut CUfunction, hmod: CUmodule, name: *const i8) -> CUresult {
     let func_name = if !name.is_null() {
         unsafe { CStr::from_ptr(name).to_string_lossy().to_string() }
     } else {
@@ -657,7 +789,7 @@ pub fn cu_module_get_function(hfunc: *mut CUfunction, hmod: CUmodule, name: *con
 }
 
 /// cuLaunchKernel - 启动内核
-pub fn cu_launch_kernel(
+pub fn cuLaunchKernel(
     f: CUfunction,
     grid_dim_x: u32, grid_dim_y: u32, grid_dim_z: u32,
     block_dim_x: u32, block_dim_y: u32, block_dim_z: u32,
@@ -684,7 +816,7 @@ pub fn cu_launch_kernel(
 }
 
 /// cuPointerGetAttribute - 获取指针属性
-pub fn cu_pointer_get_attribute(data: *mut c_void, attribute: CUpointer_attribute, ptr: CUdeviceptr) -> CUresult {
+pub fn cuPointerGetAttribute(data: *mut c_void, attribute: CUpointer_attribute, ptr: CUdeviceptr) -> CUresult {
     let address = ptr.0 as u64;
     eprintln!("[NvidiaBackend] cuPointerGetAttribute(ptr=0x{:x}, attr={:?})", address, attribute);
     
@@ -696,6 +828,119 @@ pub fn cu_pointer_get_attribute(data: *mut c_void, attribute: CUpointer_attribut
     }
     
     CUresult::ERROR_NOT_INITIALIZED
+}
+
+/// cudaMallocHost - CUDA Runtime API 主机内存分配
+pub fn cudaMallocHost(ptr: *mut *mut c_void, size: usize) -> CUresult {
+    eprintln!("[NvidiaBackend] cudaMallocHost(size={})", size);
+    
+    // 确保 CUDA 已初始化并设置默认上下文
+    if let Err(result) = ensure_cuda_context() {
+        return result;
+    }
+    
+    // 转发到 cuMemAllocHost_v2
+    let result = cuMemAllocHost_v2(ptr, size);
+    
+    if result == CUresult::SUCCESS {
+        eprintln!("[NvidiaBackend] cudaMallocHost 成功分配 {} 字节", size);
+    } else {
+        eprintln!("[NvidiaBackend] cudaMallocHost 失败: {:?}", result);
+    }
+    
+    result
+}
+
+/// cudaFreeHost - CUDA Runtime API 主机内存释放
+pub fn cudaFreeHost(ptr: *mut c_void) -> CUresult {
+    eprintln!("[NvidiaBackend] cudaFreeHost(ptr=0x{:x})", ptr as u64);
+    
+    // 转发到 cuMemFreeHost
+    let result = cuMemFreeHost(ptr);
+    
+    if result == CUresult::SUCCESS {
+        eprintln!("[NvidiaBackend] cudaFreeHost 成功释放内存");
+    } else {
+        eprintln!("[NvidiaBackend] cudaFreeHost 失败: {:?}", result);
+    }
+    
+    result
+}
+
+/// cudaMalloc - CUDA Runtime API 设备内存分配
+pub fn cudaMalloc(devPtr: *mut *mut c_void, size: usize) -> CUresult {
+    eprintln!("[NvidiaBackend] cudaMalloc(size={})", size);
+    
+    // 确保 CUDA 已初始化并设置默认上下文
+    if let Err(result) = ensure_cuda_context() {
+        return result;
+    }
+    
+    // 转换指针类型并转发到 cuMemAlloc_v2
+    let result = cuMemAlloc_v2(devPtr as *mut CUdeviceptr, size);
+    
+    if result == CUresult::SUCCESS {
+        eprintln!("[NvidiaBackend] cudaMalloc 成功分配 {} 字节设备内存", size);
+    } else {
+        eprintln!("[NvidiaBackend] cudaMalloc 失败: {:?}", result);
+    }
+    
+    result
+}
+
+/// cudaFree - CUDA Runtime API 设备内存释放
+pub fn cudaFree(devPtr: *mut c_void) -> CUresult {
+    eprintln!("[NvidiaBackend] cudaFree(ptr=0x{:x})", devPtr as u64);
+    
+    // 转换指针类型并转发到 cuMemFree_v2
+    let device_ptr = CUdeviceptr_v2(devPtr as *mut _);
+    let result = cuMemFree_v2(device_ptr);
+    
+    if result == CUresult::SUCCESS {
+        eprintln!("[NvidiaBackend] cudaFree 成功释放设备内存");
+    } else {
+        eprintln!("[NvidiaBackend] cudaFree 失败: {:?}", result);
+    }
+    
+    result
+}
+
+/// cudaMemcpy - CUDA Runtime API 内存复制
+pub fn cudaMemcpy(dst: *mut c_void, src: *const c_void, count: usize, kind: i32) -> CUresult {
+    eprintln!("[NvidiaBackend] cudaMemcpy(dst=0x{:x}, src=0x{:x}, size={}, kind={})", 
+             dst as u64, src as u64, count, kind);
+    
+    // kind: 0=HostToHost, 1=HostToDevice, 2=DeviceToHost, 3=DeviceToDevice
+    let result = match kind {
+        1 => {
+            // HostToDevice
+            let device_ptr = CUdeviceptr_v2(dst as *mut _);
+            cuMemcpyHtoD_v2(device_ptr, src, count)
+        }
+        2 => {
+            // DeviceToHost
+            let device_ptr = CUdeviceptr_v2(src as *mut _);
+            cuMemcpyDtoH_v2(dst, device_ptr, count)
+        }
+        3 => {
+            // DeviceToDevice
+            let dst_device = CUdeviceptr_v2(dst as *mut _);
+            let src_device = CUdeviceptr_v2(src as *mut _);
+            cuMemcpyDtoD_v2(dst_device, src_device, count)
+        }
+        _ => {
+            eprintln!("[NvidiaBackend] 不支持的 cudaMemcpy 类型: {}", kind);
+            CUresult::ERROR_INVALID_VALUE
+        }
+    };
+    
+    if result == CUresult::SUCCESS {
+        eprintln!("[NvidiaBackend] cudaMemcpy 成功复制 {} 字节", count);
+    } else {
+        eprintln!("[NvidiaBackend] cudaMemcpy 失败: {:?}", result);
+    }
+    
+    result
 }
 
 // 其他 CUDA API 的转发函数可以按需添加...
@@ -766,7 +1011,7 @@ pub fn configure_memory_tracer(enable_dirty_tracking: bool, enable_leak_detectio
 }
 
 // 上下文管理函数
-pub fn cu_ctx_set_current(ctx: CUcontext) -> CUresult {
+pub fn cuCtxSetCurrent(ctx: CUcontext) -> CUresult {
     eprintln!("[NvidiaBackend] cuCtxSetCurrent()");
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -779,7 +1024,7 @@ pub fn cu_ctx_set_current(ctx: CUcontext) -> CUresult {
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_ctx_synchronize() -> CUresult {
+pub fn cuCtxSynchronize() -> CUresult {
     eprintln!("[NvidiaBackend] cuCtxSynchronize()");
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -792,7 +1037,7 @@ pub fn cu_ctx_synchronize() -> CUresult {
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_ctx_set_limit(limit: CUlimit, value: usize) -> CUresult {
+pub fn cuCtxSetLimit(limit: CUlimit, value: usize) -> CUresult {
     eprintln!("[NvidiaBackend] cuCtxSetLimit(limit={:?}, value={})", limit, value);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -805,7 +1050,7 @@ pub fn cu_ctx_set_limit(limit: CUlimit, value: usize) -> CUresult {
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_ctx_get_limit(pvalue: *mut usize, limit: CUlimit) -> CUresult {
+pub fn cuCtxGetLimit(pvalue: *mut usize, limit: CUlimit) -> CUresult {
     eprintln!("[NvidiaBackend] cuCtxGetLimit(limit={:?})", limit);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -819,7 +1064,7 @@ pub fn cu_ctx_get_limit(pvalue: *mut usize, limit: CUlimit) -> CUresult {
 }
 
 // 设备管理函数
-pub fn cu_device_get_name(name: *mut i8, len: i32, dev: CUdevice) -> CUresult {
+pub fn cuDeviceGetName(name: *mut i8, len: i32, dev: CUdevice) -> CUresult {
     eprintln!("[NvidiaBackend] cuDeviceGetName(dev={})", dev);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -837,7 +1082,7 @@ pub fn cu_device_get_name(name: *mut i8, len: i32, dev: CUdevice) -> CUresult {
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_device_get_attribute(pi: *mut i32, attrib: CUdevice_attribute, dev: CUdevice) -> CUresult {
+pub fn cuDeviceGetAttribute(pi: *mut i32, attrib: CUdevice_attribute, dev: CUdevice) -> CUresult {
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
     if let Some(ref lib) = *cuda_lib {
         if let Some(func) = lib.functions.cu_device_get_attribute {
@@ -848,7 +1093,7 @@ pub fn cu_device_get_attribute(pi: *mut i32, attrib: CUdevice_attribute, dev: CU
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_device_compute_capability(major: *mut i32, minor: *mut i32, dev: CUdevice) -> CUresult {
+pub fn cuDeviceComputeCapability(major: *mut i32, minor: *mut i32, dev: CUdevice) -> CUresult {
     eprintln!("[NvidiaBackend] cuDeviceComputeCapability(dev={})", dev);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -867,7 +1112,7 @@ pub fn cu_device_compute_capability(major: *mut i32, minor: *mut i32, dev: CUdev
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_device_total_mem_v2(bytes: *mut usize, dev: CUdevice) -> CUresult {
+pub fn cuDeviceTotalMem_v2(bytes: *mut usize, dev: CUdevice) -> CUresult {
     eprintln!("[NvidiaBackend] cuDeviceTotalMem_v2(dev={})", dev);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -885,7 +1130,7 @@ pub fn cu_device_total_mem_v2(bytes: *mut usize, dev: CUdevice) -> CUresult {
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_device_get_properties(prop: *mut CUdevprop, dev: CUdevice) -> CUresult {
+pub fn cuDeviceGetProperties(prop: *mut CUdevprop, dev: CUdevice) -> CUresult {
     eprintln!("[NvidiaBackend] cuDeviceGetProperties(dev={})", dev);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -898,7 +1143,7 @@ pub fn cu_device_get_properties(prop: *mut CUdevprop, dev: CUdevice) -> CUresult
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_device_get_uuid(uuid: *mut CUuuid, dev: CUdevice) -> CUresult {
+pub fn cuDeviceGetUuid(uuid: *mut CUuuid, dev: CUdevice) -> CUresult {
     eprintln!("[NvidiaBackend] cuDeviceGetUuid(dev={})", dev);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -911,7 +1156,7 @@ pub fn cu_device_get_uuid(uuid: *mut CUuuid, dev: CUdevice) -> CUresult {
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_device_get_uuid_v2(uuid: *mut CUuuid, dev: CUdevice) -> CUresult {
+pub fn cuDeviceGetUuid_v2(uuid: *mut CUuuid, dev: CUdevice) -> CUresult {
     eprintln!("[NvidiaBackend] cuDeviceGetUuid_v2(dev={})", dev);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -924,7 +1169,7 @@ pub fn cu_device_get_uuid_v2(uuid: *mut CUuuid, dev: CUdevice) -> CUresult {
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_device_get_luid(luid: *mut i8, device_node_mask: *mut u32, dev: CUdevice) -> CUresult {
+pub fn cuDeviceGetLuid(luid: *mut i8, device_node_mask: *mut u32, dev: CUdevice) -> CUresult {
     eprintln!("[NvidiaBackend] cuDeviceGetLuid(dev={})", dev);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -937,7 +1182,7 @@ pub fn cu_device_get_luid(luid: *mut i8, device_node_mask: *mut u32, dev: CUdevi
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_device_primary_ctx_retain(pctx: *mut CUcontext, dev: CUdevice) -> CUresult {
+pub fn cuDevicePrimaryCtxRetain(pctx: *mut CUcontext, dev: CUdevice) -> CUresult {
     eprintln!("[NvidiaBackend] cuDevicePrimaryCtxRetain(dev={})", dev);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -950,7 +1195,7 @@ pub fn cu_device_primary_ctx_retain(pctx: *mut CUcontext, dev: CUdevice) -> CUre
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_device_primary_ctx_release(dev: CUdevice) -> CUresult {
+pub fn cuDevicePrimaryCtxRelease(dev: CUdevice) -> CUresult {
     eprintln!("[NvidiaBackend] cuDevicePrimaryCtxRelease(dev={})", dev);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -963,7 +1208,7 @@ pub fn cu_device_primary_ctx_release(dev: CUdevice) -> CUresult {
     CUresult::ERROR_NOT_INITIALIZED
 }
 
-pub fn cu_func_get_attribute(pi: *mut i32, attrib: CUfunction_attribute, hfunc: CUfunction) -> CUresult {
+pub fn cuFuncGetAttribute(pi: *mut i32, attrib: CUfunction_attribute, hfunc: CUfunction) -> CUresult {
     eprintln!("[NvidiaBackend] cuFuncGetAttribute(attr={:?})", attrib);
     
     let cuda_lib = NVIDIA_CUDA.lock().unwrap();
@@ -981,7 +1226,8 @@ impl Drop for NvidiaCudaLibrary {
         unsafe {
             if !self.handle.0.is_null() {
                 libc::dlclose(self.handle.0);
-                eprintln!("[NvidiaBackend] CUDA 库已卸载");
+                eprintln!("[NvidiaBackend] CUDA 库已卸载 - 句柄将失效");
+                // 注意：不要在这里清理全局状态，让 ensure_nvidia_backend_available 检测并处理
             }
         }
     }

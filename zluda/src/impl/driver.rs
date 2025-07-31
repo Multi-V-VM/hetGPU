@@ -284,7 +284,7 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     // 首先检查是否有可用的 NVIDIA 后端
     if nvidia_backend::is_nvidia_backend_available() {
         eprintln!("[Driver] 检测到 NVIDIA 后端可用，转发 cuInit 调用");
-        return nvidia_backend::cu_init(flags);
+        return nvidia_backend::cuInit(flags);
     }
     
     eprintln!("[Driver] 使用 AMD 后端进行初始化");
@@ -298,7 +298,7 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     // 首先检查是否有可用的 NVIDIA 后端
     if nvidia_backend::is_nvidia_backend_available() {
         eprintln!("[Driver] 检测到 NVIDIA 后端可用，转发 cuInit 调用");
-        return nvidia_backend::cu_init(flags);
+        return nvidia_backend::cuInit(flags);
     }
     
     eprintln!("[Driver] 使用 Intel 后端进行初始化");
@@ -319,7 +319,7 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     // 首先检查是否有可用的 NVIDIA 后端
     if nvidia_backend::is_nvidia_backend_available() {
         eprintln!("[Driver] 检测到 NVIDIA 后端可用，转发 cuInit 调用");
-        return nvidia_backend::cu_init(flags);
+        return nvidia_backend::cuInit(flags);
     }
     
     eprintln!("[Driver] 使用 Tenstorrent 后端进行初始化");

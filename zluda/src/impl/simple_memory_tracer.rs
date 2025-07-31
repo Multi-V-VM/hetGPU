@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH, Instant};
 use std::thread;
 use std::fs::File;
 use std::io::Write;
+use std::iter::repeat;
 
 /// 全局内存跟踪器实例
 static GLOBAL_TRACER: std::sync::LazyLock<Arc<Mutex<CompleteMemoryTracer>>> = 
@@ -113,15 +114,15 @@ pub enum AccessType {
 
 /// 跟踪器配置
 #[derive(Debug, Clone)]
-struct TrackerConfig {
-    enable_dirty_tracking: bool,
-    enable_access_tracking: bool,
-    enable_pattern_analysis: bool,
-    enable_leak_detection: bool,
-    max_history_size: usize,
-    page_size: usize,
-    leak_detection_threshold: u64,
-    report_interval_ms: u64,
+pub struct TrackerConfig {
+    pub enable_dirty_tracking: bool,
+    pub enable_access_tracking: bool,
+    pub enable_pattern_analysis: bool,
+    pub enable_leak_detection: bool,
+    pub max_history_size: usize,
+    pub page_size: usize,
+    pub leak_detection_threshold: u64,
+    pub report_interval_ms: u64,
 }
 
 /// 完整的统计信息
@@ -453,7 +454,6 @@ impl CompleteMemoryTracer {
         
         writeln!(file, "Complete Memory Tracer Detailed Report")?;
         writeln!(file, "Generated at: {:?}", SystemTime::now())?;
-        writeln!(file, "=".repeat(50))?;
         
         // 写入统计信息
         writeln!(file, "\nStatistics:")?;
