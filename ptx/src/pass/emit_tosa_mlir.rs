@@ -1498,11 +1498,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let src1_ssa = self.get_ssa_value(src1)?;
         let src2_ssa = self.get_ssa_value(src2)?;
 
-        // Check if this is integer or float operation
-        let tensor_type = match _data {
-            ast::ArithDetails::Integer(_) => self.get_integer_tensor_type(),
-            ast::ArithDetails::Float(_) => self.get_default_tensor_type(),
-        };
+        // Get the actual scalar type from the instruction data
+        let scalar_type = _data.type_();
+        let tensor_type = self.get_scalar_tensor_type(scalar_type);
 
         // Handle constant src2 (like constant 1)
         let src2_final = if src2_ssa.starts_with("%") && self.ssa_types.get(&src2_ssa).is_none() {
@@ -1572,13 +1570,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             dst.0, src1.0, src1_ssa, src2.0, src2_ssa
         );
 
-        let tensor_type = self.get_default_tensor_type();
-
-        // Check if this is integer or float operation
-        let tensor_type = match _data {
-            ast::ArithDetails::Integer(_) => self.get_integer_tensor_type(),
-            ast::ArithDetails::Float(_) => self.get_default_tensor_type(),
-        };
+        // Get the actual scalar type from the instruction data
+        let scalar_type = _data.type_();
+        let tensor_type = self.get_scalar_tensor_type(scalar_type);
 
         // Handle constant src2 (like constant 1)
         let src2_final = if src2_ssa.starts_with("%") && self.ssa_types.get(&src2_ssa).is_none() {
