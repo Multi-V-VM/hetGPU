@@ -1039,27 +1039,101 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
         mlir_file.display()
     );
 
+    // Check if remote execution is enabled via environment variable
+    let use_remote_tt = std::env::var("ZLUDA_TT_REMOTE_EXEC").unwrap_or_default() == "1";
+    
     // 5. 分步执行TOSA到TTNN的完整管道，将MLIR转换为flatbuffer
 
     // Step 1: TTIR to TTNN backend pipeline
     let ttnn_mlir_file = temp_dir.join(format!("{}_ttnn.mlir", kernel_name));
     eprintln!("ZLUDA DEBUG: Step 1 - Converting TOSA to TTNN backend");
-    let ttmlir_opt_path = format!("{}/build/bin/ttmlir-opt", tt_mlir_dir);
-    let system_desc_path = format!("{}/ttrt-artifacts/system_desc.ttsys", tt_mlir_dir);
-    let ttmlir_opt_args = vec![            
-            "--convert-tosa-to-ttir".to_string(),
-            format!("--ttir-to-ttnn-backend-pipeline=system-desc-path={}", system_desc_path),
-            mlir_file.display().to_string(),
-        ];
-    eprintln!(
-        "ZLUDA DEBUG: Running command: {} {}",
-        ttmlir_opt_path,
-        ttmlir_opt_args.join(" ")
-    );
-    let tosa_to_ttnn_output = Command::new(&ttmlir_opt_path)
-        .args(&ttmlir_opt_args)
-        .output()
-        .map_err(|e| format!("Failed to execute TTIR to TTNN backend pipeline: {}", e))?;
+    
+    let tosa_to_ttnn_output = if use_remote_tt {
+        // Remote execution on server 295k
+        eprintln!("ZLUDA DEBUG: Remote TT execution enabled for ttmlir-opt");
+        
+        // Copy the MLIR file to remote server
+        let remote_mlir_path = format!("/tmp/{}.mlir", kernel_name);
+        let scp_cmd = format!("scp {} 295k:{}", mlir_file.display(), remote_mlir_path);
+        
+        eprintln!("ZLUDA DEBUG: Copying MLIR file to remote server: {}", scp_cmd);
+        
+        let scp_output = Command::new("bash")
+            .arg("-c")
+            .arg(&scp_cmd)
+            .output()
+            .map_err(|e| format!("Failed to copy MLIR file to remote server: {}", e))?;
+        
+        if !scp_output.status.success() {
+            let stderr = String::from_utf8_lossy(&scp_output.stderr);
+            return Err(format!("Failed to copy MLIR file: {}", stderr));
+        }
+        
+        // Execute ttmlir-opt on remote server
+        let remote_ttnn_mlir_path = format!("/tmp/{}_ttnn.mlir", kernel_name);
+        let ttmlir_opt_cmd = format!(
+            "ssh 295k '{}/build/bin/ttmlir-opt --convert-tosa-to-ttir --ttir-to-ttnn-backend-pipeline=system-desc-path={}/ttrt-artifacts/system_desc.ttsys {} > {}'",
+            tt_mlir_dir, tt_mlir_dir, remote_mlir_path, remote_ttnn_mlir_path
+        );
+        
+        eprintln!("ZLUDA DEBUG: Running remote command: {}", ttmlir_opt_cmd);
+        
+        let remote_output = Command::new("bash")
+            .arg("-c")
+            .arg(&ttmlir_opt_cmd)
+            .output()
+            .map_err(|e| format!("Failed to execute remote ttmlir-opt: {}", e))?;
+        
+        if !remote_output.status.success() {
+            return Err(format!(
+                "Remote TTIR to TTNN backend pipeline failed: {}",
+                String::from_utf8_lossy(&remote_output.stderr)
+            ));
+        }
+        
+        // Copy the result back
+        let scp_back_cmd = format!("scp 295k:{} {}", remote_ttnn_mlir_path, ttnn_mlir_file.display());
+        eprintln!("ZLUDA DEBUG: Copying result back: {}", scp_back_cmd);
+        
+        let scp_back_output = Command::new("bash")
+            .arg("-c")
+            .arg(&scp_back_cmd)
+            .output()
+            .map_err(|e| format!("Failed to copy result back from remote server: {}", e))?;
+        
+        if !scp_back_output.status.success() {
+            let stderr = String::from_utf8_lossy(&scp_back_output.stderr);
+            return Err(format!("Failed to copy result back: {}", stderr));
+        }
+        
+        // Read the file content
+        let content = fs::read(&ttnn_mlir_file)
+            .map_err(|e| format!("Failed to read TTNN MLIR file: {}", e))?;
+        
+        std::process::Output {
+            status: remote_output.status,
+            stdout: content,
+            stderr: remote_output.stderr,
+        }
+    } else {
+        // Local execution (original code)
+        let ttmlir_opt_path = format!("{}/build/bin/ttmlir-opt", tt_mlir_dir);
+        let system_desc_path = format!("{}/ttrt-artifacts/system_desc.ttsys", tt_mlir_dir);
+        let ttmlir_opt_args = vec![            
+                "--convert-tosa-to-ttir".to_string(),
+                format!("--ttir-to-ttnn-backend-pipeline=system-desc-path={}", system_desc_path),
+                mlir_file.display().to_string(),
+            ];
+        eprintln!(
+            "ZLUDA DEBUG: Running command: {} {}",
+            ttmlir_opt_path,
+            ttmlir_opt_args.join(" ")
+        );
+        Command::new(&ttmlir_opt_path)
+            .args(&ttmlir_opt_args)
+            .output()
+            .map_err(|e| format!("Failed to execute TTIR to TTNN backend pipeline: {}", e))?
+    };
 
     if !tosa_to_ttnn_output.status.success() {
         return Err(format!(
@@ -1079,11 +1153,64 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     // Step 2: TTNN to flatbuffer conversion
     let ttnn_file = temp_dir.join(format!("{}.ttnn", kernel_name));
     eprintln!("ZLUDA DEBUG: Step 2 - Converting TTNN to flatbuffer");
-    let ttnn_to_flatbuffer_output = Command::new(format!("{}/build/bin/ttmlir-translate", tt_mlir_dir))
-    .arg("--ttnn-to-flatbuffer")
-        .arg(&ttnn_mlir_file)
-        .output()
-        .map_err(|e| format!("Failed to execute TTNN to flatbuffer conversion: {}", e))?;
+    
+    let ttnn_to_flatbuffer_output = if use_remote_tt {
+        // Remote execution on server 295k
+        eprintln!("ZLUDA DEBUG: Remote TT execution enabled for ttmlir-translate");
+        
+        // The ttnn_mlir_file is already on the remote server from previous step
+        let remote_ttnn_mlir_path = format!("/tmp/{}_ttnn.mlir", kernel_name);
+        let remote_ttnn_path = format!("/tmp/{}.ttnn", kernel_name);
+        
+        // Execute ttmlir-translate on remote server
+        let ttmlir_translate_cmd = format!(
+            "ssh 295k '{}/build/bin/ttmlir-translate --ttnn-to-flatbuffer {} > {}'",
+            tt_mlir_dir, remote_ttnn_mlir_path, remote_ttnn_path
+        );
+        
+        eprintln!("ZLUDA DEBUG: Running remote command: {}", ttmlir_translate_cmd);
+        
+        let remote_output = Command::new("bash")
+            .arg("-c")
+            .arg(&ttmlir_translate_cmd)
+            .output()
+            .map_err(|e| format!("Failed to execute remote ttmlir-translate: {}", e))?;
+        
+        if !remote_output.status.success() {
+            return Err(format!(
+                "Remote TTNN to flatbuffer conversion failed: {}",
+                String::from_utf8_lossy(&remote_output.stderr)
+            ));
+        }
+        
+        // Read the remote file content using ssh cat
+        let cat_cmd = format!("ssh 295k 'cat {}'", remote_ttnn_path);
+        let cat_output = Command::new("bash")
+            .arg("-c")
+            .arg(&cat_cmd)
+            .output()
+            .map_err(|e| format!("Failed to read remote TTNN file: {}", e))?;
+        
+        if !cat_output.status.success() {
+            return Err(format!(
+                "Failed to read remote TTNN file: {}",
+                String::from_utf8_lossy(&cat_output.stderr)
+            ));
+        }
+        
+        std::process::Output {
+            status: remote_output.status,
+            stdout: cat_output.stdout,
+            stderr: remote_output.stderr,
+        }
+    } else {
+        // Local execution (original code)
+        Command::new(format!("{}/build/bin/ttmlir-translate", tt_mlir_dir))
+        .arg("--ttnn-to-flatbuffer")
+            .arg(&ttnn_mlir_file)
+            .output()
+            .map_err(|e| format!("Failed to execute TTNN to flatbuffer conversion: {}", e))?
+    };
 
     if !ttnn_to_flatbuffer_output.status.success() {
         return Err(format!(
@@ -1187,7 +1314,7 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
         // Execute on remote server with proper environment activation
         let script_path = "/home/bubblepipe/hetGPU/run_ttnn_matrix.py";
         let remote_cmd = format!(
-            "ssh 295k 'source /home/bubblepipe/hetGPU/env/activate && python3 {} {} {} \"{}\"'",
+            "ssh 295k 'source /home/bubblepipe/tt/tt-mlir/env/activate && python3 {} {} {} \"{}\"'",
             script_path,
             remote_ttnn_path,
             all_inputs,
