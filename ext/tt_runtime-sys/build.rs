@@ -46,6 +46,7 @@ fn main() -> Result<(), VarError> {
     // Add the lib directory to the library search path
     println!("cargo:rustc-link-search=native=lib");
     println!("cargo:rustc-link-search=native={}", out_dir);
+    println!("cargo:rustc-link-search=native=/repo/tt-metal/build_Release/lib");
     
     // Link to the TT Metal libraries
     println!("cargo:rustc-link-lib=static=tt_metal_wrapper");  // Our wrapper
