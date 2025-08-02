@@ -607,15 +607,6 @@ impl Drop for Device {
 }
 
 impl Program {
-    pub fn load_from_llvm(&self, llvm_ir: &str) -> Result<(), String> {
-        let llvm_ir = CString::new(llvm_ir).map_err(|e| e.to_string())?;
-        let result = unsafe { tt_metal_LoadFromLLVM(self.handle, llvm_ir.as_ptr()) };
-        if result == tt_Result_tt_Result_Success {
-            Ok(())
-        } else {
-            Err(format!("Failed to load LLVM IR: error code {:?}", result))
-        }
-    }
 
     pub fn create_kernel(&self, kernel_name: &str, core: CoreCoord) -> Result<Kernel, String> {
         eprintln!("ZLUDA DEBUG: Program::create_kernel called with kernel_name={}, core=({},{})", kernel_name, core.x, core.y);
