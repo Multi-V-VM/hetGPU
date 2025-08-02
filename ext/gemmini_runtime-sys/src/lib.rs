@@ -675,11 +675,12 @@ fn run_on_spike(spike_state: &mut SpikeState, program_id: usize) -> Result<(), S
         eprintln!("Gemmini/Spike: Simulating execution of compiled Gemmini kernel");
         
         // Perform matrix multiplication simulation based on the compiled code
-        simulate_gemmini_matmul(spike_state)?;
+        simulate_gemmini_with_spike(spike_state)?;
         
         eprintln!("Gemmini/Spike: Direct execution completed successfully");
     } else {
         eprintln!("Gemmini/Spike: Object file not found, using mock execution");
+        panic!();
         mock_gemmini_execution(spike_state)?;
     }
     
@@ -912,7 +913,7 @@ fn read_memory_results(path: &Path, spike_state: &mut SpikeState) -> Result<(), 
     Ok(())
 }
 
-fn simulate_gemmini_matmul(spike_state: &mut SpikeState) -> Result<(), String> {
+fn simulate_gemmini_with_spike(spike_state: &mut SpikeState) -> Result<(), String> {
     eprintln!("Gemmini/Spike: Executing compiled Gemmini kernel using Spike simulator");
     
     // Find the most recent compiled object file
@@ -927,13 +928,16 @@ fn simulate_gemmini_matmul(spike_state: &mut SpikeState) -> Result<(), String> {
                     return execute_with_spike_directly(spike_state, &obj_file);
                 } else {
                     eprintln!("Gemmini/Spike: Object file is not valid ELF format, falling back to simulation");
+                    panic!();
                 }
             } else {
                 eprintln!("Gemmini/Spike: Cannot read object file, falling back to simulation");
+                panic!();
             }
         }
         Err(e) => {
             eprintln!("Gemmini/Spike: {}, falling back to compilation-based simulation", e);
+            panic!();
         }
     }
     
@@ -1391,7 +1395,7 @@ int main() {
     // Compile the startup code and link with the object file
     let linker_script = create_linker_script(temp_dir)?;
     let link_cmd = format!(
-        "riscv64-none-elf-gcc -static -nostartfiles -nostdlib -mcmodel=medany -T {} {} {} {} -o {}",
+        "riscv64-unknown-elf-gcc -static -nostartfiles -nostdlib -mcmodel=medany -T {} {} {} {} -o {}",
         linker_script,
         startup_c.to_str().unwrap(),
         input_data_s.to_str().unwrap(),
@@ -1400,7 +1404,7 @@ int main() {
     );
     eprintln!("Gemmini/Spike: Link command: {}", link_cmd);
     
-    let link_result = Command::new("riscv64-none-elf-gcc")
+    let link_result = Command::new("riscv64-unknown-elf-gcc")
         .args(&[
             "-static",
             "-nostartfiles",
@@ -1759,7 +1763,7 @@ fn simulate_compiled_execution(spike_state: &mut SpikeState) -> Result<(), Strin
 
 fn mock_gemmini_execution(spike_state: &mut SpikeState) -> Result<(), String> {
     eprintln!("Gemmini/Spike: Performing mock execution");
-    
+    panic!();
     // Simple mock: copy input to output for buffers
     if spike_state.buffers.len() >= 2 {
         let input_data = spike_state.buffers[0].data.clone();
@@ -1771,6 +1775,8 @@ fn mock_gemmini_execution(spike_state: &mut SpikeState) -> Result<(), String> {
     Ok(())
 }
 
+// TODO FIX:
+// https://github.com/Multi-V-VM/hetGPU/blob/2839110b28ff47d8f9d8d8b5de9a9b9056aee9d3/ext/gemmini_runtime-sys/src/lib.rs#L1797
 fn find_gemmini_main_binary() -> Result<String, String> {
     // Look for gemmini_main in common locations
     let possible_paths = vec![
@@ -1910,19 +1916,25 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
     // Create the pipeline command using shell
     let pipeline_cmd = format!(
         "buddy-opt {} \
-        -llvm-request-c-wrappers \
-        -one-shot-bufferize=\"bufferize-function-boundaries\" \
-        -convert-bufferization-to-memref \
-        -convert-linalg-to-loops \
-        -lower-affine -convert-scf-to-cf \
-        -convert-vector-to-llvm -finalize-memref-to-llvm \
-        -convert-arith-to-llvm \
-        -lower-gemmini \
-        -convert-func-to-llvm -reconcile-unrealized-casts | \
+            -pass-pipeline='builtin.module(func.func(tosa-to-linalg-named),func.func(tosa-to-linalg),func.func(tosa-to-tensor),func.func(tosa-to-arith))' | \
+        buddy-opt \
+            -llvm-request-c-wrappers \
+            --one-shot-bufferize='bufferize-function-boundaries' \
+            -buffer-deallocation-pipeline \
+            -convert-bufferization-to-memref \
+            -convert-linalg-to-loops \
+            -lower-affine \
+            -convert-scf-to-cf \
+            -convert-vector-to-llvm \
+            -finalize-memref-to-llvm \
+            -convert-arith-to-llvm \
+            -lower-gemmini \
+            -convert-func-to-llvm \
+            -reconcile-unrealized-casts | \
         buddy-translate -buddy-to-llvmir | \
         buddy-llc -filetype=obj -mtriple=riscv64 \
-        -mattr=+D -float-abi=hard \
-        -o {}",
+            -mattr=+D -float-abi=hard \
+            -o {}",
         linalg_mlir, obj_file
     );
     
@@ -1966,25 +1978,32 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
         }
     }
     
-    // Step 3.5: Skip gemmini_main and proceed with direct execution
-    eprintln!("Gemmini/Spike: Step 3.5 - Skipping gemmini_main, using direct execution");
+    // Step 3.5: Use gemmini_main binary instead of generating C stub
+    eprintln!("Gemmini/Spike: Step 3.5 - Using gemmini_main binary for execution");
     
-    // Store the object file path for direct execution
+    // Find the gemmini_main binary
+    let gemmini_main_path: String = find_gemmini_main_binary()?;
+    eprintln!("Gemmini/Spike: Found gemmini_main at: {}", gemmini_main_path);
+    
+    // Store the object file path for the gemmini_main binary to use
     let obj_info_file = format!("{}_obj_info.txt", base_name);
     std::fs::write(&obj_info_file, format!("{}\n{}", obj_file, linalg_mlir))
         .map_err(|e| format!("Failed to write object info: {}", e))?;
     
-    // The object file has been successfully compiled
-    eprintln!("Gemmini/Spike: Step 4 - Ready for direct execution");
+    // Instead of linking, we'll let the gemmini_main binary handle execution
+    eprintln!("Gemmini/Spike: Step 4 - Prepared for gemmini_main execution");
     eprintln!("Gemmini/Spike: Object file: {}", obj_file);
     eprintln!("Gemmini/Spike: MLIR file: {}", linalg_mlir);
     
-    // Skip the copy operation - obj_file is already at the correct location
-    // Copying to format!("{}.o", base_name) would copy the file to itself and truncate it!
-    eprintln!("Gemmini/Spike: Object file is ready at: {}", obj_file);
+    // Copy the object file to a known location for gemmini_main to find
+    let target_obj = format!("{}.o", base_name);
+    if std::fs::copy(&obj_file, &target_obj).is_ok() {
+        eprintln!("Gemmini/Spike: Copied object file to: {}", target_obj);
+    }
     
     eprintln!("Gemmini/Spike: Successfully compiled MLIR to executable: {}", executable);
     Ok(PathBuf::from(executable))
+
 }
 
 fn create_fallback_executable(executable_path: &str) -> Result<PathBuf, String> {

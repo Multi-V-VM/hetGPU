@@ -46,6 +46,10 @@ path = "examples/emit_mlir_example.rs"
 name = "checkpoint_demo"
 path = "examples/checkpoint_demo.rs"
 
+[[bin]]
+name = "gemmini_main"
+path = "src/bin/gemmini_main.rs"
+
 [features]
 intel = ["comgr/intel"]
 amd = ["comgr/amd"]
