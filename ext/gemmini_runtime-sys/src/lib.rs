@@ -614,91 +614,68 @@ impl Drop for Buffer {
 // Internal helper functions
 
 fn run_on_spike(spike_state: &mut SpikeState, program_id: usize) -> Result<(), String> {
-    // Direct execution using compiled object file instead of recursing into gemmini_main
-    eprintln!("Gemmini/Spike: Running direct execution with compiled object");
+    eprintln!("Gemmini/Spike: Running program {}", program_id);
     
     // Look for the compiled object file
     let obj_file = format!("./tmp/gemmini_program_{}.o", program_id);
     
-    if std::path::Path::new(&obj_file).exists() {
-        eprintln!("Gemmini/Spike: Found compiled object: {}", obj_file);
-        
-        // For now, simulate successful execution by processing the object file
-        // In a real implementation, this would load and execute the object file directly
-        eprintln!("Gemmini/Spike: Simulating execution of compiled Gemmini kernel");
-        
-        // Perform matrix multiplication simulation based on the compiled code
-        simulate_gemmini_with_spike(spike_state)?;
-        
-        eprintln!("Gemmini/Spike: Direct execution completed successfully");
-    } else {
-        eprintln!("Gemmini/Spike: Object file not found, using mock execution");
-        panic!("Gemmini/Spike: Object file not found");
+    if !std::path::Path::new(&obj_file).exists() {
+        panic!("Gemmini/Spike: Object file not found: {}", obj_file);
     }
     
-    Ok(())
-}
-
-
-
-
-
-
-
-
-fn simulate_gemmini_with_spike(spike_state: &mut SpikeState) -> Result<(), String> {
-    eprintln!("Gemmini/Spike: Executing compiled Gemmini kernel using Spike simulator");
+    eprintln!("Gemmini/Spike: Found compiled object: {}", obj_file);
     
-    // Find the most recent compiled object file
-    match find_latest_object_file() {
-        Ok(obj_file) => {
-            eprintln!("Gemmini/Spike: Using compiled object: {}", obj_file);
-            
-            // Check if the object file is actually valid (non-empty and has ELF magic)
-            if let Ok(obj_data) = std::fs::read(&obj_file) {
-                if obj_data.len() > 16 && obj_data.starts_with(&[0x7f, 0x45, 0x4c, 0x46]) {
-                    eprintln!("Gemmini/Spike: Valid ELF object file detected, proceeding with Spike execution");
-                    return execute_with_spike_directly(spike_state, &obj_file);
-                } else {
-                    eprintln!("Gemmini/Spike: Object file is not valid ELF format, falling back to simulation");
-                    panic!();
+    // Check if the object file is valid
+    let obj_data = std::fs::read(&obj_file)
+        .map_err(|e| format!("Failed to read object file: {}", e))?;
+    
+    if obj_data.len() <= 16 || !obj_data.starts_with(&[0x7f, 0x45, 0x4c, 0x46]) {
+        panic!("Gemmini/Spike: Object file is not valid ELF format");
+    }
+    
+    eprintln!("Gemmini/Spike: Valid ELF object file detected, proceeding with Spike execution");
+    
+    // Create executable and run with Spike
+    let executable = create_executable_from_object(spike_state, &obj_file)?;
+    
+    eprintln!("Gemmini/Spike: Launching Spike simulator with Gemmini extension");
+    
+    // Execute with Spike
+    let temp_dir = &spike_state.temp_dir;
+    let spike_result = Command::new("spike")
+        .env("LD_LIBRARY_PATH", "/root/.nix-profile/lib")
+        .args(&[
+            "--extension=gemmini",
+            "/usr/local/riscv64-none-elf/bin/pk",
+        ])
+        .arg(&executable)
+        .current_dir(temp_dir)
+        .output();
+    
+    match spike_result {
+        Ok(output) => {
+            if output.status.success() || output.status.code() == Some(0) {
+                eprintln!("Gemmini/Spike: Execution completed successfully");
+                
+                if !output.stdout.is_empty() {
+                    eprintln!("Gemmini/Spike: stdout: {}", String::from_utf8_lossy(&output.stdout));
                 }
+                if !output.stderr.is_empty() {
+                    eprintln!("Gemmini/Spike: stderr: {}", String::from_utf8_lossy(&output.stderr));
+                }
+                
+                read_spike_output_from_memory(spike_state, &output)
             } else {
-                eprintln!("Gemmini/Spike: Cannot read object file, falling back to simulation");
-                panic!();
+                panic!("Gemmini/Spike: Execution failed with status: {:?}", output.status);
             }
         }
         Err(e) => {
-            eprintln!("Gemmini/Spike: {}, falling back to compilation-based simulation", e);
-            panic!();
+            panic!("Gemmini/Spike: Failed to execute Spike: {}", e);
         }
     }
-    
-    // Fall back to simulation that interprets the compiled code's intent
-    simulate_compiled_execution(spike_state)
 }
 
-fn find_latest_object_file() -> Result<String, String> {
-    // Look for compiled object files in ./tmp
-    let obj_files = vec![
-        "./tmp/gemmini_program_0.o",
-        "./tmp/gemmini_program_1.o", 
-        "./tmp/gemmini_program_2.o",
-    ];
-    
-    for obj_file in obj_files {
-        if std::path::Path::new(obj_file).exists() {
-            // Check if file has conttent
-            if let Ok(metadata) = std::fs::metadata(obj_file) {
-                if metadata.len() > 0 {
-                    return Ok(obj_file.to_string());
-                }
-            }
-        }
-    }
-    
-    Err("No valid compiled object file found".to_string())
-}
+
 
 fn create_input_data_assembly(path: &std::path::Path, spike_state: &SpikeState) -> Result<(), String> {
     let mut content = String::new();
@@ -814,35 +791,6 @@ SECTIONS
         .map_err(|e| format!("Failed to create linker script: {}", e))?;
     
     Ok(linker_script.to_string_lossy().to_string())
-}
-
-fn execute_with_spike_directly(spike_state: &mut SpikeState, obj_file: &str) -> Result<(), String> {
-    eprintln!("Gemmini/Spike: Executing object file directly with Spike");
-    
-    // Use spike-dasm to examine the object file
-    let dasm_result = Command::new("spike-dasm")
-        .arg(obj_file)
-        .output();
-    
-    match dasm_result {
-        Ok(output) => {
-            if output.status.success() {
-                let asm_output = String::from_utf8_lossy(&output.stdout);
-                eprintln!("Gemmini/Spike: Disassembled code preview:\n{}", 
-                         asm_output.lines().take(10).collect::<Vec<_>>().join("\n"));
-            }
-        }
-        Err(e) => {
-            eprintln!("Gemmini/Spike: spike-dasm not available: {}", e);
-        }
-    }
-    
-    // Create a proper executable from the object file and run it with Spike
-    let temp_dir = &spike_state.temp_dir;
-    let executable = create_executable_from_object(spike_state, obj_file)?;
-    
-    // Execute the compiled program with Spike
-    execute_kernel_with_spike(spike_state, &executable)
 }
 
 fn create_executable_from_object(spike_state: &mut SpikeState, obj_file: &str) -> Result<std::path::PathBuf, String> {
@@ -1176,157 +1124,6 @@ int main() {
     }
 }
 
-fn execute_kernel_with_spike(spike_state: &mut SpikeState, executable: &std::path::Path) -> Result<(), String> {
-    eprintln!("Gemmini/Spike: Launching Spike simulator with Gemmini extension");
-    
-    // Prepare input data files for Spike
-    let temp_dir = &spike_state.temp_dir;
-    let input_file = temp_dir.join("input.bin");
-    let output_file = temp_dir.join("output.bin");
-    
-    // Write input buffer data to file for the executable to read
-    if !spike_state.buffers.is_empty() {
-        std::fs::write(&input_file, &spike_state.buffers[0].data)
-            .map_err(|e| format!("Failed to write input data: {}", e))?;
-        eprintln!("Gemmini/Spike: Wrote {} bytes to input file", spike_state.buffers[0].data.len());
-    }
-    
-    // Try to use Spike with Gemmini extension
-    eprintln!("Gemmini/Spike: Attempting to run with Gemmini extension");
-    
-    // Set LD_LIBRARY_PATH to find libgemmini.so
-    let gemmini_lib_path = "/root/.nix-profile/lib";
-    
-    // Build and log the command
-    let spike_cmd = format!(
-        "LD_LIBRARY_PATH={} spike --extension=gemmini /usr/local/riscv64-none-elf/bin/pk {}",
-        gemmini_lib_path,
-        executable.display()
-    );
-    eprintln!("Gemmini/Spike: Full command: {}", spike_cmd);
-    eprintln!("Gemmini/Spike: Working directory: {}", temp_dir.display());
-    
-    let spike_result = Command::new("spike")
-        .env("LD_LIBRARY_PATH", gemmini_lib_path)
-        .args(&[
-            "--extension=gemmini",
-            "/usr/local/riscv64-none-elf/bin/pk",
-        ])
-        .arg(executable)
-        .current_dir(temp_dir)
-        .output();
-    
-    match spike_result {
-        Ok(output) => {
-            if output.status.success() || output.status.code() == Some(0) {
-                eprintln!("Gemmini/Spike: Gemmini execution completed successfully");
-                
-                if !output.stdout.is_empty() {
-                    eprintln!("Gemmini/Spike: stdout: {}", String::from_utf8_lossy(&output.stdout));
-                }
-                if !output.stderr.is_empty() {
-                    eprintln!("Gemmini/Spike: stderr: {}", String::from_utf8_lossy(&output.stderr));
-                }
-                
-                return read_spike_output_from_memory(spike_state, &output);
-            } else {
-                eprintln!("Gemmini/Spike: Gemmini execution failed with status: {:?}", output.status);
-                eprintln!("Gemmini/Spike: stderr: {}", String::from_utf8_lossy(&output.stderr));
-                eprintln!("Gemmini/Spike: Falling back to pk without extension");
-                return execute_with_pk(spike_state, executable);
-            }
-        }
-        Err(e) => {
-            eprintln!("Gemmini/Spike: Failed to run with Gemmini extension: {}", e);
-            eprintln!("Gemmini/Spike: Falling back to pk without extension");
-            return execute_with_pk(spike_state, executable);
-        }
-    }
-    
-    // Execute with Spike (first try with Gemmini extension)
-    let spike_result = Command::new("spike")
-        .args(&[
-            "--isa=rv64gc",
-            "--extension=gemmini", 
-            "-m0x80000000:0x10000000", // Memory region
-        ])
-        .arg(executable)
-        .current_dir(temp_dir)
-        .output();
-    
-    match spike_result {
-        Ok(output) => {
-            if output.status.success() {
-                eprintln!("Gemmini/Spike: Spike execution completed successfully");
-                eprintln!("Gemmini/Spike: Exit code: {}", output.status.code().unwrap_or(-1));
-                
-                if !output.stdout.is_empty() {
-                    eprintln!("Gemmini/Spike: Stdout: {}", String::from_utf8_lossy(&output.stdout));
-                }
-                if !output.stderr.is_empty() {
-                    eprintln!("Gemmini/Spike: Stderr: {}", String::from_utf8_lossy(&output.stderr));
-                }
-                
-                // Try to read the output data that was written by the program
-                return read_spike_output_from_memory(spike_state, &output);
-            } else {
-                eprintln!("Gemmini/Spike: Spike execution failed with code: {}", output.status.code().unwrap_or(-1));
-                eprintln!("Gemmini/Spike: Stderr: {}", String::from_utf8_lossy(&output.stderr));
-                eprintln!("Gemmini/Spike: Stdout: {}", String::from_utf8_lossy(&output.stdout));
-                
-                // Try pk as fallback
-                return execute_with_pk(spike_state, executable);
-            }
-        }
-        Err(e) => {
-            eprintln!("Gemmini/Spike: Failed to execute Spike: {}", e);
-            // Try pk as fallback
-            return execute_with_pk(spike_state, executable);
-        }
-    }
-}
-
-fn execute_with_pk(spike_state: &mut SpikeState, executable: &std::path::Path) -> Result<(), String> {
-    eprintln!("Gemmini/Spike: Trying execution with pk (RISC-V proxy kernel)");
-    
-    let temp_dir = &spike_state.temp_dir;
-    
-    // Execute with pk using full path
-    let pk_path = "/usr/local/riscv64-none-elf/bin/pk";
-    // Get just the filename since we're changing to temp_dir
-    let executable_name = executable.file_name()
-        .ok_or_else(|| "Invalid executable path".to_string())?;
-    
-    let pk_result = Command::new("spike")
-        .args(&[pk_path])
-        .arg(executable_name)
-        .current_dir(temp_dir)
-        .output();
-    
-    match pk_result {
-        Ok(output) => {
-            eprintln!("Gemmini/Spike: pk execution completed with code: {}", output.status.code().unwrap_or(-1));
-            
-            if !output.stdout.is_empty() {
-                eprintln!("Gemmini/Spike: pk stdout: {}", String::from_utf8_lossy(&output.stdout));
-            }
-            if !output.stderr.is_empty() {
-                eprintln!("Gemmini/Spike: pk stderr: {}", String::from_utf8_lossy(&output.stderr));
-            }
-            
-            // Extract computation results from the program output or memory dump
-            return read_spike_output_from_memory(spike_state, &output);
-        }
-        Err(e) => {
-            eprintln!("Gemmini/Spike: pk execution failed: {}", e);
-        }
-    }
-    
-    // Final fallback to simulation
-    eprintln!("Gemmini/Spike: All Spike execution methods failed, falling back to simulation");
-    simulate_compiled_execution(spike_state)
-}
-
 fn read_spike_output_from_memory(spike_state: &mut SpikeState, spike_output: &std::process::Output) -> Result<(), String> {
     eprintln!("Gemmini/Spike: Reading output from Spike execution");
     
@@ -1390,108 +1187,10 @@ fn read_spike_output_from_memory(spike_state: &mut SpikeState, spike_output: &st
     
     // If no valid output was found, check if the program actually ran
     if combined_output.contains("GEMMINI_START") {
-        eprintln!("Gemmini/Spike: Program started but no output found, using compilation-aware simulation");
-        simulate_compiled_execution(spike_state)
+        panic!("Gemmini/Spike: Program started but no output found");
     } else {
-        eprintln!("Gemmini/Spike: No program execution detected, falling back to basic simulation");
-        simulate_compiled_execution(spike_state)
+        panic!("Gemmini/Spike: No program execution detected");
     }
-}
-
-fn read_spike_output(spike_state: &mut SpikeState, output_file: &std::path::Path) -> Result<(), String> {
-    match std::fs::read(output_file) {
-        Ok(output_data) => {
-            eprintln!("Gemmini/Spike: Read {} bytes from Spike output", output_data.len());
-            
-            // Store the output in the output buffer
-            let output_idx = if spike_state.buffers.len() >= 3 { 2 } else { 1 };
-            if output_idx < spike_state.buffers.len() {
-                let copy_size = std::cmp::min(output_data.len(), spike_state.buffers[output_idx].data.len());
-                spike_state.buffers[output_idx].data[..copy_size].copy_from_slice(&output_data[..copy_size]);
-                
-                // Print sample values
-                if output_data.len() >= 16 {
-                    let values: Vec<f32> = output_data.chunks_exact(4)
-                        .take(4)
-                        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                        .collect();
-                    eprintln!("Gemmini/Spike: Sample result values: [{:.2}, {:.2}, {:.2}, {:.2}]", 
-                             values[0], values[1], values[2], values[3]);
-                }
-            }
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("Gemmini/Spike: Failed to read Spike output: {}", e);
-            simulate_compiled_execution(spike_state)
-        }
-    }
-}
-
-fn simulate_compiled_execution(spike_state: &mut SpikeState) -> Result<(), String> {
-    eprintln!("Gemmini/Spike: Simulating compiled kernel execution");
-    
-    // This is a more sophisticated simulation that attempts to interpret
-    // the compiled MLIR code behavior based on the available buffers
-    if spike_state.buffers.len() >= 2 {
-        let input_a = &spike_state.buffers[0].data;
-        let input_b = if spike_state.buffers.len() >= 3 {
-            &spike_state.buffers[1].data
-        } else {
-            &spike_state.buffers[0].data
-        };
-        
-        // Convert byte data to f32 for matrix operations
-        let matrix_a: Vec<f32> = input_a.chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect();
-            
-        let matrix_b: Vec<f32> = input_b.chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect();
-        
-        // Assume 32x32 matrices based on compiled MLIR
-        let dim = 32;
-        if matrix_a.len() >= dim * dim && matrix_b.len() >= dim * dim {
-            let mut result = vec![0.0f32; dim * dim];
-            
-            // Perform matrix multiplication as the compiled code would
-            for i in 0..dim {
-                for j in 0..dim {
-                    let mut sum = 0.0;
-                    for k in 0..dim {
-                        sum += matrix_a[i * dim + k] * matrix_b[k * dim + j];
-                    }
-                    result[i * dim + j] = sum;
-                }
-            }
-            
-            eprintln!("Gemmini/Spike: Matrix multiplication completed ({}x{} matrices)", dim, dim);
-            eprintln!("Gemmini/Spike: Sample result values: [{:.2}, {:.2}, {:.2}, {:.2}]", 
-                     result[0], result[1], result[2], result[3]);
-            
-            // Convert result back to bytes and store in output buffer
-            let mut result_bytes = Vec::new();
-            for value in result {
-                result_bytes.extend_from_slice(&value.to_le_bytes());
-            }
-            
-            let output_idx = if spike_state.buffers.len() >= 3 { 2 } else { 1 };
-            if output_idx < spike_state.buffers.len() {
-                let output_size = spike_state.buffers[output_idx].data.len();
-                let copy_size = std::cmp::min(result_bytes.len(), output_size);
-                spike_state.buffers[output_idx].data[..copy_size].copy_from_slice(&result_bytes[..copy_size]);
-            }
-        } else {
-            eprintln!("Gemmini/Spike: Matrix dimensions insufficient");
-            panic!("Matrix dimensions insufficient for operation");
-        }
-    } else {
-        eprintln!("Gemmini/Spike: Insufficient buffers");
-        panic!("Insufficient buffers for operation");
-    }
-    
-    Ok(())
 }
 
 
