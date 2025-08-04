@@ -4,11 +4,11 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
-use std::fs::{self, File};
-use std::io::{Write, Read, BufWriter};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::fs;
+use std::io::{Write, Read};
+use std::path::PathBuf;
+use std::process::Command;
 use std::ptr;
 use std::sync::Mutex;
 
@@ -87,16 +87,12 @@ static SPIKE_STATE: Mutex<Option<SpikeState>> = Mutex::new(None);
 
 struct SpikeState {
     temp_dir: PathBuf,
-    device_count: u32,
     programs: Vec<ProgramData>,
     buffers: Vec<BufferData>,
-    kernels: Vec<KernelData>,
 }
 
 struct ProgramData {
     id: usize,
-    llvm_ir: Option<String>,
-    elf_path: Option<PathBuf>,
 }
 
 struct BufferData {
@@ -106,11 +102,15 @@ struct BufferData {
     data: Vec<u8>,
 }
 
-struct KernelData {
-    id: usize,
-    name: String,
-    program_id: usize,
+// Helper functions for validation
+fn validate_program_id(spike_state: &SpikeState, program_id: usize) -> bool {
+    program_id < spike_state.programs.len()
 }
+
+fn validate_buffer_id(spike_state: &SpikeState, buffer_id: usize) -> bool {
+    buffer_id < spike_state.buffers.len()
+}
+
 
 // FFI functions implementation
 
@@ -124,10 +124,8 @@ pub unsafe extern "C" fn gemmini_CreateDevice(device_id: ::core::ffi::c_int) -> 
         
         *state = Some(SpikeState {
             temp_dir: PathBuf::from("./tmp"),
-            device_count: 1,
             programs: Vec::new(),
             buffers: Vec::new(),
-            kernels: Vec::new(),
         });
         eprintln!("Gemmini/Spike: Initialized device {}", device_id);
     }
@@ -157,8 +155,6 @@ pub unsafe extern "C" fn gemmini_CreateProgram() -> *mut gemmini_Program {
         let program_id = spike_state.programs.len();
         spike_state.programs.push(ProgramData {
             id: program_id,
-            llvm_ir: None,
-            elf_path: None,
         });
         
         eprintln!("Gemmini/Spike: Created program {}", program_id);
@@ -211,21 +207,12 @@ pub unsafe extern "C" fn gemmini_CreateKernel(
     let mut state = SPIKE_STATE.lock().unwrap();
     
     if let Some(ref mut spike_state) = *state {
-        if program_id >= spike_state.programs.len() {
-            eprintln!("Gemmini/Spike: Invalid program ID");
+        if !validate_program_id(spike_state, program_id) {
             return ptr::null_mut();
         }
         
-        let kernel_id = spike_state.kernels.len();
-        spike_state.kernels.push(KernelData {
-            id: kernel_id,
-            name: kernel_name.clone(),
-            program_id,
-        });
-        
-        eprintln!("Gemmini/Spike: Created kernel '{}' (id: {}, core: ({},{}))", 
-                  kernel_name, kernel_id, core.x, core.y);
-        return (kernel_id + 1) as *mut gemmini_Kernel;
+        // Kernels are not actually tracked in this implementation
+        return 1 as *mut gemmini_Kernel;
     }
     
     ptr::null_mut()
@@ -240,9 +227,6 @@ pub unsafe extern "C" fn gemmini_SetRuntimeArgs(
     if program.is_null() || kernel_name.is_null() || args.is_null() {
         return gemmini_Result_Error;
     }
-    
-    eprintln!("Gemmini/Spike: Set runtime args for kernel '{}' ({} args)", 
-              CStr::from_ptr(kernel_name).to_string_lossy(), num_args);
     
     gemmini_Result_Success
 }
@@ -259,8 +243,7 @@ pub unsafe extern "C" fn gemmini_LaunchProgram(
     let mut state = SPIKE_STATE.lock().unwrap();
     
     if let Some(ref mut spike_state) = *state {
-        if program_id >= spike_state.programs.len() {
-            eprintln!("Gemmini/Spike: Invalid program ID");
+        if !validate_program_id(spike_state, program_id) {
             return gemmini_Result_Error as c_int;
         }
         
@@ -372,7 +355,6 @@ pub unsafe extern "C" fn gemmini_LoadFromMLIR(
         // Convert MLIR to executable using Buddy compiler toolchain
         match convert_mlir_to_executable(&mlir_file, program_id) {
             Ok(elf_path) => {
-                spike_state.programs[program_id].elf_path = Some(elf_path);
                 eprintln!("Gemmini/Spike: Successfully compiled MLIR for program {}", program_id);
                 return gemmini_Result_Success;
             }
@@ -693,9 +675,7 @@ fn create_input_data_assembly(path: &std::path::Path, spike_state: &SpikeState) 
         let mut all_data = Vec::new();
         
         // Add first buffer (input1)
-        if spike_state.buffers.len() > 0 {
-            all_data.extend_from_slice(&spike_state.buffers[0].data);
-        }
+        all_data.extend_from_slice(&spike_state.buffers[0].data);
         
         // Add second buffer (input2) if it exists
         if spike_state.buffers.len() > 1 {
@@ -1194,42 +1174,7 @@ fn read_spike_output_from_memory(spike_state: &mut SpikeState, spike_output: &st
 }
 
 
-// TODO FIX:
-// https://github.com/Multi-V-VM/hetGPU/blob/2839110b28ff47d8f9d8d8b5de9a9b9056aee9d3/ext/gemmini_runtime-sys/src/lib.rs#L1797
-fn find_gemmini_main_binary() -> Result<String, String> {
-    // Look for gemmini_main in common locations
-    let possible_paths = vec![
-        "./target/debug/gemmini_main",
-        "../target/debug/gemmini_main", 
-        "../../target/debug/gemmini_main",
-        "../../../target/debug/gemmini_main",
-        "/home/victoryang00/hetgpu/target/debug/gemmini_main",
-    ];
-    
-    for path in possible_paths {
-        if std::path::Path::new(path).exists() {
-            return Ok(path.to_string());
-        }
-    }
-    
-    // Try to find using which command
-    if let Ok(output) = Command::new("which").arg("gemmini_main").output() {
-        if output.status.success() {
-            if let Ok(path) = String::from_utf8(output.stdout) {
-                return Ok(path.trim().to_string());
-            }
-        }
-    }
-    
-    Err("Could not find gemmini_main binary. Please ensure it's built with 'cargo build --bin gemmini_main'".to_string())
-}
 
-// Convert tensor-based MLIR to memref-based MLIR for buddy-opt compatibility
-fn convert_tensor_to_memref_mlir(content: &str) -> String {
-    // For now, just return the content as-is
-    // We'll manually fix the MLIR instead
-    content.to_string()
-}
 
 fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<PathBuf, String> {
     // Output files
@@ -1309,13 +1254,10 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
         }
     };
     
-    // Convert tensor operations to memref for buddy-opt compatibility
-    let memref_content = convert_tensor_to_memref_mlir(&linalg_content);
-    
-    // Write the converted MLIR
-    match fs::write(&memref_mlir, memref_content) {
+    // Write the MLIR content 
+    match fs::write(&memref_mlir, linalg_content) {
         Ok(_) => {
-            eprintln!("Gemmini/Spike: Successfully converted to memref MLIR");
+            eprintln!("Gemmini/Spike: Successfully wrote memref MLIR");
         }
         Err(e) => {
             eprintln!("Failed to write memref MLIR file: {}", e);
@@ -1393,28 +1335,10 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
         }
     }
     
-    // Step 3.5: Use gemmini_main binary instead of generating C stub
-    eprintln!("Gemmini/Spike: Step 3.5 - Using gemmini_main binary for execution");
-    
-    // Find the gemmini_main binary
-    let gemmini_main_path: String = find_gemmini_main_binary()?;
-    eprintln!("Gemmini/Spike: Found gemmini_main at: {}", gemmini_main_path);
-    
-    // Store the object file path for the gemmini_main binary to use
-    let obj_info_file = format!("{}_obj_info.txt", base_name);
-    std::fs::write(&obj_info_file, format!("{}\n{}", obj_file, linalg_mlir))
-        .map_err(|e| format!("Failed to write object info: {}", e))?;
-    
-    // Instead of linking, we'll let the gemmini_main binary handle execution
-    eprintln!("Gemmini/Spike: Step 4 - Prepared for gemmini_main execution");
-    eprintln!("Gemmini/Spike: Object file: {}", obj_file);
-    eprintln!("Gemmini/Spike: MLIR file: {}", linalg_mlir);
-    
-    // Copy the object file to a known location for gemmini_main to find
-    let target_obj = format!("{}.o", base_name);
-    if std::fs::copy(&obj_file, &target_obj).is_ok() {
-        eprintln!("Gemmini/Spike: Copied object file to: {}", target_obj);
-    }
+    // Step 4: Object file is ready for execution
+    eprintln!("Gemmini/Spike: Step 4 - Object file ready: {}", obj_file);
+    eprintln!("Gemmini/Spike: Object file size: {} bytes", 
+             std::fs::metadata(&obj_file).map(|m| m.len()).unwrap_or(0));
     
     eprintln!("Gemmini/Spike: Successfully compiled MLIR to executable: {}", executable);
     Ok(PathBuf::from(executable))
