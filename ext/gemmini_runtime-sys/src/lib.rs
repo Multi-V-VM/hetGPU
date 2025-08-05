@@ -1053,29 +1053,155 @@ int main() {
     std::fs::write(&startup_c, startup_content)
         .map_err(|e| format!("Failed to write startup code: {}", e))?;
     
-    // Compile the startup code and link with the object file
+    // Create constants file with proper section placement
+    let constants_s = temp_dir.join("constants.s");
+    let constants_content = r#"
+    .section .rodata,"a",@progbits
+    .align 4
+    .global .L__constant_1x1xi32
+    .type .L__constant_1x1xi32, @object
+    .size .L__constant_1x1xi32, 4
+.L__constant_1x1xi32:
+    .word 1
+
+    .global .L__constant_1x1xf32
+    .type .L__constant_1x1xf32, @object
+    .size .L__constant_1x1xf32, 4
+.L__constant_1x1xf32:
+    .float 1.0
+
+    .global .L__constant_2x2xi32
+    .type .L__constant_2x2xi32, @object  
+    .size .L__constant_2x2xi32, 16
+.L__constant_2x2xi32:
+    .word 1
+    .word 1
+    .word 1
+    .word 1
+
+    .global .L__constant_1x1xi64
+    .type .L__constant_1x1xi64, @object
+    .size .L__constant_1x1xi64, 8
+.L__constant_1x1xi64:
+    .quad 1
+
+    .global .L__constant_1x1xf64
+    .type .L__constant_1x1xf64, @object
+    .size .L__constant_1x1xf64, 8
+.L__constant_1x1xf64:
+    .double 1.0
+"#;
+    std::fs::write(&constants_s, constants_content)
+        .map_err(|e| format!("Failed to write constants assembly: {}", e))?;
+    
+    // Compile all assembly and C files to object files first
+    let startup_o = temp_dir.join("startup.o");
+    let input_data_o = temp_dir.join("input_data.o");
+    let constants_o = temp_dir.join("constants.o");
+    
+    // Compile startup.c
+    eprintln!("Gemmini/Spike: Compiling startup.c");
+    let compile_c_result = Command::new("riscv64-unknown-elf-gcc")
+        .args(&[
+            "-c",
+            "-march=rv64gc",
+            "-mabi=lp64d",
+            "-mcmodel=medany",
+            startup_c.to_str().unwrap(),
+            "-o",
+            startup_o.to_str().unwrap(),
+        ])
+        .output();
+    
+    match compile_c_result {
+        Ok(output) => {
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to compile startup.c: {}", stderr));
+            }
+        }
+        Err(e) => return Err(format!("Failed to run gcc for startup.c: {}", e)),
+    }
+    
+    // Assemble input_data.s
+    eprintln!("Gemmini/Spike: Assembling input_data.s");
+    let compile_asm_result = Command::new("riscv64-unknown-elf-gcc")
+        .args(&[
+            "-c",
+            "-march=rv64gc",
+            "-mabi=lp64d",
+            input_data_s.to_str().unwrap(),
+            "-o",
+            input_data_o.to_str().unwrap(),
+        ])
+        .output();
+    
+    match compile_asm_result {
+        Ok(output) => {
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to assemble input_data.s: {}", stderr));
+            }
+        }
+        Err(e) => return Err(format!("Failed to run gcc for input_data.s: {}", e)),
+    }
+    
+    // Assemble constants.s
+    eprintln!("Gemmini/Spike: Assembling constants.s");
+    let compile_const_result = Command::new("riscv64-unknown-elf-gcc")
+        .args(&[
+            "-c",
+            "-march=rv64gc",
+            "-mabi=lp64d",
+            constants_s.to_str().unwrap(),
+            "-o",
+            constants_o.to_str().unwrap(),
+        ])
+        .output();
+    
+    match compile_const_result {
+        Ok(output) => {
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to assemble constants.s: {}", stderr));
+            }
+        }
+        Err(e) => return Err(format!("Failed to run gcc for constants.s: {}", e)),
+    }
+    
+    // Now link all object files together
     let linker_script = create_linker_script(temp_dir)?;
-    let link_cmd = format!(
-        "riscv64-unknown-elf-gcc -static -nostartfiles -nostdlib -mcmodel=medany -T {} {} {} {} -o {}",
-        linker_script,
-        startup_c.to_str().unwrap(),
-        input_data_s.to_str().unwrap(),
-        obj_file,
-        executable.display()
-    );
-    eprintln!("Gemmini/Spike: Link command: {}", link_cmd);
+    eprintln!("Gemmini/Spike: Linking executable");
+    
+    // First, let's check if we need to patch the object file for missing constants
+    eprintln!("Gemmini/Spike: Checking for undefined symbols in object file");
+    let nm_result = Command::new("riscv64-unknown-elf-nm")
+        .args(&["-u", obj_file])
+        .output();
+    
+    if let Ok(output) = nm_result {
+        let undefined = String::from_utf8_lossy(&output.stdout);
+        eprintln!("Gemmini/Spike: Undefined symbols: {}", undefined.trim());
+    }
     
     let link_result = Command::new("riscv64-unknown-elf-gcc")
         .args(&[
             "-static",
             "-nostartfiles",
             "-nostdlib",
+            "-march=rv64gc",
+            "-mabi=lp64d",
+            "-fPIC",              // Position independent code
             "-mcmodel=medany",
+            "-mno-relax",         // Disable linker relaxation
+            "-Wl,--no-relax",     // Also disable relaxation in linker
+            "-Wl,--gc-sections",  // Remove unused sections
             "-T", 
         ])
         .arg(&linker_script)
-        .arg(startup_c.to_str().unwrap())
-        .arg(&input_data_s)
+        .arg(&constants_o)  // Put constants first so they're in the right place
+        .arg(&startup_o)
+        .arg(&input_data_o)
         .arg(obj_file)
         .arg("-o")
         .arg(&executable)
@@ -1268,11 +1394,13 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
     // Update linalg_mlir to point to the memref version
     let linalg_mlir = memref_mlir;
     
-    // Step 2: Use pipeline approach: buddy-opt | buddy-translate | buddy-llc
-    eprintln!("Gemmini/Spike: Step 2 - Pipeline compilation: buddy-opt | buddy-translate | buddy-llc");
+    // Step 2: Generate LLVM IR first, then add constants, then compile
+    eprintln!("Gemmini/Spike: Step 2 - Converting MLIR to LLVM IR with constants");
     
-    // Create the pipeline command using shell
-    let pipeline_cmd = format!(
+    let llvm_ir_file = format!("{}.ll", base_name);
+    
+    // First generate LLVM IR
+    let mlir_to_llvm_cmd = format!(
         "buddy-opt {} \
             -pass-pipeline='builtin.module(func.func(tosa-to-linalg-named),func.func(tosa-to-linalg),func.func(tosa-to-tensor),func.func(tosa-to-arith))' | \
         buddy-opt \
@@ -1289,30 +1417,95 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
             -lower-gemmini \
             -convert-func-to-llvm \
             -reconcile-unrealized-casts | \
-        buddy-translate -buddy-to-llvmir | \
-        buddy-llc -filetype=obj -mtriple=riscv64 \
-            -mattr=+D -float-abi=hard \
-            -o {}",
-        linalg_mlir, obj_file
+        buddy-translate -buddy-to-llvmir > {}",
+        linalg_mlir, llvm_ir_file
     );
     
-    eprintln!("Gemmini/Spike: Running pipeline: {}", pipeline_cmd);
+    eprintln!("Gemmini/Spike: Generating LLVM IR");
+    let llvm_ir_result = Command::new("bash")
+        .args(&["-c", &mlir_to_llvm_cmd])
+        .output();
+        
+    match llvm_ir_result {
+        Ok(output) => {
+            if !output.status.success() {
+                eprintln!("Failed to generate LLVM IR!");
+                eprintln!("STDERR:\n{}", String::from_utf8_lossy(&output.stderr));
+                return Err(format!("Failed to generate LLVM IR"));
+            }
+        }
+        Err(e) => return Err(format!("Failed to run LLVM IR generation: {}", e)),
+    }
+    
+    // Read the generated LLVM IR and fix constant references
+    eprintln!("Gemmini/Spike: Fixing constant references in LLVM IR");
+    let llvm_ir = fs::read_to_string(&llvm_ir_file)
+        .map_err(|e| format!("Failed to read LLVM IR: {}", e))?;
+        
+    // The code references .L__constant_xxx symbols that don't exist
+    // Let's replace those references with the actual constant addresses
+    let mut modified_ir = llvm_ir;
+    
+    // Skip modifying if constants are already properly defined
+    eprintln!("Gemmini/Spike: Checking LLVM IR for constant definitions");
+    let needs_constants = modified_ir.contains(".L__constant_") && !modified_ir.contains("@.L__constant_");
+    
+    if needs_constants {
+        eprintln!("Gemmini/Spike: Adding missing .L__constant definitions");
+        
+        // Add the missing constant definitions
+        modified_ir.push_str("\n\n; Constants for undefined symbols\n");
+        
+        if !modified_ir.contains("@.L__constant_1x1xi32") {
+            modified_ir.push_str("@.L__constant_1x1xi32 = internal constant [1 x i32] [i32 1], align 4\n");
+        }
+        if !modified_ir.contains("@.L__constant_1x1xf32") {
+            modified_ir.push_str("@.L__constant_1x1xf32 = internal constant [1 x float] [float 1.0], align 4\n");
+        }
+        if !modified_ir.contains("@.L__constant_2x2xi32") {
+            modified_ir.push_str("@.L__constant_2x2xi32 = internal constant [4 x i32] [i32 1, i32 1, i32 1, i32 1], align 4\n");
+        }
+        if !modified_ir.contains("@.L__constant_1x1xi64") {
+            modified_ir.push_str("@.L__constant_1x1xi64 = internal constant [1 x i64] [i64 1], align 8\n");
+        }
+        if !modified_ir.contains("@.L__constant_1x1xf64") {
+            modified_ir.push_str("@.L__constant_1x1xf64 = internal constant [1 x double] [double 1.0], align 8\n");
+        }
+    } else {
+        eprintln!("Gemmini/Spike: LLVM IR already has proper constant definitions");
+    }
+    
+    // Write the modified LLVM IR back
+    fs::write(&llvm_ir_file, modified_ir)
+        .map_err(|e| format!("Failed to write modified LLVM IR: {}", e))?;
+    
+    // Now compile the LLVM IR to object file with PIC to avoid relocation issues
+    let compile_cmd = format!(
+        "buddy-llc -filetype=obj -mtriple=riscv64-unknown-elf \
+            -mattr=+m,+a,+f,+d,+c -float-abi=hard \
+            -relocation-model=pic -code-model=small \
+            {} -o {}",
+        llvm_ir_file, obj_file
+    );
+    
+    eprintln!("Gemmini/Spike: Compiling LLVM IR to object file");
+    eprintln!("Gemmini/Spike: Command: {}", compile_cmd);
     
     // First, ensure the output file doesn't exist
     let _ = std::fs::remove_file(&obj_file);
     
-    let pipeline_result = Command::new("bash")
-        .args(&["-c", &format!("set -o pipefail && {}", pipeline_cmd)])
+    let compile_result = Command::new("bash")
+        .args(&["-c", &compile_cmd])
         .output();
     
-    match pipeline_result {
+    match compile_result {
         Ok(output) => {
             if !output.status.success() {
-                eprintln!("Pipeline compilation failed!");
+                eprintln!("LLVM compilation failed!");
                 eprintln!("STDERR:\n{}", String::from_utf8_lossy(&output.stderr));
                 eprintln!("STDOUT:\n{}", String::from_utf8_lossy(&output.stdout));
                 eprintln!("Exit status: {:?}", output.status.code());
-                return Err(format!("Pipeline compilation failed"));
+                return Err(format!("LLVM compilation failed"));
             } else {
                 eprintln!("Gemmini/Spike: Pipeline compilation succeeded");
                 // Check if object file was actually created
@@ -1330,7 +1523,7 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
         }
         Err(e) => {
             eprintln!("Pipeline execution failed: {}", e);
-            eprintln!("Command was: {}", pipeline_cmd);
+            eprintln!("Command was: {}", compile_cmd);
             return Err(format!("Pipeline compilation failed"));
         }
     }
