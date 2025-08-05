@@ -3,7 +3,6 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::fs;
 use std::io::{Write, Read};
@@ -624,14 +623,19 @@ fn run_on_spike(spike_state: &mut SpikeState, program_id: usize) -> Result<(), S
     
     // Execute with Spike
     let temp_dir = &spike_state.temp_dir;
+    let spike_command = format!(
+        "LD_LIBRARY_PATH=/repo/riscv-gnu-toolchain/lib spike --extension=gemmini pk {}",
+        executable.display()
+    );
+    eprintln!("Gemmini/Spike: Executing command: {}", spike_command);
+    
     let spike_result = Command::new("spike")
-        .env("LD_LIBRARY_PATH", "/root/.nix-profile/lib")
+        .env("LD_LIBRARY_PATH", "/repo/riscv-gnu-toolchain/lib")
         .args(&[
             "--extension=gemmini",
-            "/usr/local/riscv64-none-elf/bin/pk",
+            "pk",
         ])
         .arg(&executable)
-        .current_dir(temp_dir)
         .output();
     
     match spike_result {
@@ -648,6 +652,21 @@ fn run_on_spike(spike_state: &mut SpikeState, program_id: usize) -> Result<(), S
                 
                 read_spike_output_from_memory(spike_state, &output)
             } else {
+                let exit_code = output.status.code().unwrap_or(-1);
+                eprintln!("Gemmini/Spike: Execution failed with exit code: {}", exit_code);
+                eprintln!("Gemmini/Spike: Full stdout:\n{}", String::from_utf8_lossy(&output.stdout));
+                eprintln!("Gemmini/Spike: Full stderr:\n{}", String::from_utf8_lossy(&output.stderr));
+                
+                // Try to run spike with --help to check if it's working
+                eprintln!("Gemmini/Spike: Checking if spike is properly installed...");
+                if let Ok(help_output) = Command::new("spike").arg("--help").output() {
+                    if help_output.status.success() {
+                        eprintln!("Gemmini/Spike: Spike is installed and responds to --help");
+                    } else {
+                        eprintln!("Gemmini/Spike: Spike is installed but --help failed");
+                    }
+                }
+                
                 panic!("Gemmini/Spike: Execution failed with status: {:?}", output.status);
             }
         }
