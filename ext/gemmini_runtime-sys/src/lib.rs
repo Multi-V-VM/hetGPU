@@ -598,21 +598,11 @@ fn run_on_spike(spike_state: &mut SpikeState, program_id: usize) -> Result<(), S
     
     // Execute with Spike
     let temp_dir = &spike_state.temp_dir;
-    let spike_command = format!(
-        "LD_LIBRARY_PATH=/repo/riscv-gnu-toolchain/lib spike --extension=gemmini pk {}",
-        executable.display()
-    );
-    if std::env::var("GEMMINI_DEBUG").is_ok() {
-        eprintln!("Gemmini/Spike: Executing command: {}", spike_command);
-    }
+    let spike_cmd = format!("LD_LIBRARY_PATH=/repo/riscv-gnu-toolchain/lib spike --extension=gemmini pk {}", executable.display());
+    eprintln!("Gemmini/Spike: Executing command: {}", spike_cmd);
     
-    let spike_result = Command::new("spike")
-        .env("LD_LIBRARY_PATH", "/repo/riscv-gnu-toolchain/lib")
-        .args(&[
-            "--extension=gemmini",
-            "pk",
-        ])
-        .arg(&executable)
+    let spike_result = Command::new("sh")
+        .args(&["-c", &spike_cmd])
         .output();
     
     match spike_result {
@@ -737,16 +727,11 @@ fn create_executable_from_object(spike_state: &mut SpikeState, obj_file: &str) -
     let constants_o = temp_dir.join("constants.o");
     
     // Compile startup.c
-    let compile_c_result = Command::new("riscv64-unknown-elf-gcc")
-        .args(&[
-            "-c",
-            "-march=rv64gc",
-            "-mabi=lp64d",
-            "-mcmodel=medany",
-            startup_c.to_str().unwrap(),
-            "-o",
-            startup_o.to_str().unwrap(),
-        ])
+    let compile_c_cmd = format!("riscv64-unknown-elf-gcc -c -march=rv64gc -mabi=lp64d -mcmodel=medany {} -o {}",
+                                startup_c.display(), startup_o.display());
+    eprintln!("Gemmini/Spike: Executing command: {}", compile_c_cmd);
+    let compile_c_result = Command::new("sh")
+        .args(&["-c", &compile_c_cmd])
         .output();
     
     match compile_c_result {
@@ -760,15 +745,11 @@ fn create_executable_from_object(spike_state: &mut SpikeState, obj_file: &str) -
     }
     
     // Assemble input_data.s
-    let compile_asm_result = Command::new("riscv64-unknown-elf-gcc")
-        .args(&[
-            "-c",
-            "-march=rv64gc",
-            "-mabi=lp64d",
-            input_data_s.to_str().unwrap(),
-            "-o",
-            input_data_o.to_str().unwrap(),
-        ])
+    let compile_asm_cmd = format!("riscv64-unknown-elf-gcc -c -march=rv64gc -mabi=lp64d {} -o {}",
+                                  input_data_s.display(), input_data_o.display());
+    eprintln!("Gemmini/Spike: Executing command: {}", compile_asm_cmd);
+    let compile_asm_result = Command::new("sh")
+        .args(&["-c", &compile_asm_cmd])
         .output();
     
     match compile_asm_result {
@@ -782,15 +763,11 @@ fn create_executable_from_object(spike_state: &mut SpikeState, obj_file: &str) -
     }
     
     // Assemble constants.s
-    let compile_const_result = Command::new("riscv64-unknown-elf-gcc")
-        .args(&[
-            "-c",
-            "-march=rv64gc",
-            "-mabi=lp64d",
-            constants_s.to_str().unwrap(),
-            "-o",
-            constants_o.to_str().unwrap(),
-        ])
+    let compile_const_cmd = format!("riscv64-unknown-elf-gcc -c -march=rv64gc -mabi=lp64d {} -o {}",
+                                    constants_s.display(), constants_o.display());
+    eprintln!("Gemmini/Spike: Executing command: {}", compile_const_cmd);
+    let compile_const_result = Command::new("sh")
+        .args(&["-c", &compile_const_cmd])
         .output();
     
     match compile_const_result {
@@ -809,8 +786,10 @@ fn create_executable_from_object(spike_state: &mut SpikeState, obj_file: &str) -
     // First, let's check if we need to patch the object file for missing constants
     // Check for undefined symbols if debugging
     if std::env::var("GEMMINI_DEBUG").is_ok() {
-        if let Ok(output) = Command::new("riscv64-unknown-elf-nm")
-            .args(&["-u", obj_file])
+        let nm_cmd = format!("riscv64-unknown-elf-nm -u {}", obj_file);
+        eprintln!("Gemmini/Spike: Executing command: {}", nm_cmd);
+        if let Ok(output) = Command::new("sh")
+            .args(&["-c", &nm_cmd])
             .output() {
             let undefined = String::from_utf8_lossy(&output.stdout);
             if !undefined.trim().is_empty() {
@@ -819,27 +798,11 @@ fn create_executable_from_object(spike_state: &mut SpikeState, obj_file: &str) -
         }
     }
     
-    let link_result = Command::new("riscv64-unknown-elf-gcc")
-        .args(&[
-            "-static",
-            "-nostartfiles",
-            "-nostdlib",
-            "-march=rv64gc",
-            "-mabi=lp64d",
-            "-fPIC",              // Position independent code
-            "-mcmodel=medany",
-            "-mno-relax",         // Disable linker relaxation
-            "-Wl,--no-relax",     // Also disable relaxation in linker
-            "-Wl,--gc-sections",  // Remove unused sections
-            "-T", 
-        ])
-        .arg(&linker_script)
-        .arg(&constants_o)  // Put constants first so they're in the right place
-        .arg(&startup_o)
-        .arg(&input_data_o)
-        .arg(obj_file)
-        .arg("-o")
-        .arg(&executable)
+    let link_cmd = format!("riscv64-unknown-elf-gcc -static -nostartfiles -nostdlib -march=rv64gc -mabi=lp64d -fPIC -mcmodel=medany -mno-relax -Wl,--no-relax -Wl,--gc-sections -T {} {} {} {} {} -o {}",
+                           linker_script, constants_o.display(), startup_o.display(), input_data_o.display(), obj_file, executable.display());
+    eprintln!("Gemmini/Spike: Executing command: {}", link_cmd);
+    let link_result = Command::new("sh")
+        .args(&["-c", &link_cmd])
         .output();
     
     match link_result {
@@ -936,12 +899,10 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
     let executable = format!("{}.out", base_name);
     
     // Step 1: Convert TOSA to Linalg using mlir-opt
-    let mlir_opt_result = Command::new("mlir-opt")
-        .args(&[
-            mlir_file,
-            "--tosa-to-linalg-pipeline",
-            "-o", &tosa_mlir,
-        ])
+    let mlir_opt_cmd = format!("mlir-opt {} --tosa-to-linalg-pipeline -o {}", mlir_file, tosa_mlir);
+    eprintln!("Gemmini/Spike: Executing command: {}", mlir_opt_cmd);
+    let mlir_opt_result = Command::new("sh")
+        .args(&["-c", &mlir_opt_cmd])
         .output();
     
     match mlir_opt_result {
@@ -999,7 +960,8 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
         tosa_mlir, llvm_ir_file
     );
     
-    let llvm_ir_result = Command::new("bash")
+    eprintln!("Gemmini/Spike: Executing command: {}", mlir_to_llvm_cmd);
+    let llvm_ir_result = Command::new("sh")
         .args(&["-c", &mlir_to_llvm_cmd])
         .output();
         
@@ -1058,12 +1020,12 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
     );
     
     eprintln!("Gemmini/Spike: Compiling LLVM IR to object file");
-    eprintln!("Gemmini/Spike: Command: {}", compile_cmd);
+    eprintln!("Gemmini/Spike: Executing command: {}", compile_cmd);
     
     // First, ensure the output file doesn't exist
     let _ = std::fs::remove_file(&obj_file);
     
-    let compile_result = Command::new("bash")
+    let compile_result = Command::new("sh")
         .args(&["-c", &compile_cmd])
         .output();
     
