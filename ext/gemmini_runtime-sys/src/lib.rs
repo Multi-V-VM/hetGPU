@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::ptr;
 use std::sync::Mutex;
+use tempfile::TempDir;
 
 // Gemmini configuration constants
 pub const GEMMINI_DIM: usize = 16;
@@ -85,7 +86,7 @@ pub struct gemmini_BufferConfig {
 static SPIKE_STATE: Mutex<Option<SpikeState>> = Mutex::new(None);
 
 struct SpikeState {
-    temp_dir: PathBuf,
+    temp_dir: TempDir,
     programs: Vec<ProgramData>,
     buffers: Vec<BufferData>,
 }
@@ -117,13 +118,20 @@ pub unsafe extern "C" fn gemmini_CreateDevice(device_id: ::core::ffi::c_int) -> 
     let mut state = SPIKE_STATE.lock().unwrap();
     
     if state.is_none() {
-        let _ = fs::create_dir_all("./tmp");
-        
-        *state = Some(SpikeState {
-            temp_dir: PathBuf::from("./tmp"),
-            programs: Vec::new(),
-            buffers: Vec::new(),
-        });
+        match TempDir::new() {
+            Ok(temp_dir) => {
+                *state = Some(SpikeState {
+                    temp_dir,
+                    programs: Vec::new(),
+                    buffers: Vec::new(),
+                });
+                eprintln!("Gemmini/Spike: Initialized device {}", device_id);
+            }
+            Err(e) => {
+                eprintln!("Gemmini/Spike: Failed to create temp directory: {}", e);
+                return ptr::null_mut();
+            }
+        }
     }
     
     // Return a dummy pointer (we only support one device in Spike)
@@ -320,16 +328,6 @@ pub unsafe extern "C" fn gemmini_LoadFromMLIR(
     let program_id = (program as usize) - 1;
     let mlir_str = CStr::from_ptr(mlir).to_string_lossy().to_string();
     
-    // Create tmp directory if it doesn't exist
-    let _ = fs::create_dir_all("./tmp");
-    
-    // Write MLIR to file
-    let mlir_file = format!("./tmp/gemmini_mlir_{}.mlir", program_id);
-    if let Err(e) = fs::write(&mlir_file, &mlir_str) {
-        eprintln!("Gemmini/Spike: Failed to write MLIR file: {}", e);
-        return gemmini_Result_Error;
-    }
-    
     let mut state = SPIKE_STATE.lock().unwrap();
     
     if let Some(ref mut spike_state) = *state {
@@ -338,8 +336,16 @@ pub unsafe extern "C" fn gemmini_LoadFromMLIR(
             return gemmini_Result_Error;
         }
         
+        // Write MLIR to file in temp directory
+        let temp_dir = spike_state.temp_dir.path();
+        let mlir_file = temp_dir.join(format!("gemmini_mlir_{}.mlir", program_id));
+        if let Err(e) = fs::write(&mlir_file, &mlir_str) {
+            eprintln!("Gemmini/Spike: Failed to write MLIR file: {}", e);
+            return gemmini_Result_Error;
+        }
+        
         // Convert MLIR to executable using Buddy compiler toolchain
-        match convert_mlir_to_executable(&mlir_file, program_id) {
+        match convert_mlir_to_executable(mlir_file.to_str().unwrap(), spike_state, program_id) {
             Ok(elf_path) => {
                 return gemmini_Result_Success;
             }
@@ -579,10 +585,11 @@ impl Drop for Buffer {
 
 fn run_on_spike(spike_state: &mut SpikeState, program_id: usize) -> Result<(), String> {
     // Look for the compiled object file
-    let obj_file = format!("./tmp/gemmini_program_{}.o", program_id);
+    let temp_dir = spike_state.temp_dir.path();
+    let obj_file = temp_dir.join(format!("gemmini_program_{}.o", program_id));
     
-    if !std::path::Path::new(&obj_file).exists() {
-        panic!("Gemmini/Spike: Object file not found: {}", obj_file);
+    if !obj_file.exists() {
+        panic!("Gemmini/Spike: Object file not found: {}", obj_file.display());
     }
     
     // Check if the object file is valid
@@ -594,10 +601,9 @@ fn run_on_spike(spike_state: &mut SpikeState, program_id: usize) -> Result<(), S
     }
     
     // Create executable and run with Spike
-    let executable = create_executable_from_object(spike_state, &obj_file)?;
+    let executable = create_executable_from_object(spike_state, obj_file.to_str().unwrap())?;
     
     // Execute with Spike
-    let temp_dir = &spike_state.temp_dir;
     let spike_cmd = format!("LD_LIBRARY_PATH=/repo/riscv-gnu-toolchain/lib spike --extension=gemmini pk {}", executable.display());
     eprintln!("Gemmini/Spike: Executing command: {}", spike_cmd);
     
@@ -697,7 +703,7 @@ fn create_linker_script(temp_dir: &std::path::Path) -> Result<String, String> {
 }
 
 fn create_executable_from_object(spike_state: &mut SpikeState, obj_file: &str) -> Result<std::path::PathBuf, String> {
-    let temp_dir = &spike_state.temp_dir;
+    let temp_dir = spike_state.temp_dir.path();
     let executable = temp_dir.join("gemmini_kernel");
     
     // Create input data assembly file that embeds the buffer data
@@ -890,9 +896,10 @@ fn read_spike_output_from_memory(spike_state: &mut SpikeState, spike_output: &st
 
 
 
-fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<PathBuf, String> {
+fn convert_mlir_to_executable(mlir_file: &str, spike_state: &mut SpikeState, program_id: usize) -> Result<PathBuf, String> {
     // Output files
-    let base_name = format!("./tmp/gemmini_program_{}", program_id);
+    let temp_dir = spike_state.temp_dir.path();
+    let base_name = format!("{}/gemmini_program_{}", temp_dir.display(), program_id);
     let tosa_mlir = format!("{}_linalg.mlir", base_name);
     let mut llvm_ir = format!("{}.ll", base_name);
     let obj_file = format!("{}.o", base_name);
