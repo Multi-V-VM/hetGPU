@@ -1019,34 +1019,27 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
     let llvm_ir = fs::read_to_string(&llvm_ir_file)
         .map_err(|e| format!("Failed to read LLVM IR: {}", e))?;
         
-    // The code references .L__constant_xxx symbols that don't exist
-    // Let's replace those references with the actual constant addresses
+    // Fix missing constant references in LLVM IR
     let mut modified_ir = llvm_ir;
-    
-    // Skip modifying if constants are already properly defined
-    eprintln!("Gemmini/Spike: Checking LLVM IR for constant definitions");
     let needs_constants = modified_ir.contains(".L__constant_") && !modified_ir.contains("@.L__constant_");
     
     if needs_constants {
         eprintln!("Gemmini/Spike: Adding missing .L__constant definitions");
-        
-        // Add the missing constant definitions
         modified_ir.push_str("\n\n; Constants for undefined symbols\n");
         
-        if !modified_ir.contains("@.L__constant_1x1xi32") {
-            modified_ir.push_str("@.L__constant_1x1xi32 = internal constant [1 x i32] [i32 1], align 4\n");
-        }
-        if !modified_ir.contains("@.L__constant_1x1xf32") {
-            modified_ir.push_str("@.L__constant_1x1xf32 = internal constant [1 x float] [float 1.0], align 4\n");
-        }
-        if !modified_ir.contains("@.L__constant_2x2xi32") {
-            modified_ir.push_str("@.L__constant_2x2xi32 = internal constant [4 x i32] [i32 1, i32 1, i32 1, i32 1], align 4\n");
-        }
-        if !modified_ir.contains("@.L__constant_1x1xi64") {
-            modified_ir.push_str("@.L__constant_1x1xi64 = internal constant [1 x i64] [i64 1], align 8\n");
-        }
-        if !modified_ir.contains("@.L__constant_1x1xf64") {
-            modified_ir.push_str("@.L__constant_1x1xf64 = internal constant [1 x double] [double 1.0], align 8\n");
+        // Define all required constants
+        const CONSTANT_DEFINITIONS: &[(&str, &str)] = &[
+            ("@.L__constant_1x1xi32", "@.L__constant_1x1xi32 = internal constant [1 x i32] [i32 1], align 4\n"),
+            ("@.L__constant_1x1xf32", "@.L__constant_1x1xf32 = internal constant [1 x float] [float 1.0], align 4\n"),
+            ("@.L__constant_2x2xi32", "@.L__constant_2x2xi32 = internal constant [4 x i32] [i32 1, i32 1, i32 1, i32 1], align 4\n"),
+            ("@.L__constant_1x1xi64", "@.L__constant_1x1xi64 = internal constant [1 x i64] [i64 1], align 8\n"),
+            ("@.L__constant_1x1xf64", "@.L__constant_1x1xf64 = internal constant [1 x double] [double 1.0], align 8\n"),
+        ];
+        
+        for (name, definition) in CONSTANT_DEFINITIONS {
+            if !modified_ir.contains(name) {
+                modified_ir.push_str(definition);
+            }
         }
     } else {
         eprintln!("Gemmini/Spike: LLVM IR already has proper constant definitions");
