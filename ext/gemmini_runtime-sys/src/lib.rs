@@ -1020,7 +1020,7 @@ fn convert_mlir_to_executable(mlir_file: &str, spike_state: &mut SpikeState, pro
     // Now compile the LLVM IR to object file with PIC to avoid relocation issues
     let compile_cmd = format!(
         "buddy-llc -filetype=obj -mtriple=riscv64-unknown-elf \
-            -mattr=+m,+a,+f,+d,+c -float-abi=hard \
+            -mattr=+m,+a,+f,+d,+c,+buddyext -float-abi=hard \
             -relocation-model=pic -code-model=small \
             {} -o {}",
         llvm_ir_file, obj_file

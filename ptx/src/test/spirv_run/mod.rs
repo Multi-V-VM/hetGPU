@@ -349,6 +349,23 @@ fn test_hip_assert<
             return Err(Box::new(DisplayError { err: "Missing AST for Gemmini".to_string() }));
         }
     }
+    #[cfg(feature = "tosa")]
+    {
+        eprintln!("ZLUDA TEST: Running with TOSA backend (conversion only)");
+        let ast_for_tosa = ptx_parser::parse_module_checked(ptx_text).unwrap();
+        match run_tosa_conversion(name.as_c_str(), ptx_text, ast_for_tosa) {
+            Ok(mlir_output) => {
+                eprintln!("ZLUDA TEST: TOSA conversion successful");
+                eprintln!("ZLUDA TEST: Generated TOSA MLIR:\n{}", mlir_output);
+                // For TOSA backend, we only verify conversion succeeds
+                // No execution or output comparison needed
+            }
+            Err(err) => {
+                eprintln!("ZLUDA ERROR: TOSA conversion failed with error: {:?}", err);
+                return Err(Box::new(DisplayError { err }));
+            }
+        }
+    }
 
     Ok(())
 }
@@ -1463,4 +1480,55 @@ fn run_gemmini<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug +
 
     eprintln!("ZLUDA TEST: Gemmini kernel execution complete");
     Ok(result)
+}
+
+#[cfg(feature = "tosa")]
+fn run_tosa_conversion(
+    name: &CStr,
+    ptx_text: &str,
+    ast: ptx_parser::Module,
+) -> Result<String, String> {
+    eprintln!("ZLUDA TEST: Running TOSA conversion");
+    eprintln!("ZLUDA DEBUG: Kernel name: {:?}", name);
+    
+    // Convert PTX AST to TOSA MLIR using the existing pipeline
+    let tosa_mlir = pass::to_mlir_module(ast)
+        .map_err(|e| format!("Failed to convert PTX to TOSA MLIR: {:?}", e))?;
+    
+    eprintln!("ZLUDA DEBUG: Successfully converted PTX to TOSA MLIR");
+    eprintln!("ZLUDA DEBUG: Initial TOSA MLIR size: {} bytes", tosa_mlir.len());
+    
+    // Write TOSA MLIR to a temporary file
+    let kernel_name = name.to_str().unwrap_or("unknown");
+    let temp_mlir_file = format!("/tmp/zluda_tosa_{}.mlir", kernel_name);
+    std::fs::write(&temp_mlir_file, &tosa_mlir)
+        .map_err(|e| format!("Failed to write TOSA MLIR to temp file: {:?}", e))?;
+    eprintln!("ZLUDA DEBUG: Wrote TOSA MLIR to {}", temp_mlir_file);
+    
+    // Run mlir-opt on the TOSA MLIR
+    let mlir_opt_cmd = format!("mlir-opt {}", temp_mlir_file);
+    eprintln!("ZLUDA DEBUG: Running command: {}", mlir_opt_cmd);
+    
+    let mlir_opt_output = Command::new("sh")
+        .args(&["-c", &mlir_opt_cmd])
+        .output()
+        .map_err(|e| format!("Failed to run mlir-opt: {:?}", e))?;
+    
+    if !mlir_opt_output.status.success() {
+        let stderr = String::from_utf8_lossy(&mlir_opt_output.stderr);
+        eprintln!("ZLUDA ERROR: mlir-opt failed with stderr: {}", stderr);
+        return Err(format!("mlir-opt failed: {}", stderr));
+    }
+    
+    // Get the output from mlir-opt
+    let optimized_mlir = String::from_utf8(mlir_opt_output.stdout)
+        .map_err(|e| format!("Failed to parse mlir-opt output as UTF-8: {:?}", e))?;
+    
+    eprintln!("ZLUDA DEBUG: mlir-opt completed successfully");
+    eprintln!("ZLUDA DEBUG: Optimized TOSA MLIR size: {} bytes", optimized_mlir.len());
+    
+    // Clean up temp file
+    let _ = std::fs::remove_file(&temp_mlir_file);
+    
+    Ok(optimized_mlir)
 }
