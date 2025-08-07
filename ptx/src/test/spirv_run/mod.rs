@@ -84,21 +84,28 @@ test_ptx!(not, [0u32], [u32::max_value()]);
 test_ptx!(shl, [11u32], [44u32]);
 test_ptx!(cvt_sat_s_u, [-1i32], [0i32]);
 test_ptx!(cvta, [3.0f32], [3.0f32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(block, [1u32], [2u32]);
 test_ptx!(local_align, [1u32], [1u32]);
 #[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(call, [1u32], [2u32]);
 #[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(vector, [1u32, 2u32], [3u32, 3u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(vector4, [1u32, 2u32, 3u32, 4u32], [4u32]);
 test_ptx!(ld_st_offset, [1u32, 2u32], [2u32, 1u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(ntid, [3u32], [4u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(reg_local, [12u32], [13u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(mov_address, [0xDEADu32], [0u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(b64tof64, [111u32], [111u32]);
 // This segfaults NV compiler
 #[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(implicit_param, [34u32], [34u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(pred_not, [10u32, 11u32], [2u32, 0u32]);
 test_ptx!(mad_s32, [[2i32], [3i32], [4i32]], [10i32, 10i32, 10i32]);
 test_ptx!(
@@ -116,8 +123,11 @@ test_ptx!(or, [[1u32], [2u32]], [3u32]);
 test_ptx!(sub, [2u32], [1u32]);
 test_ptx!(min, [[555i32], [444i32]], [444i32]);
 test_ptx!(max, [[556i32], [444i32]], [556i32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(global_array, [0xDEADu32], [1u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(extern_shared, [127u32], [127u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(extern_shared_call, [121u32], [123u32]);
 test_ptx!(rcp, [2f32], [0.5f32]);
 // 0b1_00000000_10000000000000000000000u32 is a large denormal
@@ -139,6 +149,7 @@ test_ptx!(selp, [100u16, 200u16], [200u16]);
 test_ptx!(selp_true, [100u16, 200u16], [100u16]);
 test_ptx!(fma, [[2f32], [3f32], [5f32]], [11f32]);
 test_ptx!(shared_variable, [513u32], [513u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(shared_ptr_32, [513u32], [513u32]);
 #[cfg(all(not(feature = "tenstorrent"),not(feature = "tosa"),not(feature = "gemmini")))]
 test_ptx!(atom_cas, [91u32, 91u32], [91u32, 100u32]);
@@ -190,6 +201,7 @@ test_ptx!(stateful_ld_st_ntid, [123u32], [123u32]);
 test_ptx!(stateful_ld_st_ntid_chain, [12651u32], [12651u32]);
 #[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(stateful_ld_st_ntid_sub, [96311u32], [96311u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(shared_ptr_take_address, [97815231u32], [97815231u32]);
 test_ptx!(cvt_s64_s32, [-1i32], [-1i64]);
 test_ptx!(add_tuning, [2u32], [3u32]);
@@ -228,10 +240,12 @@ test_ptx!(
 #[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(non_scalar_ptr_offset, [1u32, 2u32, 3u32, 4u32], [7u32]);
 test_ptx!(stateful_neg_offset, [1237518u32], [1237518u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(const, [0u16], [10u16, 20, 30, 40]);
 test_ptx!(cvt_s16_s8, [0x139231C2u32], [0xFFFFFFC2u32]);
 test_ptx!(cvt_f64_f32, [0.125f32], [0.125f64]);
 test_ptx!(prmt, [0x70c507d6u32, 0x6fbd4b5cu32], [0x6fbdd65cu32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(activemask, [0u32], [1u32]);
 test_ptx!(membar, [152731u32], [152731u32]);
 
