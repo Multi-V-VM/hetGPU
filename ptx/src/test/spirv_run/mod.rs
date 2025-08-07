@@ -134,8 +134,11 @@ test_ptx!(selp_true, [100u16, 200u16], [100u16]);
 test_ptx!(fma, [[2f32], [3f32], [5f32]], [11f32]);
 test_ptx!(shared_variable, [513u32], [513u32]);
 test_ptx!(shared_ptr_32, [513u32], [513u32]);
+#[cfg(all(not(feature = "tenstorrent"),not(feature = "tosa"),not(feature = "gemmini")))]
 test_ptx!(atom_cas, [91u32, 91u32], [91u32, 100u32]);
+#[cfg(all(not(feature = "tenstorrent"),not(feature = "tosa"),not(feature = "gemmini")))]
 test_ptx!(atom_inc, [100u32], [100u32, 101u32, 0u32]);
+#[cfg(all(not(feature = "tenstorrent"),not(feature = "tosa"),not(feature = "gemmini")))]
 test_ptx!(atom_add, [2u32, 4u32], [2u32, 6u32]);
 test_ptx!(div_approx, [[1f32], [2f32]], [0.5f32]);
 test_ptx!(sqrt, [0.25f32], [0.5f32]);
@@ -152,6 +155,7 @@ test_ptx!(cvt_s32_f32, [-13.8f32, 12.9f32], [-13i32, 13i32]);
 #[cfg(not(feature = "tenstorrent"))]
 test_ptx!(clz, [0b00000101_00101101_00010011_10101011u32], [5u32]);
 test_ptx!(popc, [0b10111100_10010010_01001001_10001010u32], [14u32]);
+#[cfg(all(not(feature = "tenstorrent"),not(feature = "tosa"),not(feature = "gemmini")))]
 test_ptx!(
     brev,
     [0b11000111_01011100_10101110_11111011u32],
@@ -172,15 +176,20 @@ test_ptx!(
     [0b11000001u32]
 );
 test_ptx!(bfi, [0b10u32, 0b101u32, 0u32, 2u32], [0b110u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(stateful_ld_st_simple, [121u32], [121u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(stateful_ld_st_ntid, [123u32], [123u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(stateful_ld_st_ntid_chain, [12651u32], [12651u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(stateful_ld_st_ntid_sub, [96311u32], [96311u32]);
 test_ptx!(shared_ptr_take_address, [97815231u32], [97815231u32]);
 test_ptx!(cvt_s64_s32, [-1i32], [-1i64]);
 test_ptx!(add_tuning, [2u32], [3u32]);
 test_ptx!(add_non_coherent, [3u32], [4u32]);
 test_ptx!(sign_extend, [-1i16], [-1i32]);
+#[cfg(all(not(feature = "tenstorrent"),not(feature = "tosa"),not(feature = "gemmini")))]
 test_ptx!(atom_add_float, [[1.25f32], [0.5f32]], [1.25f32, 1.75f32]);
 test_ptx!(
     setp_nan,
