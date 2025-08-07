@@ -1647,7 +1647,7 @@ fn run_tosa_conversion(
 
     let mlir_opt_output = Command::new("mlir-opt").arg(&temp_mlir_file).output();
 
-    let mlir_opt_out = match mlir_opt_output {
+    let (mlir_opt_out, mlir_opt_success) = match mlir_opt_output {
         Ok(output) => {
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1659,7 +1659,7 @@ fn run_tosa_conversion(
                 eprintln!("ZLUDA WARNING: mlir-opt stderr: {}", stderr);
                 eprintln!("ZLUDA WARNING: mlir-opt stdout: {}", stdout);
                 eprintln!("ZLUDA WARNING: Falling back to unoptimized MLIR");
-                tosa_mlir.clone()
+                (tosa_mlir.clone(), false)
             } else {
                 match String::from_utf8(output.stdout) {
                     Ok(result) => {
@@ -1668,14 +1668,14 @@ fn run_tosa_conversion(
                             "ZLUDA DEBUG: Optimized TOSA MLIR size: {} bytes",
                             result.len()
                         );
-                        result
+                        (result, true)
                     }
                     Err(e) => {
                         eprintln!(
                             "ZLUDA WARNING: Failed to parse mlir-opt output as UTF-8: {:?}",
                             e
                         );
-                        tosa_mlir.clone()
+                        (tosa_mlir.clone(), false)
                     }
                 }
             }
@@ -1683,7 +1683,7 @@ fn run_tosa_conversion(
         Err(e) => {
             eprintln!("ZLUDA WARNING: Failed to run mlir-opt: {:?}", e);
             eprintln!("ZLUDA WARNING: Using unoptimized MLIR");
-            tosa_mlir.clone()
+            (tosa_mlir.clone(), false)
         }
     };
 
@@ -1823,6 +1823,15 @@ fn run_tosa_conversion(
         }
     } else {
         eprintln!("ZLUDA DEBUG: LLM validation disabled (set ENABLE_LLM_VALIDATION=1 to enable)");
+        
+        // When LLM validation is disabled, use mlir-opt result to determine success/failure
+        if !mlir_opt_success {
+            eprintln!("ZLUDA ERROR: MLIR validation failed - mlir-opt returned errors");
+            let _ = std::fs::remove_file(&temp_mlir_file);
+            return Err("MLIR validation failed: mlir-opt detected errors in MLIR code".to_string());
+        } else {
+            eprintln!("ZLUDA SUCCESS: mlir-opt validated MLIR as correct");
+        }
     }
 
     // Clean up temp file

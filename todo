@@ -22,20 +22,21 @@ failures:
     test::spirv_run::global_array_hip
     test::spirv_run::ld_st_implicit_hip
     test::spirv_run::ld_st_offset_hip
-    test::spirv_run::lg2_hip
     test::spirv_run::mov_address_hip
     test::spirv_run::mul_wide_hip
     test::spirv_run::ntid_hip
     test::spirv_run::pred_not_hip
     test::spirv_run::reg_local_hip
-    test::spirv_run::rsqrt_hip
     test::spirv_run::shared_ptr_32_hip
     test::spirv_run::shared_ptr_take_address_hip
-    test::spirv_run::shl_hip
     test::spirv_run::sign_extend_hip
-    test::spirv_run::sqrt_hip
     test::spirv_run::stateful_ld_st_ntid_chain_hip
     test::spirv_run::stateful_ld_st_ntid_hip
     test::spirv_run::stateful_ld_st_ntid_sub_hip
     test::spirv_run::stateful_ld_st_simple_hip
     test::spirv_run::vector4_hip
+
+test::spirv_run::shl_hip
+test::spirv_run::sqrt_hip
+test::spirv_run::rsqrt_hip
+test::spirv_run::lg2_hip
