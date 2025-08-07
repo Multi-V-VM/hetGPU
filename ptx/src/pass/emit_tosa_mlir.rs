@@ -1069,6 +1069,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             } => {
                 self.convert_predicated_instruction(predicate, negated, instruction)?;
             }
+            // Statement::PtrAccess(ptr_access) => {
+            //     self.convert_ptr_access(ptr_access)?;
+            // }
+            Statement::Conversion(conversion) => {
+                self.convert_implicit_conversion(conversion)?;
+            }
             _ => {
                 self.write_line(&format!("// Unsupported statement: {statement:?}"));
             }
@@ -3669,6 +3675,91 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         self.value_map.insert(dst, dst_ssa.clone());
         self.ssa_types.insert(dst_ssa.clone(), tensor_type);
         Ok(dst_ssa)
+    }
+
+    fn convert_ptr_access(
+        &mut self,
+        ptr_access: PtrAccess<SpirvWord>,
+    ) -> Result<(), TranslateError> {
+        // PtrAccess is for computing pointer + offset
+        // In TOSA, we don't have real pointers, so we'll track this as an address calculation
+        let ptr_ssa = self.get_ssa_value(ptr_access.ptr_src)?;
+        let offset_ssa = self.get_ssa_value(ptr_access.offset_src)?;
+        let dst_ssa = self.next_ssa_value();
+        
+        // Use i64 type for pointer arithmetic
+        let ptr_type = self.get_scalar_tensor_type(ast::ScalarType::U64);
+        
+        // For now, we'll use add to compute the address
+        // This is a simplification - real pointer arithmetic would need proper scaling
+        self.write_line(&format!(
+            "{} = \"tosa.add\"({}, {}) : ({}, {}) -> {}",
+            dst_ssa, ptr_ssa, offset_ssa, ptr_type, ptr_type, ptr_type
+        ));
+        
+        self.value_map.insert(ptr_access.dst, dst_ssa.clone());
+        self.ssa_types.insert(dst_ssa.clone(), ptr_type);
+        Ok(())
+    }
+
+    fn convert_implicit_conversion(
+        &mut self,
+        conversion: ImplicitConversion,
+    ) -> Result<(), TranslateError> {
+        // Check if source exists
+        if let Ok(src_ssa) = self.get_ssa_value(conversion.src) {
+            let dst_ssa = self.next_ssa_value();
+            
+            // Get the source and destination types
+            let src_type = self.get_ast_type_as_mlir(&conversion.from_type)?;
+            let dst_type = self.get_ast_type_as_mlir(&conversion.to_type)?;
+            
+            // Determine the conversion operation based on the kind
+            match conversion.kind {
+                ConversionKind::Default | ConversionKind::SignExtend => {
+                    // Use cast for type conversions
+                    self.write_line(&format!(
+                        "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                        dst_ssa, src_ssa, src_type, dst_type
+                    ));
+                    
+                    self.value_map.insert(conversion.dst, dst_ssa.clone());
+                    self.ssa_types.insert(dst_ssa.clone(), dst_type);
+                }
+                _ => {
+                    // For other conversion kinds (BitToPtr, PtrToPtr, AddressOf), 
+                    // emit a comment and pass through the value
+                    self.write_line(&format!(
+                        "// Unsupported conversion kind: {:?}", 
+                        conversion.kind
+                    ));
+                    // Pass through the value without conversion
+                    self.value_map.insert(conversion.dst, src_ssa);
+                }
+            }
+        } else {
+            // Source doesn't exist yet - this might be a parameter or uninitialized value
+            self.write_line(&format!(
+                "// Unsupported statement: Conversion({:?})",
+                conversion
+            ));
+        }
+        Ok(())
+    }
+    
+    fn get_ast_type_as_mlir(&self, typ: &ast::Type) -> Result<MlirType, TranslateError> {
+        match typ {
+            ast::Type::Scalar(scalar) => Ok(self.get_scalar_tensor_type(*scalar)),
+            ast::Type::Vector(len, scalar) => Ok(self.get_vector_tensor_type(*len, *scalar)),
+            ast::Type::Array(_, scalar, _) => {
+                // For now, treat arrays as scalar tensors
+                Ok(self.get_scalar_tensor_type(*scalar))
+            }
+            ast::Type::Pointer(_, _) => {
+                // Pointers are represented as 64-bit integers in TOSA
+                Ok(self.get_scalar_tensor_type(ast::ScalarType::U64))
+            }
+        }
     }
 
     fn convert_rsqrt_instruction(

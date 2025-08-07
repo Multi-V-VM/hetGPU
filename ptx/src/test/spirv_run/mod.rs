@@ -70,13 +70,15 @@ macro_rules! test_ptx {
 test_ptx!(ld_st, [1u32], [1u32]);
 test_ptx!(ld_st_implicit, [0.5f32, 0.25f32], [0.5f32]);
 test_ptx!(mov, [1u32], [1u32]);
-// test_ptx!(mul_lo, [1u32], [2u32]);
-// test_ptx!(mul_hi, [u32::max_value()], [1u32]);
+test_ptx!(mul_lo, [1u32], [2u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
+test_ptx!(mul_hi, [u32::max_value()], [1u32]);
 test_ptx!(add, [1u32], [2u32]);
 test_ptx!(setp, [[10u32], [11u32]], [1f32]);
 test_ptx!(setp_gt, [[2f32], [1f32]], [2f32]);
 test_ptx!(setp_leu, [[1f32], [2f32]], [1f32]);
-// test_ptx!(bra, [10u32], [11u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
+test_ptx!(bra, [10u32], [11u32]);
 test_ptx!(not, [0u32], [u32::max_value()]);
 #[cfg(not(feature = "tenstorrent"))]
 test_ptx!(shl, [11u32], [44u32]);
@@ -84,8 +86,10 @@ test_ptx!(cvt_sat_s_u, [-1i32], [0i32]);
 test_ptx!(cvta, [3.0f32], [3.0f32]);
 test_ptx!(block, [1u32], [2u32]);
 test_ptx!(local_align, [1u32], [1u32]);
-// test_ptx!(call, [1u32], [2u32]);
-// test_ptx!(vector, [1u32, 2u32], [3u32, 3u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
+test_ptx!(call, [1u32], [2u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
+test_ptx!(vector, [1u32, 2u32], [3u32, 3u32]);
 test_ptx!(vector4, [1u32, 2u32, 3u32, 4u32], [4u32]);
 test_ptx!(ld_st_offset, [1u32, 2u32], [2u32, 1u32]);
 test_ptx!(ntid, [3u32], [4u32]);
@@ -93,7 +97,8 @@ test_ptx!(reg_local, [12u32], [13u32]);
 test_ptx!(mov_address, [0xDEADu32], [0u32]);
 test_ptx!(b64tof64, [111u32], [111u32]);
 // This segfaults NV compiler
-// test_ptx!(implicit_param, [34u32], [34u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
+test_ptx!(implicit_param, [34u32], [34u32]);
 test_ptx!(pred_not, [10u32, 11u32], [2u32, 0u32]);
 test_ptx!(mad_s32, [[2i32], [3i32], [4i32]], [10i32, 10i32, 10i32]);
 test_ptx!(
@@ -101,7 +106,8 @@ test_ptx!(
     [0x01_00_00_00__01_00_00_00i64],
     [0x1_00_00_00_00_00_00i64]
 );
-// test_ptx!(vector_extract, [1u8, 2u8, 3u8, 4u8], [3u8, 4u8, 1u8, 2u8]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
+test_ptx!(vector_extract, [1u8, 2u8, 3u8, 4u8], [3u8, 4u8, 1u8, 2u8]);
 
 #[cfg(not(feature = "tenstorrent"))]
 test_ptx!(shr, [-2i32], [-1i32]); // shift is not supported in ttir
@@ -219,7 +225,8 @@ test_ptx!(
     ],
     [0u32, 0u32, 0u32, 2u32]
 );
-// test_ptx!(non_scalar_ptr_offset, [1u32, 2u32, 3u32, 4u32], [7u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
+test_ptx!(non_scalar_ptr_offset, [1u32, 2u32, 3u32, 4u32], [7u32]);
 test_ptx!(stateful_neg_offset, [1237518u32], [1237518u32]);
 test_ptx!(const, [0u16], [10u16, 20, 30, 40]);
 test_ptx!(cvt_s16_s8, [0x139231C2u32], [0xFFFFFFC2u32]);
@@ -228,8 +235,10 @@ test_ptx!(prmt, [0x70c507d6u32, 0x6fbd4b5cu32], [0x6fbdd65cu32]);
 test_ptx!(activemask, [0u32], [1u32]);
 test_ptx!(membar, [152731u32], [152731u32]);
 
-// test_ptx!(shared_unify_extern, [7681u32, 7682u32], [15363u32]);
-// test_ptx!(shared_unify_local, [16752u32, 714u32], [17466u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
+test_ptx!(shared_unify_extern, [7681u32, 7682u32], [15363u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
+test_ptx!(shared_unify_local, [16752u32, 714u32], [17466u32]);
 
 test_ptx!(assertfail);
 test_ptx!(func_ptr);
