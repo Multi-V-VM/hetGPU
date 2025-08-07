@@ -1,9 +1,9 @@
+#[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
+use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
-#[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
-use cuda_types::cuda::*;
 
 use std::ptr;
 #[cfg(feature = "amd")]
@@ -27,14 +27,13 @@ pub(crate) fn get_attribute(
     mut cu_attrib: ze_kernel_properties_t,
     func: ze_kernel_handle_t,
 ) -> ze_result_t {
-    
     let result = unsafe { zeKernelGetProperties(func, &mut cu_attrib) };
     if result != ze_result_t::ZE_RESULT_SUCCESS {
         return result;
     }
-    
+
     *pi = cu_attrib.localMemSize as i32;
-    
+
     ze_result_t::ZE_RESULT_SUCCESS
 }
 
@@ -85,19 +84,17 @@ pub(crate) unsafe fn launch_kernel(
     extra: *mut *mut ::core::ffi::c_void,
 ) -> ze_result_t {
     // Set the group size (equivalent to CUDA block dimensions)
-    let result = unsafe {
-        zeKernelSetGroupSize(f, block_dim_x, block_dim_y, block_dim_z)
-    };
-    
+    let result = unsafe { zeKernelSetGroupSize(f, block_dim_x, block_dim_y, block_dim_z) };
+
     if result != ze_result_t::ZE_RESULT_SUCCESS {
         return result;
     }
-    
+
     // Set arguments from kernel_params if provided
     if !kernel_params.is_null() {
         let mut param_index = 0;
         let mut current_param = kernel_params;
-        
+
         while !(*current_param).is_null() {
             unsafe {
                 let param_value = *current_param;
@@ -105,19 +102,19 @@ pub(crate) unsafe fn launch_kernel(
                     f,
                     param_index,
                     std::mem::size_of::<*mut ::core::ffi::c_void>(),
-                    param_value as *const ::core::ffi::c_void
+                    param_value as *const ::core::ffi::c_void,
                 );
-                
+
                 if result != ze_result_t::ZE_RESULT_SUCCESS {
                     return result;
                 }
-                
+
                 param_index += 1;
                 current_param = current_param.add(1);
             }
         }
     }
-    
+
     // Process 'extra' parameters if provided (e.g., shared memory size)
     if !extra.is_null() {
         // 'extra' is typically of the form [KEY1, VALUE1, KEY2, VALUE2, ..., 0]
@@ -128,38 +125,38 @@ pub(crate) unsafe fn launch_kernel(
                 if key.is_null() {
                     break;
                 }
-                
+
                 let key_value = key as usize;
                 let value_ptr = extra.add(i + 1);
                 let value = *value_ptr;
-                
+
                 if key_value == 1 { // CU_LAUNCH_PARAM_BUFFER_SHARED_MEMORY
-                    // shared memory is already set via the shared_mem_bytes parameter
+                     // shared memory is already set via the shared_mem_bytes parameter
                 }
-                
+
                 i += 2;
             }
         }
     }
-    
+
     // Get or create a command list for this stream
     let command_list = unsafe {
         // In a real implementation, you'd have a way to get or create a command list for the given stream
         // For simplicity, we'll assume some function exists to do this
         get_or_create_command_list_for_stream(stream)
     };
-    
+
     if command_list.0.is_null() {
         return ze_result_t::ZE_RESULT_ERROR_UNINITIALIZED;
     }
-    
+
     // Prepare launch arguments for grid dimensions
     let dispatch_args = ze_group_count_t {
         groupCountX: grid_dim_x,
         groupCountY: grid_dim_y,
         groupCountZ: grid_dim_z,
     };
-    
+
     // Launch the kernel
     let result = unsafe {
         zeCommandListAppendLaunchKernel(
@@ -167,83 +164,71 @@ pub(crate) unsafe fn launch_kernel(
             f,
             &dispatch_args,
             *ptr::null_mut(), // No event to wait on
-            0,               // No events to wait on
-            ptr::null_mut(), // No event to signal
+            0,                // No events to wait on
+            ptr::null_mut(),  // No event to signal
         )
     };
-    
+
     if result != ze_result_t::ZE_RESULT_SUCCESS {
         return result;
     }
-    
+
     // Close and execute the command list (in a real implementation, this might be deferred)
-    let result = unsafe {
-        zeCommandListClose(command_list)
-    };
-    
+    let result = unsafe { zeCommandListClose(command_list) };
+
     if result != ze_result_t::ZE_RESULT_SUCCESS {
         return result;
     }
-    
+
     let result = unsafe {
         // Execute the command list
-        zeCommandQueueExecuteCommandLists(
-            stream,
-            1,
-            &command_list,
-            *ptr::null_mut(),
-        )
+        zeCommandQueueExecuteCommandLists(stream, 1, &command_list, *ptr::null_mut())
     };
-    
+
     if result != ze_result_t::ZE_RESULT_SUCCESS {
         return result;
     }
-    
+
     // If this is a synchronous stream, synchronize immediately
     let is_synchronous = false; // In a real implementation, determine if stream is synchronous
-    
+
     if is_synchronous {
-        let result = unsafe {
-            zeCommandQueueSynchronize(stream, u64::MAX)
-        };
-        
+        let result = unsafe { zeCommandQueueSynchronize(stream, u64::MAX) };
+
         if result != ze_result_t::ZE_RESULT_SUCCESS {
             return result;
         }
     }
-    
+
     ze_result_t::ZE_RESULT_SUCCESS
 }
 
 // Helper function to get or create a command list for a stream
 #[cfg(feature = "intel")]
-unsafe fn get_or_create_command_list_for_stream(stream: ze_command_queue_handle_t) -> ze_command_list_handle_t {
+unsafe fn get_or_create_command_list_for_stream(
+    stream: ze_command_queue_handle_t,
+) -> ze_command_list_handle_t {
     // In a real implementation, you'd have a way to track command lists per stream
     // For now, we'll create a new one (this would leak in a real implementation)
-    
+
     // Get the device and context from the stream
     let device = get_device_from_stream(stream);
     let context = get_context_from_stream(stream);
-    
+
     let desc = ze_command_list_desc_t {
         stype: ze_structure_type_t::ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC,
         pNext: ptr::null(),
         commandQueueGroupOrdinal: 0, // Default queue group
         flags: 0,
     };
-    
+
     let mut command_list = ze_command_list_handle_t(ptr::null_mut());
-    let result = zeCommandListCreate(
-        context,
-        device,
-        &desc,
-        &mut command_list,
-    );
-    
+    let result = zeCommandListCreate(context, device, &desc, &mut command_list);
+
     if result != ze_result_t::ZE_RESULT_SUCCESS {
         return ze_command_list_handle_t(ptr::null_mut());
     }
-    
+
     command_list
 }
 
@@ -317,23 +302,23 @@ pub(crate) fn launch_kernel(
     // 4. Handle synchronization based on the stream
 
     let _kernel = unsafe { &*f };
-    
+
     // Process kernel parameters if provided
     if !kernel_params.is_null() {
         unsafe {
             let mut param_index = 0;
             let mut current_param = kernel_params;
-            
+
             while !(*current_param).is_null() {
                 let _param_value = *current_param;
                 // In a real implementation, set kernel argument at param_index
-                
+
                 param_index += 1;
                 current_param = current_param.add(1);
             }
         }
     }
-    
+
     // Process extra parameters if provided
     if !extra.is_null() {
         unsafe {
@@ -343,26 +328,26 @@ pub(crate) fn launch_kernel(
                 if key.is_null() {
                     break;
                 }
-                
+
                 let _key_value = key as usize;
                 let _value_ptr = extra.add(i + 1);
                 let _value = *_value_ptr;
-                
+
                 // Process extra parameters as needed
-                
+
                 i += 2;
             }
         }
     }
-    
+
     // Placeholder for actual Tenstorrent kernel launch
     // This would interface with the tt_runtime_sys to launch the kernel
-    
+
     // Suppress unused parameter warnings
     let _ = (grid_dim_x, grid_dim_y, grid_dim_z);
     let _ = (block_dim_x, block_dim_y, block_dim_z);
     let _ = shared_mem_bytes;
     let _ = stream;
-    
+
     Ok(())
 }

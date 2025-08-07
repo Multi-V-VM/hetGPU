@@ -3,6 +3,11 @@ use crate::pass;
 use crate::pass::debug_integration::{
     ptx_type_size_bits, ptx_type_to_dwarf_encoding, DebugContext,
 };
+#[cfg(feature = "gemmini")]
+use gemmini_runtime_sys::{
+    Buffer as GemminiBuffer, CoreCoord as GemminiCoreCoord, Device as GemminiDevice,
+    Program as GemminiProgram,
+};
 #[cfg(feature = "amd")]
 use hip_runtime_sys::hipError_t;
 use serde::{Deserialize, Serialize};
@@ -17,8 +22,6 @@ use std::process::Command;
 use std::{ptr, str};
 #[cfg(feature = "tenstorrent")]
 use tt_runtime_sys::*;
-#[cfg(feature = "gemmini")]
-use gemmini_runtime_sys::{Device as GemminiDevice, Program as GemminiProgram, Buffer as GemminiBuffer, CoreCoord as GemminiCoreCoord};
 #[cfg(feature = "intel")]
 use ze_runtime_sys::ze_result_t;
 
@@ -37,17 +40,17 @@ macro_rules! test_ptx {
                     input.extend_from_slice(inp);
                 }
                 let mut output = $output;
-                
+
                 // Store the number of inputs and their lengths for Tenstorrent backend
                 std::env::set_var(concat!("ZLUDA_INPUT_COUNT_", stringify!($fn_name)), inputs.len().to_string());
                 let lengths: Vec<String> = inputs.iter().map(|inp| inp.len().to_string()).collect();
                 std::env::set_var(concat!("ZLUDA_INPUT_LENGTHS_", stringify!($fn_name)), lengths.join(","));
-                
+
                 test_hip_assert(stringify!($fn_name), ptx, &input, &mut output)
             }
         }
     };
-    
+
     // Original format for single input array
     ($fn_name:ident, $input:expr, $output:expr) => {
         paste::item! {
@@ -76,7 +79,7 @@ test_ptx!(setp_leu, [[1f32], [2f32]], [1f32]);
 // test_ptx!(bra, [10u32], [11u32]);
 test_ptx!(not, [0u32], [u32::max_value()]);
 #[cfg(not(feature = "tenstorrent"))]
-test_ptx!(shl, [11u32], [44u32]); 
+test_ptx!(shl, [11u32], [44u32]);
 test_ptx!(cvt_sat_s_u, [-1i32], [0i32]);
 test_ptx!(cvta, [3.0f32], [3.0f32]);
 test_ptx!(block, [1u32], [2u32]);
@@ -101,7 +104,7 @@ test_ptx!(
 // test_ptx!(vector_extract, [1u8, 2u8, 3u8, 4u8], [3u8, 4u8, 1u8, 2u8]);
 
 #[cfg(not(feature = "tenstorrent"))]
-test_ptx!(shr, [-2i32], [-1i32]); // shift is not supported in ttir 
+test_ptx!(shr, [-2i32], [-1i32]); // shift is not supported in ttir
 
 test_ptx!(or, [[1u32], [2u32]], [3u32]);
 test_ptx!(sub, [2u32], [1u32]);
@@ -147,7 +150,7 @@ test_ptx!(cvt_rzi, [[-13.8f32], [12.9f32]], [-13f32, 12f32]);
 test_ptx!(cvt_s32_f32, [-13.8f32, 12.9f32], [-13i32, 13i32]);
 
 #[cfg(not(feature = "tenstorrent"))]
-test_ptx!(clz, [0b00000101_00101101_00010011_10101011u32], [5u32]); 
+test_ptx!(clz, [0b00000101_00101101_00010011_10101011u32], [5u32]);
 test_ptx!(popc, [0b10111100_10010010_01001001_10001010u32], [14u32]);
 test_ptx!(
     brev,
@@ -304,17 +307,20 @@ fn test_hip_assert<
 ) -> Result<(), Box<dyn error::Error + 'a>> {
     // Special case handling for tests that cause parser errors
     let ast = ptx_parser::parse_module_checked(ptx_text).unwrap();
-    
+
     // Generate correct source filename for debug info
-    let source_filename = format!("/home/user8f69baeb408f8eb8cf93a99706b1/hetGPU/ptx/src/test/spirv_run/{}.ptx", name);
-    
+    let source_filename = format!(
+        "/home/user8f69baeb408f8eb8cf93a99706b1/hetGPU/ptx/src/test/spirv_run/{}.ptx",
+        name
+    );
+
     // Parse again for backends that need a fresh AST
     let _ast_for_gemmini = if cfg!(feature = "gemmini") {
         Some(ptx_parser::parse_module_checked(ptx_text).unwrap())
     } else {
         None
     };
-    
+
     let name = CString::new(name)?;
 
     // Expected failure test names - tests that are actually supposed to fail
@@ -390,7 +396,14 @@ fn test_hip_assert<
     {
         eprintln!("ZLUDA TEST: Running with Gemmini backend");
         if let Some(ast_gemmini) = _ast_for_gemmini {
-            match run_gemmini(name.as_c_str(), ptx_text, ast_gemmini, module, input, output) {
+            match run_gemmini(
+                name.as_c_str(),
+                ptx_text,
+                ast_gemmini,
+                module,
+                input,
+                output,
+            ) {
                 Ok(r) => {
                     eprintln!(
                         "ZLUDA TEST: Kernel execution complete. Result: {:?}, Expected: {:?}",
@@ -408,7 +421,9 @@ fn test_hip_assert<
             }
         } else {
             eprintln!("ZLUDA ERROR: AST for Gemmini was not parsed");
-            return Err(Box::new(DisplayError { err: "Missing AST for Gemmini".to_string() }));
+            return Err(Box::new(DisplayError {
+                err: "Missing AST for Gemmini".to_string(),
+            }));
         }
     }
     #[cfg(feature = "tosa")]
@@ -448,7 +463,10 @@ fn test_cuda_assert<
         name
     );
     // Construct the full path to the PTX file for proper debug info
-    let ptx_filename = format!("/home/user8f69baeb408f8eb8cf93a99706b1/hetGPU/ptx/src/test/spirv_run/{}.ptx", name);
+    let ptx_filename = format!(
+        "/home/user8f69baeb408f8eb8cf93a99706b1/hetGPU/ptx/src/test/spirv_run/{}.ptx",
+        name
+    );
     match crate::ptx_to_llvm_with_debug_then_llc_with_filename(ptx_text, &ptx_filename) {
         Ok(reconstructed_ptx) => {
             eprintln!("ZLUDA TEST: Debug pipeline completed successfully");
@@ -526,7 +544,7 @@ fn run_hip<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Def
     use hip_runtime_sys::*;
     unsafe { hipInit(0) }.unwrap();
     let mut result = vec![0u8.into(); output.len()];
-    
+
     // Dump LLVM IR to a file for debugging
     let kernel_name = name.to_str().unwrap_or("unknown_kernel");
     let llvm_ir_file = format!("/tmp/zluda_amd_llvm_ir_{}.bc", kernel_name);
@@ -534,7 +552,7 @@ fn run_hip<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Def
     if let Err(e) = std::fs::write(&llvm_ir_file, &*module.llvm_ir) {
         eprintln!("ZLUDA WARNING: Failed to dump LLVM IR: {}", e);
     }
-    
+
     // Dump LLVM IR as text for debugging
     let llvm_ir_text_file = format!("/tmp/zluda_amd_llvm_ir_{}.ll", kernel_name);
     let cmd_output = Command::new("llvm-dis-20")
@@ -542,22 +560,28 @@ fn run_hip<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Def
         .arg("-o")
         .arg(&llvm_ir_text_file)
         .output();
-    
+
     match cmd_output {
         Ok(output) if output.status.success() => {
             eprintln!("ZLUDA DEBUG: LLVM IR dumped to {}", llvm_ir_text_file);
         }
         Ok(output) => {
-            eprintln!("ZLUDA WARNING: llvm-dis failed: {}", String::from_utf8_lossy(&output.stderr));
+            eprintln!(
+                "ZLUDA WARNING: llvm-dis failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
             // Try llvm-dis-20 as fallback
             if let Ok(output) = Command::new("llvm-dis-20")
                 .arg(&llvm_ir_file)
                 .arg("-o")
                 .arg(&llvm_ir_text_file)
-                .output() 
+                .output()
             {
                 if output.status.success() {
-                    eprintln!("ZLUDA DEBUG: LLVM IR dumped to {} using llvm-dis-20", llvm_ir_text_file);
+                    eprintln!(
+                        "ZLUDA DEBUG: LLVM IR dumped to {} using llvm-dis-20",
+                        llvm_ir_text_file
+                    );
                 }
             }
         }
@@ -565,7 +589,7 @@ fn run_hip<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Def
             eprintln!("ZLUDA WARNING: Failed to run llvm-dis: {}", e);
         }
     }
-    
+
     {
         let dev = 0;
         let mut stream = unsafe { mem::zeroed() };
@@ -581,7 +605,8 @@ fn run_hip<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Def
             eprintln!("ZLUDA ERROR: Failed to compile bitcode: {:?}", e);
             eprintln!("ZLUDA DEBUG: Check that AMD ROCm is properly installed and compatible");
             e
-        }).unwrap();
+        })
+        .unwrap();
         let mut module = unsafe { mem::zeroed() };
         unsafe { hipModuleLoadData(&mut module, elf_module.as_ptr() as _) }.unwrap();
         let mut kernel = unsafe { mem::zeroed() };
@@ -1020,10 +1045,10 @@ fn generate_tosa_mlir(
 #[cfg(feature = "tenstorrent")]
 fn format_array_with_types<T: Debug + Copy>(array: &[T]) -> String {
     use std::any::type_name;
-    
+
     // Get the type name
     let type_str = type_name::<T>();
-    
+
     // Determine the type suffix based on Rust type
     let suffix = match type_str {
         "u8" => "u8",
@@ -1056,25 +1081,31 @@ fn format_array_with_types<T: Debug + Copy>(array: &[T]) -> String {
             }
         }
     };
-    
+
     // Format the array elements with type annotations
-    let elements: Vec<String> = array.iter().map(|&val| {
-        if suffix.is_empty() {
-            // No suffix, just format the value
-            format!("{:?}", val)
-        } else {
-            // Add type suffix
-            format!("{:?}{}", val, suffix)
-        }
-    }).collect();
-    
+    let elements: Vec<String> = array
+        .iter()
+        .map(|&val| {
+            if suffix.is_empty() {
+                // No suffix, just format the value
+                format!("{:?}", val)
+            } else {
+                // Add type suffix
+                format!("{:?}{}", val, suffix)
+            }
+        })
+        .collect();
+
     // Join as array string
     format!("[{}]", elements.join(","))
 }
 
 #[cfg(feature = "tenstorrent")]
 fn format_inputs_for_script<T: Debug + Copy>(inputs: &[&[T]]) -> Vec<String> {
-    inputs.iter().map(|input| format_array_with_types(*input)).collect()
+    inputs
+        .iter()
+        .map(|input| format_array_with_types(*input))
+        .collect()
 }
 
 #[cfg(feature = "tenstorrent")]
@@ -1090,7 +1121,7 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
 
     use std::fs;
     use std::process::Command;
-    
+
     // 2. 获取kernel名称
     let kernel_name = name.to_str().map_err(|e| e.to_string())?;
 
@@ -1104,7 +1135,7 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     //   - build/bin/ttmlir-opt: MLIR optimizer for Tenstorrent
     //   - build/bin/ttmlir-translate: MLIR to flatbuffer translator
     //   - ttrt-artifacts/system_desc.ttsys: System description file for Tenstorrent hardware
-    //   - env/activate : Environment activation script for Python virtual environment, with ttrt installed 
+    //   - env/activate : Environment activation script for Python virtual environment, with ttrt installed
     let tt_mlir_dir = "/home/bubblepipe/tt/tt-mlir";
 
     // 4. 生成TOSA MLIR代码，使用真实的PTX源代码
@@ -1120,75 +1151,82 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
 
     // Check if remote execution is enabled via environment variable
     let use_remote_tt = std::env::var("ZLUDA_TT_REMOTE_EXEC").unwrap_or_default() == "1";
-    
+
     // 5. 分步执行TOSA到TTNN的完整管道，将MLIR转换为flatbuffer
 
     // Step 1: TTIR to TTNN backend pipeline
     let ttnn_mlir_file = temp_dir.join(format!("{}_ttnn.mlir", kernel_name));
     eprintln!("ZLUDA DEBUG: Step 1 - Converting TOSA to TTNN backend");
-    
+
     let tosa_to_ttnn_output = if use_remote_tt {
         // Remote execution on server 295k
         eprintln!("ZLUDA DEBUG: Remote TT execution enabled for ttmlir-opt");
-        
+
         // Copy the MLIR file to remote server
         let remote_mlir_path = format!("/tmp/{}.mlir", kernel_name);
         let scp_cmd = format!("scp {} 295k:{}", mlir_file.display(), remote_mlir_path);
-        
-        eprintln!("ZLUDA DEBUG: Copying MLIR file to remote server: {}", scp_cmd);
-        
+
+        eprintln!(
+            "ZLUDA DEBUG: Copying MLIR file to remote server: {}",
+            scp_cmd
+        );
+
         let scp_output = Command::new("bash")
             .arg("-c")
             .arg(&scp_cmd)
             .output()
             .map_err(|e| format!("Failed to copy MLIR file to remote server: {}", e))?;
-        
+
         if !scp_output.status.success() {
             let stderr = String::from_utf8_lossy(&scp_output.stderr);
             return Err(format!("Failed to copy MLIR file: {}", stderr));
         }
-        
+
         // Execute ttmlir-opt on remote server
         let remote_ttnn_mlir_path = format!("/tmp/{}_ttnn.mlir", kernel_name);
         let ttmlir_opt_cmd = format!(
             "ssh 295k '{}/build/bin/ttmlir-opt --convert-tosa-to-ttir --ttir-to-ttnn-backend-pipeline=system-desc-path={}/ttrt-artifacts/system_desc.ttsys {} > {}'",
             tt_mlir_dir, tt_mlir_dir, remote_mlir_path, remote_ttnn_mlir_path
         );
-        
+
         eprintln!("ZLUDA DEBUG: Running remote command: {}", ttmlir_opt_cmd);
-        
+
         let remote_output = Command::new("bash")
             .arg("-c")
             .arg(&ttmlir_opt_cmd)
             .output()
             .map_err(|e| format!("Failed to execute remote ttmlir-opt: {}", e))?;
-        
+
         if !remote_output.status.success() {
             return Err(format!(
                 "Remote TTIR to TTNN backend pipeline failed: {}",
                 String::from_utf8_lossy(&remote_output.stderr)
             ));
         }
-        
+
         // Copy the result back
-        let scp_back_cmd = format!("scp 295k:{} {}", remote_ttnn_mlir_path, ttnn_mlir_file.display());
+        let scp_back_cmd = format!(
+            "scp 295k:{} {}",
+            remote_ttnn_mlir_path,
+            ttnn_mlir_file.display()
+        );
         eprintln!("ZLUDA DEBUG: Copying result back: {}", scp_back_cmd);
-        
+
         let scp_back_output = Command::new("bash")
             .arg("-c")
             .arg(&scp_back_cmd)
             .output()
             .map_err(|e| format!("Failed to copy result back from remote server: {}", e))?;
-        
+
         if !scp_back_output.status.success() {
             let stderr = String::from_utf8_lossy(&scp_back_output.stderr);
             return Err(format!("Failed to copy result back: {}", stderr));
         }
-        
+
         // Read the file content
         let content = fs::read(&ttnn_mlir_file)
             .map_err(|e| format!("Failed to read TTNN MLIR file: {}", e))?;
-        
+
         std::process::Output {
             status: remote_output.status,
             stdout: content,
@@ -1198,11 +1236,14 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
         // Local execution (original code)
         let ttmlir_opt_path = format!("{}/build/bin/ttmlir-opt", tt_mlir_dir);
         let system_desc_path = format!("{}/ttrt-artifacts/system_desc.ttsys", tt_mlir_dir);
-        let ttmlir_opt_args = vec![            
-                "--convert-tosa-to-ttir".to_string(),
-                format!("--ttir-to-ttnn-backend-pipeline=system-desc-path={}", system_desc_path),
-                mlir_file.display().to_string(),
-            ];
+        let ttmlir_opt_args = vec![
+            "--convert-tosa-to-ttir".to_string(),
+            format!(
+                "--ttir-to-ttnn-backend-pipeline=system-desc-path={}",
+                system_desc_path
+            ),
+            mlir_file.display().to_string(),
+        ];
         eprintln!(
             "ZLUDA DEBUG: Running command: {} {}",
             ttmlir_opt_path,
@@ -1232,36 +1273,39 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     // Step 2: TTNN to flatbuffer conversion
     let ttnn_file = temp_dir.join(format!("{}.ttnn", kernel_name));
     eprintln!("ZLUDA DEBUG: Step 2 - Converting TTNN to flatbuffer");
-    
+
     let ttnn_to_flatbuffer_output = if use_remote_tt {
         // Remote execution on server 295k
         eprintln!("ZLUDA DEBUG: Remote TT execution enabled for ttmlir-translate");
-        
+
         // The ttnn_mlir_file is already on the remote server from previous step
         let remote_ttnn_mlir_path = format!("/tmp/{}_ttnn.mlir", kernel_name);
         let remote_ttnn_path = format!("/tmp/{}.ttnn", kernel_name);
-        
+
         // Execute ttmlir-translate on remote server
         let ttmlir_translate_cmd = format!(
             "ssh 295k '{}/build/bin/ttmlir-translate --ttnn-to-flatbuffer {} > {}'",
             tt_mlir_dir, remote_ttnn_mlir_path, remote_ttnn_path
         );
-        
-        eprintln!("ZLUDA DEBUG: Running remote command: {}", ttmlir_translate_cmd);
-        
+
+        eprintln!(
+            "ZLUDA DEBUG: Running remote command: {}",
+            ttmlir_translate_cmd
+        );
+
         let remote_output = Command::new("bash")
             .arg("-c")
             .arg(&ttmlir_translate_cmd)
             .output()
             .map_err(|e| format!("Failed to execute remote ttmlir-translate: {}", e))?;
-        
+
         if !remote_output.status.success() {
             return Err(format!(
                 "Remote TTNN to flatbuffer conversion failed: {}",
                 String::from_utf8_lossy(&remote_output.stderr)
             ));
         }
-        
+
         // Read the remote file content using ssh cat
         let cat_cmd = format!("ssh 295k 'cat {}'", remote_ttnn_path);
         let cat_output = Command::new("bash")
@@ -1269,14 +1313,14 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
             .arg(&cat_cmd)
             .output()
             .map_err(|e| format!("Failed to read remote TTNN file: {}", e))?;
-        
+
         if !cat_output.status.success() {
             return Err(format!(
                 "Failed to read remote TTNN file: {}",
                 String::from_utf8_lossy(&cat_output.stderr)
             ));
         }
-        
+
         std::process::Output {
             status: remote_output.status,
             stdout: cat_output.stdout,
@@ -1285,7 +1329,7 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     } else {
         // Local execution (original code)
         Command::new(format!("{}/build/bin/ttmlir-translate", tt_mlir_dir))
-        .arg("--ttnn-to-flatbuffer")
+            .arg("--ttnn-to-flatbuffer")
             .arg(&ttnn_mlir_file)
             .output()
             .map_err(|e| format!("Failed to execute TTNN to flatbuffer conversion: {}", e))?
@@ -1302,90 +1346,109 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     fs::write(&ttnn_file, &ttnn_to_flatbuffer_output.stdout)
         .map_err(|e| format!("Failed to write TTNN flatbuffer to file: {}", e))?;
 
-    eprintln!("ZLUDA DEBUG: Generated TTNN flatbuffer file at {}", ttnn_file.display());
+    eprintln!(
+        "ZLUDA DEBUG: Generated TTNN flatbuffer file at {}",
+        ttnn_file.display()
+    );
     eprintln!(
         "ZLUDA DEBUG: TTNN flatbuffer size: {} bytes",
         ttnn_to_flatbuffer_output.stdout.len()
     );
     // 6. Execute TTNN binary using Python script
     eprintln!("ZLUDA DEBUG: Executing TTNN binary with Python script");
-    
+
     // For Tenstorrent backend, we need to properly separate multiple inputs
     // Check if we have input structure info from the test macro
     let input_count_var = format!("ZLUDA_INPUT_COUNT_{}", kernel_name);
     let input_lengths_var = format!("ZLUDA_INPUT_LENGTHS_{}", kernel_name);
-    
-    let (input_strings, output_str) = if let (Ok(count_str), Ok(lengths_str)) = 
-        (std::env::var(&input_count_var), std::env::var(&input_lengths_var)) {
+
+    let (input_strings, output_str) = if let (Ok(count_str), Ok(lengths_str)) = (
+        std::env::var(&input_count_var),
+        std::env::var(&input_lengths_var),
+    ) {
         // We have structure information from the macro
         if let Ok(num_inputs) = count_str.parse::<usize>() {
             if num_inputs > 1 {
                 // Parse the lengths
-                let lengths: Vec<usize> = lengths_str.split(',')
+                let lengths: Vec<usize> = lengths_str
+                    .split(',')
                     .filter_map(|s| s.parse().ok())
                     .collect();
-                
+
                 if lengths.len() == num_inputs {
                     // Split the input according to the stored structure
                     let mut input_strings = Vec::new();
                     let mut offset = 0;
                     for length in lengths {
                         if offset + length <= input.len() {
-                            input_strings.push(format_array_with_types(&input[offset..offset + length]));
+                            input_strings
+                                .push(format_array_with_types(&input[offset..offset + length]));
                             offset += length;
                         }
                     }
                     (input_strings, format_array_with_types(output))
                 } else {
                     // Fallback: treat as single input
-                    (vec![format_array_with_types(input)], format_array_with_types(output))
+                    (
+                        vec![format_array_with_types(input)],
+                        format_array_with_types(output),
+                    )
                 }
             } else {
                 // Single input
-                (vec![format_array_with_types(input)], format_array_with_types(output))
+                (
+                    vec![format_array_with_types(input)],
+                    format_array_with_types(output),
+                )
             }
         } else {
             // Failed to parse count
-            (vec![format_array_with_types(input)], format_array_with_types(output))
+            (
+                vec![format_array_with_types(input)],
+                format_array_with_types(output),
+            )
         }
     } else {
         // No structure info, treat as single input
-        (vec![format_array_with_types(input)], format_array_with_types(output))
+        (
+            vec![format_array_with_types(input)],
+            format_array_with_types(output),
+        )
     };
-    
+
     eprintln!("ZLUDA DEBUG: Input arrays: {:?}", input_strings);
     eprintln!("ZLUDA DEBUG: Expected output: {}", output_str);
-    
+
     // Check if remote execution is enabled via environment variable
     let use_remote_tt = std::env::var("ZLUDA_TT_REMOTE_EXEC").unwrap_or_default() == "1";
-    
+
     let execution_output = if use_remote_tt {
         // Remote execution on server 295k
         eprintln!("ZLUDA DEBUG: Remote TT execution enabled");
-        
+
         // Copy the TTNN file to remote server
         let remote_ttnn_path = format!("/tmp/{}.ttnn", kernel_name);
-        let scp_cmd = format!(
-            "scp {} 295k:{}",
-            ttnn_file.display(),
-            remote_ttnn_path
+        let scp_cmd = format!("scp {} 295k:{}", ttnn_file.display(), remote_ttnn_path);
+
+        eprintln!(
+            "ZLUDA DEBUG: Copying TTNN file to remote server: {}",
+            scp_cmd
         );
-        
-        eprintln!("ZLUDA DEBUG: Copying TTNN file to remote server: {}", scp_cmd);
-        
+
         let scp_output = Command::new("bash")
             .arg("-c")
             .arg(&scp_cmd)
             .output()
             .map_err(|e| format!("Failed to copy TTNN file to remote server: {}", e))?;
-        
+
         if !scp_output.status.success() {
             let stderr = String::from_utf8_lossy(&scp_output.stderr);
             return Err(format!("Failed to copy TTNN file: {}", stderr));
         }
-        
+
         // Join all input strings with spaces
-        let all_inputs = input_strings.iter()
+        let all_inputs = input_strings
+            .iter()
             .map(|s| format!("\"{}\"", s))
             .collect::<Vec<_>>()
             .join(" ");
@@ -1394,14 +1457,14 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
         let script_path = "/home/bubblepipe/hetGPU/run_ttnn_matrix.py";
         let remote_cmd = format!(
             "ssh 295k 'source /home/bubblepipe/tt/tt-mlir/env/activate && python3 {} {} {} \"{}\"'",
-            script_path,
-            remote_ttnn_path,
-            all_inputs,
-            output_str
+            script_path, remote_ttnn_path, all_inputs, output_str
         );
-        
-        eprintln!("ZLUDA DEBUG: Executing command on remote server: {}", remote_cmd);
-        
+
+        eprintln!(
+            "ZLUDA DEBUG: Executing command on remote server: {}",
+            remote_cmd
+        );
+
         // Execute the command
         Command::new("bash")
             .arg("-c")
@@ -1411,13 +1474,14 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
     } else {
         // Local execution (original code)
         eprintln!("ZLUDA DEBUG: Local TT execution");
-        
+
         // Build the command to execute the Python script
         let script_path = "/home/bubblepipe/hetGPU/run_ttnn_matrix.py";
         let env_path = format!("{}/env/activate", tt_mlir_dir);
 
         // Join all input strings with spaces
-        let all_inputs = input_strings.iter()
+        let all_inputs = input_strings
+            .iter()
             .map(|s| format!("\"{}\"", s))
             .collect::<Vec<_>>()
             .join(" ");
@@ -1430,9 +1494,9 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
             all_inputs,
             output_str
         );
-        
+
         eprintln!("ZLUDA DEBUG: Executing command: {}", cmd);
-        
+
         // Execute the command
         Command::new("bash")
             .arg("-c")
@@ -1440,7 +1504,7 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
             .output()
             .map_err(|e| format!("Failed to execute Python script: {}", e))?
     };
-    
+
     if execution_output.status.success() {
         eprintln!("ZLUDA DEBUG: Python script executed successfully");
         eprintln!("ZLUDA TEST: Tenstorrent kernel execution complete");
@@ -1453,13 +1517,10 @@ fn run_tt<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug + Defa
         eprintln!("ZLUDA ERROR: stderr: {}", stderr);
         Err(format!("Python script execution failed: {}", stderr))
     }
-
 }
 
 #[cfg(feature = "gemmini")]
-fn generate_tosa_mlir_from_ast_gemmini(
-    ast: ptx_parser::Module,
-) -> Result<String, String> {
+fn generate_tosa_mlir_from_ast_gemmini(ast: ptx_parser::Module) -> Result<String, String> {
     // Convert PTX AST to TOSA MLIR using the existing pipeline
     pass::to_mlir_module(ast).map_err(|e| format!("Failed to convert PTX to MLIR: {:?}", e))
 }
@@ -1487,7 +1548,7 @@ fn run_gemmini<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug +
 
     // 2. Get kernel name
     let kernel_name = name.to_str().map_err(|e| e.to_string())?;
-    
+
     // 3. Create program
     let program = device.create_program()?;
     eprintln!("ZLUDA DEBUG: Created Gemmini program");
@@ -1495,7 +1556,7 @@ fn run_gemmini<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug +
     // 4. Generate TOSA MLIR from PTX AST
     let tosa_mlir = generate_tosa_mlir_from_ast_gemmini(ast)?;
     eprintln!("ZLUDA DEBUG: Generated TOSA MLIR for Gemmini");
-    
+
     // 5. Load TOSA MLIR into the program
     program.load_from_mlir(&tosa_mlir)?;
     eprintln!("ZLUDA DEBUG: Loaded TOSA MLIR into Gemmini program");
@@ -1511,13 +1572,14 @@ fn run_gemmini<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug +
 
     let input_buffer = device.create_buffer(input_size as u64)?;
     let output_buffer = device.create_buffer(output_size as u64)?;
-    eprintln!("ZLUDA DEBUG: Created input buffer ({} bytes) and output buffer ({} bytes)", 
-              input_size, output_size);
+    eprintln!(
+        "ZLUDA DEBUG: Created input buffer ({} bytes) and output buffer ({} bytes)",
+        input_size, output_size
+    );
 
     // 7. Write input data to buffer
-    input_buffer.write(unsafe { 
-        std::slice::from_raw_parts(input.as_ptr() as *const u8, input_size) 
-    })?;
+    input_buffer
+        .write(unsafe { std::slice::from_raw_parts(input.as_ptr() as *const u8, input_size) })?;
     eprintln!("ZLUDA DEBUG: Wrote {} bytes to input buffer", input_size);
 
     // 8. Set kernel runtime arguments
@@ -1526,8 +1588,11 @@ fn run_gemmini<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug +
     eprintln!("ZLUDA DEBUG: Set runtime arguments for kernel");
 
     // 9. Launch the kernel
-    eprintln!("ZLUDA DEBUG: Launching Gemmini kernel with {} inputs -> {} expected outputs",
-              input.len(), output.len());
+    eprintln!(
+        "ZLUDA DEBUG: Launching Gemmini kernel with {} inputs -> {} expected outputs",
+        input.len(),
+        output.len()
+    );
     program.launch(&device)?;
 
     // 10. Wait for completion
@@ -1552,38 +1617,45 @@ fn run_tosa_conversion(
 ) -> Result<String, String> {
     eprintln!("ZLUDA TEST: Running TOSA conversion");
     eprintln!("ZLUDA DEBUG: Kernel name: {:?}", name);
-    
+
     // Convert PTX AST to TOSA MLIR using the existing pipeline
     let tosa_mlir = pass::to_mlir_module(ast)
         .map_err(|e| format!("Failed to convert PTX to TOSA MLIR: {:?}", e))?;
-    
+
     eprintln!("ZLUDA DEBUG: Successfully converted PTX to TOSA MLIR");
-    eprintln!("ZLUDA DEBUG: Initial TOSA MLIR size: {} bytes", tosa_mlir.len());
-    
+    eprintln!(
+        "ZLUDA DEBUG: Initial TOSA MLIR size: {} bytes",
+        tosa_mlir.len()
+    );
+
     // Write TOSA MLIR to a temporary file
     let kernel_name = name.to_str().unwrap_or("unknown");
     let temp_mlir_file = format!("/tmp/zluda_tosa_{}.mlir", kernel_name);
     std::fs::write(&temp_mlir_file, &tosa_mlir)
         .map_err(|e| format!("Failed to write TOSA MLIR to temp file: {:?}", e))?;
     eprintln!("ZLUDA DEBUG: Wrote TOSA MLIR to {}", temp_mlir_file);
-    
+
     // First, let's see what we're about to process
     eprintln!("ZLUDA DEBUG: About to process MLIR with mlir-opt:");
-    eprintln!("ZLUDA DEBUG: First 500 chars of MLIR:\n{}", &tosa_mlir.chars().take(500).collect::<String>());
-    
+    eprintln!(
+        "ZLUDA DEBUG: First 500 chars of MLIR:\n{}",
+        &tosa_mlir.chars().take(500).collect::<String>()
+    );
+
     // Run mlir-opt on the TOSA MLIR
     eprintln!("ZLUDA DEBUG: Running mlir-opt on {}", temp_mlir_file);
-    
-    let mlir_opt_output = Command::new("mlir-opt")
-        .arg(&temp_mlir_file)
-        .output();
-    
+
+    let mlir_opt_output = Command::new("mlir-opt").arg(&temp_mlir_file).output();
+
     let mlir_opt_out = match mlir_opt_output {
         Ok(output) => {
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                eprintln!("ZLUDA WARNING: mlir-opt failed with status: {:?}", output.status);
+                eprintln!(
+                    "ZLUDA WARNING: mlir-opt failed with status: {:?}",
+                    output.status
+                );
                 eprintln!("ZLUDA WARNING: mlir-opt stderr: {}", stderr);
                 eprintln!("ZLUDA WARNING: mlir-opt stdout: {}", stdout);
                 eprintln!("ZLUDA WARNING: Falling back to unoptimized MLIR");
@@ -1592,11 +1664,17 @@ fn run_tosa_conversion(
                 match String::from_utf8(output.stdout) {
                     Ok(result) => {
                         eprintln!("ZLUDA DEBUG: mlir-opt completed successfully");
-                        eprintln!("ZLUDA DEBUG: Optimized TOSA MLIR size: {} bytes", result.len());
+                        eprintln!(
+                            "ZLUDA DEBUG: Optimized TOSA MLIR size: {} bytes",
+                            result.len()
+                        );
                         result
                     }
                     Err(e) => {
-                        eprintln!("ZLUDA WARNING: Failed to parse mlir-opt output as UTF-8: {:?}", e);
+                        eprintln!(
+                            "ZLUDA WARNING: Failed to parse mlir-opt output as UTF-8: {:?}",
+                            e
+                        );
                         tosa_mlir.clone()
                     }
                 }
@@ -1608,39 +1686,39 @@ fn run_tosa_conversion(
             tosa_mlir.clone()
         }
     };
-    
+
     // Validate MLIR with LLM if enabled and API key is available
     let llm_validation_enabled = std::env::var("ENABLE_LLM_VALIDATION")
         .map(|v| v == "1" || v.to_lowercase() == "true" || v.to_lowercase() == "yes")
         .unwrap_or(false);
-    
+
     if llm_validation_enabled {
         if let Ok(api_key) = std::env::var("GEMINI_API_KEY") {
             if !api_key.is_empty() {
                 eprintln!("ZLUDA DEBUG: Validating MLIR with LLM");
-            
-            // Prepare the validation prompt
-            let prompt = format!(
-                "{}\nignore redundent consts, does this make sense? reply only `yes` or `no`",
-                &mlir_opt_out
-            );
-            
-            // Escape the prompt for JSON
-            let escaped_prompt = prompt
-                .replace('\\', r"\\")
-                .replace('"', r#"\""#)
-                .replace('\n', r"\n")
-                .replace('\r', r"\r")
-                .replace('\t', r"\t");
-            
-            // Create JSON request
-            let request_body = format!(
-                r#"{{"contents":[{{"parts":[{{"text":"{}"}}]}}]}}"#,
-                escaped_prompt
-            );
-            
-            // Make API request
-            let api_output = Command::new("curl")
+
+                // Prepare the validation prompt
+                let prompt = format!(
+                    "{}\nignore redundent consts, does this make sense? reply only `yes` or `no`",
+                    &mlir_opt_out
+                );
+
+                // Escape the prompt for JSON
+                let escaped_prompt = prompt
+                    .replace('\\', r"\\")
+                    .replace('"', r#"\""#)
+                    .replace('\n', r"\n")
+                    .replace('\r', r"\r")
+                    .replace('\t', r"\t");
+
+                // Create JSON request
+                let request_body = format!(
+                    r#"{{"contents":[{{"parts":[{{"text":"{}"}}]}}]}}"#,
+                    escaped_prompt
+                );
+
+                // Make API request
+                let api_output = Command::new("curl")
                 .arg("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
                 .arg("-H")
                 .arg("Content-Type: application/json")
@@ -1652,81 +1730,103 @@ fn run_tosa_conversion(
                 .arg(&request_body)
                 .arg("-s")
                 .output();
-            
-            match api_output {
-                Ok(output) if output.status.success() => {
-                    if let Ok(response_text) = String::from_utf8(output.stdout) {
-                        // Print the full JSON response for debugging
-                        eprintln!("ZLUDA DEBUG: LLM Response JSON:\n{}", response_text);
-                        
-                        // Parse the JSON response properly
-                        match serde_json::from_str::<GeminiResponse>(&response_text) {
-                            Ok(response) => {
-                                // Check for API errors first
-                                if let Some(error) = response.error {
-                                    eprintln!("ZLUDA WARNING: LLM API returned an error");
-                                    if let Some(message) = &error.message {
-                                        if message.contains("API_KEY_INVALID") || message.contains("API key not valid") {
-                                            eprintln!("ZLUDA ERROR: Invalid API key. Please check your GEMINI_API_KEY environment variable");
-                                        } else if message.contains("RATE_LIMIT_EXCEEDED") {
-                                            eprintln!("ZLUDA WARNING: Rate limit exceeded. Skipping LLM validation");
-                                        } else {
-                                            eprintln!("ZLUDA WARNING: API error: {}", message);
+
+                match api_output {
+                    Ok(output) if output.status.success() => {
+                        if let Ok(response_text) = String::from_utf8(output.stdout) {
+                            // Print the full JSON response for debugging
+                            eprintln!("ZLUDA DEBUG: LLM Response JSON:\n{}", response_text);
+
+                            // Parse the JSON response properly
+                            match serde_json::from_str::<GeminiResponse>(&response_text) {
+                                Ok(response) => {
+                                    // Check for API errors first
+                                    if let Some(error) = response.error {
+                                        eprintln!("ZLUDA WARNING: LLM API returned an error");
+                                        if let Some(message) = &error.message {
+                                            if message.contains("API_KEY_INVALID")
+                                                || message.contains("API key not valid")
+                                            {
+                                                eprintln!("ZLUDA ERROR: Invalid API key. Please check your GEMINI_API_KEY environment variable");
+                                            } else if message.contains("RATE_LIMIT_EXCEEDED") {
+                                                eprintln!("ZLUDA WARNING: Rate limit exceeded. Skipping LLM validation");
+                                            } else {
+                                                eprintln!("ZLUDA WARNING: API error: {}", message);
+                                            }
                                         }
-                                    }
-                                    // Don't fail the test for API errors, just skip validation
-                                } else if !response.candidates.is_empty() {
-                                    // Process the first candidate's response
-                                    if let Some(candidate) = response.candidates.first() {
-                                        if !candidate.content.parts.is_empty() {
-                                            if let Some(part) = candidate.content.parts.first() {
-                                                let response_text = part.text.trim().to_lowercase();
-                                                eprintln!("ZLUDA DEBUG: LLM response text: {}", response_text);
-                                                
-                                                // Check for yes/no in the response - test ONLY passes with explicit "yes"
-                                                if response_text.starts_with("yes") || response_text == "yes" {
-                                                    eprintln!("ZLUDA SUCCESS: LLM validated MLIR as correct");
-                                                    // Test passes - continue normally
-                                                } else if response_text.starts_with("no") || response_text == "no" {
-                                                    eprintln!("ZLUDA ERROR: LLM detected issues in MLIR code");
-                                                    let _ = std::fs::remove_file(&temp_mlir_file);
-                                                    return Err("LLM validation failed: MLIR code has issues".to_string());
-                                                } else {
-                                                    eprintln!("ZLUDA ERROR: LLM gave unclear response: '{}'. Test requires explicit 'yes' to pass", response_text);
-                                                    let _ = std::fs::remove_file(&temp_mlir_file);
-                                                    return Err(format!("LLM validation failed: unclear response '{}' (expected 'yes' or 'no')", response_text));
+                                        // Don't fail the test for API errors, just skip validation
+                                    } else if !response.candidates.is_empty() {
+                                        // Process the first candidate's response
+                                        if let Some(candidate) = response.candidates.first() {
+                                            if !candidate.content.parts.is_empty() {
+                                                if let Some(part) = candidate.content.parts.first()
+                                                {
+                                                    let response_text =
+                                                        part.text.trim().to_lowercase();
+                                                    eprintln!(
+                                                        "ZLUDA DEBUG: LLM response text: {}",
+                                                        response_text
+                                                    );
+
+                                                    // Check for yes/no in the response - test ONLY passes with explicit "yes"
+                                                    if response_text.starts_with("yes")
+                                                        || response_text == "yes"
+                                                    {
+                                                        eprintln!("ZLUDA SUCCESS: LLM validated MLIR as correct");
+                                                        // Test passes - continue normally
+                                                    } else if response_text.starts_with("no")
+                                                        || response_text == "no"
+                                                    {
+                                                        eprintln!("ZLUDA ERROR: LLM detected issues in MLIR code");
+                                                        let _ =
+                                                            std::fs::remove_file(&temp_mlir_file);
+                                                        return Err("LLM validation failed: MLIR code has issues".to_string());
+                                                    } else {
+                                                        eprintln!("ZLUDA ERROR: LLM gave unclear response: '{}'. Test requires explicit 'yes' to pass", response_text);
+                                                        let _ =
+                                                            std::fs::remove_file(&temp_mlir_file);
+                                                        return Err(format!("LLM validation failed: unclear response '{}' (expected 'yes' or 'no')", response_text));
+                                                    }
                                                 }
                                             }
                                         }
+                                    } else {
+                                        eprintln!("ZLUDA WARNING: No candidates in LLM response");
                                     }
-                                } else {
-                                    eprintln!("ZLUDA WARNING: No candidates in LLM response");
                                 }
-                            }
-                            Err(e) => {
-                                eprintln!("ZLUDA WARNING: Failed to parse LLM response as JSON: {}", e);
-                                eprintln!("ZLUDA DEBUG: Raw response was: {}", response_text);
-                                return Err(format!("LLM reponse parse failed: {}", response_text));
+                                Err(e) => {
+                                    eprintln!(
+                                        "ZLUDA WARNING: Failed to parse LLM response as JSON: {}",
+                                        e
+                                    );
+                                    eprintln!("ZLUDA DEBUG: Raw response was: {}", response_text);
+                                    return Err(format!(
+                                        "LLM reponse parse failed: {}",
+                                        response_text
+                                    ));
+                                }
                             }
                         }
                     }
-                }
-                Ok(output) => {
-                    eprintln!("ZLUDA WARNING: curl command failed with status: {:?}", output.status);
-                    if let Ok(error_text) = String::from_utf8(output.stderr) {
-                        eprintln!("ZLUDA WARNING: curl stderr: {}", error_text);
+                    Ok(output) => {
+                        eprintln!(
+                            "ZLUDA WARNING: curl command failed with status: {:?}",
+                            output.status
+                        );
+                        if let Ok(error_text) = String::from_utf8(output.stderr) {
+                            eprintln!("ZLUDA WARNING: curl stderr: {}", error_text);
+                        }
                     }
-                },
-                Err(e) => eprintln!("ZLUDA WARNING: Failed to execute curl: {}", e),
-            }
+                    Err(e) => eprintln!("ZLUDA WARNING: Failed to execute curl: {}", e),
+                }
             }
         }
     } else {
         eprintln!("ZLUDA DEBUG: LLM validation disabled (set ENABLE_LLM_VALIDATION=1 to enable)");
     }
-    
+
     // Clean up temp file
     // let _ = std::fs::remove_file(&temp_mlir_file);
-    
+
     Ok(mlir_opt_out)
 }

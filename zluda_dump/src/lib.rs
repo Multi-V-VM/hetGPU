@@ -58,16 +58,17 @@ macro_rules! extern_redirect_with_post {
 use cuda_base::cuda_function_declarations;
 cuda_function_declarations!(
     extern_redirect,
-    extern_redirect_with_post <= [
-        cuModuleLoad,
-        cuModuleLoadData,
-        cuModuleLoadDataEx,
-        cuGetExportTable,
-        cuModuleGetFunction,
-        cuDeviceGetAttribute,
-        cuDeviceComputeCapability,
-        cuModuleLoadFatBinary
-    ]
+    extern_redirect_with_post
+        <= [
+            cuModuleLoad,
+            cuModuleLoadData,
+            cuModuleLoadDataEx,
+            cuGetExportTable,
+            cuModuleGetFunction,
+            cuDeviceGetAttribute,
+            cuDeviceComputeCapability,
+            cuModuleLoadFatBinary
+        ]
 );
 
 mod dark_api;

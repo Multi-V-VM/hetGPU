@@ -511,7 +511,9 @@ async fn compile_command(args: CompileArgs) -> anyhow::Result<()> {
     let ptx_content = fs::read_to_string(&args.input)?;
 
     // Get the absolute path of the input file for debug info
-    let source_filename = args.input.canonicalize()
+    let source_filename = args
+        .input
+        .canonicalize()
         .unwrap_or_else(|_| args.input.clone())
         .to_string_lossy()
         .to_string();

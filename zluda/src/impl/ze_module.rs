@@ -40,7 +40,8 @@ impl SpirvModule {
 
         // Convert LLVM IR to SPIRV binary
         let spirv_binary = ptx::llvm_to_spirv(
-            std::str::from_utf8(&llvm_module.llvm_ir).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?
+            std::str::from_utf8(&llvm_module.llvm_ir)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?,
         )?;
 
         // Create module build description
@@ -288,7 +289,7 @@ fn ptx_to_spirv(spirv_module: &SpirvModule) -> Result<Vec<u8>, CUerror> {
 
     // Convert LLVM IR to SPIR-V using the robust implementation and the AsStr trait
     let spirv_binary = ptx::llvm_to_spirv(
-        std::str::from_utf8(&llvm_module.llvm_ir).map_err(|_| CUerror::INVALID_VALUE)?
+        std::str::from_utf8(&llvm_module.llvm_ir).map_err(|_| CUerror::INVALID_VALUE)?,
     )
     .map_err(|_| CUerror::UNKNOWN)?;
 

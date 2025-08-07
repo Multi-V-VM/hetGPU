@@ -766,7 +766,7 @@ impl Parse for ArgumentField {
             repr,
             type_,
             space,
-            relaxed_type_check
+            relaxed_type_check,
         })
     }
 }

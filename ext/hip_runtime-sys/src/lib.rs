@@ -50,9 +50,7 @@ where
     pub fn get(&self, bit_offset: usize, bit_width: u8) -> u64 {
         debug_assert!(bit_width <= 64);
         debug_assert!(bit_offset / 8 < self.storage.as_ref().len());
-        debug_assert!(
-            (bit_offset + (bit_width as usize)) / 8 <= self.storage.as_ref().len(),
-        );
+        debug_assert!((bit_offset + (bit_width as usize)) / 8 <= self.storage.as_ref().len(),);
         let mut val = 0;
         for i in 0..(bit_width as usize) {
             if self.get_bit(i + bit_offset) {
@@ -70,9 +68,7 @@ where
     pub fn set(&mut self, bit_offset: usize, bit_width: u8, val: u64) {
         debug_assert!(bit_width <= 64);
         debug_assert!(bit_offset / 8 < self.storage.as_ref().len());
-        debug_assert!(
-            (bit_offset + (bit_width as usize)) / 8 <= self.storage.as_ref().len(),
-        );
+        debug_assert!((bit_offset + (bit_width as usize)) / 8 <= self.storage.as_ref().len(),);
         for i in 0..(bit_width as usize) {
             let mask = 1 << i;
             let val_bit_is_set = val & mask == mask;
@@ -366,189 +362,81 @@ impl hipDeviceArch_t {
         hasDynamicParallelism: ::core::ffi::c_uint,
     ) -> __BindgenBitfieldUnit<[u8; 3usize]> {
         let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 3usize]> = Default::default();
-        __bindgen_bitfield_unit
-            .set(
-                0usize,
-                1u8,
-                {
-                    let hasGlobalInt32Atomics: u32 = unsafe {
-                        ::core::mem::transmute(hasGlobalInt32Atomics)
-                    };
-                    hasGlobalInt32Atomics as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                1usize,
-                1u8,
-                {
-                    let hasGlobalFloatAtomicExch: u32 = unsafe {
-                        ::core::mem::transmute(hasGlobalFloatAtomicExch)
-                    };
-                    hasGlobalFloatAtomicExch as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                2usize,
-                1u8,
-                {
-                    let hasSharedInt32Atomics: u32 = unsafe {
-                        ::core::mem::transmute(hasSharedInt32Atomics)
-                    };
-                    hasSharedInt32Atomics as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                3usize,
-                1u8,
-                {
-                    let hasSharedFloatAtomicExch: u32 = unsafe {
-                        ::core::mem::transmute(hasSharedFloatAtomicExch)
-                    };
-                    hasSharedFloatAtomicExch as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                4usize,
-                1u8,
-                {
-                    let hasFloatAtomicAdd: u32 = unsafe {
-                        ::core::mem::transmute(hasFloatAtomicAdd)
-                    };
-                    hasFloatAtomicAdd as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                5usize,
-                1u8,
-                {
-                    let hasGlobalInt64Atomics: u32 = unsafe {
-                        ::core::mem::transmute(hasGlobalInt64Atomics)
-                    };
-                    hasGlobalInt64Atomics as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                6usize,
-                1u8,
-                {
-                    let hasSharedInt64Atomics: u32 = unsafe {
-                        ::core::mem::transmute(hasSharedInt64Atomics)
-                    };
-                    hasSharedInt64Atomics as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                7usize,
-                1u8,
-                {
-                    let hasDoubles: u32 = unsafe { ::core::mem::transmute(hasDoubles) };
-                    hasDoubles as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                8usize,
-                1u8,
-                {
-                    let hasWarpVote: u32 = unsafe {
-                        ::core::mem::transmute(hasWarpVote)
-                    };
-                    hasWarpVote as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                9usize,
-                1u8,
-                {
-                    let hasWarpBallot: u32 = unsafe {
-                        ::core::mem::transmute(hasWarpBallot)
-                    };
-                    hasWarpBallot as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                10usize,
-                1u8,
-                {
-                    let hasWarpShuffle: u32 = unsafe {
-                        ::core::mem::transmute(hasWarpShuffle)
-                    };
-                    hasWarpShuffle as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                11usize,
-                1u8,
-                {
-                    let hasFunnelShift: u32 = unsafe {
-                        ::core::mem::transmute(hasFunnelShift)
-                    };
-                    hasFunnelShift as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                12usize,
-                1u8,
-                {
-                    let hasThreadFenceSystem: u32 = unsafe {
-                        ::core::mem::transmute(hasThreadFenceSystem)
-                    };
-                    hasThreadFenceSystem as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                13usize,
-                1u8,
-                {
-                    let hasSyncThreadsExt: u32 = unsafe {
-                        ::core::mem::transmute(hasSyncThreadsExt)
-                    };
-                    hasSyncThreadsExt as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                14usize,
-                1u8,
-                {
-                    let hasSurfaceFuncs: u32 = unsafe {
-                        ::core::mem::transmute(hasSurfaceFuncs)
-                    };
-                    hasSurfaceFuncs as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                15usize,
-                1u8,
-                {
-                    let has3dGrid: u32 = unsafe { ::core::mem::transmute(has3dGrid) };
-                    has3dGrid as u64
-                },
-            );
-        __bindgen_bitfield_unit
-            .set(
-                16usize,
-                1u8,
-                {
-                    let hasDynamicParallelism: u32 = unsafe {
-                        ::core::mem::transmute(hasDynamicParallelism)
-                    };
-                    hasDynamicParallelism as u64
-                },
-            );
+        __bindgen_bitfield_unit.set(0usize, 1u8, {
+            let hasGlobalInt32Atomics: u32 =
+                unsafe { ::core::mem::transmute(hasGlobalInt32Atomics) };
+            hasGlobalInt32Atomics as u64
+        });
+        __bindgen_bitfield_unit.set(1usize, 1u8, {
+            let hasGlobalFloatAtomicExch: u32 =
+                unsafe { ::core::mem::transmute(hasGlobalFloatAtomicExch) };
+            hasGlobalFloatAtomicExch as u64
+        });
+        __bindgen_bitfield_unit.set(2usize, 1u8, {
+            let hasSharedInt32Atomics: u32 =
+                unsafe { ::core::mem::transmute(hasSharedInt32Atomics) };
+            hasSharedInt32Atomics as u64
+        });
+        __bindgen_bitfield_unit.set(3usize, 1u8, {
+            let hasSharedFloatAtomicExch: u32 =
+                unsafe { ::core::mem::transmute(hasSharedFloatAtomicExch) };
+            hasSharedFloatAtomicExch as u64
+        });
+        __bindgen_bitfield_unit.set(4usize, 1u8, {
+            let hasFloatAtomicAdd: u32 = unsafe { ::core::mem::transmute(hasFloatAtomicAdd) };
+            hasFloatAtomicAdd as u64
+        });
+        __bindgen_bitfield_unit.set(5usize, 1u8, {
+            let hasGlobalInt64Atomics: u32 =
+                unsafe { ::core::mem::transmute(hasGlobalInt64Atomics) };
+            hasGlobalInt64Atomics as u64
+        });
+        __bindgen_bitfield_unit.set(6usize, 1u8, {
+            let hasSharedInt64Atomics: u32 =
+                unsafe { ::core::mem::transmute(hasSharedInt64Atomics) };
+            hasSharedInt64Atomics as u64
+        });
+        __bindgen_bitfield_unit.set(7usize, 1u8, {
+            let hasDoubles: u32 = unsafe { ::core::mem::transmute(hasDoubles) };
+            hasDoubles as u64
+        });
+        __bindgen_bitfield_unit.set(8usize, 1u8, {
+            let hasWarpVote: u32 = unsafe { ::core::mem::transmute(hasWarpVote) };
+            hasWarpVote as u64
+        });
+        __bindgen_bitfield_unit.set(9usize, 1u8, {
+            let hasWarpBallot: u32 = unsafe { ::core::mem::transmute(hasWarpBallot) };
+            hasWarpBallot as u64
+        });
+        __bindgen_bitfield_unit.set(10usize, 1u8, {
+            let hasWarpShuffle: u32 = unsafe { ::core::mem::transmute(hasWarpShuffle) };
+            hasWarpShuffle as u64
+        });
+        __bindgen_bitfield_unit.set(11usize, 1u8, {
+            let hasFunnelShift: u32 = unsafe { ::core::mem::transmute(hasFunnelShift) };
+            hasFunnelShift as u64
+        });
+        __bindgen_bitfield_unit.set(12usize, 1u8, {
+            let hasThreadFenceSystem: u32 = unsafe { ::core::mem::transmute(hasThreadFenceSystem) };
+            hasThreadFenceSystem as u64
+        });
+        __bindgen_bitfield_unit.set(13usize, 1u8, {
+            let hasSyncThreadsExt: u32 = unsafe { ::core::mem::transmute(hasSyncThreadsExt) };
+            hasSyncThreadsExt as u64
+        });
+        __bindgen_bitfield_unit.set(14usize, 1u8, {
+            let hasSurfaceFuncs: u32 = unsafe { ::core::mem::transmute(hasSurfaceFuncs) };
+            hasSurfaceFuncs as u64
+        });
+        __bindgen_bitfield_unit.set(15usize, 1u8, {
+            let has3dGrid: u32 = unsafe { ::core::mem::transmute(has3dGrid) };
+            has3dGrid as u64
+        });
+        __bindgen_bitfield_unit.set(16usize, 1u8, {
+            let hasDynamicParallelism: u32 =
+                unsafe { ::core::mem::transmute(hasDynamicParallelism) };
+            hasDynamicParallelism as u64
+        });
         __bindgen_bitfield_unit
     }
 }
@@ -580,7 +468,7 @@ pub struct hipDeviceProp_tR0600 {
     ///< Warp size.
     pub warpSize: ::core::ffi::c_int,
     /**< Maximum pitch in bytes allowed by memory copies
-< pitched memory*/
+    < pitched memory*/
     pub memPitch: usize,
     ///< Max work items per work group or workgroup max size.
     pub maxThreadsPerBlock: ::core::ffi::c_int,
@@ -591,15 +479,15 @@ pub struct hipDeviceProp_tR0600 {
     ///< Max clock frequency of the multiProcessors in khz.
     pub clockRate: ::core::ffi::c_int,
     /**< Size of shared constant memory region on the device
-< (in bytes).*/
+    < (in bytes).*/
     pub totalConstMem: usize,
     /**< Major compute capability.  On HCC, this is an approximation and features may
-< differ from CUDA CC.  See the arch feature flags for portable ways to query
-< feature caps.*/
+    < differ from CUDA CC.  See the arch feature flags for portable ways to query
+    < feature caps.*/
     pub major: ::core::ffi::c_int,
     /**< Minor compute capability.  On HCC, this is an approximation and features may
-< differ from CUDA CC.  See the arch feature flags for portable ways to query
-< feature caps.*/
+    < differ from CUDA CC.  See the arch feature flags for portable ways to query
+    < feature caps.*/
     pub minor: ::core::ffi::c_int,
     ///< Alignment requirement for textures
     pub textureAlignment: usize,
@@ -632,7 +520,7 @@ pub struct hipDeviceProp_tR0600 {
     ///< Maximum 2D tex dimensions if gather has to be performed
     pub maxTexture2DGather: [::core::ffi::c_int; 2usize],
     /**< Maximum dimensions (width, height, depth) of 3D images, in image
-< elements*/
+    < elements*/
     pub maxTexture3D: [::core::ffi::c_int; 3usize],
     ///< Maximum alternate 3D texture dims
     pub maxTexture3DAlt: [::core::ffi::c_int; 3usize],
@@ -707,28 +595,28 @@ pub struct hipDeviceProp_tR0600 {
     ///< Deprecated. CUDA only.
     pub singleToDoublePrecisionPerfRatio: ::core::ffi::c_int,
     /**< Device supports coherently accessing pageable memory
-< without calling hipHostRegister on it*/
+    < without calling hipHostRegister on it*/
     pub pageableMemoryAccess: ::core::ffi::c_int,
     /**< Device can coherently access managed memory concurrently with
-< the CPU*/
+    < the CPU*/
     pub concurrentManagedAccess: ::core::ffi::c_int,
     ///< Is compute preemption supported on the device
     pub computePreemptionSupported: ::core::ffi::c_int,
     /**< Device can access host registered memory with same
-< address as the host*/
+    < address as the host*/
     pub canUseHostPointerForRegisteredMem: ::core::ffi::c_int,
     ///< HIP device supports cooperative launch
     pub cooperativeLaunch: ::core::ffi::c_int,
     /**< HIP device supports cooperative launch on multiple
-< devices*/
+    < devices*/
     pub cooperativeMultiDeviceLaunch: ::core::ffi::c_int,
     ///< Per device m ax shared mem per block usable by special opt in
     pub sharedMemPerBlockOptin: usize,
     /**< Device accesses pageable memory via the host's
-< page tables*/
+    < page tables*/
     pub pageableMemoryAccessUsesHostPageTables: ::core::ffi::c_int,
     /**< Host can directly access managed memory on the device
-< without migration*/
+    < without migration*/
     pub directManagedMemAccessFromHost: ::core::ffi::c_int,
     ///< Max number of blocks on CU
     pub maxBlocksPerMultiProcessor: ::core::ffi::c_int,
@@ -741,7 +629,7 @@ pub struct hipDeviceProp_tR0600 {
     ///< Indicates if device supports sparse hip arrays
     pub sparseHipArraySupported: ::core::ffi::c_int,
     /**< Device supports using the hipHostRegisterReadOnly flag
-< with hipHostRegistger*/
+    < with hipHostRegistger*/
     pub hostRegisterReadOnlySupported: ::core::ffi::c_int,
     ///< Indicates external timeline semaphore support
     pub timelineSemaphoreInteropSupported: ::core::ffi::c_int,
@@ -750,14 +638,14 @@ pub struct hipDeviceProp_tR0600 {
     ///< Indicates device support of RDMA APIs
     pub gpuDirectRDMASupported: ::core::ffi::c_int,
     /**< Bitmask to be interpreted according to
-< hipFlushGPUDirectRDMAWritesOptions*/
+    < hipFlushGPUDirectRDMAWritesOptions*/
     pub gpuDirectRDMAFlushWritesOptions: ::core::ffi::c_uint,
     ///< value of hipGPUDirectRDMAWritesOrdering
     pub gpuDirectRDMAWritesOrdering: ::core::ffi::c_int,
     ///< Bitmask of handle types support with mempool based IPC
     pub memoryPoolSupportedHandleTypes: ::core::ffi::c_uint,
     /**< Device supports deferred mapping HIP arrays and HIP
-< mipmapped arrays*/
+    < mipmapped arrays*/
     pub deferredMappingHipArraySupported: ::core::ffi::c_int,
     ///< Device supports IPC events
     pub ipcEventSupported: ::core::ffi::c_int,
@@ -774,7 +662,7 @@ pub struct hipDeviceProp_tR0600 {
     ///< Maximum Shared Memory Per CU. HIP Only.
     pub maxSharedMemoryPerMultiProcessor: usize,
     /**< Frequency in khz of the timer used by the device-side "clock*"
-< instructions.  New for HIP.*/
+    < instructions.  New for HIP.*/
     pub clockInstructionRate: ::core::ffi::c_int,
     ///< Architectural feature flags.  New for HIP.
     pub arch: hipDeviceArch_t,
@@ -783,16 +671,16 @@ pub struct hipDeviceProp_tR0600 {
     ///< Addres of HDP_REG_COHERENCY_FLUSH_CNTL register
     pub hdpRegFlushCntl: *mut ::core::ffi::c_uint,
     /**< HIP device supports cooperative launch on
-< multiple*/
+    < multiple*/
     pub cooperativeMultiDeviceUnmatchedFunc: ::core::ffi::c_int,
     /**< HIP device supports cooperative launch on
-< multiple*/
+    < multiple*/
     pub cooperativeMultiDeviceUnmatchedGridDim: ::core::ffi::c_int,
     /**< HIP device supports cooperative launch on
-< multiple*/
+    < multiple*/
     pub cooperativeMultiDeviceUnmatchedBlockDim: ::core::ffi::c_int,
     /**< HIP device supports cooperative launch on
-< multiple*/
+    < multiple*/
     pub cooperativeMultiDeviceUnmatchedSharedMem: ::core::ffi::c_int,
     ///< 1: if it is a large PCI bar device, else 0
     pub isLargeBar: ::core::ffi::c_int,
@@ -809,18 +697,18 @@ impl hipMemoryType {
 }
 impl hipMemoryType {
     /**< Memory is physically located on device. (see deviceId for
-< specific device)*/
+    < specific device)*/
     pub const hipMemoryTypeDevice: hipMemoryType = hipMemoryType(2);
 }
 impl hipMemoryType {
     /**< Managed memory, automaticallly managed by the unified
-< memory system
-< place holder for new values.*/
+    < memory system
+    < place holder for new values.*/
     pub const hipMemoryTypeManaged: hipMemoryType = hipMemoryType(3);
 }
 impl hipMemoryType {
     /**< Array memory, physically located on device. (see deviceId for
-< specific device)*/
+    < specific device)*/
     pub const hipMemoryTypeArray: hipMemoryType = hipMemoryType(10);
 }
 impl hipMemoryType {
@@ -846,138 +734,103 @@ pub struct hipPointerAttribute_t {
     pub allocationFlags: ::core::ffi::c_uint,
 }
 impl hipDeviceAttribute_t {
-    pub const hipDeviceAttributeCudaCompatibleBegin: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        0,
-    );
+    pub const hipDeviceAttributeCudaCompatibleBegin: hipDeviceAttribute_t = hipDeviceAttribute_t(0);
 }
 impl hipDeviceAttribute_t {
     ///< Whether ECC support is enabled.
-    pub const hipDeviceAttributeEccEnabled: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        0,
-    );
+    pub const hipDeviceAttributeEccEnabled: hipDeviceAttribute_t = hipDeviceAttribute_t(0);
 }
 impl hipDeviceAttribute_t {
     ///< Cuda only. The maximum size of the window policy in bytes.
-    pub const hipDeviceAttributeAccessPolicyMaxWindowSize: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        1,
-    );
+    pub const hipDeviceAttributeAccessPolicyMaxWindowSize: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(1);
 }
 impl hipDeviceAttribute_t {
     ///< Asynchronous engines number.
-    pub const hipDeviceAttributeAsyncEngineCount: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        2,
-    );
+    pub const hipDeviceAttributeAsyncEngineCount: hipDeviceAttribute_t = hipDeviceAttribute_t(2);
 }
 impl hipDeviceAttribute_t {
     ///< Whether host memory can be mapped into device address space
-    pub const hipDeviceAttributeCanMapHostMemory: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        3,
-    );
+    pub const hipDeviceAttributeCanMapHostMemory: hipDeviceAttribute_t = hipDeviceAttribute_t(3);
 }
 impl hipDeviceAttribute_t {
     /**< Device can access host registered memory
-< at the same virtual address as the CPU*/
-    pub const hipDeviceAttributeCanUseHostPointerForRegisteredMem: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        4,
-    );
+    < at the same virtual address as the CPU*/
+    pub const hipDeviceAttributeCanUseHostPointerForRegisteredMem: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(4);
 }
 impl hipDeviceAttribute_t {
     ///< Peak clock frequency in kilohertz.
-    pub const hipDeviceAttributeClockRate: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        5,
-    );
+    pub const hipDeviceAttributeClockRate: hipDeviceAttribute_t = hipDeviceAttribute_t(5);
 }
 impl hipDeviceAttribute_t {
     ///< Compute mode that device is currently in.
-    pub const hipDeviceAttributeComputeMode: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        6,
-    );
+    pub const hipDeviceAttributeComputeMode: hipDeviceAttribute_t = hipDeviceAttribute_t(6);
 }
 impl hipDeviceAttribute_t {
     ///< Device supports Compute Preemption.
-    pub const hipDeviceAttributeComputePreemptionSupported: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        7,
-    );
+    pub const hipDeviceAttributeComputePreemptionSupported: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(7);
 }
 impl hipDeviceAttribute_t {
     ///< Device can possibly execute multiple kernels concurrently.
-    pub const hipDeviceAttributeConcurrentKernels: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        8,
-    );
+    pub const hipDeviceAttributeConcurrentKernels: hipDeviceAttribute_t = hipDeviceAttribute_t(8);
 }
 impl hipDeviceAttribute_t {
     ///< Device can coherently access managed memory concurrently with the CPU
-    pub const hipDeviceAttributeConcurrentManagedAccess: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        9,
-    );
+    pub const hipDeviceAttributeConcurrentManagedAccess: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(9);
 }
 impl hipDeviceAttribute_t {
     ///< Support cooperative launch
-    pub const hipDeviceAttributeCooperativeLaunch: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10,
-    );
+    pub const hipDeviceAttributeCooperativeLaunch: hipDeviceAttribute_t = hipDeviceAttribute_t(10);
 }
 impl hipDeviceAttribute_t {
     ///< Support cooperative launch on multiple devices
-    pub const hipDeviceAttributeCooperativeMultiDeviceLaunch: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        11,
-    );
+    pub const hipDeviceAttributeCooperativeMultiDeviceLaunch: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(11);
 }
 impl hipDeviceAttribute_t {
     /**< Device can concurrently copy memory and execute a kernel.
-< Deprecated. Use instead asyncEngineCount.*/
-    pub const hipDeviceAttributeDeviceOverlap: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        12,
-    );
+    < Deprecated. Use instead asyncEngineCount.*/
+    pub const hipDeviceAttributeDeviceOverlap: hipDeviceAttribute_t = hipDeviceAttribute_t(12);
 }
 impl hipDeviceAttribute_t {
     /**< Host can directly access managed memory on
-< the device without migration*/
-    pub const hipDeviceAttributeDirectManagedMemAccessFromHost: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        13,
-    );
+    < the device without migration*/
+    pub const hipDeviceAttributeDirectManagedMemAccessFromHost: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(13);
 }
 impl hipDeviceAttribute_t {
     ///< Device supports caching globals in L1
-    pub const hipDeviceAttributeGlobalL1CacheSupported: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        14,
-    );
+    pub const hipDeviceAttributeGlobalL1CacheSupported: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(14);
 }
 impl hipDeviceAttribute_t {
     ///< Link between the device and the host supports native atomic operations
-    pub const hipDeviceAttributeHostNativeAtomicSupported: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        15,
-    );
+    pub const hipDeviceAttributeHostNativeAtomicSupported: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(15);
 }
 impl hipDeviceAttribute_t {
     ///< Device is integrated GPU
-    pub const hipDeviceAttributeIntegrated: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        16,
-    );
+    pub const hipDeviceAttributeIntegrated: hipDeviceAttribute_t = hipDeviceAttribute_t(16);
 }
 impl hipDeviceAttribute_t {
     ///< Multiple GPU devices.
-    pub const hipDeviceAttributeIsMultiGpuBoard: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        17,
-    );
+    pub const hipDeviceAttributeIsMultiGpuBoard: hipDeviceAttribute_t = hipDeviceAttribute_t(17);
 }
 impl hipDeviceAttribute_t {
     ///< Run time limit for kernels executed on the device
-    pub const hipDeviceAttributeKernelExecTimeout: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        18,
-    );
+    pub const hipDeviceAttributeKernelExecTimeout: hipDeviceAttribute_t = hipDeviceAttribute_t(18);
 }
 impl hipDeviceAttribute_t {
     ///< Size of L2 cache in bytes. 0 if the device doesn't have L2 cache.
-    pub const hipDeviceAttributeL2CacheSize: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        19,
-    );
+    pub const hipDeviceAttributeL2CacheSize: hipDeviceAttribute_t = hipDeviceAttribute_t(19);
 }
 impl hipDeviceAttribute_t {
     ///< caching locals in L1 is supported
-    pub const hipDeviceAttributeLocalL1CacheSupported: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        20,
-    );
+    pub const hipDeviceAttributeLocalL1CacheSupported: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(20);
 }
 impl hipDeviceAttribute_t {
     ///< 8-byte locally unique identifier in 8 bytes. Undefined on TCC and non-Windows platforms
@@ -985,256 +838,184 @@ impl hipDeviceAttribute_t {
 }
 impl hipDeviceAttribute_t {
     ///< Luid device node mask. Undefined on TCC and non-Windows platforms
-    pub const hipDeviceAttributeLuidDeviceNodeMask: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        22,
-    );
+    pub const hipDeviceAttributeLuidDeviceNodeMask: hipDeviceAttribute_t = hipDeviceAttribute_t(22);
 }
 impl hipDeviceAttribute_t {
     ///< Major compute capability version number.
-    pub const hipDeviceAttributeComputeCapabilityMajor: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        23,
-    );
+    pub const hipDeviceAttributeComputeCapabilityMajor: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(23);
 }
 impl hipDeviceAttribute_t {
     ///< Device supports allocating managed memory on this system
-    pub const hipDeviceAttributeManagedMemory: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        24,
-    );
+    pub const hipDeviceAttributeManagedMemory: hipDeviceAttribute_t = hipDeviceAttribute_t(24);
 }
 impl hipDeviceAttribute_t {
     ///< Max block size per multiprocessor
-    pub const hipDeviceAttributeMaxBlocksPerMultiProcessor: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        25,
-    );
+    pub const hipDeviceAttributeMaxBlocksPerMultiProcessor: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(25);
 }
 impl hipDeviceAttribute_t {
     ///< Max block size in width.
-    pub const hipDeviceAttributeMaxBlockDimX: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        26,
-    );
+    pub const hipDeviceAttributeMaxBlockDimX: hipDeviceAttribute_t = hipDeviceAttribute_t(26);
 }
 impl hipDeviceAttribute_t {
     ///< Max block size in height.
-    pub const hipDeviceAttributeMaxBlockDimY: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        27,
-    );
+    pub const hipDeviceAttributeMaxBlockDimY: hipDeviceAttribute_t = hipDeviceAttribute_t(27);
 }
 impl hipDeviceAttribute_t {
     ///< Max block size in depth.
-    pub const hipDeviceAttributeMaxBlockDimZ: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        28,
-    );
+    pub const hipDeviceAttributeMaxBlockDimZ: hipDeviceAttribute_t = hipDeviceAttribute_t(28);
 }
 impl hipDeviceAttribute_t {
     ///< Max grid size  in width.
-    pub const hipDeviceAttributeMaxGridDimX: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        29,
-    );
+    pub const hipDeviceAttributeMaxGridDimX: hipDeviceAttribute_t = hipDeviceAttribute_t(29);
 }
 impl hipDeviceAttribute_t {
     ///< Max grid size  in height.
-    pub const hipDeviceAttributeMaxGridDimY: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        30,
-    );
+    pub const hipDeviceAttributeMaxGridDimY: hipDeviceAttribute_t = hipDeviceAttribute_t(30);
 }
 impl hipDeviceAttribute_t {
     ///< Max grid size  in depth.
-    pub const hipDeviceAttributeMaxGridDimZ: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        31,
-    );
+    pub const hipDeviceAttributeMaxGridDimZ: hipDeviceAttribute_t = hipDeviceAttribute_t(31);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum size of 1D surface.
-    pub const hipDeviceAttributeMaxSurface1D: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        32,
-    );
+    pub const hipDeviceAttributeMaxSurface1D: hipDeviceAttribute_t = hipDeviceAttribute_t(32);
 }
 impl hipDeviceAttribute_t {
     ///< Cuda only. Maximum dimensions of 1D layered surface.
-    pub const hipDeviceAttributeMaxSurface1DLayered: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        33,
-    );
+    pub const hipDeviceAttributeMaxSurface1DLayered: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(33);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimension (width, height) of 2D surface.
-    pub const hipDeviceAttributeMaxSurface2D: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        34,
-    );
+    pub const hipDeviceAttributeMaxSurface2D: hipDeviceAttribute_t = hipDeviceAttribute_t(34);
 }
 impl hipDeviceAttribute_t {
     ///< Cuda only. Maximum dimensions of 2D layered surface.
-    pub const hipDeviceAttributeMaxSurface2DLayered: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        35,
-    );
+    pub const hipDeviceAttributeMaxSurface2DLayered: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(35);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimension (width, height, depth) of 3D surface.
-    pub const hipDeviceAttributeMaxSurface3D: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        36,
-    );
+    pub const hipDeviceAttributeMaxSurface3D: hipDeviceAttribute_t = hipDeviceAttribute_t(36);
 }
 impl hipDeviceAttribute_t {
     ///< Cuda only. Maximum dimensions of Cubemap surface.
-    pub const hipDeviceAttributeMaxSurfaceCubemap: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        37,
-    );
+    pub const hipDeviceAttributeMaxSurfaceCubemap: hipDeviceAttribute_t = hipDeviceAttribute_t(37);
 }
 impl hipDeviceAttribute_t {
     ///< Cuda only. Maximum dimension of Cubemap layered surface.
-    pub const hipDeviceAttributeMaxSurfaceCubemapLayered: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        38,
-    );
+    pub const hipDeviceAttributeMaxSurfaceCubemapLayered: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(38);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum size of 1D texture.
-    pub const hipDeviceAttributeMaxTexture1DWidth: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        39,
-    );
+    pub const hipDeviceAttributeMaxTexture1DWidth: hipDeviceAttribute_t = hipDeviceAttribute_t(39);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimensions of 1D layered texture.
-    pub const hipDeviceAttributeMaxTexture1DLayered: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        40,
-    );
+    pub const hipDeviceAttributeMaxTexture1DLayered: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(40);
 }
 impl hipDeviceAttribute_t {
     /**< Maximum number of elements allocatable in a 1D linear texture.
-< Use cudaDeviceGetTexture1DLinearMaxWidth() instead on Cuda.*/
-    pub const hipDeviceAttributeMaxTexture1DLinear: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        41,
-    );
+    < Use cudaDeviceGetTexture1DLinearMaxWidth() instead on Cuda.*/
+    pub const hipDeviceAttributeMaxTexture1DLinear: hipDeviceAttribute_t = hipDeviceAttribute_t(41);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum size of 1D mipmapped texture.
-    pub const hipDeviceAttributeMaxTexture1DMipmap: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        42,
-    );
+    pub const hipDeviceAttributeMaxTexture1DMipmap: hipDeviceAttribute_t = hipDeviceAttribute_t(42);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimension width of 2D texture.
-    pub const hipDeviceAttributeMaxTexture2DWidth: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        43,
-    );
+    pub const hipDeviceAttributeMaxTexture2DWidth: hipDeviceAttribute_t = hipDeviceAttribute_t(43);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimension hight of 2D texture.
-    pub const hipDeviceAttributeMaxTexture2DHeight: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        44,
-    );
+    pub const hipDeviceAttributeMaxTexture2DHeight: hipDeviceAttribute_t = hipDeviceAttribute_t(44);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimensions of 2D texture if gather operations  performed.
-    pub const hipDeviceAttributeMaxTexture2DGather: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        45,
-    );
+    pub const hipDeviceAttributeMaxTexture2DGather: hipDeviceAttribute_t = hipDeviceAttribute_t(45);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimensions of 2D layered texture.
-    pub const hipDeviceAttributeMaxTexture2DLayered: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        46,
-    );
+    pub const hipDeviceAttributeMaxTexture2DLayered: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(46);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimensions (width, height, pitch) of 2D textures bound to pitched memory.
-    pub const hipDeviceAttributeMaxTexture2DLinear: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        47,
-    );
+    pub const hipDeviceAttributeMaxTexture2DLinear: hipDeviceAttribute_t = hipDeviceAttribute_t(47);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimensions of 2D mipmapped texture.
-    pub const hipDeviceAttributeMaxTexture2DMipmap: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        48,
-    );
+    pub const hipDeviceAttributeMaxTexture2DMipmap: hipDeviceAttribute_t = hipDeviceAttribute_t(48);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimension width of 3D texture.
-    pub const hipDeviceAttributeMaxTexture3DWidth: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        49,
-    );
+    pub const hipDeviceAttributeMaxTexture3DWidth: hipDeviceAttribute_t = hipDeviceAttribute_t(49);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimension height of 3D texture.
-    pub const hipDeviceAttributeMaxTexture3DHeight: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        50,
-    );
+    pub const hipDeviceAttributeMaxTexture3DHeight: hipDeviceAttribute_t = hipDeviceAttribute_t(50);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimension depth of 3D texture.
-    pub const hipDeviceAttributeMaxTexture3DDepth: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        51,
-    );
+    pub const hipDeviceAttributeMaxTexture3DDepth: hipDeviceAttribute_t = hipDeviceAttribute_t(51);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimensions of alternate 3D texture.
-    pub const hipDeviceAttributeMaxTexture3DAlt: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        52,
-    );
+    pub const hipDeviceAttributeMaxTexture3DAlt: hipDeviceAttribute_t = hipDeviceAttribute_t(52);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimensions of Cubemap texture
-    pub const hipDeviceAttributeMaxTextureCubemap: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        53,
-    );
+    pub const hipDeviceAttributeMaxTextureCubemap: hipDeviceAttribute_t = hipDeviceAttribute_t(53);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimensions of Cubemap layered texture.
-    pub const hipDeviceAttributeMaxTextureCubemapLayered: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        54,
-    );
+    pub const hipDeviceAttributeMaxTextureCubemapLayered: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(54);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum dimension of a block
-    pub const hipDeviceAttributeMaxThreadsDim: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        55,
-    );
+    pub const hipDeviceAttributeMaxThreadsDim: hipDeviceAttribute_t = hipDeviceAttribute_t(55);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum number of threads per block.
-    pub const hipDeviceAttributeMaxThreadsPerBlock: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        56,
-    );
+    pub const hipDeviceAttributeMaxThreadsPerBlock: hipDeviceAttribute_t = hipDeviceAttribute_t(56);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum resident threads per multiprocessor.
-    pub const hipDeviceAttributeMaxThreadsPerMultiProcessor: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        57,
-    );
+    pub const hipDeviceAttributeMaxThreadsPerMultiProcessor: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(57);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum pitch in bytes allowed by memory copies
-    pub const hipDeviceAttributeMaxPitch: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        58,
-    );
+    pub const hipDeviceAttributeMaxPitch: hipDeviceAttribute_t = hipDeviceAttribute_t(58);
 }
 impl hipDeviceAttribute_t {
     ///< Global memory bus width in bits.
-    pub const hipDeviceAttributeMemoryBusWidth: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        59,
-    );
+    pub const hipDeviceAttributeMemoryBusWidth: hipDeviceAttribute_t = hipDeviceAttribute_t(59);
 }
 impl hipDeviceAttribute_t {
     ///< Peak memory clock frequency in kilohertz.
-    pub const hipDeviceAttributeMemoryClockRate: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        60,
-    );
+    pub const hipDeviceAttributeMemoryClockRate: hipDeviceAttribute_t = hipDeviceAttribute_t(60);
 }
 impl hipDeviceAttribute_t {
     ///< Minor compute capability version number.
-    pub const hipDeviceAttributeComputeCapabilityMinor: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        61,
-    );
+    pub const hipDeviceAttributeComputeCapabilityMinor: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(61);
 }
 impl hipDeviceAttribute_t {
     ///< Unique ID of device group on the same multi-GPU board
-    pub const hipDeviceAttributeMultiGpuBoardGroupID: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        62,
-    );
+    pub const hipDeviceAttributeMultiGpuBoardGroupID: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(62);
 }
 impl hipDeviceAttribute_t {
     ///< Number of multiprocessors on the device.
-    pub const hipDeviceAttributeMultiprocessorCount: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        63,
-    );
+    pub const hipDeviceAttributeMultiprocessorCount: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(63);
 }
 impl hipDeviceAttribute_t {
     ///< Previously hipDeviceAttributeName
@@ -1242,131 +1023,102 @@ impl hipDeviceAttribute_t {
 }
 impl hipDeviceAttribute_t {
     /**< Device supports coherently accessing pageable memory
-< without calling hipHostRegister on it*/
-    pub const hipDeviceAttributePageableMemoryAccess: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        65,
-    );
+    < without calling hipHostRegister on it*/
+    pub const hipDeviceAttributePageableMemoryAccess: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(65);
 }
 impl hipDeviceAttribute_t {
     ///< Device accesses pageable memory via the host's page tables
-    pub const hipDeviceAttributePageableMemoryAccessUsesHostPageTables: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        66,
-    );
+    pub const hipDeviceAttributePageableMemoryAccessUsesHostPageTables: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(66);
 }
 impl hipDeviceAttribute_t {
     ///< PCI Bus ID.
-    pub const hipDeviceAttributePciBusId: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        67,
-    );
+    pub const hipDeviceAttributePciBusId: hipDeviceAttribute_t = hipDeviceAttribute_t(67);
 }
 impl hipDeviceAttribute_t {
     ///< PCI Device ID.
-    pub const hipDeviceAttributePciDeviceId: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        68,
-    );
+    pub const hipDeviceAttributePciDeviceId: hipDeviceAttribute_t = hipDeviceAttribute_t(68);
 }
 impl hipDeviceAttribute_t {
     ///< PCI Domain ID.
-    pub const hipDeviceAttributePciDomainID: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        69,
-    );
+    pub const hipDeviceAttributePciDomainID: hipDeviceAttribute_t = hipDeviceAttribute_t(69);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum l2 persisting lines capacity in bytes
-    pub const hipDeviceAttributePersistingL2CacheMaxSize: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        70,
-    );
+    pub const hipDeviceAttributePersistingL2CacheMaxSize: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(70);
 }
 impl hipDeviceAttribute_t {
     /**< 32-bit registers available to a thread block. This number is shared
-< by all thread blocks simultaneously resident on a multiprocessor.*/
-    pub const hipDeviceAttributeMaxRegistersPerBlock: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        71,
-    );
+    < by all thread blocks simultaneously resident on a multiprocessor.*/
+    pub const hipDeviceAttributeMaxRegistersPerBlock: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(71);
 }
 impl hipDeviceAttribute_t {
     ///< 32-bit registers available per block.
-    pub const hipDeviceAttributeMaxRegistersPerMultiprocessor: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        72,
-    );
+    pub const hipDeviceAttributeMaxRegistersPerMultiprocessor: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(72);
 }
 impl hipDeviceAttribute_t {
     ///< Shared memory reserved by CUDA driver per block.
-    pub const hipDeviceAttributeReservedSharedMemPerBlock: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        73,
-    );
+    pub const hipDeviceAttributeReservedSharedMemPerBlock: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(73);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum shared memory available per block in bytes.
-    pub const hipDeviceAttributeMaxSharedMemoryPerBlock: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        74,
-    );
+    pub const hipDeviceAttributeMaxSharedMemoryPerBlock: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(74);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum shared memory per block usable by special opt in.
-    pub const hipDeviceAttributeSharedMemPerBlockOptin: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        75,
-    );
+    pub const hipDeviceAttributeSharedMemPerBlockOptin: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(75);
 }
 impl hipDeviceAttribute_t {
     ///< Shared memory available per multiprocessor.
-    pub const hipDeviceAttributeSharedMemPerMultiprocessor: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        76,
-    );
+    pub const hipDeviceAttributeSharedMemPerMultiprocessor: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(76);
 }
 impl hipDeviceAttribute_t {
     ///< Cuda only. Performance ratio of single precision to double precision.
-    pub const hipDeviceAttributeSingleToDoublePrecisionPerfRatio: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        77,
-    );
+    pub const hipDeviceAttributeSingleToDoublePrecisionPerfRatio: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(77);
 }
 impl hipDeviceAttribute_t {
     ///< Whether to support stream priorities.
-    pub const hipDeviceAttributeStreamPrioritiesSupported: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        78,
-    );
+    pub const hipDeviceAttributeStreamPrioritiesSupported: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(78);
 }
 impl hipDeviceAttribute_t {
     ///< Alignment requirement for surfaces
-    pub const hipDeviceAttributeSurfaceAlignment: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        79,
-    );
+    pub const hipDeviceAttributeSurfaceAlignment: hipDeviceAttribute_t = hipDeviceAttribute_t(79);
 }
 impl hipDeviceAttribute_t {
     ///< Cuda only. Whether device is a Tesla device using TCC driver
-    pub const hipDeviceAttributeTccDriver: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        80,
-    );
+    pub const hipDeviceAttributeTccDriver: hipDeviceAttribute_t = hipDeviceAttribute_t(80);
 }
 impl hipDeviceAttribute_t {
     ///< Alignment requirement for textures
-    pub const hipDeviceAttributeTextureAlignment: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        81,
-    );
+    pub const hipDeviceAttributeTextureAlignment: hipDeviceAttribute_t = hipDeviceAttribute_t(81);
 }
 impl hipDeviceAttribute_t {
     ///< Pitch alignment requirement for 2D texture references bound to pitched memory;
-    pub const hipDeviceAttributeTexturePitchAlignment: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        82,
-    );
+    pub const hipDeviceAttributeTexturePitchAlignment: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(82);
 }
 impl hipDeviceAttribute_t {
     ///< Constant memory size in bytes.
-    pub const hipDeviceAttributeTotalConstantMemory: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        83,
-    );
+    pub const hipDeviceAttributeTotalConstantMemory: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(83);
 }
 impl hipDeviceAttribute_t {
     ///< Global memory available on devicice.
-    pub const hipDeviceAttributeTotalGlobalMem: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        84,
-    );
+    pub const hipDeviceAttributeTotalGlobalMem: hipDeviceAttribute_t = hipDeviceAttribute_t(84);
 }
 impl hipDeviceAttribute_t {
     ///< Cuda only. An unified address space shared with the host.
-    pub const hipDeviceAttributeUnifiedAddressing: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        85,
-    );
+    pub const hipDeviceAttributeUnifiedAddressing: hipDeviceAttribute_t = hipDeviceAttribute_t(85);
 }
 impl hipDeviceAttribute_t {
     ///< Previously hipDeviceAttributeUuid
@@ -1374,187 +1126,146 @@ impl hipDeviceAttribute_t {
 }
 impl hipDeviceAttribute_t {
     ///< Warp size in threads.
-    pub const hipDeviceAttributeWarpSize: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        87,
-    );
+    pub const hipDeviceAttributeWarpSize: hipDeviceAttribute_t = hipDeviceAttribute_t(87);
 }
 impl hipDeviceAttribute_t {
     ///< Device supports HIP Stream Ordered Memory Allocator
-    pub const hipDeviceAttributeMemoryPoolsSupported: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        88,
-    );
+    pub const hipDeviceAttributeMemoryPoolsSupported: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(88);
 }
 impl hipDeviceAttribute_t {
     ///< Device supports HIP virtual memory management
-    pub const hipDeviceAttributeVirtualMemoryManagementSupported: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        89,
-    );
+    pub const hipDeviceAttributeVirtualMemoryManagementSupported: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(89);
 }
 impl hipDeviceAttribute_t {
     ///< Can device support host memory registration via hipHostRegister
-    pub const hipDeviceAttributeHostRegisterSupported: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        90,
-    );
+    pub const hipDeviceAttributeHostRegisterSupported: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(90);
 }
 impl hipDeviceAttribute_t {
     ///< Supported handle mask for HIP Stream Ordered Memory Allocator
-    pub const hipDeviceAttributeMemoryPoolSupportedHandleTypes: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        91,
-    );
+    pub const hipDeviceAttributeMemoryPoolSupportedHandleTypes: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(91);
 }
 impl hipDeviceAttribute_t {
-    pub const hipDeviceAttributeCudaCompatibleEnd: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        9999,
-    );
+    pub const hipDeviceAttributeCudaCompatibleEnd: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(9999);
 }
 impl hipDeviceAttribute_t {
-    pub const hipDeviceAttributeAmdSpecificBegin: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10000,
-    );
+    pub const hipDeviceAttributeAmdSpecificBegin: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(10000);
 }
 impl hipDeviceAttribute_t {
     ///< Frequency in khz of the timer used by the device-side "clock*"
-    pub const hipDeviceAttributeClockInstructionRate: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10000,
-    );
+    pub const hipDeviceAttributeClockInstructionRate: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(10000);
 }
 impl hipDeviceAttribute_t {
     ///< Previously hipDeviceAttributeArch
-    pub const hipDeviceAttributeUnused3: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10001,
-    );
+    pub const hipDeviceAttributeUnused3: hipDeviceAttribute_t = hipDeviceAttribute_t(10001);
 }
 impl hipDeviceAttribute_t {
     ///< Maximum Shared Memory PerMultiprocessor.
-    pub const hipDeviceAttributeMaxSharedMemoryPerMultiprocessor: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10002,
-    );
+    pub const hipDeviceAttributeMaxSharedMemoryPerMultiprocessor: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(10002);
 }
 impl hipDeviceAttribute_t {
     ///< Previously hipDeviceAttributeGcnArch
-    pub const hipDeviceAttributeUnused4: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10003,
-    );
+    pub const hipDeviceAttributeUnused4: hipDeviceAttribute_t = hipDeviceAttribute_t(10003);
 }
 impl hipDeviceAttribute_t {
     ///< Previously hipDeviceAttributeGcnArchName
-    pub const hipDeviceAttributeUnused5: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10004,
-    );
+    pub const hipDeviceAttributeUnused5: hipDeviceAttribute_t = hipDeviceAttribute_t(10004);
 }
 impl hipDeviceAttribute_t {
     ///< Address of the HDP_MEM_COHERENCY_FLUSH_CNTL register
-    pub const hipDeviceAttributeHdpMemFlushCntl: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10005,
-    );
+    pub const hipDeviceAttributeHdpMemFlushCntl: hipDeviceAttribute_t = hipDeviceAttribute_t(10005);
 }
 impl hipDeviceAttribute_t {
     ///< Address of the HDP_REG_COHERENCY_FLUSH_CNTL register
-    pub const hipDeviceAttributeHdpRegFlushCntl: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10006,
-    );
+    pub const hipDeviceAttributeHdpRegFlushCntl: hipDeviceAttribute_t = hipDeviceAttribute_t(10006);
 }
 impl hipDeviceAttribute_t {
     /**< Supports cooperative launch on multiple
-< devices with unmatched functions*/
-    pub const hipDeviceAttributeCooperativeMultiDeviceUnmatchedFunc: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10007,
-    );
+    < devices with unmatched functions*/
+    pub const hipDeviceAttributeCooperativeMultiDeviceUnmatchedFunc: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(10007);
 }
 impl hipDeviceAttribute_t {
     /**< Supports cooperative launch on multiple
-< devices with unmatched grid dimensions*/
-    pub const hipDeviceAttributeCooperativeMultiDeviceUnmatchedGridDim: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10008,
-    );
+    < devices with unmatched grid dimensions*/
+    pub const hipDeviceAttributeCooperativeMultiDeviceUnmatchedGridDim: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(10008);
 }
 impl hipDeviceAttribute_t {
     /**< Supports cooperative launch on multiple
-< devices with unmatched block dimensions*/
-    pub const hipDeviceAttributeCooperativeMultiDeviceUnmatchedBlockDim: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10009,
-    );
+    < devices with unmatched block dimensions*/
+    pub const hipDeviceAttributeCooperativeMultiDeviceUnmatchedBlockDim: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(10009);
 }
 impl hipDeviceAttribute_t {
     /**< Supports cooperative launch on multiple
-< devices with unmatched shared memories*/
-    pub const hipDeviceAttributeCooperativeMultiDeviceUnmatchedSharedMem: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10010,
-    );
+    < devices with unmatched shared memories*/
+    pub const hipDeviceAttributeCooperativeMultiDeviceUnmatchedSharedMem: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(10010);
 }
 impl hipDeviceAttribute_t {
     ///< Whether it is LargeBar
-    pub const hipDeviceAttributeIsLargeBar: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10011,
-    );
+    pub const hipDeviceAttributeIsLargeBar: hipDeviceAttribute_t = hipDeviceAttribute_t(10011);
 }
 impl hipDeviceAttribute_t {
     ///< Revision of the GPU in this device
-    pub const hipDeviceAttributeAsicRevision: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10012,
-    );
+    pub const hipDeviceAttributeAsicRevision: hipDeviceAttribute_t = hipDeviceAttribute_t(10012);
 }
 impl hipDeviceAttribute_t {
     /**< '1' if Device supports hipStreamWaitValue32() and
-< hipStreamWaitValue64(), '0' otherwise.*/
-    pub const hipDeviceAttributeCanUseStreamWaitValue: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10013,
-    );
+    < hipStreamWaitValue64(), '0' otherwise.*/
+    pub const hipDeviceAttributeCanUseStreamWaitValue: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(10013);
 }
 impl hipDeviceAttribute_t {
     ///< '1' if Device supports image, '0' otherwise.
-    pub const hipDeviceAttributeImageSupport: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10014,
-    );
+    pub const hipDeviceAttributeImageSupport: hipDeviceAttribute_t = hipDeviceAttribute_t(10014);
 }
 impl hipDeviceAttribute_t {
     /**< All available physical compute
-< units for the device*/
-    pub const hipDeviceAttributePhysicalMultiProcessorCount: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10015,
-    );
+    < units for the device*/
+    pub const hipDeviceAttributePhysicalMultiProcessorCount: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(10015);
 }
 impl hipDeviceAttribute_t {
     ///< '1' if Device supports fine grain, '0' otherwise
-    pub const hipDeviceAttributeFineGrainSupport: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10016,
-    );
+    pub const hipDeviceAttributeFineGrainSupport: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(10016);
 }
 impl hipDeviceAttribute_t {
     ///< Constant frequency of wall clock in kilohertz.
-    pub const hipDeviceAttributeWallClockRate: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        10017,
-    );
+    pub const hipDeviceAttributeWallClockRate: hipDeviceAttribute_t = hipDeviceAttribute_t(10017);
 }
 impl hipDeviceAttribute_t {
-    pub const hipDeviceAttributeAmdSpecificEnd: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        19999,
-    );
+    pub const hipDeviceAttributeAmdSpecificEnd: hipDeviceAttribute_t = hipDeviceAttribute_t(19999);
 }
 impl hipDeviceAttribute_t {
-    pub const hipDeviceAttributeVendorSpecificBegin: hipDeviceAttribute_t = hipDeviceAttribute_t(
-        20000,
-    );
+    pub const hipDeviceAttributeVendorSpecificBegin: hipDeviceAttribute_t =
+        hipDeviceAttribute_t(20000);
 }
 #[repr(transparent)]
 /** hipDeviceAttribute_t
- hipDeviceAttributeUnused number: 5*/
+hipDeviceAttributeUnused number: 5*/
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipDeviceAttribute_t(pub ::core::ffi::c_uint);
 impl hipDriverProcAddressQueryResult {
-    pub const HIP_GET_PROC_ADDRESS_SUCCESS: hipDriverProcAddressQueryResult = hipDriverProcAddressQueryResult(
-        0,
-    );
+    pub const HIP_GET_PROC_ADDRESS_SUCCESS: hipDriverProcAddressQueryResult =
+        hipDriverProcAddressQueryResult(0);
 }
 impl hipDriverProcAddressQueryResult {
-    pub const HIP_GET_PROC_ADDRESS_SYMBOL_NOT_FOUND: hipDriverProcAddressQueryResult = hipDriverProcAddressQueryResult(
-        1,
-    );
+    pub const HIP_GET_PROC_ADDRESS_SYMBOL_NOT_FOUND: hipDriverProcAddressQueryResult =
+        hipDriverProcAddressQueryResult(1);
 }
 impl hipDriverProcAddressQueryResult {
-    pub const HIP_GET_PROC_ADDRESS_VERSION_NOT_SUFFICIENT: hipDriverProcAddressQueryResult = hipDriverProcAddressQueryResult(
-        2,
-    );
+    pub const HIP_GET_PROC_ADDRESS_VERSION_NOT_SUFFICIENT: hipDriverProcAddressQueryResult =
+        hipDriverProcAddressQueryResult(2);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -1575,32 +1286,27 @@ impl hipComputeMode {
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipComputeMode(pub ::core::ffi::c_uint);
 impl hipFlushGPUDirectRDMAWritesOptions {
-    pub const hipFlushGPUDirectRDMAWritesOptionHost: hipFlushGPUDirectRDMAWritesOptions = hipFlushGPUDirectRDMAWritesOptions(
-        1,
-    );
+    pub const hipFlushGPUDirectRDMAWritesOptionHost: hipFlushGPUDirectRDMAWritesOptions =
+        hipFlushGPUDirectRDMAWritesOptions(1);
 }
 impl hipFlushGPUDirectRDMAWritesOptions {
-    pub const hipFlushGPUDirectRDMAWritesOptionMemOps: hipFlushGPUDirectRDMAWritesOptions = hipFlushGPUDirectRDMAWritesOptions(
-        2,
-    );
+    pub const hipFlushGPUDirectRDMAWritesOptionMemOps: hipFlushGPUDirectRDMAWritesOptions =
+        hipFlushGPUDirectRDMAWritesOptions(2);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipFlushGPUDirectRDMAWritesOptions(pub ::core::ffi::c_uint);
 impl hipGPUDirectRDMAWritesOrdering {
-    pub const hipGPUDirectRDMAWritesOrderingNone: hipGPUDirectRDMAWritesOrdering = hipGPUDirectRDMAWritesOrdering(
-        0,
-    );
+    pub const hipGPUDirectRDMAWritesOrderingNone: hipGPUDirectRDMAWritesOrdering =
+        hipGPUDirectRDMAWritesOrdering(0);
 }
 impl hipGPUDirectRDMAWritesOrdering {
-    pub const hipGPUDirectRDMAWritesOrderingOwner: hipGPUDirectRDMAWritesOrdering = hipGPUDirectRDMAWritesOrdering(
-        100,
-    );
+    pub const hipGPUDirectRDMAWritesOrderingOwner: hipGPUDirectRDMAWritesOrdering =
+        hipGPUDirectRDMAWritesOrdering(100);
 }
 impl hipGPUDirectRDMAWritesOrdering {
-    pub const hipGPUDirectRDMAWritesOrderingAllDevices: hipGPUDirectRDMAWritesOrdering = hipGPUDirectRDMAWritesOrdering(
-        200,
-    );
+    pub const hipGPUDirectRDMAWritesOrderingAllDevices: hipGPUDirectRDMAWritesOrdering =
+        hipGPUDirectRDMAWritesOrdering(200);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -1612,9 +1318,7 @@ impl hipChannelFormatKind {
     pub const hipChannelFormatKindSigned: hipChannelFormatKind = hipChannelFormatKind(0);
 }
 impl hipChannelFormatKind {
-    pub const hipChannelFormatKindUnsigned: hipChannelFormatKind = hipChannelFormatKind(
-        1,
-    );
+    pub const hipChannelFormatKindUnsigned: hipChannelFormatKind = hipChannelFormatKind(1);
 }
 impl hipChannelFormatKind {
     pub const hipChannelFormatKindFloat: hipChannelFormatKind = hipChannelFormatKind(2);
@@ -1746,9 +1450,7 @@ impl HIPresourcetype_enum {
 }
 impl HIPresourcetype_enum {
     ///< Mipmapped array resource
-    pub const HIP_RESOURCE_TYPE_MIPMAPPED_ARRAY: HIPresourcetype_enum = HIPresourcetype_enum(
-        1,
-    );
+    pub const HIP_RESOURCE_TYPE_MIPMAPPED_ARRAY: HIPresourcetype_enum = HIPresourcetype_enum(1);
 }
 impl HIPresourcetype_enum {
     ///< Linear resource
@@ -1823,94 +1525,58 @@ impl hipResourceViewFormat {
     pub const hipResViewFormatNone: hipResourceViewFormat = hipResourceViewFormat(0);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedChar1: hipResourceViewFormat = hipResourceViewFormat(
-        1,
-    );
+    pub const hipResViewFormatUnsignedChar1: hipResourceViewFormat = hipResourceViewFormat(1);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedChar2: hipResourceViewFormat = hipResourceViewFormat(
-        2,
-    );
+    pub const hipResViewFormatUnsignedChar2: hipResourceViewFormat = hipResourceViewFormat(2);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedChar4: hipResourceViewFormat = hipResourceViewFormat(
-        3,
-    );
+    pub const hipResViewFormatUnsignedChar4: hipResourceViewFormat = hipResourceViewFormat(3);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedChar1: hipResourceViewFormat = hipResourceViewFormat(
-        4,
-    );
+    pub const hipResViewFormatSignedChar1: hipResourceViewFormat = hipResourceViewFormat(4);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedChar2: hipResourceViewFormat = hipResourceViewFormat(
-        5,
-    );
+    pub const hipResViewFormatSignedChar2: hipResourceViewFormat = hipResourceViewFormat(5);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedChar4: hipResourceViewFormat = hipResourceViewFormat(
-        6,
-    );
+    pub const hipResViewFormatSignedChar4: hipResourceViewFormat = hipResourceViewFormat(6);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedShort1: hipResourceViewFormat = hipResourceViewFormat(
-        7,
-    );
+    pub const hipResViewFormatUnsignedShort1: hipResourceViewFormat = hipResourceViewFormat(7);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedShort2: hipResourceViewFormat = hipResourceViewFormat(
-        8,
-    );
+    pub const hipResViewFormatUnsignedShort2: hipResourceViewFormat = hipResourceViewFormat(8);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedShort4: hipResourceViewFormat = hipResourceViewFormat(
-        9,
-    );
+    pub const hipResViewFormatUnsignedShort4: hipResourceViewFormat = hipResourceViewFormat(9);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedShort1: hipResourceViewFormat = hipResourceViewFormat(
-        10,
-    );
+    pub const hipResViewFormatSignedShort1: hipResourceViewFormat = hipResourceViewFormat(10);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedShort2: hipResourceViewFormat = hipResourceViewFormat(
-        11,
-    );
+    pub const hipResViewFormatSignedShort2: hipResourceViewFormat = hipResourceViewFormat(11);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedShort4: hipResourceViewFormat = hipResourceViewFormat(
-        12,
-    );
+    pub const hipResViewFormatSignedShort4: hipResourceViewFormat = hipResourceViewFormat(12);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedInt1: hipResourceViewFormat = hipResourceViewFormat(
-        13,
-    );
+    pub const hipResViewFormatUnsignedInt1: hipResourceViewFormat = hipResourceViewFormat(13);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedInt2: hipResourceViewFormat = hipResourceViewFormat(
-        14,
-    );
+    pub const hipResViewFormatUnsignedInt2: hipResourceViewFormat = hipResourceViewFormat(14);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedInt4: hipResourceViewFormat = hipResourceViewFormat(
-        15,
-    );
+    pub const hipResViewFormatUnsignedInt4: hipResourceViewFormat = hipResourceViewFormat(15);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedInt1: hipResourceViewFormat = hipResourceViewFormat(
-        16,
-    );
+    pub const hipResViewFormatSignedInt1: hipResourceViewFormat = hipResourceViewFormat(16);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedInt2: hipResourceViewFormat = hipResourceViewFormat(
-        17,
-    );
+    pub const hipResViewFormatSignedInt2: hipResourceViewFormat = hipResourceViewFormat(17);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedInt4: hipResourceViewFormat = hipResourceViewFormat(
-        18,
-    );
+    pub const hipResViewFormatSignedInt4: hipResourceViewFormat = hipResourceViewFormat(18);
 }
 impl hipResourceViewFormat {
     pub const hipResViewFormatHalf1: hipResourceViewFormat = hipResourceViewFormat(19);
@@ -1931,54 +1597,44 @@ impl hipResourceViewFormat {
     pub const hipResViewFormatFloat4: hipResourceViewFormat = hipResourceViewFormat(24);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedBlockCompressed1: hipResourceViewFormat = hipResourceViewFormat(
-        25,
-    );
+    pub const hipResViewFormatUnsignedBlockCompressed1: hipResourceViewFormat =
+        hipResourceViewFormat(25);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedBlockCompressed2: hipResourceViewFormat = hipResourceViewFormat(
-        26,
-    );
+    pub const hipResViewFormatUnsignedBlockCompressed2: hipResourceViewFormat =
+        hipResourceViewFormat(26);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedBlockCompressed3: hipResourceViewFormat = hipResourceViewFormat(
-        27,
-    );
+    pub const hipResViewFormatUnsignedBlockCompressed3: hipResourceViewFormat =
+        hipResourceViewFormat(27);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedBlockCompressed4: hipResourceViewFormat = hipResourceViewFormat(
-        28,
-    );
+    pub const hipResViewFormatUnsignedBlockCompressed4: hipResourceViewFormat =
+        hipResourceViewFormat(28);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedBlockCompressed4: hipResourceViewFormat = hipResourceViewFormat(
-        29,
-    );
+    pub const hipResViewFormatSignedBlockCompressed4: hipResourceViewFormat =
+        hipResourceViewFormat(29);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedBlockCompressed5: hipResourceViewFormat = hipResourceViewFormat(
-        30,
-    );
+    pub const hipResViewFormatUnsignedBlockCompressed5: hipResourceViewFormat =
+        hipResourceViewFormat(30);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedBlockCompressed5: hipResourceViewFormat = hipResourceViewFormat(
-        31,
-    );
+    pub const hipResViewFormatSignedBlockCompressed5: hipResourceViewFormat =
+        hipResourceViewFormat(31);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedBlockCompressed6H: hipResourceViewFormat = hipResourceViewFormat(
-        32,
-    );
+    pub const hipResViewFormatUnsignedBlockCompressed6H: hipResourceViewFormat =
+        hipResourceViewFormat(32);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatSignedBlockCompressed6H: hipResourceViewFormat = hipResourceViewFormat(
-        33,
-    );
+    pub const hipResViewFormatSignedBlockCompressed6H: hipResourceViewFormat =
+        hipResourceViewFormat(33);
 }
 impl hipResourceViewFormat {
-    pub const hipResViewFormatUnsignedBlockCompressed7: hipResourceViewFormat = hipResourceViewFormat(
-        34,
-    );
+    pub const hipResViewFormatUnsignedBlockCompressed7: hipResourceViewFormat =
+        hipResourceViewFormat(34);
 }
 #[repr(transparent)]
 /// hip texture resource view formats
@@ -1986,213 +1642,177 @@ impl hipResourceViewFormat {
 pub struct hipResourceViewFormat(pub ::core::ffi::c_uint);
 impl HIPresourceViewFormat_enum {
     ///< No resource view format (use underlying resource format)
-    pub const HIP_RES_VIEW_FORMAT_NONE: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        0,
-    );
+    pub const HIP_RES_VIEW_FORMAT_NONE: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(0);
 }
 impl HIPresourceViewFormat_enum {
     ///< 1 channel unsigned 8-bit integers
-    pub const HIP_RES_VIEW_FORMAT_UINT_1X8: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        1,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UINT_1X8: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(1);
 }
 impl HIPresourceViewFormat_enum {
     ///< 2 channel unsigned 8-bit integers
-    pub const HIP_RES_VIEW_FORMAT_UINT_2X8: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        2,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UINT_2X8: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(2);
 }
 impl HIPresourceViewFormat_enum {
     ///< 4 channel unsigned 8-bit integers
-    pub const HIP_RES_VIEW_FORMAT_UINT_4X8: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        3,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UINT_4X8: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(3);
 }
 impl HIPresourceViewFormat_enum {
     ///< 1 channel signed 8-bit integers
-    pub const HIP_RES_VIEW_FORMAT_SINT_1X8: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        4,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SINT_1X8: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(4);
 }
 impl HIPresourceViewFormat_enum {
     ///< 2 channel signed 8-bit integers
-    pub const HIP_RES_VIEW_FORMAT_SINT_2X8: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        5,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SINT_2X8: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(5);
 }
 impl HIPresourceViewFormat_enum {
     ///< 4 channel signed 8-bit integers
-    pub const HIP_RES_VIEW_FORMAT_SINT_4X8: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        6,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SINT_4X8: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(6);
 }
 impl HIPresourceViewFormat_enum {
     ///< 1 channel unsigned 16-bit integers
-    pub const HIP_RES_VIEW_FORMAT_UINT_1X16: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        7,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UINT_1X16: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(7);
 }
 impl HIPresourceViewFormat_enum {
     ///< 2 channel unsigned 16-bit integers
-    pub const HIP_RES_VIEW_FORMAT_UINT_2X16: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        8,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UINT_2X16: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(8);
 }
 impl HIPresourceViewFormat_enum {
     ///< 4 channel unsigned 16-bit integers
-    pub const HIP_RES_VIEW_FORMAT_UINT_4X16: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        9,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UINT_4X16: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(9);
 }
 impl HIPresourceViewFormat_enum {
     ///< 1 channel signed 16-bit integers
-    pub const HIP_RES_VIEW_FORMAT_SINT_1X16: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        10,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SINT_1X16: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(10);
 }
 impl HIPresourceViewFormat_enum {
     ///< 2 channel signed 16-bit integers
-    pub const HIP_RES_VIEW_FORMAT_SINT_2X16: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        11,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SINT_2X16: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(11);
 }
 impl HIPresourceViewFormat_enum {
     ///< 4 channel signed 16-bit integers
-    pub const HIP_RES_VIEW_FORMAT_SINT_4X16: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        12,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SINT_4X16: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(12);
 }
 impl HIPresourceViewFormat_enum {
     ///< 1 channel unsigned 32-bit integers
-    pub const HIP_RES_VIEW_FORMAT_UINT_1X32: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        13,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UINT_1X32: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(13);
 }
 impl HIPresourceViewFormat_enum {
     ///< 2 channel unsigned 32-bit integers
-    pub const HIP_RES_VIEW_FORMAT_UINT_2X32: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        14,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UINT_2X32: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(14);
 }
 impl HIPresourceViewFormat_enum {
     ///< 4 channel unsigned 32-bit integers
-    pub const HIP_RES_VIEW_FORMAT_UINT_4X32: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        15,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UINT_4X32: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(15);
 }
 impl HIPresourceViewFormat_enum {
     ///< 1 channel signed 32-bit integers
-    pub const HIP_RES_VIEW_FORMAT_SINT_1X32: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        16,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SINT_1X32: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(16);
 }
 impl HIPresourceViewFormat_enum {
     ///< 2 channel signed 32-bit integers
-    pub const HIP_RES_VIEW_FORMAT_SINT_2X32: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        17,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SINT_2X32: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(17);
 }
 impl HIPresourceViewFormat_enum {
     ///< 4 channel signed 32-bit integers
-    pub const HIP_RES_VIEW_FORMAT_SINT_4X32: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        18,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SINT_4X32: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(18);
 }
 impl HIPresourceViewFormat_enum {
     ///< 1 channel 16-bit floating point
-    pub const HIP_RES_VIEW_FORMAT_FLOAT_1X16: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        19,
-    );
+    pub const HIP_RES_VIEW_FORMAT_FLOAT_1X16: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(19);
 }
 impl HIPresourceViewFormat_enum {
     ///< 2 channel 16-bit floating point
-    pub const HIP_RES_VIEW_FORMAT_FLOAT_2X16: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        20,
-    );
+    pub const HIP_RES_VIEW_FORMAT_FLOAT_2X16: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(20);
 }
 impl HIPresourceViewFormat_enum {
     ///< 4 channel 16-bit floating point
-    pub const HIP_RES_VIEW_FORMAT_FLOAT_4X16: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        21,
-    );
+    pub const HIP_RES_VIEW_FORMAT_FLOAT_4X16: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(21);
 }
 impl HIPresourceViewFormat_enum {
     ///< 1 channel 32-bit floating point
-    pub const HIP_RES_VIEW_FORMAT_FLOAT_1X32: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        22,
-    );
+    pub const HIP_RES_VIEW_FORMAT_FLOAT_1X32: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(22);
 }
 impl HIPresourceViewFormat_enum {
     ///< 2 channel 32-bit floating point
-    pub const HIP_RES_VIEW_FORMAT_FLOAT_2X32: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        23,
-    );
+    pub const HIP_RES_VIEW_FORMAT_FLOAT_2X32: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(23);
 }
 impl HIPresourceViewFormat_enum {
     ///< 4 channel 32-bit floating point
-    pub const HIP_RES_VIEW_FORMAT_FLOAT_4X32: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        24,
-    );
+    pub const HIP_RES_VIEW_FORMAT_FLOAT_4X32: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(24);
 }
 impl HIPresourceViewFormat_enum {
     ///< Block compressed 1
-    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC1: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        25,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC1: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(25);
 }
 impl HIPresourceViewFormat_enum {
     ///< Block compressed 2
-    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC2: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        26,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC2: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(26);
 }
 impl HIPresourceViewFormat_enum {
     ///< Block compressed 3
-    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC3: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        27,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC3: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(27);
 }
 impl HIPresourceViewFormat_enum {
     ///< Block compressed 4 unsigned
-    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC4: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        28,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC4: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(28);
 }
 impl HIPresourceViewFormat_enum {
     ///< Block compressed 4 signed
-    pub const HIP_RES_VIEW_FORMAT_SIGNED_BC4: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        29,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SIGNED_BC4: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(29);
 }
 impl HIPresourceViewFormat_enum {
     ///< Block compressed 5 unsigned
-    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC5: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        30,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC5: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(30);
 }
 impl HIPresourceViewFormat_enum {
     ///< Block compressed 5 signed
-    pub const HIP_RES_VIEW_FORMAT_SIGNED_BC5: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        31,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SIGNED_BC5: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(31);
 }
 impl HIPresourceViewFormat_enum {
     ///< Block compressed 6 unsigned half-float
-    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC6H: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        32,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC6H: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(32);
 }
 impl HIPresourceViewFormat_enum {
     ///< Block compressed 6 signed half-float
-    pub const HIP_RES_VIEW_FORMAT_SIGNED_BC6H: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        33,
-    );
+    pub const HIP_RES_VIEW_FORMAT_SIGNED_BC6H: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(33);
 }
 impl HIPresourceViewFormat_enum {
     ///< Block compressed 7
-    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC7: HIPresourceViewFormat_enum = HIPresourceViewFormat_enum(
-        34,
-    );
+    pub const HIP_RES_VIEW_FORMAT_UNSIGNED_BC7: HIPresourceViewFormat_enum =
+        HIPresourceViewFormat_enum(34);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -2358,7 +1978,7 @@ impl hipMemcpyKind {
 }
 impl hipMemcpyKind {
     /**< Runtime will automatically determine
-<copy-kind based on virtual addresses.*/
+    <copy-kind based on virtual addresses.*/
     pub const hipMemcpyDefault: hipMemcpyKind = hipMemcpyKind(4);
 }
 impl hipMemcpyKind {
@@ -2430,54 +2050,38 @@ pub struct HIP_MEMCPY3D {
     pub Depth: usize,
 }
 impl hipFunction_attribute {
-    pub const HIP_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK: hipFunction_attribute = hipFunction_attribute(
-        0,
-    );
+    pub const HIP_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK: hipFunction_attribute =
+        hipFunction_attribute(0);
 }
 impl hipFunction_attribute {
-    pub const HIP_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES: hipFunction_attribute = hipFunction_attribute(
-        1,
-    );
+    pub const HIP_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES: hipFunction_attribute =
+        hipFunction_attribute(1);
 }
 impl hipFunction_attribute {
-    pub const HIP_FUNC_ATTRIBUTE_CONST_SIZE_BYTES: hipFunction_attribute = hipFunction_attribute(
-        2,
-    );
+    pub const HIP_FUNC_ATTRIBUTE_CONST_SIZE_BYTES: hipFunction_attribute = hipFunction_attribute(2);
 }
 impl hipFunction_attribute {
-    pub const HIP_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES: hipFunction_attribute = hipFunction_attribute(
-        3,
-    );
+    pub const HIP_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES: hipFunction_attribute = hipFunction_attribute(3);
 }
 impl hipFunction_attribute {
-    pub const HIP_FUNC_ATTRIBUTE_NUM_REGS: hipFunction_attribute = hipFunction_attribute(
-        4,
-    );
+    pub const HIP_FUNC_ATTRIBUTE_NUM_REGS: hipFunction_attribute = hipFunction_attribute(4);
 }
 impl hipFunction_attribute {
-    pub const HIP_FUNC_ATTRIBUTE_PTX_VERSION: hipFunction_attribute = hipFunction_attribute(
-        5,
-    );
+    pub const HIP_FUNC_ATTRIBUTE_PTX_VERSION: hipFunction_attribute = hipFunction_attribute(5);
 }
 impl hipFunction_attribute {
-    pub const HIP_FUNC_ATTRIBUTE_BINARY_VERSION: hipFunction_attribute = hipFunction_attribute(
-        6,
-    );
+    pub const HIP_FUNC_ATTRIBUTE_BINARY_VERSION: hipFunction_attribute = hipFunction_attribute(6);
 }
 impl hipFunction_attribute {
-    pub const HIP_FUNC_ATTRIBUTE_CACHE_MODE_CA: hipFunction_attribute = hipFunction_attribute(
-        7,
-    );
+    pub const HIP_FUNC_ATTRIBUTE_CACHE_MODE_CA: hipFunction_attribute = hipFunction_attribute(7);
 }
 impl hipFunction_attribute {
-    pub const HIP_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES: hipFunction_attribute = hipFunction_attribute(
-        8,
-    );
+    pub const HIP_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES: hipFunction_attribute =
+        hipFunction_attribute(8);
 }
 impl hipFunction_attribute {
-    pub const HIP_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT: hipFunction_attribute = hipFunction_attribute(
-        9,
-    );
+    pub const HIP_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT: hipFunction_attribute =
+        hipFunction_attribute(9);
 }
 impl hipFunction_attribute {
     pub const HIP_FUNC_ATTRIBUTE_MAX: hipFunction_attribute = hipFunction_attribute(10);
@@ -2487,118 +2091,88 @@ impl hipFunction_attribute {
 pub struct hipFunction_attribute(pub ::core::ffi::c_uint);
 impl hipPointer_attribute {
     /**< The context on which a pointer was allocated
-< @warning - not supported in HIP*/
-    pub const HIP_POINTER_ATTRIBUTE_CONTEXT: hipPointer_attribute = hipPointer_attribute(
-        1,
-    );
+    < @warning - not supported in HIP*/
+    pub const HIP_POINTER_ATTRIBUTE_CONTEXT: hipPointer_attribute = hipPointer_attribute(1);
 }
 impl hipPointer_attribute {
     ///< memory type describing location of a pointer
-    pub const HIP_POINTER_ATTRIBUTE_MEMORY_TYPE: hipPointer_attribute = hipPointer_attribute(
-        2,
-    );
+    pub const HIP_POINTER_ATTRIBUTE_MEMORY_TYPE: hipPointer_attribute = hipPointer_attribute(2);
 }
 impl hipPointer_attribute {
     ///< address at which the pointer is allocated on device
-    pub const HIP_POINTER_ATTRIBUTE_DEVICE_POINTER: hipPointer_attribute = hipPointer_attribute(
-        3,
-    );
+    pub const HIP_POINTER_ATTRIBUTE_DEVICE_POINTER: hipPointer_attribute = hipPointer_attribute(3);
 }
 impl hipPointer_attribute {
     ///< address at which the pointer is allocated on host
-    pub const HIP_POINTER_ATTRIBUTE_HOST_POINTER: hipPointer_attribute = hipPointer_attribute(
-        4,
-    );
+    pub const HIP_POINTER_ATTRIBUTE_HOST_POINTER: hipPointer_attribute = hipPointer_attribute(4);
 }
 impl hipPointer_attribute {
     /**< A pair of tokens for use with linux kernel interface
-< @warning - not supported in HIP*/
-    pub const HIP_POINTER_ATTRIBUTE_P2P_TOKENS: hipPointer_attribute = hipPointer_attribute(
-        5,
-    );
+    < @warning - not supported in HIP*/
+    pub const HIP_POINTER_ATTRIBUTE_P2P_TOKENS: hipPointer_attribute = hipPointer_attribute(5);
 }
 impl hipPointer_attribute {
     /**< Synchronize every synchronous memory operation
-< initiated on this region*/
-    pub const HIP_POINTER_ATTRIBUTE_SYNC_MEMOPS: hipPointer_attribute = hipPointer_attribute(
-        6,
-    );
+    < initiated on this region*/
+    pub const HIP_POINTER_ATTRIBUTE_SYNC_MEMOPS: hipPointer_attribute = hipPointer_attribute(6);
 }
 impl hipPointer_attribute {
     ///< Unique ID for an allocated memory region
-    pub const HIP_POINTER_ATTRIBUTE_BUFFER_ID: hipPointer_attribute = hipPointer_attribute(
-        7,
-    );
+    pub const HIP_POINTER_ATTRIBUTE_BUFFER_ID: hipPointer_attribute = hipPointer_attribute(7);
 }
 impl hipPointer_attribute {
     ///< Indicates if the pointer points to managed memory
-    pub const HIP_POINTER_ATTRIBUTE_IS_MANAGED: hipPointer_attribute = hipPointer_attribute(
-        8,
-    );
+    pub const HIP_POINTER_ATTRIBUTE_IS_MANAGED: hipPointer_attribute = hipPointer_attribute(8);
 }
 impl hipPointer_attribute {
     /**< device ordinal of a device on which a pointer
-< was allocated or registered*/
-    pub const HIP_POINTER_ATTRIBUTE_DEVICE_ORDINAL: hipPointer_attribute = hipPointer_attribute(
-        9,
-    );
+    < was allocated or registered*/
+    pub const HIP_POINTER_ATTRIBUTE_DEVICE_ORDINAL: hipPointer_attribute = hipPointer_attribute(9);
 }
 impl hipPointer_attribute {
     /**< if this pointer maps to an allocation
-< that is suitable for hipIpcGetMemHandle
-< @warning - not supported in HIP*/
-    pub const HIP_POINTER_ATTRIBUTE_IS_LEGACY_HIP_IPC_CAPABLE: hipPointer_attribute = hipPointer_attribute(
-        10,
-    );
+    < that is suitable for hipIpcGetMemHandle
+    < @warning - not supported in HIP*/
+    pub const HIP_POINTER_ATTRIBUTE_IS_LEGACY_HIP_IPC_CAPABLE: hipPointer_attribute =
+        hipPointer_attribute(10);
 }
 impl hipPointer_attribute {
     ///< Starting address for this requested pointer
-    pub const HIP_POINTER_ATTRIBUTE_RANGE_START_ADDR: hipPointer_attribute = hipPointer_attribute(
-        11,
-    );
+    pub const HIP_POINTER_ATTRIBUTE_RANGE_START_ADDR: hipPointer_attribute =
+        hipPointer_attribute(11);
 }
 impl hipPointer_attribute {
     ///< Size of the address range for this requested pointer
-    pub const HIP_POINTER_ATTRIBUTE_RANGE_SIZE: hipPointer_attribute = hipPointer_attribute(
-        12,
-    );
+    pub const HIP_POINTER_ATTRIBUTE_RANGE_SIZE: hipPointer_attribute = hipPointer_attribute(12);
 }
 impl hipPointer_attribute {
     /**< tells if this pointer is in a valid address range
-< that is mapped to a backing allocation*/
-    pub const HIP_POINTER_ATTRIBUTE_MAPPED: hipPointer_attribute = hipPointer_attribute(
-        13,
-    );
+    < that is mapped to a backing allocation*/
+    pub const HIP_POINTER_ATTRIBUTE_MAPPED: hipPointer_attribute = hipPointer_attribute(13);
 }
 impl hipPointer_attribute {
     /**< Bitmask of allowed hipmemAllocationHandleType
-< for this allocation @warning - not supported in HIP*/
-    pub const HIP_POINTER_ATTRIBUTE_ALLOWED_HANDLE_TYPES: hipPointer_attribute = hipPointer_attribute(
-        14,
-    );
+    < for this allocation @warning - not supported in HIP*/
+    pub const HIP_POINTER_ATTRIBUTE_ALLOWED_HANDLE_TYPES: hipPointer_attribute =
+        hipPointer_attribute(14);
 }
 impl hipPointer_attribute {
     /**< returns if the memory referenced by
-< this pointer can be used with the GPUDirect RDMA API
-< @warning - not supported in HIP*/
-    pub const HIP_POINTER_ATTRIBUTE_IS_GPU_DIRECT_RDMA_CAPABLE: hipPointer_attribute = hipPointer_attribute(
-        15,
-    );
+    < this pointer can be used with the GPUDirect RDMA API
+    < @warning - not supported in HIP*/
+    pub const HIP_POINTER_ATTRIBUTE_IS_GPU_DIRECT_RDMA_CAPABLE: hipPointer_attribute =
+        hipPointer_attribute(15);
 }
 impl hipPointer_attribute {
     /**< Returns the access flags the device associated with
-< for the corresponding memory referenced by the ptr*/
-    pub const HIP_POINTER_ATTRIBUTE_ACCESS_FLAGS: hipPointer_attribute = hipPointer_attribute(
-        16,
-    );
+    < for the corresponding memory referenced by the ptr*/
+    pub const HIP_POINTER_ATTRIBUTE_ACCESS_FLAGS: hipPointer_attribute = hipPointer_attribute(16);
 }
 impl hipPointer_attribute {
     /**< Returns the mempool handle for the allocation if
-< it was allocated from a mempool
-< @warning - not supported in HIP*/
-    pub const HIP_POINTER_ATTRIBUTE_MEMPOOL_HANDLE: hipPointer_attribute = hipPointer_attribute(
-        17,
-    );
+    < it was allocated from a mempool
+    < @warning - not supported in HIP*/
+    pub const HIP_POINTER_ATTRIBUTE_MEMPOOL_HANDLE: hipPointer_attribute = hipPointer_attribute(17);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -2727,9 +2301,7 @@ impl hipDeviceP2PAttr {
     pub const hipDevP2PAttrNativeAtomicSupported: hipDeviceP2PAttr = hipDeviceP2PAttr(2);
 }
 impl hipDeviceP2PAttr {
-    pub const hipDevP2PAttrHipArrayAccessSupported: hipDeviceP2PAttr = hipDeviceP2PAttr(
-        3,
-    );
+    pub const hipDevP2PAttrHipArrayAccessSupported: hipDeviceP2PAttr = hipDeviceP2PAttr(3);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -2799,18 +2371,18 @@ pub struct ihipEvent_t {
 pub type hipEvent_t = *mut ihipEvent_t;
 impl hipLimit_t {
     /**< Limit of stack size in bytes on the current device, per
-< thread. The size is in units of 256 dwords, up to the
-< limit of (128K - 16)*/
+    < thread. The size is in units of 256 dwords, up to the
+    < limit of (128K - 16)*/
     pub const hipLimitStackSize: hipLimit_t = hipLimit_t(0);
 }
 impl hipLimit_t {
     /**< Size limit in bytes of fifo used by printf call on the
-< device. Currently not supported*/
+    < device. Currently not supported*/
     pub const hipLimitPrintfFifoSize: hipLimit_t = hipLimit_t(1);
 }
 impl hipLimit_t {
     /**< Limit of heap size in bytes on the current device, should
-< be less than the global memory size on the device*/
+    < be less than the global memory size on the device*/
     pub const hipLimitMallocHeapSize: hipLimit_t = hipLimit_t(2);
 }
 impl hipLimit_t {
@@ -2820,13 +2392,13 @@ impl hipLimit_t {
 #[repr(transparent)]
 /** hipLimit
 
- @note In HIP device limit-related APIs, any input limit value other than those defined in the
- enum is treated as "UnsupportedLimit" by default.*/
+@note In HIP device limit-related APIs, any input limit value other than those defined in the
+enum is treated as "UnsupportedLimit" by default.*/
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipLimit_t(pub ::core::ffi::c_uint);
 impl hipMemoryAdvise {
     /**< Data will mostly be read and only occassionally
-< be written to*/
+    < be written to*/
     pub const hipMemAdviseSetReadMostly: hipMemoryAdvise = hipMemoryAdvise(1);
 }
 impl hipMemoryAdvise {
@@ -2835,7 +2407,7 @@ impl hipMemoryAdvise {
 }
 impl hipMemoryAdvise {
     /**< Set the preferred location for the data as
-< the specified device*/
+    < the specified device*/
     pub const hipMemAdviseSetPreferredLocation: hipMemoryAdvise = hipMemoryAdvise(3);
 }
 impl hipMemoryAdvise {
@@ -2844,20 +2416,20 @@ impl hipMemoryAdvise {
 }
 impl hipMemoryAdvise {
     /**< Data will be accessed by the specified device
-< so prevent page faults as much as possible*/
+    < so prevent page faults as much as possible*/
     pub const hipMemAdviseSetAccessedBy: hipMemoryAdvise = hipMemoryAdvise(5);
 }
 impl hipMemoryAdvise {
     /**< Let HIP to decide on the page faulting policy
-< for the specified device*/
+    < for the specified device*/
     pub const hipMemAdviseUnsetAccessedBy: hipMemoryAdvise = hipMemoryAdvise(6);
 }
 impl hipMemoryAdvise {
     /**< The default memory model is fine-grain. That allows
-< coherent operations between host and device, while
-< executing kernels. The coarse-grain can be used
-< for data that only needs to be coherent at dispatch
-< boundaries for better performance*/
+    < coherent operations between host and device, while
+    < executing kernels. The coarse-grain can be used
+    < for data that only needs to be coherent at dispatch
+    < boundaries for better performance*/
     pub const hipMemAdviseSetCoarseGrain: hipMemoryAdvise = hipMemoryAdvise(100);
 }
 impl hipMemoryAdvise {
@@ -2867,30 +2439,27 @@ impl hipMemoryAdvise {
 #[repr(transparent)]
 /** HIP Memory Advise values
 
- @note This memory advise enumeration is used on Linux, not Windows.*/
+@note This memory advise enumeration is used on Linux, not Windows.*/
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipMemoryAdvise(pub ::core::ffi::c_uint);
 impl hipMemRangeCoherencyMode {
     /**< Updates to memory with this attribute can be
-< done coherently from all devices*/
-    pub const hipMemRangeCoherencyModeFineGrain: hipMemRangeCoherencyMode = hipMemRangeCoherencyMode(
-        0,
-    );
+    < done coherently from all devices*/
+    pub const hipMemRangeCoherencyModeFineGrain: hipMemRangeCoherencyMode =
+        hipMemRangeCoherencyMode(0);
 }
 impl hipMemRangeCoherencyMode {
     /**< Writes to memory with this attribute can be
-< performed by a single device at a time*/
-    pub const hipMemRangeCoherencyModeCoarseGrain: hipMemRangeCoherencyMode = hipMemRangeCoherencyMode(
-        1,
-    );
+    < performed by a single device at a time*/
+    pub const hipMemRangeCoherencyModeCoarseGrain: hipMemRangeCoherencyMode =
+        hipMemRangeCoherencyMode(1);
 }
 impl hipMemRangeCoherencyMode {
     /**< Memory region queried contains subregions with
-< both hipMemRangeCoherencyModeFineGrain and
-< hipMemRangeCoherencyModeCoarseGrain attributes*/
-    pub const hipMemRangeCoherencyModeIndeterminate: hipMemRangeCoherencyMode = hipMemRangeCoherencyMode(
-        2,
-    );
+    < both hipMemRangeCoherencyModeFineGrain and
+    < hipMemRangeCoherencyModeCoarseGrain attributes*/
+    pub const hipMemRangeCoherencyModeIndeterminate: hipMemRangeCoherencyMode =
+        hipMemRangeCoherencyMode(2);
 }
 #[repr(transparent)]
 /// HIP Coherency Mode
@@ -2898,37 +2467,28 @@ impl hipMemRangeCoherencyMode {
 pub struct hipMemRangeCoherencyMode(pub ::core::ffi::c_uint);
 impl hipMemRangeAttribute {
     /**< Whether the range will mostly be read and
-< only occassionally be written to*/
-    pub const hipMemRangeAttributeReadMostly: hipMemRangeAttribute = hipMemRangeAttribute(
-        1,
-    );
+    < only occassionally be written to*/
+    pub const hipMemRangeAttributeReadMostly: hipMemRangeAttribute = hipMemRangeAttribute(1);
 }
 impl hipMemRangeAttribute {
     ///< The preferred location of the range
-    pub const hipMemRangeAttributePreferredLocation: hipMemRangeAttribute = hipMemRangeAttribute(
-        2,
-    );
+    pub const hipMemRangeAttributePreferredLocation: hipMemRangeAttribute = hipMemRangeAttribute(2);
 }
 impl hipMemRangeAttribute {
     /**< Memory range has hipMemAdviseSetAccessedBy
-< set for the specified device*/
-    pub const hipMemRangeAttributeAccessedBy: hipMemRangeAttribute = hipMemRangeAttribute(
-        3,
-    );
+    < set for the specified device*/
+    pub const hipMemRangeAttributeAccessedBy: hipMemRangeAttribute = hipMemRangeAttribute(3);
 }
 impl hipMemRangeAttribute {
     /**< The last location to where the range was
-< prefetched*/
-    pub const hipMemRangeAttributeLastPrefetchLocation: hipMemRangeAttribute = hipMemRangeAttribute(
-        4,
-    );
+    < prefetched*/
+    pub const hipMemRangeAttributeLastPrefetchLocation: hipMemRangeAttribute =
+        hipMemRangeAttribute(4);
 }
 impl hipMemRangeAttribute {
     /**< Returns coherency mode
-< @ref hipMemRangeCoherencyMode for the range*/
-    pub const hipMemRangeAttributeCoherencyMode: hipMemRangeAttribute = hipMemRangeAttribute(
-        100,
-    );
+    < @ref hipMemRangeCoherencyMode for the range*/
+    pub const hipMemRangeAttributeCoherencyMode: hipMemRangeAttribute = hipMemRangeAttribute(100);
 }
 #[repr(transparent)]
 /// HIP range attributes
@@ -2936,57 +2496,55 @@ impl hipMemRangeAttribute {
 pub struct hipMemRangeAttribute(pub ::core::ffi::c_uint);
 impl hipMemPoolAttr {
     /** (value type = int)
- Allow @p hipMemAllocAsync to use memory asynchronously freed
- in another streams as long as a stream ordering dependency
- of the allocating stream on the free action exists.
- hip events and null stream interactions can create the required
- stream ordered dependencies. (default enabled)*/
+    Allow @p hipMemAllocAsync to use memory asynchronously freed
+    in another streams as long as a stream ordering dependency
+    of the allocating stream on the free action exists.
+    hip events and null stream interactions can create the required
+    stream ordered dependencies. (default enabled)*/
     pub const hipMemPoolReuseFollowEventDependencies: hipMemPoolAttr = hipMemPoolAttr(1);
 }
 impl hipMemPoolAttr {
     /** (value type = int)
- Allow reuse of already completed frees when there is no dependency
- between the free and allocation. (default enabled)*/
+    Allow reuse of already completed frees when there is no dependency
+    between the free and allocation. (default enabled)*/
     pub const hipMemPoolReuseAllowOpportunistic: hipMemPoolAttr = hipMemPoolAttr(2);
 }
 impl hipMemPoolAttr {
     /** (value type = int)
- Allow @p hipMemAllocAsync to insert new stream dependencies
- in order to establish the stream ordering required to reuse
- a piece of memory released by cuFreeAsync (default enabled).*/
-    pub const hipMemPoolReuseAllowInternalDependencies: hipMemPoolAttr = hipMemPoolAttr(
-        3,
-    );
+    Allow @p hipMemAllocAsync to insert new stream dependencies
+    in order to establish the stream ordering required to reuse
+    a piece of memory released by cuFreeAsync (default enabled).*/
+    pub const hipMemPoolReuseAllowInternalDependencies: hipMemPoolAttr = hipMemPoolAttr(3);
 }
 impl hipMemPoolAttr {
     /** (value type = uint64_t)
- Amount of reserved memory in bytes to hold onto before trying
- to release memory back to the OS. When more than the release
- threshold bytes of memory are held by the memory pool, the
- allocator will try to release memory back to the OS on the
- next call to stream, event or context synchronize. (default 0)*/
+    Amount of reserved memory in bytes to hold onto before trying
+    to release memory back to the OS. When more than the release
+    threshold bytes of memory are held by the memory pool, the
+    allocator will try to release memory back to the OS on the
+    next call to stream, event or context synchronize. (default 0)*/
     pub const hipMemPoolAttrReleaseThreshold: hipMemPoolAttr = hipMemPoolAttr(4);
 }
 impl hipMemPoolAttr {
     /** (value type = uint64_t)
- Amount of backing memory currently allocated for the mempool.*/
+    Amount of backing memory currently allocated for the mempool.*/
     pub const hipMemPoolAttrReservedMemCurrent: hipMemPoolAttr = hipMemPoolAttr(5);
 }
 impl hipMemPoolAttr {
     /** (value type = uint64_t)
- High watermark of backing memory allocated for the mempool since the
- last time it was reset. High watermark can only be reset to zero.*/
+    High watermark of backing memory allocated for the mempool since the
+    last time it was reset. High watermark can only be reset to zero.*/
     pub const hipMemPoolAttrReservedMemHigh: hipMemPoolAttr = hipMemPoolAttr(6);
 }
 impl hipMemPoolAttr {
     /** (value type = uint64_t)
- Amount of memory from the pool that is currently in use by the application.*/
+    Amount of memory from the pool that is currently in use by the application.*/
     pub const hipMemPoolAttrUsedMemCurrent: hipMemPoolAttr = hipMemPoolAttr(7);
 }
 impl hipMemPoolAttr {
     /** (value type = uint64_t)
- High watermark of the amount of memory from the pool that was in use by the application since
- the last time it was reset. High watermark can only be reset to zero.*/
+    High watermark of the amount of memory from the pool that was in use by the application since
+    the last time it was reset. High watermark can only be reset to zero.*/
     pub const hipMemPoolAttrUsedMemHigh: hipMemPoolAttr = hipMemPoolAttr(8);
 }
 #[repr(transparent)]
@@ -3006,7 +2564,7 @@ impl hipMemLocationType {
 pub struct hipMemLocationType(pub ::core::ffi::c_uint);
 /** Specifies a memory location.
 
- To specify a gpu, set type = @p hipMemLocationTypeDevice and set id = the gpu's device ID*/
+To specify a gpu, set type = @p hipMemLocationTypeDevice and set id = the gpu's device ID*/
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipMemLocation {
@@ -3042,21 +2600,17 @@ pub struct hipMemAccessDesc {
     pub flags: hipMemAccessFlags,
 }
 impl hipMemAllocationType {
-    pub const hipMemAllocationTypeInvalid: hipMemAllocationType = hipMemAllocationType(
-        0,
-    );
+    pub const hipMemAllocationTypeInvalid: hipMemAllocationType = hipMemAllocationType(0);
 }
 impl hipMemAllocationType {
     /** This allocation type is 'pinned', i.e. cannot migrate from its current
- location while the application is actively using it*/
+    location while the application is actively using it*/
     pub const hipMemAllocationTypePinned: hipMemAllocationType = hipMemAllocationType(1);
 }
 impl hipMemAllocationType {
     /** This allocation type is 'pinned', i.e. cannot migrate from its current
- location while the application is actively using it*/
-    pub const hipMemAllocationTypeMax: hipMemAllocationType = hipMemAllocationType(
-        2147483647,
-    );
+    location while the application is actively using it*/
+    pub const hipMemAllocationTypeMax: hipMemAllocationType = hipMemAllocationType(2147483647);
 }
 #[repr(transparent)]
 /// Defines the allocation types
@@ -3064,27 +2618,20 @@ impl hipMemAllocationType {
 pub struct hipMemAllocationType(pub ::core::ffi::c_uint);
 impl hipMemAllocationHandleType {
     ///< Does not allow any export mechanism
-    pub const hipMemHandleTypeNone: hipMemAllocationHandleType = hipMemAllocationHandleType(
-        0,
-    );
+    pub const hipMemHandleTypeNone: hipMemAllocationHandleType = hipMemAllocationHandleType(0);
 }
 impl hipMemAllocationHandleType {
     ///< Allows a file descriptor for exporting. Permitted only on POSIX systems
-    pub const hipMemHandleTypePosixFileDescriptor: hipMemAllocationHandleType = hipMemAllocationHandleType(
-        1,
-    );
+    pub const hipMemHandleTypePosixFileDescriptor: hipMemAllocationHandleType =
+        hipMemAllocationHandleType(1);
 }
 impl hipMemAllocationHandleType {
     ///< Allows a Win32 NT handle for exporting. (HANDLE)
-    pub const hipMemHandleTypeWin32: hipMemAllocationHandleType = hipMemAllocationHandleType(
-        2,
-    );
+    pub const hipMemHandleTypeWin32: hipMemAllocationHandleType = hipMemAllocationHandleType(2);
 }
 impl hipMemAllocationHandleType {
     ///< Allows a Win32 KMT handle for exporting. (D3DKMT_HANDLE)
-    pub const hipMemHandleTypeWin32Kmt: hipMemAllocationHandleType = hipMemAllocationHandleType(
-        4,
-    );
+    pub const hipMemHandleTypeWin32Kmt: hipMemAllocationHandleType = hipMemAllocationHandleType(4);
 }
 #[repr(transparent)]
 /** Flags for specifying handle types for memory pool allocations
@@ -3173,14 +2720,10 @@ impl hipJitOption {
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipJitOption(pub ::core::ffi::c_uint);
 impl hipFuncAttribute {
-    pub const hipFuncAttributeMaxDynamicSharedMemorySize: hipFuncAttribute = hipFuncAttribute(
-        8,
-    );
+    pub const hipFuncAttributeMaxDynamicSharedMemorySize: hipFuncAttribute = hipFuncAttribute(8);
 }
 impl hipFuncAttribute {
-    pub const hipFuncAttributePreferredSharedMemoryCarveout: hipFuncAttribute = hipFuncAttribute(
-        9,
-    );
+    pub const hipFuncAttributePreferredSharedMemoryCarveout: hipFuncAttribute = hipFuncAttribute(9);
 }
 impl hipFuncAttribute {
     pub const hipFuncAttributeMax: hipFuncAttribute = hipFuncAttribute(10);
@@ -3215,12 +2758,12 @@ impl hipSharedMemConfig {
 }
 impl hipSharedMemConfig {
     /**< Shared mem is banked at 4-bytes intervals and performs best
-< when adjacent threads access data 4 bytes apart.*/
+    < when adjacent threads access data 4 bytes apart.*/
     pub const hipSharedMemBankSizeFourByte: hipSharedMemConfig = hipSharedMemConfig(1);
 }
 impl hipSharedMemConfig {
     /**< Shared mem is banked at 8-byte intervals and performs best
-< when adjacent threads access data 4 bytes apart.*/
+    < when adjacent threads access data 4 bytes apart.*/
     pub const hipSharedMemBankSizeEightByte: hipSharedMemConfig = hipSharedMemConfig(2);
 }
 #[repr(transparent)]
@@ -3285,44 +2828,36 @@ pub struct hipFunctionLaunchParams_t {
 /// struct hipFunctionLaunchParams_t
 pub type hipFunctionLaunchParams = hipFunctionLaunchParams_t;
 impl hipExternalMemoryHandleType_enum {
-    pub const hipExternalMemoryHandleTypeOpaqueFd: hipExternalMemoryHandleType_enum = hipExternalMemoryHandleType_enum(
-        1,
-    );
+    pub const hipExternalMemoryHandleTypeOpaqueFd: hipExternalMemoryHandleType_enum =
+        hipExternalMemoryHandleType_enum(1);
 }
 impl hipExternalMemoryHandleType_enum {
-    pub const hipExternalMemoryHandleTypeOpaqueWin32: hipExternalMemoryHandleType_enum = hipExternalMemoryHandleType_enum(
-        2,
-    );
+    pub const hipExternalMemoryHandleTypeOpaqueWin32: hipExternalMemoryHandleType_enum =
+        hipExternalMemoryHandleType_enum(2);
 }
 impl hipExternalMemoryHandleType_enum {
-    pub const hipExternalMemoryHandleTypeOpaqueWin32Kmt: hipExternalMemoryHandleType_enum = hipExternalMemoryHandleType_enum(
-        3,
-    );
+    pub const hipExternalMemoryHandleTypeOpaqueWin32Kmt: hipExternalMemoryHandleType_enum =
+        hipExternalMemoryHandleType_enum(3);
 }
 impl hipExternalMemoryHandleType_enum {
-    pub const hipExternalMemoryHandleTypeD3D12Heap: hipExternalMemoryHandleType_enum = hipExternalMemoryHandleType_enum(
-        4,
-    );
+    pub const hipExternalMemoryHandleTypeD3D12Heap: hipExternalMemoryHandleType_enum =
+        hipExternalMemoryHandleType_enum(4);
 }
 impl hipExternalMemoryHandleType_enum {
-    pub const hipExternalMemoryHandleTypeD3D12Resource: hipExternalMemoryHandleType_enum = hipExternalMemoryHandleType_enum(
-        5,
-    );
+    pub const hipExternalMemoryHandleTypeD3D12Resource: hipExternalMemoryHandleType_enum =
+        hipExternalMemoryHandleType_enum(5);
 }
 impl hipExternalMemoryHandleType_enum {
-    pub const hipExternalMemoryHandleTypeD3D11Resource: hipExternalMemoryHandleType_enum = hipExternalMemoryHandleType_enum(
-        6,
-    );
+    pub const hipExternalMemoryHandleTypeD3D11Resource: hipExternalMemoryHandleType_enum =
+        hipExternalMemoryHandleType_enum(6);
 }
 impl hipExternalMemoryHandleType_enum {
-    pub const hipExternalMemoryHandleTypeD3D11ResourceKmt: hipExternalMemoryHandleType_enum = hipExternalMemoryHandleType_enum(
-        7,
-    );
+    pub const hipExternalMemoryHandleTypeD3D11ResourceKmt: hipExternalMemoryHandleType_enum =
+        hipExternalMemoryHandleType_enum(7);
 }
 impl hipExternalMemoryHandleType_enum {
-    pub const hipExternalMemoryHandleTypeNvSciBuf: hipExternalMemoryHandleType_enum = hipExternalMemoryHandleType_enum(
-        8,
-    );
+    pub const hipExternalMemoryHandleTypeNvSciBuf: hipExternalMemoryHandleType_enum =
+        hipExternalMemoryHandleType_enum(8);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -3372,54 +2907,44 @@ pub struct hipExternalMemoryMipmappedArrayDesc_st {
 pub type hipExternalMemoryMipmappedArrayDesc = hipExternalMemoryMipmappedArrayDesc_st;
 pub type hipExternalMemory_t = *mut ::core::ffi::c_void;
 impl hipExternalSemaphoreHandleType_enum {
-    pub const hipExternalSemaphoreHandleTypeOpaqueFd: hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(
-        1,
-    );
+    pub const hipExternalSemaphoreHandleTypeOpaqueFd: hipExternalSemaphoreHandleType_enum =
+        hipExternalSemaphoreHandleType_enum(1);
 }
 impl hipExternalSemaphoreHandleType_enum {
-    pub const hipExternalSemaphoreHandleTypeOpaqueWin32: hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(
-        2,
-    );
+    pub const hipExternalSemaphoreHandleTypeOpaqueWin32: hipExternalSemaphoreHandleType_enum =
+        hipExternalSemaphoreHandleType_enum(2);
 }
 impl hipExternalSemaphoreHandleType_enum {
-    pub const hipExternalSemaphoreHandleTypeOpaqueWin32Kmt: hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(
-        3,
-    );
+    pub const hipExternalSemaphoreHandleTypeOpaqueWin32Kmt: hipExternalSemaphoreHandleType_enum =
+        hipExternalSemaphoreHandleType_enum(3);
 }
 impl hipExternalSemaphoreHandleType_enum {
-    pub const hipExternalSemaphoreHandleTypeD3D12Fence: hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(
-        4,
-    );
+    pub const hipExternalSemaphoreHandleTypeD3D12Fence: hipExternalSemaphoreHandleType_enum =
+        hipExternalSemaphoreHandleType_enum(4);
 }
 impl hipExternalSemaphoreHandleType_enum {
-    pub const hipExternalSemaphoreHandleTypeD3D11Fence: hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(
-        5,
-    );
+    pub const hipExternalSemaphoreHandleTypeD3D11Fence: hipExternalSemaphoreHandleType_enum =
+        hipExternalSemaphoreHandleType_enum(5);
 }
 impl hipExternalSemaphoreHandleType_enum {
-    pub const hipExternalSemaphoreHandleTypeNvSciSync: hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(
-        6,
-    );
+    pub const hipExternalSemaphoreHandleTypeNvSciSync: hipExternalSemaphoreHandleType_enum =
+        hipExternalSemaphoreHandleType_enum(6);
 }
 impl hipExternalSemaphoreHandleType_enum {
-    pub const hipExternalSemaphoreHandleTypeKeyedMutex: hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(
-        7,
-    );
+    pub const hipExternalSemaphoreHandleTypeKeyedMutex: hipExternalSemaphoreHandleType_enum =
+        hipExternalSemaphoreHandleType_enum(7);
 }
 impl hipExternalSemaphoreHandleType_enum {
-    pub const hipExternalSemaphoreHandleTypeKeyedMutexKmt: hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(
-        8,
-    );
+    pub const hipExternalSemaphoreHandleTypeKeyedMutexKmt: hipExternalSemaphoreHandleType_enum =
+        hipExternalSemaphoreHandleType_enum(8);
 }
 impl hipExternalSemaphoreHandleType_enum {
-    pub const hipExternalSemaphoreHandleTypeTimelineSemaphoreFd: hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(
-        9,
-    );
+    pub const hipExternalSemaphoreHandleTypeTimelineSemaphoreFd:
+        hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(9);
 }
 impl hipExternalSemaphoreHandleType_enum {
-    pub const hipExternalSemaphoreHandleTypeTimelineSemaphoreWin32: hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(
-        10,
-    );
+    pub const hipExternalSemaphoreHandleTypeTimelineSemaphoreWin32:
+        hipExternalSemaphoreHandleType_enum = hipExternalSemaphoreHandleType_enum(10);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -3516,31 +3041,25 @@ pub struct hipExternalSemaphoreWaitParams_st__bindgen_ty_1__bindgen_ty_3 {
 /// External semaphore wait parameters, compatible with driver type
 pub type hipExternalSemaphoreWaitParams = hipExternalSemaphoreWaitParams_st;
 impl hipGraphicsRegisterFlags {
-    pub const hipGraphicsRegisterFlagsNone: hipGraphicsRegisterFlags = hipGraphicsRegisterFlags(
-        0,
-    );
+    pub const hipGraphicsRegisterFlagsNone: hipGraphicsRegisterFlags = hipGraphicsRegisterFlags(0);
 }
 impl hipGraphicsRegisterFlags {
     ///< HIP will not write to this registered resource
-    pub const hipGraphicsRegisterFlagsReadOnly: hipGraphicsRegisterFlags = hipGraphicsRegisterFlags(
-        1,
-    );
+    pub const hipGraphicsRegisterFlagsReadOnly: hipGraphicsRegisterFlags =
+        hipGraphicsRegisterFlags(1);
 }
 impl hipGraphicsRegisterFlags {
-    pub const hipGraphicsRegisterFlagsWriteDiscard: hipGraphicsRegisterFlags = hipGraphicsRegisterFlags(
-        2,
-    );
+    pub const hipGraphicsRegisterFlagsWriteDiscard: hipGraphicsRegisterFlags =
+        hipGraphicsRegisterFlags(2);
 }
 impl hipGraphicsRegisterFlags {
     ///< HIP will bind this resource to a surface
-    pub const hipGraphicsRegisterFlagsSurfaceLoadStore: hipGraphicsRegisterFlags = hipGraphicsRegisterFlags(
-        4,
-    );
+    pub const hipGraphicsRegisterFlagsSurfaceLoadStore: hipGraphicsRegisterFlags =
+        hipGraphicsRegisterFlags(4);
 }
 impl hipGraphicsRegisterFlags {
-    pub const hipGraphicsRegisterFlagsTextureGather: hipGraphicsRegisterFlags = hipGraphicsRegisterFlags(
-        8,
-    );
+    pub const hipGraphicsRegisterFlagsTextureGather: hipGraphicsRegisterFlags =
+        hipGraphicsRegisterFlags(8);
 }
 #[repr(transparent)]
 /// HIP Access falgs for Interop resources.
@@ -3644,9 +3163,8 @@ impl hipGraphNodeType {
 /// hipGraphNodeType
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipGraphNodeType(pub ::core::ffi::c_uint);
-pub type hipHostFn_t = ::core::option::Option<
-    unsafe extern "C" fn(userData: *mut ::core::ffi::c_void),
->;
+pub type hipHostFn_t =
+    ::core::option::Option<unsafe extern "C" fn(userData: *mut ::core::ffi::c_void)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipHostNodeParams {
@@ -3677,10 +3195,10 @@ pub struct hipMemsetParams {
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipMemAllocNodeParams {
     /**< Pool properties, which contain where
-< the location should reside*/
+    < the location should reside*/
     pub poolProps: hipMemPoolProps,
     /**< The number of memory access descriptors.
-< Must not be bigger than the number of GPUs*/
+    < Must not be bigger than the number of GPUs*/
     pub accessDescs: *const hipMemAccessDesc,
     ///< The number of access descriptors
     pub accessDescCount: usize,
@@ -3712,15 +3230,11 @@ pub struct hipAccessPolicyWindow {
 }
 impl hipLaunchAttributeID {
     ///< Valid for Streams, graph nodes, launches
-    pub const hipLaunchAttributeAccessPolicyWindow: hipLaunchAttributeID = hipLaunchAttributeID(
-        1,
-    );
+    pub const hipLaunchAttributeAccessPolicyWindow: hipLaunchAttributeID = hipLaunchAttributeID(1);
 }
 impl hipLaunchAttributeID {
     ///< Valid for graph nodes, launches
-    pub const hipLaunchAttributeCooperative: hipLaunchAttributeID = hipLaunchAttributeID(
-        2,
-    );
+    pub const hipLaunchAttributeCooperative: hipLaunchAttributeID = hipLaunchAttributeID(2);
 }
 impl hipLaunchAttributeID {
     ///< Valid for graph node, streams, launches
@@ -3735,12 +3249,12 @@ pub struct hipLaunchAttributeID(pub ::core::ffi::c_uint);
 #[derive(Copy, Clone)]
 pub union hipLaunchAttributeValue {
     /**< Value of launch attribute::
-hipLaunchAttributePolicyWindow.*/
+    hipLaunchAttributePolicyWindow.*/
     pub accessPolicyWindow: hipAccessPolicyWindow,
     ///< Value of launch attribute ::hipLaunchAttributeCooperative
     pub cooperative: ::core::ffi::c_int,
     /**< Value of launch attribute :: hipLaunchAttributePriority. Execution
-priority of kernel.*/
+    priority of kernel.*/
     pub priority: ::core::ffi::c_int,
 }
 /// Memset node params
@@ -3762,48 +3276,38 @@ pub struct HIP_MEMSET_NODE_PARAMS {
 }
 impl hipGraphExecUpdateResult {
     ///< The update succeeded
-    pub const hipGraphExecUpdateSuccess: hipGraphExecUpdateResult = hipGraphExecUpdateResult(
-        0,
-    );
+    pub const hipGraphExecUpdateSuccess: hipGraphExecUpdateResult = hipGraphExecUpdateResult(0);
 }
 impl hipGraphExecUpdateResult {
     /**< The update failed for an unexpected reason which is described
-< in the return value of the function*/
-    pub const hipGraphExecUpdateError: hipGraphExecUpdateResult = hipGraphExecUpdateResult(
-        1,
-    );
+    < in the return value of the function*/
+    pub const hipGraphExecUpdateError: hipGraphExecUpdateResult = hipGraphExecUpdateResult(1);
 }
 impl hipGraphExecUpdateResult {
     ///< The update failed because the topology changed
-    pub const hipGraphExecUpdateErrorTopologyChanged: hipGraphExecUpdateResult = hipGraphExecUpdateResult(
-        2,
-    );
+    pub const hipGraphExecUpdateErrorTopologyChanged: hipGraphExecUpdateResult =
+        hipGraphExecUpdateResult(2);
 }
 impl hipGraphExecUpdateResult {
     ///< The update failed because a node type changed
-    pub const hipGraphExecUpdateErrorNodeTypeChanged: hipGraphExecUpdateResult = hipGraphExecUpdateResult(
-        3,
-    );
+    pub const hipGraphExecUpdateErrorNodeTypeChanged: hipGraphExecUpdateResult =
+        hipGraphExecUpdateResult(3);
 }
 impl hipGraphExecUpdateResult {
-    pub const hipGraphExecUpdateErrorFunctionChanged: hipGraphExecUpdateResult = hipGraphExecUpdateResult(
-        4,
-    );
+    pub const hipGraphExecUpdateErrorFunctionChanged: hipGraphExecUpdateResult =
+        hipGraphExecUpdateResult(4);
 }
 impl hipGraphExecUpdateResult {
-    pub const hipGraphExecUpdateErrorParametersChanged: hipGraphExecUpdateResult = hipGraphExecUpdateResult(
-        5,
-    );
+    pub const hipGraphExecUpdateErrorParametersChanged: hipGraphExecUpdateResult =
+        hipGraphExecUpdateResult(5);
 }
 impl hipGraphExecUpdateResult {
-    pub const hipGraphExecUpdateErrorNotSupported: hipGraphExecUpdateResult = hipGraphExecUpdateResult(
-        6,
-    );
+    pub const hipGraphExecUpdateErrorNotSupported: hipGraphExecUpdateResult =
+        hipGraphExecUpdateResult(6);
 }
 impl hipGraphExecUpdateResult {
-    pub const hipGraphExecUpdateErrorUnsupportedFunctionChange: hipGraphExecUpdateResult = hipGraphExecUpdateResult(
-        7,
-    );
+    pub const hipGraphExecUpdateErrorUnsupportedFunctionChange: hipGraphExecUpdateResult =
+        hipGraphExecUpdateResult(7);
 }
 #[repr(transparent)]
 /// Graph execution update result
@@ -3813,78 +3317,60 @@ impl hipStreamCaptureMode {
     pub const hipStreamCaptureModeGlobal: hipStreamCaptureMode = hipStreamCaptureMode(0);
 }
 impl hipStreamCaptureMode {
-    pub const hipStreamCaptureModeThreadLocal: hipStreamCaptureMode = hipStreamCaptureMode(
-        1,
-    );
+    pub const hipStreamCaptureModeThreadLocal: hipStreamCaptureMode = hipStreamCaptureMode(1);
 }
 impl hipStreamCaptureMode {
-    pub const hipStreamCaptureModeRelaxed: hipStreamCaptureMode = hipStreamCaptureMode(
-        2,
-    );
+    pub const hipStreamCaptureModeRelaxed: hipStreamCaptureMode = hipStreamCaptureMode(2);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipStreamCaptureMode(pub ::core::ffi::c_uint);
 impl hipStreamCaptureStatus {
     ///< Stream is not capturing
-    pub const hipStreamCaptureStatusNone: hipStreamCaptureStatus = hipStreamCaptureStatus(
-        0,
-    );
+    pub const hipStreamCaptureStatusNone: hipStreamCaptureStatus = hipStreamCaptureStatus(0);
 }
 impl hipStreamCaptureStatus {
     ///< Stream is actively capturing
-    pub const hipStreamCaptureStatusActive: hipStreamCaptureStatus = hipStreamCaptureStatus(
-        1,
-    );
+    pub const hipStreamCaptureStatusActive: hipStreamCaptureStatus = hipStreamCaptureStatus(1);
 }
 impl hipStreamCaptureStatus {
     /**< Stream is part of a capture sequence that has been
-< invalidated, but not terminated*/
-    pub const hipStreamCaptureStatusInvalidated: hipStreamCaptureStatus = hipStreamCaptureStatus(
-        2,
-    );
+    < invalidated, but not terminated*/
+    pub const hipStreamCaptureStatusInvalidated: hipStreamCaptureStatus = hipStreamCaptureStatus(2);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipStreamCaptureStatus(pub ::core::ffi::c_uint);
 impl hipStreamUpdateCaptureDependenciesFlags {
     ///< Add new nodes to the dependency set
-    pub const hipStreamAddCaptureDependencies: hipStreamUpdateCaptureDependenciesFlags = hipStreamUpdateCaptureDependenciesFlags(
-        0,
-    );
+    pub const hipStreamAddCaptureDependencies: hipStreamUpdateCaptureDependenciesFlags =
+        hipStreamUpdateCaptureDependenciesFlags(0);
 }
 impl hipStreamUpdateCaptureDependenciesFlags {
     ///< Replace the dependency set with the new nodes
-    pub const hipStreamSetCaptureDependencies: hipStreamUpdateCaptureDependenciesFlags = hipStreamUpdateCaptureDependenciesFlags(
-        1,
-    );
+    pub const hipStreamSetCaptureDependencies: hipStreamUpdateCaptureDependenciesFlags =
+        hipStreamUpdateCaptureDependenciesFlags(1);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipStreamUpdateCaptureDependenciesFlags(pub ::core::ffi::c_uint);
 impl hipGraphMemAttributeType {
     ///< Amount of memory, in bytes, currently associated with graphs
-    pub const hipGraphMemAttrUsedMemCurrent: hipGraphMemAttributeType = hipGraphMemAttributeType(
-        0,
-    );
+    pub const hipGraphMemAttrUsedMemCurrent: hipGraphMemAttributeType = hipGraphMemAttributeType(0);
 }
 impl hipGraphMemAttributeType {
     ///< High watermark of memory, in bytes, associated with graphs since the last time.
-    pub const hipGraphMemAttrUsedMemHigh: hipGraphMemAttributeType = hipGraphMemAttributeType(
-        1,
-    );
+    pub const hipGraphMemAttrUsedMemHigh: hipGraphMemAttributeType = hipGraphMemAttributeType(1);
 }
 impl hipGraphMemAttributeType {
     ///< Amount of memory, in bytes, currently allocated for graphs.
-    pub const hipGraphMemAttrReservedMemCurrent: hipGraphMemAttributeType = hipGraphMemAttributeType(
-        2,
-    );
+    pub const hipGraphMemAttrReservedMemCurrent: hipGraphMemAttributeType =
+        hipGraphMemAttributeType(2);
 }
 impl hipGraphMemAttributeType {
     ///< High watermark of memory, in bytes, currently allocated for graphs
-    pub const hipGraphMemAttrReservedMemHigh: hipGraphMemAttributeType = hipGraphMemAttributeType(
-        3,
-    );
+    pub const hipGraphMemAttrReservedMemHigh: hipGraphMemAttributeType =
+        hipGraphMemAttributeType(3);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -3898,126 +3384,100 @@ impl hipUserObjectFlags {
 pub struct hipUserObjectFlags(pub ::core::ffi::c_uint);
 impl hipUserObjectRetainFlags {
     ///< Add new reference or retain.
-    pub const hipGraphUserObjectMove: hipUserObjectRetainFlags = hipUserObjectRetainFlags(
-        1,
-    );
+    pub const hipGraphUserObjectMove: hipUserObjectRetainFlags = hipUserObjectRetainFlags(1);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipUserObjectRetainFlags(pub ::core::ffi::c_uint);
 impl hipGraphInstantiateFlags {
-    pub const hipGraphInstantiateFlagAutoFreeOnLaunch: hipGraphInstantiateFlags = hipGraphInstantiateFlags(
-        1,
-    );
+    pub const hipGraphInstantiateFlagAutoFreeOnLaunch: hipGraphInstantiateFlags =
+        hipGraphInstantiateFlags(1);
 }
 impl hipGraphInstantiateFlags {
-    pub const hipGraphInstantiateFlagUpload: hipGraphInstantiateFlags = hipGraphInstantiateFlags(
-        2,
-    );
+    pub const hipGraphInstantiateFlagUpload: hipGraphInstantiateFlags = hipGraphInstantiateFlags(2);
 }
 impl hipGraphInstantiateFlags {
-    pub const hipGraphInstantiateFlagDeviceLaunch: hipGraphInstantiateFlags = hipGraphInstantiateFlags(
-        4,
-    );
+    pub const hipGraphInstantiateFlagDeviceLaunch: hipGraphInstantiateFlags =
+        hipGraphInstantiateFlags(4);
 }
 impl hipGraphInstantiateFlags {
-    pub const hipGraphInstantiateFlagUseNodePriority: hipGraphInstantiateFlags = hipGraphInstantiateFlags(
-        8,
-    );
+    pub const hipGraphInstantiateFlagUseNodePriority: hipGraphInstantiateFlags =
+        hipGraphInstantiateFlags(8);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipGraphInstantiateFlags(pub ::core::ffi::c_uint);
 impl hipGraphDebugDotFlags {
-    pub const hipGraphDebugDotFlagsVerbose: hipGraphDebugDotFlags = hipGraphDebugDotFlags(
-        1,
-    );
+    pub const hipGraphDebugDotFlagsVerbose: hipGraphDebugDotFlags = hipGraphDebugDotFlags(1);
 }
 impl hipGraphDebugDotFlags {
     ///< Adds hipKernelNodeParams to output
-    pub const hipGraphDebugDotFlagsKernelNodeParams: hipGraphDebugDotFlags = hipGraphDebugDotFlags(
-        4,
-    );
+    pub const hipGraphDebugDotFlagsKernelNodeParams: hipGraphDebugDotFlags =
+        hipGraphDebugDotFlags(4);
 }
 impl hipGraphDebugDotFlags {
     ///< Adds hipMemcpy3DParms to output
-    pub const hipGraphDebugDotFlagsMemcpyNodeParams: hipGraphDebugDotFlags = hipGraphDebugDotFlags(
-        8,
-    );
+    pub const hipGraphDebugDotFlagsMemcpyNodeParams: hipGraphDebugDotFlags =
+        hipGraphDebugDotFlags(8);
 }
 impl hipGraphDebugDotFlags {
     ///< Adds hipMemsetParams to output
-    pub const hipGraphDebugDotFlagsMemsetNodeParams: hipGraphDebugDotFlags = hipGraphDebugDotFlags(
-        16,
-    );
+    pub const hipGraphDebugDotFlagsMemsetNodeParams: hipGraphDebugDotFlags =
+        hipGraphDebugDotFlags(16);
 }
 impl hipGraphDebugDotFlags {
     ///< Adds hipHostNodeParams to output
-    pub const hipGraphDebugDotFlagsHostNodeParams: hipGraphDebugDotFlags = hipGraphDebugDotFlags(
-        32,
-    );
+    pub const hipGraphDebugDotFlagsHostNodeParams: hipGraphDebugDotFlags =
+        hipGraphDebugDotFlags(32);
 }
 impl hipGraphDebugDotFlags {
-    pub const hipGraphDebugDotFlagsEventNodeParams: hipGraphDebugDotFlags = hipGraphDebugDotFlags(
-        64,
-    );
+    pub const hipGraphDebugDotFlagsEventNodeParams: hipGraphDebugDotFlags =
+        hipGraphDebugDotFlags(64);
 }
 impl hipGraphDebugDotFlags {
-    pub const hipGraphDebugDotFlagsExtSemasSignalNodeParams: hipGraphDebugDotFlags = hipGraphDebugDotFlags(
-        128,
-    );
+    pub const hipGraphDebugDotFlagsExtSemasSignalNodeParams: hipGraphDebugDotFlags =
+        hipGraphDebugDotFlags(128);
 }
 impl hipGraphDebugDotFlags {
-    pub const hipGraphDebugDotFlagsExtSemasWaitNodeParams: hipGraphDebugDotFlags = hipGraphDebugDotFlags(
-        256,
-    );
+    pub const hipGraphDebugDotFlagsExtSemasWaitNodeParams: hipGraphDebugDotFlags =
+        hipGraphDebugDotFlags(256);
 }
 impl hipGraphDebugDotFlags {
-    pub const hipGraphDebugDotFlagsKernelNodeAttributes: hipGraphDebugDotFlags = hipGraphDebugDotFlags(
-        512,
-    );
+    pub const hipGraphDebugDotFlagsKernelNodeAttributes: hipGraphDebugDotFlags =
+        hipGraphDebugDotFlags(512);
 }
 impl hipGraphDebugDotFlags {
-    pub const hipGraphDebugDotFlagsHandles: hipGraphDebugDotFlags = hipGraphDebugDotFlags(
-        1024,
-    );
+    pub const hipGraphDebugDotFlagsHandles: hipGraphDebugDotFlags = hipGraphDebugDotFlags(1024);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipGraphDebugDotFlags(pub ::core::ffi::c_uint);
 impl hipGraphInstantiateResult {
     ///< Instantiation Success
-    pub const hipGraphInstantiateSuccess: hipGraphInstantiateResult = hipGraphInstantiateResult(
-        0,
-    );
+    pub const hipGraphInstantiateSuccess: hipGraphInstantiateResult = hipGraphInstantiateResult(0);
 }
 impl hipGraphInstantiateResult {
     /**< Instantiation failed for an
-unexpected reason which is described in the return value of the function*/
-    pub const hipGraphInstantiateError: hipGraphInstantiateResult = hipGraphInstantiateResult(
-        1,
-    );
+    unexpected reason which is described in the return value of the function*/
+    pub const hipGraphInstantiateError: hipGraphInstantiateResult = hipGraphInstantiateResult(1);
 }
 impl hipGraphInstantiateResult {
     /**< Instantiation failed due
-to invalid structure, such as cycles*/
-    pub const hipGraphInstantiateInvalidStructure: hipGraphInstantiateResult = hipGraphInstantiateResult(
-        2,
-    );
+    to invalid structure, such as cycles*/
+    pub const hipGraphInstantiateInvalidStructure: hipGraphInstantiateResult =
+        hipGraphInstantiateResult(2);
 }
 impl hipGraphInstantiateResult {
     /**< Instantiation for device launch failed
-because the graph contained an unsupported operation*/
-    pub const hipGraphInstantiateNodeOperationNotSupported: hipGraphInstantiateResult = hipGraphInstantiateResult(
-        3,
-    );
+    because the graph contained an unsupported operation*/
+    pub const hipGraphInstantiateNodeOperationNotSupported: hipGraphInstantiateResult =
+        hipGraphInstantiateResult(3);
 }
 impl hipGraphInstantiateResult {
     /**< Instantiation for device launch failed
-due to the nodes belonging to different contexts*/
-    pub const hipGraphInstantiateMultipleDevicesNotSupported: hipGraphInstantiateResult = hipGraphInstantiateResult(
-        4,
-    );
+    due to the nodes belonging to different contexts*/
+    pub const hipGraphInstantiateMultipleDevicesNotSupported: hipGraphInstantiateResult =
+        hipGraphInstantiateResult(4);
 }
 #[repr(transparent)]
 /// hipGraphInstantiateWithParams results
@@ -4032,7 +3492,7 @@ pub struct hipGraphInstantiateParams {
     ///< Instantiation flags
     pub flags: ::core::ffi::c_ulonglong,
     /**< Whether instantiation was successful.
-If it failed, the reason why*/
+    If it failed, the reason why*/
     pub result_out: hipGraphInstantiateResult,
     ///< Upload stream
     pub uploadStream: hipStream_t,
@@ -4086,15 +3546,13 @@ pub struct ihipMemGenericAllocationHandle {
 pub type hipMemGenericAllocationHandle_t = *mut ihipMemGenericAllocationHandle;
 impl hipMemAllocationGranularity_flags {
     ///< Minimum granularity
-    pub const hipMemAllocationGranularityMinimum: hipMemAllocationGranularity_flags = hipMemAllocationGranularity_flags(
-        0,
-    );
+    pub const hipMemAllocationGranularityMinimum: hipMemAllocationGranularity_flags =
+        hipMemAllocationGranularity_flags(0);
 }
 impl hipMemAllocationGranularity_flags {
     ///< Recommended granularity for performance
-    pub const hipMemAllocationGranularityRecommended: hipMemAllocationGranularity_flags = hipMemAllocationGranularity_flags(
-        1,
-    );
+    pub const hipMemAllocationGranularityRecommended: hipMemAllocationGranularity_flags =
+        hipMemAllocationGranularity_flags(1);
 }
 #[repr(transparent)]
 /// Flags for granularity
@@ -4122,15 +3580,13 @@ impl hipMemOperationType {
 pub struct hipMemOperationType(pub ::core::ffi::c_uint);
 impl hipArraySparseSubresourceType {
     ///< Sparse level
-    pub const hipArraySparseSubresourceTypeSparseLevel: hipArraySparseSubresourceType = hipArraySparseSubresourceType(
-        0,
-    );
+    pub const hipArraySparseSubresourceTypeSparseLevel: hipArraySparseSubresourceType =
+        hipArraySparseSubresourceType(0);
 }
 impl hipArraySparseSubresourceType {
     ///< Miptail
-    pub const hipArraySparseSubresourceTypeMiptail: hipArraySparseSubresourceType = hipArraySparseSubresourceType(
-        1,
-    );
+    pub const hipArraySparseSubresourceTypeMiptail: hipArraySparseSubresourceType =
+        hipArraySparseSubresourceType(1);
 }
 #[repr(transparent)]
 /// Subresource types for sparse arrays
@@ -4223,7 +3679,7 @@ pub struct hipMemcpyNodeParams {
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipChildGraphNodeParams {
     /**< Either the child graph to clone into the node, or
-< a handle to the graph possesed by the node used during query*/
+    < a handle to the graph possesed by the node used during query*/
     pub graph: hipGraph_t,
 }
 /// Event record node params
@@ -4273,14 +3729,11 @@ pub union hipGraphNodeParams__bindgen_ty_1 {
     pub free: hipMemFreeNodeParams,
 }
 impl hipGraphDependencyType {
-    pub const hipGraphDependencyTypeDefault: hipGraphDependencyType = hipGraphDependencyType(
-        0,
-    );
+    pub const hipGraphDependencyTypeDefault: hipGraphDependencyType = hipGraphDependencyType(0);
 }
 impl hipGraphDependencyType {
-    pub const hipGraphDependencyTypeProgrammatic: hipGraphDependencyType = hipGraphDependencyType(
-        1,
-    );
+    pub const hipGraphDependencyTypeProgrammatic: hipGraphDependencyType =
+        hipGraphDependencyType(1);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -4289,12 +3742,12 @@ pub struct hipGraphDependencyType(pub ::core::ffi::c_uint);
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct hipGraphEdgeData {
     /**< This indicates when the dependency is triggered from the upstream node on the
-< edge. The meaning is specfic to the node type. A value of 0 in all cases
-< means full completion of the upstream node, with memory visibility to the
-< downstream node or portion thereof (indicated by to_port). Only kernel nodes
-< define non-zero ports. A kernel node can use the following output port types:
-< hipGraphKernelNodePortDefault, hipGraphKernelNodePortProgrammatic, or
-< hipGraphKernelNodePortLaunchCompletion.*/
+    < edge. The meaning is specfic to the node type. A value of 0 in all cases
+    < means full completion of the upstream node, with memory visibility to the
+    < downstream node or portion thereof (indicated by to_port). Only kernel nodes
+    < define non-zero ports. A kernel node can use the following output port types:
+    < hipGraphKernelNodePortDefault, hipGraphKernelNodePortProgrammatic, or
+    < hipGraphKernelNodePortLaunchCompletion.*/
     pub from_port: ::core::ffi::c_uchar,
     ///< These bytes are unused and must be zeroed
     pub reserved: [::core::ffi::c_uchar; 5usize],
@@ -4312,55 +3765,52 @@ extern "C" {
     #[must_use]
     /** @brief Returns the approximate HIP driver version.
 
- @param [out] driverVersion driver version
+    @param [out] driverVersion driver version
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning The HIP feature set does not correspond to an exact CUDA SDK driver revision.
- This function always set *driverVersion to 4 as an approximation though HIP supports
- some features which were introduced in later CUDA SDK revisions.
- HIP apps code should not rely on the driver revision number here and should
- use arch feature flags to test device capabilities or conditional compilation.
+    @warning The HIP feature set does not correspond to an exact CUDA SDK driver revision.
+    This function always set *driverVersion to 4 as an approximation though HIP supports
+    some features which were introduced in later CUDA SDK revisions.
+    HIP apps code should not rely on the driver revision number here and should
+    use arch feature flags to test device capabilities or conditional compilation.
 
- @see hipRuntimeGetVersion*/
+    @see hipRuntimeGetVersion*/
     pub fn hipDriverGetVersion(driverVersion: *mut ::core::ffi::c_int) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Returns the approximate HIP Runtime version.
 
- @param [out] runtimeVersion HIP runtime version
+    @param [out] runtimeVersion HIP runtime version
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning The version definition of HIP runtime is different from CUDA.
- On AMD platform, the function returns HIP runtime version,
- while on NVIDIA platform, it returns CUDA runtime version.
- And there is no mapping/correlation between HIP version and CUDA version.
+    @warning The version definition of HIP runtime is different from CUDA.
+    On AMD platform, the function returns HIP runtime version,
+    while on NVIDIA platform, it returns CUDA runtime version.
+    And there is no mapping/correlation between HIP version and CUDA version.
 
- @see hipDriverGetVersion*/
+    @see hipDriverGetVersion*/
     pub fn hipRuntimeGetVersion(runtimeVersion: *mut ::core::ffi::c_int) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Returns a handle to a compute device
- @param [out] device Handle of device
- @param [in] ordinal Device ordinal
+    @param [out] device Handle of device
+    @param [in] ordinal Device ordinal
 
- @returns #hipSuccess, #hipErrorInvalidDevice*/
-    pub fn hipDeviceGet(
-        device: *mut hipDevice_t,
-        ordinal: ::core::ffi::c_int,
-    ) -> hipError_t;
+    @returns #hipSuccess, #hipErrorInvalidDevice*/
+    pub fn hipDeviceGet(device: *mut hipDevice_t, ordinal: ::core::ffi::c_int) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Returns the compute capability of the device
- @param [out] major Major compute capability version number
- @param [out] minor Minor compute capability version number
- @param [in] device Device ordinal
+    @param [out] major Major compute capability version number
+    @param [out] minor Minor compute capability version number
+    @param [in] device Device ordinal
 
- @returns #hipSuccess, #hipErrorInvalidDevice*/
+    @returns #hipSuccess, #hipErrorInvalidDevice*/
     pub fn hipDeviceComputeCapability(
         major: *mut ::core::ffi::c_int,
         minor: *mut ::core::ffi::c_int,
@@ -4370,11 +3820,11 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Returns an identifer string for the device.
- @param [out] name String of the device name
- @param [in] len Maximum length of string to store in device name
- @param [in] device Device ordinal
+    @param [out] name String of the device name
+    @param [in] len Maximum length of string to store in device name
+    @param [in] device Device ordinal
 
- @returns #hipSuccess, #hipErrorInvalidDevice*/
+    @returns #hipSuccess, #hipErrorInvalidDevice*/
     pub fn hipDeviceGetName(
         name: *mut ::core::ffi::c_char,
         len: ::core::ffi::c_int,
@@ -4384,25 +3834,25 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Returns an UUID for the device.[BETA]
- @param [out] uuid UUID for the device
- @param [in] device device ordinal
+    @param [out] uuid UUID for the device
+    @param [in] device device ordinal
 
- @warning This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue, #hipErrorNotInitialized,
- #hipErrorDeinitialized*/
+    @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue, #hipErrorNotInitialized,
+    #hipErrorDeinitialized*/
     pub fn hipDeviceGetUuid(uuid: *mut hipUUID, device: hipDevice_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Returns a value for attribute of link between two devices
- @param [out] value Pointer of the value for the attrubute
- @param [in] attr enum of hipDeviceP2PAttr to query
- @param [in] srcDevice The source device of the link
- @param [in] dstDevice The destination device of the link
+    @param [out] value Pointer of the value for the attrubute
+    @param [in] attr enum of hipDeviceP2PAttr to query
+    @param [in] srcDevice The source device of the link
+    @param [in] dstDevice The destination device of the link
 
- @returns #hipSuccess, #hipErrorInvalidDevice*/
+    @returns #hipSuccess, #hipErrorInvalidDevice*/
     pub fn hipDeviceGetP2PAttribute(
         value: *mut ::core::ffi::c_int,
         attr: hipDeviceP2PAttr,
@@ -4413,11 +3863,11 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Returns a PCI Bus Id string for the device, overloaded to take int device ID.
- @param [out] pciBusId The string of PCI Bus Id format for the device
- @param [in] len Maximum length of string
- @param [in] device The device ordinal
+    @param [out] pciBusId The string of PCI Bus Id format for the device
+    @param [in] len Maximum length of string
+    @param [in] device The device ordinal
 
- @returns #hipSuccess, #hipErrorInvalidDevice*/
+    @returns #hipSuccess, #hipErrorInvalidDevice*/
     pub fn hipDeviceGetPCIBusId(
         pciBusId: *mut ::core::ffi::c_char,
         len: ::core::ffi::c_int,
@@ -4427,10 +3877,10 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Returns a handle to a compute device.
- @param [out] device The handle of the device
- @param [in] pciBusId The string of PCI Bus Id for the device
+    @param [out] device The handle of the device
+    @param [in] pciBusId The string of PCI Bus Id for the device
 
- @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue*/
     pub fn hipDeviceGetByPCIBusId(
         device: *mut ::core::ffi::c_int,
         pciBusId: *const ::core::ffi::c_char,
@@ -4439,10 +3889,10 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Returns the total amount of memory on the device.
- @param [out] bytes The size of memory in bytes, on the device
- @param [in] device The ordinal of the device
+    @param [out] bytes The size of memory in bytes, on the device
+    @param [in] device The ordinal of the device
 
- @returns #hipSuccess, #hipErrorInvalidDevice*/
+    @returns #hipSuccess, #hipErrorInvalidDevice*/
     pub fn hipDeviceTotalMem(bytes: *mut usize, device: hipDevice_t) -> hipError_t;
 }
 extern "C" {
@@ -4454,59 +3904,59 @@ extern "C" {
     #[must_use]
     /** @brief The state of current device is discarded and updated to a fresh state.
 
- Calling this function deletes all streams created, memory allocated, kernels running, events
- created. Make sure that no other thread is using the device or streams, memory, kernels, events
- associated with the current device.
+    Calling this function deletes all streams created, memory allocated, kernels running, events
+    created. Make sure that no other thread is using the device or streams, memory, kernels, events
+    associated with the current device.
 
- @returns #hipSuccess
+    @returns #hipSuccess
 
- @see hipDeviceSynchronize*/
+    @see hipDeviceSynchronize*/
     pub fn hipDeviceReset() -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Set default device to be used for subsequent hip API calls from this thread.
 
- @param[in] deviceId Valid device in range 0...hipGetDeviceCount().
+    @param[in] deviceId Valid device in range 0...hipGetDeviceCount().
 
- Sets @p device as the default device for the calling host thread.  Valid device id's are 0...
- (hipGetDeviceCount()-1).
+    Sets @p device as the default device for the calling host thread.  Valid device id's are 0...
+    (hipGetDeviceCount()-1).
 
- Many HIP APIs implicitly use the "default device" :
+    Many HIP APIs implicitly use the "default device" :
 
- - Any device memory subsequently allocated from this host thread (using hipMalloc) will be
- allocated on device.
- - Any streams or events created from this host thread will be associated with device.
- - Any kernels launched from this host thread (using hipLaunchKernel) will be executed on device
- (unless a specific stream is specified, in which case the device associated with that stream will
- be used).
+    - Any device memory subsequently allocated from this host thread (using hipMalloc) will be
+    allocated on device.
+    - Any streams or events created from this host thread will be associated with device.
+    - Any kernels launched from this host thread (using hipLaunchKernel) will be executed on device
+    (unless a specific stream is specified, in which case the device associated with that stream will
+    be used).
 
- This function may be called from any host thread.  Multiple host threads may use the same device.
- This function does no synchronization with the previous or new device, and has very little
- runtime overhead. Applications can use hipSetDevice to quickly switch the default device before
- making a HIP runtime call which uses the default device.
+    This function may be called from any host thread.  Multiple host threads may use the same device.
+    This function does no synchronization with the previous or new device, and has very little
+    runtime overhead. Applications can use hipSetDevice to quickly switch the default device before
+    making a HIP runtime call which uses the default device.
 
- The default device is stored in thread-local-storage for each thread.
- Thread-pool implementations may inherit the default device of the previous thread.  A good
- practice is to always call hipSetDevice at the start of HIP coding sequency to establish a known
- standard device.
+    The default device is stored in thread-local-storage for each thread.
+    Thread-pool implementations may inherit the default device of the previous thread.  A good
+    practice is to always call hipSetDevice at the start of HIP coding sequency to establish a known
+    standard device.
 
- @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorNoDevice
+    @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorNoDevice
 
- @see #hipGetDevice, #hipGetDeviceCount*/
+    @see #hipGetDevice, #hipGetDeviceCount*/
     pub fn hipSetDevice(deviceId: ::core::ffi::c_int) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Set a list of devices that can be used.
 
- @param[in] device_arr List of devices to try
- @param[in] len Number of devices in specified list
+     @param[in] device_arr List of devices to try
+     @param[in] len Number of devices in specified list
 
- @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
- @see #hipGetDevice, #hipGetDeviceCount. #hipSetDevice. #hipGetDeviceProperties. #hipSetDeviceFlags. #hipChooseDevice
-*/
+     @see #hipGetDevice, #hipGetDeviceCount. #hipSetDevice. #hipGetDeviceProperties. #hipSetDeviceFlags. #hipChooseDevice
+    */
     pub fn hipSetValidDevices(
         device_arr: *mut ::core::ffi::c_int,
         len: ::core::ffi::c_int,
@@ -4516,40 +3966,40 @@ extern "C" {
     #[must_use]
     /** @brief Return the default device id for the calling host thread.
 
- @param [out] deviceId *device is written with the default device
+    @param [out] deviceId *device is written with the default device
 
- HIP maintains an default device for each thread using thread-local-storage.
- This device is used implicitly for HIP runtime APIs called by this thread.
- hipGetDevice returns in * @p device the default device for the calling host thread.
+    HIP maintains an default device for each thread using thread-local-storage.
+    This device is used implicitly for HIP runtime APIs called by this thread.
+    hipGetDevice returns in * @p device the default device for the calling host thread.
 
- @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
- @see hipSetDevice, hipGetDevicesizeBytes*/
+    @see hipSetDevice, hipGetDevicesizeBytes*/
     pub fn hipGetDevice(deviceId: *mut ::core::ffi::c_int) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Return number of compute-capable devices.
 
- @param [out] count Returns number of compute-capable devices.
+    @param [out] count Returns number of compute-capable devices.
 
- @returns #hipSuccess, #hipErrorNoDevice
+    @returns #hipSuccess, #hipErrorNoDevice
 
 
- Returns in @p *count the number of devices that have ability to run compute commands.  If there
- are no such devices, then @ref hipGetDeviceCount will return #hipErrorNoDevice. If 1 or more
- devices can be found, then hipGetDeviceCount returns #hipSuccess.*/
+    Returns in @p *count the number of devices that have ability to run compute commands.  If there
+    are no such devices, then @ref hipGetDeviceCount will return #hipErrorNoDevice. If 1 or more
+    devices can be found, then hipGetDeviceCount returns #hipSuccess.*/
     pub fn hipGetDeviceCount(count: *mut ::core::ffi::c_int) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Query for a specific device attribute.
 
- @param [out] pi pointer to value to return
- @param [in] attr attribute to query
- @param [in] deviceId which device to query for information
+    @param [out] pi pointer to value to return
+    @param [in] attr attribute to query
+    @param [in] deviceId which device to query for information
 
- @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue*/
     pub fn hipDeviceGetAttribute(
         pi: *mut ::core::ffi::c_int,
         attr: hipDeviceAttribute_t,
@@ -4560,16 +4010,16 @@ extern "C" {
     #[must_use]
     /** @brief Returns the default memory pool of the specified device
 
- @param [out] mem_pool Default memory pool to return
- @param [in] device    Device index for query the default memory pool
+    @param [out] mem_pool Default memory pool to return
+    @param [in] device    Device index for query the default memory pool
 
- @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue, #hipErrorNotSupported
+    @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @see hipDeviceGetDefaultMemPool, hipMallocAsync, hipMemPoolTrimTo, hipMemPoolGetAttribute,
- hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
+    @see hipDeviceGetDefaultMemPool, hipMallocAsync, hipMemPoolTrimTo, hipMemPoolGetAttribute,
+    hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipDeviceGetDefaultMemPool(
         mem_pool: *mut hipMemPool_t,
         device: ::core::ffi::c_int,
@@ -4579,47 +4029,44 @@ extern "C" {
     #[must_use]
     /** @brief Sets the current memory pool of a device
 
- The memory pool must be local to the specified device.
- @p hipMallocAsync allocates from the current mempool of the provided stream's device.
- By default, a device's current memory pool is its default memory pool.
+    The memory pool must be local to the specified device.
+    @p hipMallocAsync allocates from the current mempool of the provided stream's device.
+    By default, a device's current memory pool is its default memory pool.
 
- @note Use @p hipMallocFromPoolAsync for asynchronous memory allocations from a device
- different than the one the stream runs on.
+    @note Use @p hipMallocFromPoolAsync for asynchronous memory allocations from a device
+    different than the one the stream runs on.
 
- @param [in] device   Device index for the update
- @param [in] mem_pool Memory pool for update as the current on the specified device
+    @param [in] device   Device index for the update
+    @param [in] mem_pool Memory pool for update as the current on the specified device
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDevice, #hipErrorNotSupported
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDevice, #hipErrorNotSupported
 
- @see hipDeviceGetDefaultMemPool, hipMallocAsync, hipMemPoolTrimTo, hipMemPoolGetAttribute,
- hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
+    @see hipDeviceGetDefaultMemPool, hipMallocAsync, hipMemPoolTrimTo, hipMemPoolGetAttribute,
+    hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
-    pub fn hipDeviceSetMemPool(
-        device: ::core::ffi::c_int,
-        mem_pool: hipMemPool_t,
-    ) -> hipError_t;
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
+    pub fn hipDeviceSetMemPool(device: ::core::ffi::c_int, mem_pool: hipMemPool_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Gets the current memory pool for the specified device
 
- Returns the last pool provided to @p hipDeviceSetMemPool for this device
- or the device's default memory pool if @p hipDeviceSetMemPool has never been called.
- By default the current mempool is the default mempool for a device,
- otherwise the returned pool must have been set with @p hipDeviceSetMemPool.
+    Returns the last pool provided to @p hipDeviceSetMemPool for this device
+    or the device's default memory pool if @p hipDeviceSetMemPool has never been called.
+    By default the current mempool is the default mempool for a device,
+    otherwise the returned pool must have been set with @p hipDeviceSetMemPool.
 
- @param [out] mem_pool Current memory pool on the specified device
- @param [in] device    Device index to query the current memory pool
+    @param [out] mem_pool Current memory pool on the specified device
+    @param [in] device    Device index to query the current memory pool
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @see hipDeviceGetDefaultMemPool, hipMallocAsync, hipMemPoolTrimTo, hipMemPoolGetAttribute,
- hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
+    @see hipDeviceGetDefaultMemPool, hipMallocAsync, hipMemPoolTrimTo, hipMemPoolGetAttribute,
+    hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipDeviceGetMemPool(
         mem_pool: *mut hipMemPool_t,
         device: ::core::ffi::c_int,
@@ -4629,15 +4076,15 @@ extern "C" {
     #[must_use]
     /** @brief Returns device properties.
 
- @param [out] prop written with device properties
- @param [in]  deviceId which device to query for information
+    @param [out] prop written with device properties
+    @param [in]  deviceId which device to query for information
 
- @return #hipSuccess, #hipErrorInvalidDevice
- @bug HCC always returns 0 for maxThreadsPerMultiProcessor
- @bug HCC always returns 0 for regsPerBlock
- @bug HCC always returns 0 for l2CacheSize
+    @return #hipSuccess, #hipErrorInvalidDevice
+    @bug HCC always returns 0 for maxThreadsPerMultiProcessor
+    @bug HCC always returns 0 for regsPerBlock
+    @bug HCC always returns 0 for l2CacheSize
 
- Populates hipGetDeviceProperties with information for the specified device.*/
+    Populates hipGetDeviceProperties with information for the specified device.*/
     pub fn hipGetDeviceProperties(
         prop: *mut hipDeviceProp_tR0600,
         deviceId: ::core::ffi::c_int,
@@ -4647,132 +4094,132 @@ extern "C" {
     #[must_use]
     /** @brief Set L1/Shared cache partition.
 
- @param [in] cacheConfig Cache configuration
+     @param [in] cacheConfig Cache configuration
 
- @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorNotSupported
 
- Note: AMD devices do not support reconfigurable cache. This API is not implemented
- on AMD platform. If the function is called, it will return hipErrorNotSupported.
-*/
+     Note: AMD devices do not support reconfigurable cache. This API is not implemented
+     on AMD platform. If the function is called, it will return hipErrorNotSupported.
+    */
     pub fn hipDeviceSetCacheConfig(cacheConfig: hipFuncCache_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Get Cache configuration for a specific Device
 
- @param [out] cacheConfig Pointer of cache configuration
+     @param [out] cacheConfig Pointer of cache configuration
 
- @returns #hipSuccess, #hipErrorNotInitialized
- Note: AMD devices do not support reconfigurable cache. This hint is ignored
- on these architectures.
-*/
+     @returns #hipSuccess, #hipErrorNotInitialized
+     Note: AMD devices do not support reconfigurable cache. This hint is ignored
+     on these architectures.
+    */
     pub fn hipDeviceGetCacheConfig(cacheConfig: *mut hipFuncCache_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Gets resource limits of current device
 
- The function queries the size of limit value, as required by the input enum value hipLimit_t,
- which can be either #hipLimitStackSize, or #hipLimitMallocHeapSize. Any other input as
- default, the function will return #hipErrorUnsupportedLimit.
+     The function queries the size of limit value, as required by the input enum value hipLimit_t,
+     which can be either #hipLimitStackSize, or #hipLimitMallocHeapSize. Any other input as
+     default, the function will return #hipErrorUnsupportedLimit.
 
- @param [out] pValue Returns the size of the limit in bytes
- @param [in]  limit The limit to query
+     @param [out] pValue Returns the size of the limit in bytes
+     @param [in]  limit The limit to query
 
- @returns #hipSuccess, #hipErrorUnsupportedLimit, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorUnsupportedLimit, #hipErrorInvalidValue
+    */
     pub fn hipDeviceGetLimit(pValue: *mut usize, limit: hipLimit_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Sets resource limits of current device.
 
- As the input enum limit,
- #hipLimitStackSize sets the limit value of the stack size on the current GPU device, per thread.
- The limit size can get via hipDeviceGetLimit. The size is in units of 256 dwords, up to the limit
- (128K - 16).
+     As the input enum limit,
+     #hipLimitStackSize sets the limit value of the stack size on the current GPU device, per thread.
+     The limit size can get via hipDeviceGetLimit. The size is in units of 256 dwords, up to the limit
+     (128K - 16).
 
- #hipLimitMallocHeapSize sets the limit value of the heap used by the malloc()/free()
- calls. For limit size, use the #hipDeviceGetLimit API.
+     #hipLimitMallocHeapSize sets the limit value of the heap used by the malloc()/free()
+     calls. For limit size, use the #hipDeviceGetLimit API.
 
- Any other input as default, the funtion will return hipErrorUnsupportedLimit.
+     Any other input as default, the funtion will return hipErrorUnsupportedLimit.
 
- @param [in] limit Enum of hipLimit_t to set
- @param [in] value The size of limit value in bytes
+     @param [in] limit Enum of hipLimit_t to set
+     @param [in] value The size of limit value in bytes
 
- @returns #hipSuccess, #hipErrorUnsupportedLimit, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorUnsupportedLimit, #hipErrorInvalidValue
+    */
     pub fn hipDeviceSetLimit(limit: hipLimit_t, value: usize) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Returns bank width of shared memory for current device
 
- @param [out] pConfig The pointer of the bank width for shared memory
+     @param [out] pConfig The pointer of the bank width for shared memory
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized
 
- Note: AMD devices and some Nvidia GPUS do not support shared cache banking, and the hint is
- ignored on those architectures.
-*/
+     Note: AMD devices and some Nvidia GPUS do not support shared cache banking, and the hint is
+     ignored on those architectures.
+    */
     pub fn hipDeviceGetSharedMemConfig(pConfig: *mut hipSharedMemConfig) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Gets the flags set for current device
 
- @param [out] flags Pointer of the flags
+    @param [out] flags Pointer of the flags
 
- @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue*/
     pub fn hipGetDeviceFlags(flags: *mut ::core::ffi::c_uint) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief The bank width of shared memory on current device is set
 
- @param [in] config Configuration for the bank width of shared memory
+     @param [in] config Configuration for the bank width of shared memory
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized
 
- Note: AMD devices and some Nvidia GPUS do not support shared cache banking, and the hint is
- ignored on those architectures.
-*/
+     Note: AMD devices and some Nvidia GPUS do not support shared cache banking, and the hint is
+     ignored on those architectures.
+    */
     pub fn hipDeviceSetSharedMemConfig(config: hipSharedMemConfig) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief The current device behavior is changed according the flags passed.
 
- @param [in] flags Flag to set on the current device
+     @param [in] flags Flag to set on the current device
 
- The schedule flags impact how HIP waits for the completion of a command running on a device.
- hipDeviceScheduleSpin         : HIP runtime will actively spin in the thread which submitted the
- work until the command completes.  This offers the lowest latency, but will consume a CPU core
- and may increase power. hipDeviceScheduleYield        : The HIP runtime will yield the CPU to
- system so that other tasks can use it.  This may increase latency to detect the completion but
- will consume less power and is friendlier to other tasks in the system.
- hipDeviceScheduleBlockingSync : On ROCm platform, this is a synonym for hipDeviceScheduleYield.
- hipDeviceScheduleAuto         : Use a hueristic to select between Spin and Yield modes.  If the
- number of HIP contexts is greater than the number of logical processors in the system, use Spin
- scheduling.  Else use Yield scheduling.
+     The schedule flags impact how HIP waits for the completion of a command running on a device.
+     hipDeviceScheduleSpin         : HIP runtime will actively spin in the thread which submitted the
+     work until the command completes.  This offers the lowest latency, but will consume a CPU core
+     and may increase power. hipDeviceScheduleYield        : The HIP runtime will yield the CPU to
+     system so that other tasks can use it.  This may increase latency to detect the completion but
+     will consume less power and is friendlier to other tasks in the system.
+     hipDeviceScheduleBlockingSync : On ROCm platform, this is a synonym for hipDeviceScheduleYield.
+     hipDeviceScheduleAuto         : Use a hueristic to select between Spin and Yield modes.  If the
+     number of HIP contexts is greater than the number of logical processors in the system, use Spin
+     scheduling.  Else use Yield scheduling.
 
 
- hipDeviceMapHost              : Allow mapping host memory.  On ROCM, this is always allowed and
- the flag is ignored. hipDeviceLmemResizeToMax      : @warning ROCm silently ignores this flag.
+     hipDeviceMapHost              : Allow mapping host memory.  On ROCM, this is always allowed and
+     the flag is ignored. hipDeviceLmemResizeToMax      : @warning ROCm silently ignores this flag.
 
- @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorSetOnActiveProcess
+     @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorSetOnActiveProcess
 
-*/
+    */
     pub fn hipSetDeviceFlags(flags: ::core::ffi::c_uint) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Device which matches hipDeviceProp_t is returned
 
- @param [out] device Pointer of the device
- @param [in]  prop Pointer of the properties
+    @param [out] device Pointer of the device
+    @param [in]  prop Pointer of the properties
 
- @returns #hipSuccess, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipChooseDeviceR0600(
         device: *mut ::core::ffi::c_int,
         prop: *const hipDeviceProp_tR0600,
@@ -4782,14 +4229,14 @@ extern "C" {
     #[must_use]
     /** @brief Returns the link type and hop count between two devices
 
- @param [in] device1 Ordinal for device1
- @param [in] device2 Ordinal for device2
- @param [out] linktype Returns the link type (See hsa_amd_link_info_type_t) between the two devices
- @param [out] hopcount Returns the hop count between the two devices
+    @param [in] device1 Ordinal for device1
+    @param [in] device2 Ordinal for device2
+    @param [out] linktype Returns the link type (See hsa_amd_link_info_type_t) between the two devices
+    @param [out] hopcount Returns the hop count between the two devices
 
- Queries and returns the HSA link type and the hop count between the two specified devices.
+    Queries and returns the HSA link type and the hop count between the two specified devices.
 
- @returns #hipSuccess, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipExtGetLinkTypeAndHopCount(
         device1: ::core::ffi::c_int,
         device2: ::core::ffi::c_int,
@@ -4800,26 +4247,26 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Gets an interprocess memory handle for an existing device memory
-          allocation
+              allocation
 
- Takes a pointer to the base of an existing device memory allocation created
- with hipMalloc and exports it for use in another process. This is a
- lightweight operation and may be called multiple times on an allocation
- without adverse effects.
+     Takes a pointer to the base of an existing device memory allocation created
+     with hipMalloc and exports it for use in another process. This is a
+     lightweight operation and may be called multiple times on an allocation
+     without adverse effects.
 
- If a region of memory is freed with hipFree and a subsequent call
- to hipMalloc returns memory with the same device address,
- hipIpcGetMemHandle will return a unique handle for the
- new memory.
+     If a region of memory is freed with hipFree and a subsequent call
+     to hipMalloc returns memory with the same device address,
+     hipIpcGetMemHandle will return a unique handle for the
+     new memory.
 
- @param handle - Pointer to user allocated hipIpcMemHandle to return
-                    the handle in.
- @param devPtr - Base pointer to previously allocated device memory
+     @param handle - Pointer to user allocated hipIpcMemHandle to return
+                        the handle in.
+     @param devPtr - Base pointer to previously allocated device memory
 
- @returns #hipSuccess, #hipErrorInvalidHandle, #hipErrorOutOfMemory, #hipErrorMapFailed
+     @returns #hipSuccess, #hipErrorInvalidHandle, #hipErrorOutOfMemory, #hipErrorMapFailed
 
- @note This IPC memory related feature API on Windows may behave differently from Linux.
-*/
+     @note This IPC memory related feature API on Windows may behave differently from Linux.
+    */
     pub fn hipIpcGetMemHandle(
         handle: *mut hipIpcMemHandle_t,
         devPtr: *mut ::core::ffi::c_void,
@@ -4828,38 +4275,38 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Opens an interprocess memory handle exported from another process
-          and returns a device pointer usable in the local process.
+              and returns a device pointer usable in the local process.
 
- Maps memory exported from another process with hipIpcGetMemHandle into
- the current device address space. For contexts on different devices
- hipIpcOpenMemHandle can attempt to enable peer access between the
- devices as if the user called hipDeviceEnablePeerAccess. This behavior is
- controlled by the hipIpcMemLazyEnablePeerAccess flag.
- hipDeviceCanAccessPeer can determine if a mapping is possible.
+     Maps memory exported from another process with hipIpcGetMemHandle into
+     the current device address space. For contexts on different devices
+     hipIpcOpenMemHandle can attempt to enable peer access between the
+     devices as if the user called hipDeviceEnablePeerAccess. This behavior is
+     controlled by the hipIpcMemLazyEnablePeerAccess flag.
+     hipDeviceCanAccessPeer can determine if a mapping is possible.
 
- Contexts that may open hipIpcMemHandles are restricted in the following way.
- hipIpcMemHandles from each device in a given process may only be opened
- by one context per device per other process.
+     Contexts that may open hipIpcMemHandles are restricted in the following way.
+     hipIpcMemHandles from each device in a given process may only be opened
+     by one context per device per other process.
 
- Memory returned from hipIpcOpenMemHandle must be freed with
- hipIpcCloseMemHandle.
+     Memory returned from hipIpcOpenMemHandle must be freed with
+     hipIpcCloseMemHandle.
 
- Calling hipFree on an exported memory region before calling
- hipIpcCloseMemHandle in the importing context will result in undefined
- behavior.
+     Calling hipFree on an exported memory region before calling
+     hipIpcCloseMemHandle in the importing context will result in undefined
+     behavior.
 
- @param devPtr - Returned device pointer
- @param handle - hipIpcMemHandle to open
- @param flags  - Flags for this operation. Must be specified as hipIpcMemLazyEnablePeerAccess
+     @param devPtr - Returned device pointer
+     @param handle - hipIpcMemHandle to open
+     @param flags  - Flags for this operation. Must be specified as hipIpcMemLazyEnablePeerAccess
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidContext,
-  #hipErrorInvalidDevicePointer
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidContext,
+      #hipErrorInvalidDevicePointer
 
- @note During multiple processes, using the same memory handle opened by the current context,
- there is no guarantee that the same device poiter will be returned in @p *devPtr.
- This is diffrent from CUDA.
- @note This IPC memory related feature API on Windows may behave differently from Linux.
-*/
+     @note During multiple processes, using the same memory handle opened by the current context,
+     there is no guarantee that the same device poiter will be returned in @p *devPtr.
+     This is diffrent from CUDA.
+     @note This IPC memory related feature API on Windows may behave differently from Linux.
+    */
     pub fn hipIpcOpenMemHandle(
         devPtr: *mut *mut ::core::ffi::c_void,
         handle: hipIpcMemHandle_t,
@@ -4870,63 +4317,58 @@ extern "C" {
     #[must_use]
     /** @brief Close memory mapped with hipIpcOpenMemHandle
 
- Unmaps memory returnd by hipIpcOpenMemHandle. The original allocation
- in the exporting process as well as imported mappings in other processes
- will be unaffected.
+     Unmaps memory returnd by hipIpcOpenMemHandle. The original allocation
+     in the exporting process as well as imported mappings in other processes
+     will be unaffected.
 
- Any resources used to enable peer access will be freed if this is the
- last mapping using them.
+     Any resources used to enable peer access will be freed if this is the
+     last mapping using them.
 
- @param devPtr - Device pointer returned by hipIpcOpenMemHandle
+     @param devPtr - Device pointer returned by hipIpcOpenMemHandle
 
- @returns #hipSuccess, #hipErrorMapFailed, #hipErrorInvalidHandle
+     @returns #hipSuccess, #hipErrorMapFailed, #hipErrorInvalidHandle
 
- @note This IPC memory related feature API on Windows may behave differently from Linux.
-*/
+     @note This IPC memory related feature API on Windows may behave differently from Linux.
+    */
     pub fn hipIpcCloseMemHandle(devPtr: *mut ::core::ffi::c_void) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Gets an opaque interprocess handle for an event.
 
- This opaque handle may be copied into other processes and opened with hipIpcOpenEventHandle.
- Then hipEventRecord, hipEventSynchronize, hipStreamWaitEvent and hipEventQuery may be used in
- either process. Operations on the imported event after the exported event has been freed with hipEventDestroy
- will result in undefined behavior.
+     This opaque handle may be copied into other processes and opened with hipIpcOpenEventHandle.
+     Then hipEventRecord, hipEventSynchronize, hipStreamWaitEvent and hipEventQuery may be used in
+     either process. Operations on the imported event after the exported event has been freed with hipEventDestroy
+     will result in undefined behavior.
 
- @param[out]  handle Pointer to hipIpcEventHandle to return the opaque event handle
- @param[in]   event  Event allocated with hipEventInterprocess and hipEventDisableTiming flags
+     @param[out]  handle Pointer to hipIpcEventHandle to return the opaque event handle
+     @param[in]   event  Event allocated with hipEventInterprocess and hipEventDisableTiming flags
 
- @returns #hipSuccess, #hipErrorInvalidConfiguration, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidConfiguration, #hipErrorInvalidValue
 
- @note This IPC event related feature API is currently applicable on Linux.
-*/
-    pub fn hipIpcGetEventHandle(
-        handle: *mut hipIpcEventHandle_t,
-        event: hipEvent_t,
-    ) -> hipError_t;
+     @note This IPC event related feature API is currently applicable on Linux.
+    */
+    pub fn hipIpcGetEventHandle(handle: *mut hipIpcEventHandle_t, event: hipEvent_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Opens an interprocess event handles.
 
- Opens an interprocess event handle exported from another process with hipIpcGetEventHandle. The returned
- hipEvent_t behaves like a locally created event with the hipEventDisableTiming flag specified. This event
- need be freed with hipEventDestroy. Operations on the imported event after the exported event has been freed
- with hipEventDestroy will result in undefined behavior. If the function is called within the same process where
- handle is returned by hipIpcGetEventHandle, it will return hipErrorInvalidContext.
+     Opens an interprocess event handle exported from another process with hipIpcGetEventHandle. The returned
+     hipEvent_t behaves like a locally created event with the hipEventDisableTiming flag specified. This event
+     need be freed with hipEventDestroy. Operations on the imported event after the exported event has been freed
+     with hipEventDestroy will result in undefined behavior. If the function is called within the same process where
+     handle is returned by hipIpcGetEventHandle, it will return hipErrorInvalidContext.
 
- @param[out]  event  Pointer to hipEvent_t to return the event
- @param[in]   handle The opaque interprocess handle to open
+     @param[out]  event  Pointer to hipEvent_t to return the event
+     @param[in]   handle The opaque interprocess handle to open
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidContext
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidContext
 
- @note This IPC event related feature API is currently applicable on Linux.
-*/
-    pub fn hipIpcOpenEventHandle(
-        event: *mut hipEvent_t,
-        handle: hipIpcEventHandle_t,
-    ) -> hipError_t;
+     @note This IPC event related feature API is currently applicable on Linux.
+    */
+    pub fn hipIpcOpenEventHandle(event: *mut hipEvent_t, handle: hipIpcEventHandle_t)
+        -> hipError_t;
 }
 extern "C" {
     #[must_use]
@@ -4941,13 +4383,13 @@ extern "C" {
     #[must_use]
     /** @brief Set Cache configuration for a specific function
 
- @param [in] func Pointer of the function.
- @param [in] config Configuration to set.
+     @param [in] func Pointer of the function.
+     @param [in] config Configuration to set.
 
- @returns #hipSuccess, #hipErrorNotInitialized
- Note: AMD devices and some Nvidia GPUS do not support reconfigurable cache.  This hint is ignored
- on those architectures.
-*/
+     @returns #hipSuccess, #hipErrorNotInitialized
+     Note: AMD devices and some Nvidia GPUS do not support reconfigurable cache.  This hint is ignored
+     on those architectures.
+    */
     pub fn hipFuncSetCacheConfig(
         func: *const ::core::ffi::c_void,
         config: hipFuncCache_t,
@@ -4957,14 +4399,14 @@ extern "C" {
     #[must_use]
     /** @brief Set shared memory configuation for a specific function
 
- @param [in] func Pointer of the function
- @param [in] config Configuration
+     @param [in] func Pointer of the function
+     @param [in] config Configuration
 
- @returns #hipSuccess, #hipErrorInvalidDeviceFunction, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidDeviceFunction, #hipErrorInvalidValue
 
- Note: AMD devices and some Nvidia GPUS do not support shared cache banking, and the hint is
- ignored on those architectures.
-*/
+     Note: AMD devices and some Nvidia GPUS do not support shared cache banking, and the hint is
+     ignored on those architectures.
+    */
     pub fn hipFuncSetSharedMemConfig(
         func: *const ::core::ffi::c_void,
         config: hipSharedMemConfig,
@@ -4978,55 +4420,55 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Return last error returned by any HIP runtime API call and resets the stored error code to
- #hipSuccess
+    #hipSuccess
 
- @returns return code from last HIP called from the active host thread
+    @returns return code from last HIP called from the active host thread
 
- Returns the last error that has been returned by any of the runtime calls in the same host
- thread, and then resets the saved error to #hipSuccess.
+    Returns the last error that has been returned by any of the runtime calls in the same host
+    thread, and then resets the saved error to #hipSuccess.
 
- @see hipGetErrorString, hipGetLastError, hipPeakAtLastError, hipError_t*/
+    @see hipGetErrorString, hipGetLastError, hipPeakAtLastError, hipError_t*/
     pub fn hipExtGetLastError() -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Return last error returned by any HIP runtime API call.
 
- @return #hipSuccess
+    @return #hipSuccess
 
- Returns the last error that has been returned by any of the runtime calls in the same host
- thread. Unlike hipGetLastError, this function does not reset the saved error code.
+    Returns the last error that has been returned by any of the runtime calls in the same host
+    thread. Unlike hipGetLastError, this function does not reset the saved error code.
 
- @see hipGetErrorString, hipGetLastError, hipPeakAtLastError, hipError_t*/
+    @see hipGetErrorString, hipGetLastError, hipPeakAtLastError, hipError_t*/
     pub fn hipPeekAtLastError() -> hipError_t;
 }
 extern "C" {
     /** @brief Return hip error as text string form.
 
- @param hip_error Error code to convert to name.
- @return const char pointer to the NULL-terminated error name
+    @param hip_error Error code to convert to name.
+    @return const char pointer to the NULL-terminated error name
 
- @see hipGetErrorString, hipGetLastError, hipPeakAtLastError, hipError_t*/
+    @see hipGetErrorString, hipGetLastError, hipPeakAtLastError, hipError_t*/
     pub fn hipGetErrorName(hip_error: hipError_t) -> *const ::core::ffi::c_char;
 }
 extern "C" {
     /** @brief Return handy text string message to explain the error which occurred
 
- @param hipError Error code to convert to string.
- @return const char pointer to the NULL-terminated error string
+    @param hipError Error code to convert to string.
+    @return const char pointer to the NULL-terminated error string
 
- @see hipGetErrorName, hipGetLastError, hipPeakAtLastError, hipError_t*/
+    @see hipGetErrorName, hipGetLastError, hipPeakAtLastError, hipError_t*/
     pub fn hipGetErrorString(hipError: hipError_t) -> *const ::core::ffi::c_char;
 }
 extern "C" {
     #[must_use]
     /** @brief Return hip error as text string form.
 
- @param [in] hipError Error code to convert to string.
- @param [out] errorString char pointer to the NULL-terminated error string
- @return #hipSuccess, #hipErrorInvalidValue
+    @param [in] hipError Error code to convert to string.
+    @param [out] errorString char pointer to the NULL-terminated error string
+    @return #hipSuccess, #hipErrorInvalidValue
 
- @see hipGetErrorName, hipGetLastError, hipPeakAtLastError, hipError_t*/
+    @see hipGetErrorName, hipGetLastError, hipPeakAtLastError, hipError_t*/
     pub fn hipDrvGetErrorName(
         hipError: hipError_t,
         errorString: *mut *const ::core::ffi::c_char,
@@ -5036,11 +4478,11 @@ extern "C" {
     #[must_use]
     /** @brief Return handy text string message to explain the error which occurred
 
- @param [in] hipError Error code to convert to string.
- @param [out] errorString char pointer to the NULL-terminated error string
- @return #hipSuccess, #hipErrorInvalidValue
+    @param [in] hipError Error code to convert to string.
+    @param [out] errorString char pointer to the NULL-terminated error string
+    @return #hipSuccess, #hipErrorInvalidValue
 
- @see hipGetErrorName, hipGetLastError, hipPeakAtLastError, hipError_t*/
+    @see hipGetErrorName, hipGetLastError, hipPeakAtLastError, hipError_t*/
     pub fn hipDrvGetErrorString(
         hipError: hipError_t,
         errorString: *mut *const ::core::ffi::c_char,
@@ -5050,36 +4492,36 @@ extern "C" {
     #[must_use]
     /** @brief Create an asynchronous stream.
 
- @param[in, out] stream Valid pointer to hipStream_t.  This function writes the memory with the
- newly created stream.
- @return #hipSuccess, #hipErrorInvalidValue
+    @param[in, out] stream Valid pointer to hipStream_t.  This function writes the memory with the
+    newly created stream.
+    @return #hipSuccess, #hipErrorInvalidValue
 
- Create a new asynchronous stream.  @p stream returns an opaque handle that can be used to
- reference the newly created stream in subsequent hipStream* commands.  The stream is allocated on
- the heap and will remain allocated even if the handle goes out-of-scope.  To release the memory
- used by the stream, application must call hipStreamDestroy.
+    Create a new asynchronous stream.  @p stream returns an opaque handle that can be used to
+    reference the newly created stream in subsequent hipStream* commands.  The stream is allocated on
+    the heap and will remain allocated even if the handle goes out-of-scope.  To release the memory
+    used by the stream, application must call hipStreamDestroy.
 
- @return #hipSuccess, #hipErrorInvalidValue
+    @return #hipSuccess, #hipErrorInvalidValue
 
- @see hipStreamCreateWithFlags, hipStreamCreateWithPriority, hipStreamSynchronize, hipStreamWaitEvent, hipStreamDestroy*/
+    @see hipStreamCreateWithFlags, hipStreamCreateWithPriority, hipStreamSynchronize, hipStreamWaitEvent, hipStreamDestroy*/
     pub fn hipStreamCreate(stream: *mut hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Create an asynchronous stream.
 
- @param[in, out] stream Pointer to new stream
- @param[in ] flags to control stream creation.
- @return #hipSuccess, #hipErrorInvalidValue
+    @param[in, out] stream Pointer to new stream
+    @param[in ] flags to control stream creation.
+    @return #hipSuccess, #hipErrorInvalidValue
 
- Create a new asynchronous stream.  @p stream returns an opaque handle that can be used to
- reference the newly created stream in subsequent hipStream* commands.  The stream is allocated on
- the heap and will remain allocated even if the handle goes out-of-scope.  To release the memory
- used by the stream, application must call hipStreamDestroy. Flags controls behavior of the
- stream.  See #hipStreamDefault, #hipStreamNonBlocking.
+    Create a new asynchronous stream.  @p stream returns an opaque handle that can be used to
+    reference the newly created stream in subsequent hipStream* commands.  The stream is allocated on
+    the heap and will remain allocated even if the handle goes out-of-scope.  To release the memory
+    used by the stream, application must call hipStreamDestroy. Flags controls behavior of the
+    stream.  See #hipStreamDefault, #hipStreamNonBlocking.
 
 
- @see hipStreamCreate, hipStreamCreateWithPriority, hipStreamSynchronize, hipStreamWaitEvent, hipStreamDestroy*/
+    @see hipStreamCreate, hipStreamCreateWithPriority, hipStreamSynchronize, hipStreamWaitEvent, hipStreamDestroy*/
     pub fn hipStreamCreateWithFlags(
         stream: *mut hipStream_t,
         flags: ::core::ffi::c_uint,
@@ -5089,19 +4531,19 @@ extern "C" {
     #[must_use]
     /** @brief Create an asynchronous stream with the specified priority.
 
- @param[in, out] stream Pointer to new stream
- @param[in ] flags to control stream creation.
- @param[in ] priority of the stream. Lower numbers represent higher priorities.
- @return #hipSuccess, #hipErrorInvalidValue
+    @param[in, out] stream Pointer to new stream
+    @param[in ] flags to control stream creation.
+    @param[in ] priority of the stream. Lower numbers represent higher priorities.
+    @return #hipSuccess, #hipErrorInvalidValue
 
- Create a new asynchronous stream with the specified priority.  @p stream returns an opaque handle
- that can be used to reference the newly created stream in subsequent hipStream* commands.  The
- stream is allocated on the heap and will remain allocated even if the handle goes out-of-scope.
- To release the memory used by the stream, application must call hipStreamDestroy. Flags controls
- behavior of the stream.  See #hipStreamDefault, #hipStreamNonBlocking.
+    Create a new asynchronous stream with the specified priority.  @p stream returns an opaque handle
+    that can be used to reference the newly created stream in subsequent hipStream* commands.  The
+    stream is allocated on the heap and will remain allocated even if the handle goes out-of-scope.
+    To release the memory used by the stream, application must call hipStreamDestroy. Flags controls
+    behavior of the stream.  See #hipStreamDefault, #hipStreamNonBlocking.
 
 
- @see hipStreamCreate, hipStreamSynchronize, hipStreamWaitEvent, hipStreamDestroy*/
+    @see hipStreamCreate, hipStreamSynchronize, hipStreamWaitEvent, hipStreamDestroy*/
     pub fn hipStreamCreateWithPriority(
         stream: *mut hipStream_t,
         flags: ::core::ffi::c_uint,
@@ -5112,16 +4554,16 @@ extern "C" {
     #[must_use]
     /** @brief Returns numerical values that correspond to the least and greatest stream priority.
 
- @param[in, out] leastPriority pointer in which value corresponding to least priority is returned.
- @param[in, out] greatestPriority pointer in which value corresponding to greatest priority is returned.
- @returns #hipSuccess
+    @param[in, out] leastPriority pointer in which value corresponding to least priority is returned.
+    @param[in, out] greatestPriority pointer in which value corresponding to greatest priority is returned.
+    @returns #hipSuccess
 
- Returns in *leastPriority and *greatestPriority the numerical values that correspond to the least
- and greatest stream priority respectively. Stream priorities follow a convention where lower numbers
- imply greater priorities. The range of meaningful stream priorities is given by
- [*greatestPriority, *leastPriority]. If the user attempts to create a stream with a priority value
- that is outside the meaningful range as specified by this API, the priority is automatically
- clamped to within the valid range.*/
+    Returns in *leastPriority and *greatestPriority the numerical values that correspond to the least
+    and greatest stream priority respectively. Stream priorities follow a convention where lower numbers
+    imply greater priorities. The range of meaningful stream priorities is given by
+    [*greatestPriority, *leastPriority]. If the user attempts to create a stream with a priority value
+    that is outside the meaningful range as specified by this API, the priority is automatically
+    clamped to within the valid range.*/
     pub fn hipDeviceGetStreamPriorityRange(
         leastPriority: *mut ::core::ffi::c_int,
         greatestPriority: *mut ::core::ffi::c_int,
@@ -5131,79 +4573,79 @@ extern "C" {
     #[must_use]
     /** @brief Destroys the specified stream.
 
- @param[in] stream stream identifier.
- @return #hipSuccess #hipErrorInvalidHandle
+    @param[in] stream stream identifier.
+    @return #hipSuccess #hipErrorInvalidHandle
 
- Destroys the specified stream.
+    Destroys the specified stream.
 
- If commands are still executing on the specified stream, some may complete execution before the
- queue is deleted.
+    If commands are still executing on the specified stream, some may complete execution before the
+    queue is deleted.
 
- The queue may be destroyed while some commands are still inflight, or may wait for all commands
- queued to the stream before destroying it.
+    The queue may be destroyed while some commands are still inflight, or may wait for all commands
+    queued to the stream before destroying it.
 
- @see hipStreamCreate, hipStreamCreateWithFlags, hipStreamCreateWithPriority, hipStreamQuery,
- hipStreamWaitEvent, hipStreamSynchronize*/
+    @see hipStreamCreate, hipStreamCreateWithFlags, hipStreamCreateWithPriority, hipStreamQuery,
+    hipStreamWaitEvent, hipStreamSynchronize*/
     pub fn hipStreamDestroy(stream: hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Return #hipSuccess if all of the operations in the specified @p stream have completed, or
- #hipErrorNotReady if not.
+    #hipErrorNotReady if not.
 
- @param[in] stream stream to query
+    @param[in] stream stream to query
 
- @return #hipSuccess, #hipErrorNotReady, #hipErrorInvalidHandle
+    @return #hipSuccess, #hipErrorNotReady, #hipErrorInvalidHandle
 
- This is thread-safe and returns a snapshot of the current state of the queue.  However, if other
- host threads are sending work to the stream, the status may change immediately after the function
- is called.  It is typically used for debug.
+    This is thread-safe and returns a snapshot of the current state of the queue.  However, if other
+    host threads are sending work to the stream, the status may change immediately after the function
+    is called.  It is typically used for debug.
 
- @see hipStreamCreate, hipStreamCreateWithFlags, hipStreamCreateWithPriority, hipStreamWaitEvent,
- hipStreamSynchronize, hipStreamDestroy*/
+    @see hipStreamCreate, hipStreamCreateWithFlags, hipStreamCreateWithPriority, hipStreamWaitEvent,
+    hipStreamSynchronize, hipStreamDestroy*/
     pub fn hipStreamQuery(stream: hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Wait for all commands in stream to complete.
 
- @param[in] stream stream identifier.
+     @param[in] stream stream identifier.
 
- @return #hipSuccess, #hipErrorInvalidHandle
+     @return #hipSuccess, #hipErrorInvalidHandle
 
- This command is host-synchronous : the host will block until the specified stream is empty.
+     This command is host-synchronous : the host will block until the specified stream is empty.
 
- This command follows standard null-stream semantics.  Specifically, specifying the null stream
- will cause the command to wait for other streams on the same device to complete all pending
- operations.
+     This command follows standard null-stream semantics.  Specifically, specifying the null stream
+     will cause the command to wait for other streams on the same device to complete all pending
+     operations.
 
- This command honors the hipDeviceLaunchBlocking flag, which controls whether the wait is active
- or blocking.
+     This command honors the hipDeviceLaunchBlocking flag, which controls whether the wait is active
+     or blocking.
 
- @see hipStreamCreate, hipStreamCreateWithFlags, hipStreamCreateWithPriority, hipStreamWaitEvent,
- hipStreamDestroy
-*/
+     @see hipStreamCreate, hipStreamCreateWithFlags, hipStreamCreateWithPriority, hipStreamWaitEvent,
+     hipStreamDestroy
+    */
     pub fn hipStreamSynchronize(stream: hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Make the specified compute stream wait for an event
 
- @param[in] stream stream to make wait.
- @param[in] event event to wait on
- @param[in] flags control operation [must be 0]
+    @param[in] stream stream to make wait.
+    @param[in] event event to wait on
+    @param[in] flags control operation [must be 0]
 
- @return #hipSuccess, #hipErrorInvalidHandle
+    @return #hipSuccess, #hipErrorInvalidHandle
 
- This function inserts a wait operation into the specified stream.
- All future work submitted to @p stream will wait until @p event reports completion before
- beginning execution.
+    This function inserts a wait operation into the specified stream.
+    All future work submitted to @p stream will wait until @p event reports completion before
+    beginning execution.
 
- This function only waits for commands in the current stream to complete.  Notably, this function
- does not implicitly wait for commands in the default stream to complete, even if the specified
- stream is created with hipStreamNonBlocking = 0.
+    This function only waits for commands in the current stream to complete.  Notably, this function
+    does not implicitly wait for commands in the default stream to complete, even if the specified
+    stream is created with hipStreamNonBlocking = 0.
 
- @see hipStreamCreate, hipStreamCreateWithFlags, hipStreamCreateWithPriority, hipStreamSynchronize, hipStreamDestroy*/
+    @see hipStreamCreate, hipStreamCreateWithFlags, hipStreamCreateWithPriority, hipStreamSynchronize, hipStreamDestroy*/
     pub fn hipStreamWaitEvent(
         stream: hipStream_t,
         event: hipEvent_t,
@@ -5214,33 +4656,30 @@ extern "C" {
     #[must_use]
     /** @brief Return flags associated with this stream.
 
- @param[in] stream stream to be queried
- @param[in,out] flags Pointer to an unsigned integer in which the stream's flags are returned
- @return #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidHandle
+    @param[in] stream stream to be queried
+    @param[in,out] flags Pointer to an unsigned integer in which the stream's flags are returned
+    @return #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidHandle
 
- @returns #hipSuccess #hipErrorInvalidValue #hipErrorInvalidHandle
+    @returns #hipSuccess #hipErrorInvalidValue #hipErrorInvalidHandle
 
- Return flags associated with this stream in *@p flags.
+    Return flags associated with this stream in *@p flags.
 
- @see hipStreamCreateWithFlags*/
-    pub fn hipStreamGetFlags(
-        stream: hipStream_t,
-        flags: *mut ::core::ffi::c_uint,
-    ) -> hipError_t;
+    @see hipStreamCreateWithFlags*/
+    pub fn hipStreamGetFlags(stream: hipStream_t, flags: *mut ::core::ffi::c_uint) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Query the priority of a stream.
 
- @param[in] stream stream to be queried
- @param[in,out] priority Pointer to an unsigned integer in which the stream's priority is returned
- @return #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidHandle
+    @param[in] stream stream to be queried
+    @param[in,out] priority Pointer to an unsigned integer in which the stream's priority is returned
+    @return #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidHandle
 
- @returns #hipSuccess #hipErrorInvalidValue #hipErrorInvalidHandle
+    @returns #hipSuccess #hipErrorInvalidValue #hipErrorInvalidHandle
 
- Query the priority of a stream. The priority is returned in in priority.
+    Query the priority of a stream. The priority is returned in in priority.
 
- @see hipStreamCreateWithFlags*/
+    @see hipStreamCreateWithFlags*/
     pub fn hipStreamGetPriority(
         stream: hipStream_t,
         priority: *mut ::core::ffi::c_int,
@@ -5250,36 +4689,33 @@ extern "C" {
     #[must_use]
     /** @brief Get the device assocaited with the stream
 
- @param[in] stream stream to be queried
- @param[out] device device associated with the stream
- @return #hipSuccess, #hipErrorInvalidValue, #hipErrorContextIsDestroyed, #hipErrorInvalidHandle,
- #hipErrorNotInitialized, #hipErrorDeinitialized, #hipErrorInvalidContext
+    @param[in] stream stream to be queried
+    @param[out] device device associated with the stream
+    @return #hipSuccess, #hipErrorInvalidValue, #hipErrorContextIsDestroyed, #hipErrorInvalidHandle,
+    #hipErrorNotInitialized, #hipErrorDeinitialized, #hipErrorInvalidContext
 
- @see hipStreamCreate, hipStreamDestroy, hipDeviceGetStreamPriorityRange*/
-    pub fn hipStreamGetDevice(
-        stream: hipStream_t,
-        device: *mut hipDevice_t,
-    ) -> hipError_t;
+    @see hipStreamCreate, hipStreamDestroy, hipDeviceGetStreamPriorityRange*/
+    pub fn hipStreamGetDevice(stream: hipStream_t, device: *mut hipDevice_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Create an asynchronous stream with the specified CU mask.
 
- @param[in, out] stream Pointer to new stream
- @param[in ] cuMaskSize Size of CU mask bit array passed in.
- @param[in ] cuMask Bit-vector representing the CU mask. Each active bit represents using one CU.
- The first 32 bits represent the first 32 CUs, and so on. If its size is greater than physical
- CU number (i.e., multiProcessorCount member of hipDeviceProp_t), the extra elements are ignored.
- It is user's responsibility to make sure the input is meaningful.
- @return #hipSuccess, #hipErrorInvalidHandle, #hipErrorInvalidValue
+    @param[in, out] stream Pointer to new stream
+    @param[in ] cuMaskSize Size of CU mask bit array passed in.
+    @param[in ] cuMask Bit-vector representing the CU mask. Each active bit represents using one CU.
+    The first 32 bits represent the first 32 CUs, and so on. If its size is greater than physical
+    CU number (i.e., multiProcessorCount member of hipDeviceProp_t), the extra elements are ignored.
+    It is user's responsibility to make sure the input is meaningful.
+    @return #hipSuccess, #hipErrorInvalidHandle, #hipErrorInvalidValue
 
- Create a new asynchronous stream with the specified CU mask.  @p stream returns an opaque handle
- that can be used to reference the newly created stream in subsequent hipStream* commands.  The
- stream is allocated on the heap and will remain allocated even if the handle goes out-of-scope.
- To release the memory used by the stream, application must call hipStreamDestroy.
+    Create a new asynchronous stream with the specified CU mask.  @p stream returns an opaque handle
+    that can be used to reference the newly created stream in subsequent hipStream* commands.  The
+    stream is allocated on the heap and will remain allocated even if the handle goes out-of-scope.
+    To release the memory used by the stream, application must call hipStreamDestroy.
 
 
- @see hipStreamCreate, hipStreamSynchronize, hipStreamWaitEvent, hipStreamDestroy*/
+    @see hipStreamCreate, hipStreamSynchronize, hipStreamWaitEvent, hipStreamDestroy*/
     pub fn hipExtStreamCreateWithCUMask(
         stream: *mut hipStream_t,
         cuMaskSize: u32,
@@ -5290,14 +4726,14 @@ extern "C" {
     #[must_use]
     /** @brief Get CU mask associated with an asynchronous stream
 
- @param[in] stream stream to be queried
- @param[in] cuMaskSize number of the block of memories (uint32_t *) allocated by user
- @param[out] cuMask Pointer to a pre-allocated block of memories (uint32_t *) in which
- the stream's CU mask is returned. The CU mask is returned in a chunck of 32 bits where
- each active bit represents one active CU
- @return #hipSuccess, #hipErrorInvalidHandle, #hipErrorInvalidValue
+    @param[in] stream stream to be queried
+    @param[in] cuMaskSize number of the block of memories (uint32_t *) allocated by user
+    @param[out] cuMask Pointer to a pre-allocated block of memories (uint32_t *) in which
+    the stream's CU mask is returned. The CU mask is returned in a chunck of 32 bits where
+    each active bit represents one active CU
+    @return #hipSuccess, #hipErrorInvalidHandle, #hipErrorInvalidValue
 
- @see hipStreamCreate, hipStreamSynchronize, hipStreamWaitEvent, hipStreamDestroy*/
+    @see hipStreamCreate, hipStreamSynchronize, hipStreamWaitEvent, hipStreamDestroy*/
     pub fn hipExtStreamGetCUMask(
         stream: hipStream_t,
         cuMaskSize: u32,
@@ -5315,18 +4751,18 @@ pub type hipStreamCallback_t = ::core::option::Option<
 extern "C" {
     #[must_use]
     /** @brief Adds a callback to be called on the host after all currently enqueued
- items in the stream have completed.  For each
- hipStreamAddCallback call, a callback will be executed exactly once.
- The callback will block later work in the stream until it is finished.
- @param[in] stream   - Stream to add callback to
- @param[in] callback - The function to call once preceding stream operations are complete
- @param[in] userData - User specified data to be passed to the callback function
- @param[in] flags    - Reserved for future use, must be 0
- @return #hipSuccess, #hipErrorInvalidHandle, #hipErrorNotSupported
+     items in the stream have completed.  For each
+     hipStreamAddCallback call, a callback will be executed exactly once.
+     The callback will block later work in the stream until it is finished.
+     @param[in] stream   - Stream to add callback to
+     @param[in] callback - The function to call once preceding stream operations are complete
+     @param[in] userData - User specified data to be passed to the callback function
+     @param[in] flags    - Reserved for future use, must be 0
+     @return #hipSuccess, #hipErrorInvalidHandle, #hipErrorNotSupported
 
- @see hipStreamCreate, hipStreamCreateWithFlags, hipStreamQuery, hipStreamSynchronize,
- hipStreamWaitEvent, hipStreamDestroy, hipStreamCreateWithPriority
-*/
+     @see hipStreamCreate, hipStreamCreateWithFlags, hipStreamQuery, hipStreamSynchronize,
+     hipStreamWaitEvent, hipStreamDestroy, hipStreamCreateWithPriority
+    */
     pub fn hipStreamAddCallback(
         stream: hipStream_t,
         callback: hipStreamCallback_t,
@@ -5349,34 +4785,34 @@ extern "C" {
     #[must_use]
     /** @brief Enqueues a wait command to the stream.[BETA]
 
- @param [in] stream - Stream identifier
- @param [in] ptr    - Pointer to memory object allocated using 'hipMallocSignalMemory' flag
- @param [in] value  - Value to be used in compare operation
- @param [in] flags  - Defines the compare operation, supported values are hipStreamWaitValueGte
- hipStreamWaitValueEq, hipStreamWaitValueAnd and hipStreamWaitValueNor.
- @param [in] mask   - Mask to be applied on value at memory before it is compared with value
- default value is set to enable every bit
+    @param [in] stream - Stream identifier
+    @param [in] ptr    - Pointer to memory object allocated using 'hipMallocSignalMemory' flag
+    @param [in] value  - Value to be used in compare operation
+    @param [in] flags  - Defines the compare operation, supported values are hipStreamWaitValueGte
+    hipStreamWaitValueEq, hipStreamWaitValueAnd and hipStreamWaitValueNor.
+    @param [in] mask   - Mask to be applied on value at memory before it is compared with value
+    default value is set to enable every bit
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- Enqueues a wait command to the stream, all operations enqueued  on this stream after this, will
- not execute until the defined wait condition is true.
+    Enqueues a wait command to the stream, all operations enqueued  on this stream after this, will
+    not execute until the defined wait condition is true.
 
- hipStreamWaitValueGte: waits until *ptr&mask >= value
- hipStreamWaitValueEq : waits until *ptr&mask == value
- hipStreamWaitValueAnd: waits until ((*ptr&mask) & value) != 0
- hipStreamWaitValueNor: waits until ~((*ptr&mask) | (value&mask)) != 0
+    hipStreamWaitValueGte: waits until *ptr&mask >= value
+    hipStreamWaitValueEq : waits until *ptr&mask == value
+    hipStreamWaitValueAnd: waits until ((*ptr&mask) & value) != 0
+    hipStreamWaitValueNor: waits until ~((*ptr&mask) | (value&mask)) != 0
 
- @note when using 'hipStreamWaitValueNor', mask is applied on both 'value' and '*ptr'.
+    @note when using 'hipStreamWaitValueNor', mask is applied on both 'value' and '*ptr'.
 
- @note Support for hipStreamWaitValue64 can be queried using 'hipDeviceGetAttribute()' and
- 'hipDeviceAttributeCanUseStreamWaitValue' flag.
+    @note Support for hipStreamWaitValue64 can be queried using 'hipDeviceGetAttribute()' and
+    'hipDeviceAttributeCanUseStreamWaitValue' flag.
 
- @warning This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @see hipExtMallocWithFlags, hipFree, hipStreamWaitValue32, hipStreamWriteValue64,
- hipStreamWriteValue32, hipDeviceGetAttribute*/
+    @see hipExtMallocWithFlags, hipFree, hipStreamWaitValue32, hipStreamWriteValue64,
+    hipStreamWriteValue32, hipDeviceGetAttribute*/
     pub fn hipStreamWaitValue64(
         stream: hipStream_t,
         ptr: *mut ::core::ffi::c_void,
@@ -5389,21 +4825,21 @@ extern "C" {
     #[must_use]
     /** @brief Enqueues a write command to the stream.[BETA]
 
- @param [in] stream - Stream identifier
- @param [in] ptr    - Pointer to a GPU accessible memory object
- @param [in] value  - Value to be written
- @param [in] flags  - reserved, ignored for now, will be used in future releases
+    @param [in] stream - Stream identifier
+    @param [in] ptr    - Pointer to a GPU accessible memory object
+    @param [in] value  - Value to be written
+    @param [in] flags  - reserved, ignored for now, will be used in future releases
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- Enqueues a write command to the stream, write operation is performed after all earlier commands
- on this stream have completed the execution.
+    Enqueues a write command to the stream, write operation is performed after all earlier commands
+    on this stream have completed the execution.
 
- @warning This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @see hipExtMallocWithFlags, hipFree, hipStreamWriteValue32, hipStreamWaitValue32,
- hipStreamWaitValue64*/
+    @see hipExtMallocWithFlags, hipFree, hipStreamWriteValue32, hipStreamWaitValue32,
+    hipStreamWaitValue64*/
     pub fn hipStreamWriteValue32(
         stream: hipStream_t,
         ptr: *mut ::core::ffi::c_void,
@@ -5415,21 +4851,21 @@ extern "C" {
     #[must_use]
     /** @brief Enqueues a write command to the stream.[BETA]
 
- @param [in] stream - Stream identifier
- @param [in] ptr    - Pointer to a GPU accessible memory object
- @param [in] value  - Value to be written
- @param [in] flags  - reserved, ignored for now, will be used in future releases
+    @param [in] stream - Stream identifier
+    @param [in] ptr    - Pointer to a GPU accessible memory object
+    @param [in] value  - Value to be written
+    @param [in] flags  - reserved, ignored for now, will be used in future releases
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- Enqueues a write command to the stream, write operation is performed after all earlier commands
- on this stream have completed the execution.
+    Enqueues a write command to the stream, write operation is performed after all earlier commands
+    on this stream have completed the execution.
 
- @warning This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @see hipExtMallocWithFlags, hipFree, hipStreamWriteValue32, hipStreamWaitValue32,
- hipStreamWaitValue64*/
+    @see hipExtMallocWithFlags, hipFree, hipStreamWriteValue32, hipStreamWaitValue32,
+    hipStreamWaitValue64*/
     pub fn hipStreamWriteValue64(
         stream: hipStream_t,
         ptr: *mut ::core::ffi::c_void,
@@ -5449,13 +4885,13 @@ extern "C" {
     #[must_use]
     /**  Create an event
 
- @param[in,out] event Returns the newly created event.
+    @param[in,out] event Returns the newly created event.
 
- @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue,
- #hipErrorLaunchFailure, #hipErrorOutOfMemory
+    @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue,
+    #hipErrorLaunchFailure, #hipErrorOutOfMemory
 
- @see hipEventCreateWithFlags, hipEventRecord, hipEventQuery, hipEventSynchronize,
- hipEventDestroy, hipEventElapsedTime*/
+    @see hipEventCreateWithFlags, hipEventRecord, hipEventQuery, hipEventSynchronize,
+    hipEventDestroy, hipEventElapsedTime*/
     pub fn hipEventCreate(event: *mut hipEvent_t) -> hipError_t;
 }
 extern "C" {
@@ -5466,105 +4902,101 @@ extern "C" {
     #[must_use]
     /**  @brief Destroy the specified event.
 
-  @param[in] event Event to destroy.
-  @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue,
- #hipErrorLaunchFailure
+     @param[in] event Event to destroy.
+     @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue,
+    #hipErrorLaunchFailure
 
-  Releases memory associated with the event.  If the event is recording but has not completed
- recording when hipEventDestroy() is called, the function will return immediately and the
- completion_future resources will be released later, when the hipDevice is synchronized.
+     Releases memory associated with the event.  If the event is recording but has not completed
+    recording when hipEventDestroy() is called, the function will return immediately and the
+    completion_future resources will be released later, when the hipDevice is synchronized.
 
- @see hipEventCreate, hipEventCreateWithFlags, hipEventQuery, hipEventSynchronize, hipEventRecord,
- hipEventElapsedTime
+    @see hipEventCreate, hipEventCreateWithFlags, hipEventQuery, hipEventSynchronize, hipEventRecord,
+    hipEventElapsedTime
 
- @returns #hipSuccess*/
+    @returns #hipSuccess*/
     pub fn hipEventDestroy(event: hipEvent_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Wait for an event to complete.
 
-  This function will block until the event is ready, waiting for all previous work in the stream
- specified when event was recorded with hipEventRecord().
+     This function will block until the event is ready, waiting for all previous work in the stream
+    specified when event was recorded with hipEventRecord().
 
-  If hipEventRecord() has not been called on @p event, this function returns #hipSuccess when no
-  event is captured.
+     If hipEventRecord() has not been called on @p event, this function returns #hipSuccess when no
+     event is captured.
 
 
-  @param[in] event Event on which to wait.
+     @param[in] event Event on which to wait.
 
-  @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized,
- #hipErrorInvalidHandle, #hipErrorLaunchFailure
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized,
+    #hipErrorInvalidHandle, #hipErrorLaunchFailure
 
-  @see hipEventCreate, hipEventCreateWithFlags, hipEventQuery, hipEventDestroy, hipEventRecord,
- hipEventElapsedTime*/
+     @see hipEventCreate, hipEventCreateWithFlags, hipEventQuery, hipEventDestroy, hipEventRecord,
+    hipEventElapsedTime*/
     pub fn hipEventSynchronize(event: hipEvent_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Return the elapsed time between two events.
 
- @param[out] ms : Return time between start and stop in ms.
- @param[in]   start : Start event.
- @param[in]   stop  : Stop event.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotReady, #hipErrorInvalidHandle,
- #hipErrorNotInitialized, #hipErrorLaunchFailure
+    @param[out] ms : Return time between start and stop in ms.
+    @param[in]   start : Start event.
+    @param[in]   stop  : Stop event.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotReady, #hipErrorInvalidHandle,
+    #hipErrorNotInitialized, #hipErrorLaunchFailure
 
- Computes the elapsed time between two events. Time is computed in ms, with
- a resolution of approximately 1 us.
+    Computes the elapsed time between two events. Time is computed in ms, with
+    a resolution of approximately 1 us.
 
- Events which are recorded in a NULL stream will block until all commands
- on all other streams complete execution, and then record the timestamp.
+    Events which are recorded in a NULL stream will block until all commands
+    on all other streams complete execution, and then record the timestamp.
 
- Events which are recorded in a non-NULL stream will record their timestamp
- when they reach the head of the specified stream, after all previous
- commands in that stream have completed executing.  Thus the time that
- the event recorded may be significantly after the host calls hipEventRecord().
+    Events which are recorded in a non-NULL stream will record their timestamp
+    when they reach the head of the specified stream, after all previous
+    commands in that stream have completed executing.  Thus the time that
+    the event recorded may be significantly after the host calls hipEventRecord().
 
- If hipEventRecord() has not been called on either event, then #hipErrorInvalidHandle is
- returned. If hipEventRecord() has been called on both events, but the timestamp has not yet been
- recorded on one or both events (that is, hipEventQuery() would return #hipErrorNotReady on at
- least one of the events), then #hipErrorNotReady is returned.
+    If hipEventRecord() has not been called on either event, then #hipErrorInvalidHandle is
+    returned. If hipEventRecord() has been called on both events, but the timestamp has not yet been
+    recorded on one or both events (that is, hipEventQuery() would return #hipErrorNotReady on at
+    least one of the events), then #hipErrorNotReady is returned.
 
- @see hipEventCreate, hipEventCreateWithFlags, hipEventQuery, hipEventDestroy, hipEventRecord,
- hipEventSynchronize*/
-    pub fn hipEventElapsedTime(
-        ms: *mut f32,
-        start: hipEvent_t,
-        stop: hipEvent_t,
-    ) -> hipError_t;
+    @see hipEventCreate, hipEventCreateWithFlags, hipEventQuery, hipEventDestroy, hipEventRecord,
+    hipEventSynchronize*/
+    pub fn hipEventElapsedTime(ms: *mut f32, start: hipEvent_t, stop: hipEvent_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Query event status
 
- @param[in] event Event to query.
- @returns #hipSuccess, #hipErrorNotReady, #hipErrorInvalidHandle, #hipErrorInvalidValue,
- #hipErrorNotInitialized, #hipErrorLaunchFailure
+    @param[in] event Event to query.
+    @returns #hipSuccess, #hipErrorNotReady, #hipErrorInvalidHandle, #hipErrorInvalidValue,
+    #hipErrorNotInitialized, #hipErrorLaunchFailure
 
- Query the status of the specified event.  This function will return #hipSuccess if all
- commands in the appropriate stream (specified to hipEventRecord()) have completed.  If any execution
- has not completed, then #hipErrorNotReady is returned.
+    Query the status of the specified event.  This function will return #hipSuccess if all
+    commands in the appropriate stream (specified to hipEventRecord()) have completed.  If any execution
+    has not completed, then #hipErrorNotReady is returned.
 
- @note: This API returns #hipSuccess, if hipEventRecord() is not called before this API.
+    @note: This API returns #hipSuccess, if hipEventRecord() is not called before this API.
 
- @see hipEventCreate, hipEventCreateWithFlags, hipEventRecord, hipEventDestroy,
- hipEventSynchronize, hipEventElapsedTime*/
+    @see hipEventCreate, hipEventCreateWithFlags, hipEventRecord, hipEventDestroy,
+    hipEventSynchronize, hipEventElapsedTime*/
     pub fn hipEventQuery(event: hipEvent_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Sets information on the specified pointer.[BETA]
 
-  @param [in]      value     Sets pointer attribute value
-  @param [in]      attribute  Attribute to set
-  @param [in]      ptr      Pointer to set attributes for
+      @param [in]      value     Sets pointer attribute value
+      @param [in]      attribute  Attribute to set
+      @param [in]      ptr      Pointer to set attributes for
 
-  @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+      @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
-  @warning This API is marked as beta, meaning, while this is feature complete,
-  it is still open to changes and may have outstanding issues.
-*/
+      @warning This API is marked as beta, meaning, while this is feature complete,
+      it is still open to changes and may have outstanding issues.
+    */
     pub fn hipPointerSetAttribute(
         value: *const ::core::ffi::c_void,
         attribute: hipPointer_attribute,
@@ -5575,21 +5007,21 @@ extern "C" {
     #[must_use]
     /**  @brief Returns attributes for the specified pointer
 
-  @param [out]  attributes  attributes for the specified pointer
-  @param [in]   ptr         pointer to get attributes for
+    @param [out]  attributes  attributes for the specified pointer
+    @param [in]   ptr         pointer to get attributes for
 
-  The output parameter 'attributes' has a member named 'type' that describes what memory the
-  pointer is associated with, such as device memory, host memory, managed memory, and others.
-  Otherwise, the API cannot handle the pointer and returns #hipErrorInvalidValue.
+    The output parameter 'attributes' has a member named 'type' that describes what memory the
+    pointer is associated with, such as device memory, host memory, managed memory, and others.
+    Otherwise, the API cannot handle the pointer and returns #hipErrorInvalidValue.
 
-  @note  The unrecognized memory type is unsupported to keep the HIP functionality backward
-  compatibility due to #hipMemoryType enum values.
+    @note  The unrecognized memory type is unsupported to keep the HIP functionality backward
+    compatibility due to #hipMemoryType enum values.
 
-  @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+    @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
-  @note  The current behavior of this HIP API corresponds to the CUDA API before version 11.0.
+    @note  The current behavior of this HIP API corresponds to the CUDA API before version 11.0.
 
-  @see hipPointerGetAttribute*/
+    @see hipPointerGetAttribute*/
     pub fn hipPointerGetAttributes(
         attributes: *mut hipPointerAttribute_t,
         ptr: *const ::core::ffi::c_void,
@@ -5599,16 +5031,16 @@ extern "C" {
     #[must_use]
     /**  @brief Returns information about the specified pointer.[BETA]
 
-  @param [in, out] data     Returned pointer attribute value
-  @param [in]      attribute  Attribute to query for
-  @param [in]      ptr      Pointer to get attributes for
+    @param [in, out] data     Returned pointer attribute value
+    @param [in]      attribute  Attribute to query for
+    @param [in]      ptr      Pointer to get attributes for
 
-  @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+    @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
-  @warning This API is marked as beta, meaning, while this is feature complete,
-  it is still open to changes and may have outstanding issues.
+    @warning This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
-  @see hipPointerGetAttributes*/
+    @see hipPointerGetAttributes*/
     pub fn hipPointerGetAttribute(
         data: *mut ::core::ffi::c_void,
         attribute: hipPointer_attribute,
@@ -5619,18 +5051,18 @@ extern "C" {
     #[must_use]
     /**  @brief Returns information about the specified pointer.[BETA]
 
-  @param [in]  numAttributes   number of attributes to query for
-  @param [in]  attributes      attributes to query for
-  @param [in, out] data        a two-dimensional containing pointers to memory locations
-                               where the result of each attribute query will be written to
-  @param [in]  ptr             pointer to get attributes for
+    @param [in]  numAttributes   number of attributes to query for
+    @param [in]  attributes      attributes to query for
+    @param [in, out] data        a two-dimensional containing pointers to memory locations
+                                 where the result of each attribute query will be written to
+    @param [in]  ptr             pointer to get attributes for
 
-  @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+    @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
-  @warning This API is marked as beta, meaning, while this is feature complete,
-  it is still open to changes and may have outstanding issues.
+    @warning This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
-  @see hipPointerGetAttribute*/
+    @see hipPointerGetAttribute*/
     pub fn hipDrvPointerGetAttributes(
         numAttributes: ::core::ffi::c_uint,
         attributes: *mut hipPointer_attribute,
@@ -5650,14 +5082,14 @@ extern "C" {
     #[must_use]
     /**  @brief Signals a set of external semaphore objects.
 
-  @param[in] extSemArray  External semaphores to be waited on
-  @param[in] paramsArray Array of semaphore parameters
-  @param[in] numExtSems Number of semaphores to wait on
-  @param[in] stream Stream to enqueue the wait operations in
+    @param[in] extSemArray  External semaphores to be waited on
+    @param[in] paramsArray Array of semaphore parameters
+    @param[in] numExtSems Number of semaphores to wait on
+    @param[in] stream Stream to enqueue the wait operations in
 
-  @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+    @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
-  @see*/
+    @see*/
     pub fn hipSignalExternalSemaphoresAsync(
         extSemArray: *const hipExternalSemaphore_t,
         paramsArray: *const hipExternalSemaphoreSignalParams,
@@ -5669,14 +5101,14 @@ extern "C" {
     #[must_use]
     /**  @brief Waits on a set of external semaphore objects
 
-  @param[in] extSemArray  External semaphores to be waited on
-  @param[in] paramsArray Array of semaphore parameters
-  @param[in] numExtSems Number of semaphores to wait on
-  @param[in] stream Stream to enqueue the wait operations in
+    @param[in] extSemArray  External semaphores to be waited on
+    @param[in] paramsArray Array of semaphore parameters
+    @param[in] numExtSems Number of semaphores to wait on
+    @param[in] stream Stream to enqueue the wait operations in
 
-  @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+    @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
-  @see*/
+    @see*/
     pub fn hipWaitExternalSemaphoresAsync(
         extSemArray: *const hipExternalSemaphore_t,
         paramsArray: *const hipExternalSemaphoreWaitParams,
@@ -5688,23 +5120,23 @@ extern "C" {
     #[must_use]
     /**  @brief Destroys an external semaphore object and releases any references to the underlying resource. Any outstanding signals or waits must have completed before the semaphore is destroyed.
 
-  @param[in] extSem handle to an external memory object
+    @param[in] extSem handle to an external memory object
 
-  @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+    @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
-  @see*/
+    @see*/
     pub fn hipDestroyExternalSemaphore(extSem: hipExternalSemaphore_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Imports an external memory object.
 
-  @param[out] extMem_out  Returned handle to an external memory object
-  @param[in]  memHandleDesc Memory import handle descriptor
+    @param[out] extMem_out  Returned handle to an external memory object
+    @param[in]  memHandleDesc Memory import handle descriptor
 
-  @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+    @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
-  @see*/
+    @see*/
     pub fn hipImportExternalMemory(
         extMem_out: *mut hipExternalMemory_t,
         memHandleDesc: *const hipExternalMemoryHandleDesc,
@@ -5714,13 +5146,13 @@ extern "C" {
     #[must_use]
     /**  @brief Maps a buffer onto an imported memory object.
 
-  @param[out] devPtr Returned device pointer to buffer
-  @param[in]  extMem  Handle to external memory object
-  @param[in]  bufferDesc  Buffer descriptor
+    @param[out] devPtr Returned device pointer to buffer
+    @param[in]  extMem  Handle to external memory object
+    @param[in]  bufferDesc  Buffer descriptor
 
-  @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+    @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
-  @see*/
+    @see*/
     pub fn hipExternalMemoryGetMappedBuffer(
         devPtr: *mut *mut ::core::ffi::c_void,
         extMem: hipExternalMemory_t,
@@ -5731,26 +5163,26 @@ extern "C" {
     #[must_use]
     /**  @brief Destroys an external memory object.
 
-  @param[in] extMem  External memory object to be destroyed
+    @param[in] extMem  External memory object to be destroyed
 
-  @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
 
-  @see*/
+    @see*/
     pub fn hipDestroyExternalMemory(extMem: hipExternalMemory_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Maps a mipmapped array onto an external memory object.
 
-  @param[out] mipmap mipmapped array to return
-  @param[in]  extMem external memory object handle
-  @param[in]  mipmapDesc external mipmapped array descriptor
+    @param[out] mipmap mipmapped array to return
+    @param[in]  extMem external memory object handle
+    @param[in]  mipmapDesc external mipmapped array descriptor
 
-  Returned mipmapped array must be freed using hipFreeMipmappedArray.
+    Returned mipmapped array must be freed using hipFreeMipmappedArray.
 
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidResourceHandle
+    @return #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidResourceHandle
 
-  @see hipImportExternalMemory, hipDestroyExternalMemory, hipExternalMemoryGetMappedBuffer, hipFreeMipmappedArray*/
+    @see hipImportExternalMemory, hipDestroyExternalMemory, hipExternalMemoryGetMappedBuffer, hipFreeMipmappedArray*/
     pub fn hipExternalMemoryGetMappedMipmappedArray(
         mipmap: *mut hipMipmappedArray_t,
         extMem: hipExternalMemory_t,
@@ -5766,21 +5198,21 @@ extern "C" {
     #[must_use]
     /**  @brief Allocate memory on the default accelerator
 
-  @param[out] ptr  Pointer to the allocated memory
-  @param[in]  sizeBytes  Requested memory size
-  @param[in]  flags  Type of memory allocation
+     @param[out] ptr  Pointer to the allocated memory
+     @param[in]  sizeBytes  Requested memory size
+     @param[in]  flags  Type of memory allocation
 
-  If requested memory size is 0, no memory is allocated, *ptr returns nullptr, and #hipSuccess
-  is returned.
+     If requested memory size is 0, no memory is allocated, *ptr returns nullptr, and #hipSuccess
+     is returned.
 
-  The memory allocation flag should be either #hipDeviceMallocDefault,
-  #hipDeviceMallocFinegrained, #hipDeviceMallocUncached, or #hipMallocSignalMemory.
-  If the flag is any other value, the API returns #hipErrorInvalidValue.
+     The memory allocation flag should be either #hipDeviceMallocDefault,
+     #hipDeviceMallocFinegrained, #hipDeviceMallocUncached, or #hipMallocSignalMemory.
+     If the flag is any other value, the API returns #hipErrorInvalidValue.
 
-  @return #hipSuccess, #hipErrorOutOfMemory, #hipErrorInvalidValue (bad context, null *ptr)
+     @return #hipSuccess, #hipErrorOutOfMemory, #hipErrorInvalidValue (bad context, null *ptr)
 
-  @see hipMallocPitch, hipFree, hipMallocArray, hipFreeArray, hipMalloc3D, hipMalloc3DArray,
- hipHostFree, hipHostMalloc*/
+     @see hipMallocPitch, hipFree, hipMallocArray, hipFreeArray, hipMalloc3D, hipMalloc3DArray,
+    hipHostFree, hipHostMalloc*/
     pub fn hipExtMallocWithFlags(
         ptr: *mut *mut ::core::ffi::c_void,
         sizeBytes: usize,
@@ -5791,64 +5223,61 @@ extern "C" {
     #[must_use]
     /**  @brief Allocate pinned host memory [Deprecated]
 
-  @param[out] ptr Pointer to the allocated host pinned memory
-  @param[in]  size Requested memory size
+    @param[out] ptr Pointer to the allocated host pinned memory
+    @param[in]  size Requested memory size
 
-  If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
+    If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
 
-  @return #hipSuccess, #hipErrorOutOfMemory
+    @return #hipSuccess, #hipErrorOutOfMemory
 
-  @warning  This API is deprecated, use hipHostMalloc() instead*/
+    @warning  This API is deprecated, use hipHostMalloc() instead*/
     pub fn hipMallocHost(ptr: *mut *mut ::core::ffi::c_void, size: usize) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Allocate pinned host memory [Deprecated]
 
-  @param[out] ptr Pointer to the allocated host pinned memory
-  @param[in]  size Requested memory size
+    @param[out] ptr Pointer to the allocated host pinned memory
+    @param[in]  size Requested memory size
 
-  If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
+    If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
 
-  @return #hipSuccess, #hipErrorOutOfMemory
+    @return #hipSuccess, #hipErrorOutOfMemory
 
-  @warning  This API is deprecated, use hipHostMalloc() instead*/
-    pub fn hipMemAllocHost(
-        ptr: *mut *mut ::core::ffi::c_void,
-        size: usize,
-    ) -> hipError_t;
+    @warning  This API is deprecated, use hipHostMalloc() instead*/
+    pub fn hipMemAllocHost(ptr: *mut *mut ::core::ffi::c_void, size: usize) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Allocates device accessible page locked (pinned) host memory
 
-  This API allocates pinned host memory which is mapped into the address space of all GPUs
-  in the system, the memory can be accessed directly by the GPU device, and can be read or
-  written with much higher bandwidth than pageable memory obtained with functions such as
-  malloc().
+    This API allocates pinned host memory which is mapped into the address space of all GPUs
+    in the system, the memory can be accessed directly by the GPU device, and can be read or
+    written with much higher bandwidth than pageable memory obtained with functions such as
+    malloc().
 
-  Using the pinned host memory, applications can implement faster data transfers for HostToDevice
-  and DeviceToHost. The runtime tracks the hipHostMalloc allocations and can avoid some of the
-  setup required for regular unpinned memory.
+    Using the pinned host memory, applications can implement faster data transfers for HostToDevice
+    and DeviceToHost. The runtime tracks the hipHostMalloc allocations and can avoid some of the
+    setup required for regular unpinned memory.
 
-  When the memory accesses are infrequent, zero-copy memory can be a good choice, for coherent
-  allocation. GPU can directly access the host memory over the CPU/GPU interconnect, without need
-  to copy the data.
+    When the memory accesses are infrequent, zero-copy memory can be a good choice, for coherent
+    allocation. GPU can directly access the host memory over the CPU/GPU interconnect, without need
+    to copy the data.
 
-  Currently the allocation granularity is 4KB for the API.
+    Currently the allocation granularity is 4KB for the API.
 
-  Developers need to choose proper allocation flag with consideration of synchronization.
+    Developers need to choose proper allocation flag with consideration of synchronization.
 
-  @param[out] ptr Pointer to the allocated host pinned memory
-  @param[in]  size Requested memory size in bytes
-  If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
-  @param[in]  flags Type of host memory allocation
+    @param[out] ptr Pointer to the allocated host pinned memory
+    @param[in]  size Requested memory size in bytes
+    If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
+    @param[in]  flags Type of host memory allocation
 
-  If no input for flags, it will be the default pinned memory allocation on the host.
+    If no input for flags, it will be the default pinned memory allocation on the host.
 
-  @return #hipSuccess, #hipErrorOutOfMemory
+    @return #hipSuccess, #hipErrorOutOfMemory
 
-  @see hipSetDeviceFlags, hipHostFree*/
+    @see hipSetDeviceFlags, hipHostFree*/
     pub fn hipHostMalloc(
         ptr: *mut *mut ::core::ffi::c_void,
         size: usize,
@@ -5868,14 +5297,14 @@ extern "C" {
     #[must_use]
     /** @brief Prefetches memory to the specified destination device using HIP.
 
- @param [in] dev_ptr  pointer to be prefetched
- @param [in] count    size in bytes for prefetching
- @param [in] device   destination device to prefetch to
- @param [in] stream   stream to enqueue prefetch operation
+    @param [in] dev_ptr  pointer to be prefetched
+    @param [in] count    size in bytes for prefetching
+    @param [in] device   destination device to prefetch to
+    @param [in] stream   stream to enqueue prefetch operation
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemPrefetchAsync(
         dev_ptr: *const ::core::ffi::c_void,
         count: usize,
@@ -5887,21 +5316,21 @@ extern "C" {
     #[must_use]
     /** @brief Advise about the usage of a given memory range to HIP.
 
- @param [in] dev_ptr  pointer to memory to set the advice for
- @param [in] count    size in bytes of the memory range, it should be CPU page size alligned.
- @param [in] advice   advice to be applied for the specified memory range
- @param [in] device   device to apply the advice for
+    @param [in] dev_ptr  pointer to memory to set the advice for
+    @param [in] count    size in bytes of the memory range, it should be CPU page size alligned.
+    @param [in] advice   advice to be applied for the specified memory range
+    @param [in] device   device to apply the advice for
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- This HIP API advises about the usage to be applied on unified memory allocation in the
- range starting from the pointer address devPtr, with the size of count bytes.
- The memory range must refer to managed memory allocated via the API hipMallocManaged, and the
- range will be handled with proper round down and round up respectively in the driver to
- be aligned to CPU page size, the same way as corresponding CUDA API behaves in CUDA version 8.0
- and afterwards.
+    This HIP API advises about the usage to be applied on unified memory allocation in the
+    range starting from the pointer address devPtr, with the size of count bytes.
+    The memory range must refer to managed memory allocated via the API hipMallocManaged, and the
+    range will be handled with proper round down and round up respectively in the driver to
+    be aligned to CPU page size, the same way as corresponding CUDA API behaves in CUDA version 8.0
+    and afterwards.
 
- @note  This API is implemented on Linux and is under development on Windows.*/
+    @note  This API is implemented on Linux and is under development on Windows.*/
     pub fn hipMemAdvise(
         dev_ptr: *const ::core::ffi::c_void,
         count: usize,
@@ -5913,16 +5342,16 @@ extern "C" {
     #[must_use]
     /** @brief Query an attribute of a given memory range in HIP.
 
- @param [in,out] data   a pointer to a memory location where the result of each
-                        attribute query will be written to
- @param [in] data_size  the size of data
- @param [in] attribute  the attribute to query
- @param [in] dev_ptr    start of the range to query
- @param [in] count      size of the range to query
+    @param [in,out] data   a pointer to a memory location where the result of each
+                           attribute query will be written to
+    @param [in] data_size  the size of data
+    @param [in] attribute  the attribute to query
+    @param [in] dev_ptr    start of the range to query
+    @param [in] count      size of the range to query
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemRangeGetAttribute(
         data: *mut ::core::ffi::c_void,
         data_size: usize,
@@ -5935,18 +5364,18 @@ extern "C" {
     #[must_use]
     /** @brief Query attributes of a given memory range in HIP.
 
- @param [in,out] data     a two-dimensional array containing pointers to memory locations
-                          where the result of each attribute query will be written to
- @param [in] data_sizes   an array, containing the sizes of each result
- @param [in] attributes   the attribute to query
- @param [in] num_attributes  an array of attributes to query (numAttributes and the number
-                          of attributes in this array should match)
- @param [in] dev_ptr      start of the range to query
- @param [in] count        size of the range to query
+    @param [in,out] data     a two-dimensional array containing pointers to memory locations
+                             where the result of each attribute query will be written to
+    @param [in] data_sizes   an array, containing the sizes of each result
+    @param [in] attributes   the attribute to query
+    @param [in] num_attributes  an array of attributes to query (numAttributes and the number
+                             of attributes in this array should match)
+    @param [in] dev_ptr      start of the range to query
+    @param [in] count        size of the range to query
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemRangeGetAttributes(
         data: *mut *mut ::core::ffi::c_void,
         data_sizes: *mut usize,
@@ -5960,16 +5389,16 @@ extern "C" {
     #[must_use]
     /** @brief Attach memory to a stream asynchronously in HIP.
 
- @param [in] stream     - stream in which to enqueue the attach operation
- @param [in] dev_ptr    - pointer to memory (must be a pointer to managed memory or
-                          to a valid host-accessible region of system-allocated memory)
- @param [in] length     - length of memory (defaults to zero)
- @param [in] flags      - must be one of hipMemAttachGlobal, hipMemAttachHost or
-                          hipMemAttachSingle (defaults to hipMemAttachSingle)
+    @param [in] stream     - stream in which to enqueue the attach operation
+    @param [in] dev_ptr    - pointer to memory (must be a pointer to managed memory or
+                             to a valid host-accessible region of system-allocated memory)
+    @param [in] length     - length of memory (defaults to zero)
+    @param [in] flags      - must be one of hipMemAttachGlobal, hipMemAttachHost or
+                             hipMemAttachSingle (defaults to hipMemAttachSingle)
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipStreamAttachMemAsync(
         stream: hipStream_t,
         dev_ptr: *mut ::core::ffi::c_void,
@@ -5981,33 +5410,33 @@ extern "C" {
     #[must_use]
     /** @brief Allocates memory with stream ordered semantics
 
- Inserts a memory allocation operation into @p stream.
- A pointer to the allocated memory is returned immediately in *dptr.
- The allocation must not be accessed until the allocation operation completes.
- The allocation comes from the memory pool associated with the stream's device.
+    Inserts a memory allocation operation into @p stream.
+    A pointer to the allocated memory is returned immediately in *dptr.
+    The allocation must not be accessed until the allocation operation completes.
+    The allocation comes from the memory pool associated with the stream's device.
 
- @note The default memory pool of a device contains device memory from that device.
- @note Basic stream ordering allows future work submitted into the same stream to use the
-  allocation. Stream query, stream synchronize, and HIP events can be used to guarantee that
-  the allocation operation completes before work submitted in a separate stream runs.
- @note During stream capture, this function results in the creation of an allocation node.
-  In this case, the allocation is owned by the graph instead of the memory pool. The memory
-  pool's properties are used to set the node's creation parameters.
+    @note The default memory pool of a device contains device memory from that device.
+    @note Basic stream ordering allows future work submitted into the same stream to use the
+     allocation. Stream query, stream synchronize, and HIP events can be used to guarantee that
+     the allocation operation completes before work submitted in a separate stream runs.
+    @note During stream capture, this function results in the creation of an allocation node.
+     In this case, the allocation is owned by the graph instead of the memory pool. The memory
+     pool's properties are used to set the node's creation parameters.
 
- @param [out] dev_ptr  Returned device pointer of memory allocation
- @param [in] size      Number of bytes to allocate
- @param [in] stream    The stream establishing the stream ordering contract and
-                       the memory pool to allocate from
+    @param [out] dev_ptr  Returned device pointer of memory allocation
+    @param [in] size      Number of bytes to allocate
+    @param [in] stream    The stream establishing the stream ordering contract and
+                          the memory pool to allocate from
 
- @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported, #hipErrorOutOfMemory
+    @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported, #hipErrorOutOfMemory
 
- @see hipMallocFromPoolAsync, hipFreeAsync, hipMemPoolTrimTo, hipMemPoolGetAttribute,
- hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
+    @see hipMallocFromPoolAsync, hipFreeAsync, hipMemPoolTrimTo, hipMemPoolGetAttribute,
+    hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMallocAsync(
         dev_ptr: *mut *mut ::core::ffi::c_void,
         size: usize,
@@ -6018,101 +5447,95 @@ extern "C" {
     #[must_use]
     /** @brief Frees memory with stream ordered semantics
 
- Inserts a free operation into @p stream.
- The allocation must not be used after stream execution reaches the free.
- After this API returns, accessing the memory from any subsequent work launched on the GPU
- or querying its pointer attributes results in undefined behavior.
+    Inserts a free operation into @p stream.
+    The allocation must not be used after stream execution reaches the free.
+    After this API returns, accessing the memory from any subsequent work launched on the GPU
+    or querying its pointer attributes results in undefined behavior.
 
- @note During stream capture, this function results in the creation of a free node and
- must therefore be passed the address of a graph allocation.
+    @note During stream capture, this function results in the creation of a free node and
+    must therefore be passed the address of a graph allocation.
 
- @param [in] dev_ptr Pointer to device memory to free
- @param [in] stream  The stream, where the destruciton will occur according to the execution order
+    @param [in] dev_ptr Pointer to device memory to free
+    @param [in] stream  The stream, where the destruciton will occur according to the execution order
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @see hipMallocFromPoolAsync, hipMallocAsync, hipMemPoolTrimTo, hipMemPoolGetAttribute,
- hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
+    @see hipMallocFromPoolAsync, hipMallocAsync, hipMemPoolTrimTo, hipMemPoolGetAttribute,
+    hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
-    pub fn hipFreeAsync(
-        dev_ptr: *mut ::core::ffi::c_void,
-        stream: hipStream_t,
-    ) -> hipError_t;
+    @note  This API is implemented on Linux, under development on Windows.*/
+    pub fn hipFreeAsync(dev_ptr: *mut ::core::ffi::c_void, stream: hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Releases freed memory back to the OS
 
- Releases memory back to the OS until the pool contains fewer than @p min_bytes_to_keep
- reserved bytes, or there is no more memory that the allocator can safely release.
- The allocator cannot release OS allocations that back outstanding asynchronous allocations.
- The OS allocations may happen at different granularity from the user allocations.
+    Releases memory back to the OS until the pool contains fewer than @p min_bytes_to_keep
+    reserved bytes, or there is no more memory that the allocator can safely release.
+    The allocator cannot release OS allocations that back outstanding asynchronous allocations.
+    The OS allocations may happen at different granularity from the user allocations.
 
- @note: Allocations that have not been freed count as outstanding.
- @note: Allocations that have been asynchronously freed but whose completion has
- not been observed on the host (eg. by a synchronize) can count as outstanding.
+    @note: Allocations that have not been freed count as outstanding.
+    @note: Allocations that have been asynchronously freed but whose completion has
+    not been observed on the host (eg. by a synchronize) can count as outstanding.
 
- @param[in] mem_pool          The memory pool to trim allocations
- @param[in] min_bytes_to_hold If the pool has less than min_bytes_to_hold reserved,
- then the TrimTo operation is a no-op.  Otherwise the memory pool will contain
- at least min_bytes_to_hold bytes reserved after the operation.
+    @param[in] mem_pool          The memory pool to trim allocations
+    @param[in] min_bytes_to_hold If the pool has less than min_bytes_to_hold reserved,
+    then the TrimTo operation is a no-op.  Otherwise the memory pool will contain
+    at least min_bytes_to_hold bytes reserved after the operation.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute,
- hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
+    @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute,
+    hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
-    pub fn hipMemPoolTrimTo(
-        mem_pool: hipMemPool_t,
-        min_bytes_to_hold: usize,
-    ) -> hipError_t;
+    @note  This API is implemented on Linux, under development on Windows.*/
+    pub fn hipMemPoolTrimTo(mem_pool: hipMemPool_t, min_bytes_to_hold: usize) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Sets attributes of a memory pool
 
- Supported attributes are:
- - @p hipMemPoolAttrReleaseThreshold: (value type = cuuint64_t)
-                                  Amount of reserved memory in bytes to hold onto before trying
-                                  to release memory back to the OS. When more than the release
-                                  threshold bytes of memory are held by the memory pool, the
-                                  allocator will try to release memory back to the OS on the
-                                  next call to stream, event or context synchronize. (default 0)
- - @p hipMemPoolReuseFollowEventDependencies: (value type = int)
-                                  Allow @p hipMallocAsync to use memory asynchronously freed
-                                  in another stream as long as a stream ordering dependency
-                                  of the allocating stream on the free action exists.
-                                  HIP events and null stream interactions can create the required
-                                  stream ordered dependencies. (default enabled)
- - @p hipMemPoolReuseAllowOpportunistic: (value type = int)
-                                  Allow reuse of already completed frees when there is no dependency
-                                  between the free and allocation. (default enabled)
- - @p hipMemPoolReuseAllowInternalDependencies: (value type = int)
-                                  Allow @p hipMallocAsync to insert new stream dependencies
-                                  in order to establish the stream ordering required to reuse
-                                  a piece of memory released by @p hipFreeAsync (default enabled).
+    Supported attributes are:
+    - @p hipMemPoolAttrReleaseThreshold: (value type = cuuint64_t)
+                                     Amount of reserved memory in bytes to hold onto before trying
+                                     to release memory back to the OS. When more than the release
+                                     threshold bytes of memory are held by the memory pool, the
+                                     allocator will try to release memory back to the OS on the
+                                     next call to stream, event or context synchronize. (default 0)
+    - @p hipMemPoolReuseFollowEventDependencies: (value type = int)
+                                     Allow @p hipMallocAsync to use memory asynchronously freed
+                                     in another stream as long as a stream ordering dependency
+                                     of the allocating stream on the free action exists.
+                                     HIP events and null stream interactions can create the required
+                                     stream ordered dependencies. (default enabled)
+    - @p hipMemPoolReuseAllowOpportunistic: (value type = int)
+                                     Allow reuse of already completed frees when there is no dependency
+                                     between the free and allocation. (default enabled)
+    - @p hipMemPoolReuseAllowInternalDependencies: (value type = int)
+                                     Allow @p hipMallocAsync to insert new stream dependencies
+                                     in order to establish the stream ordering required to reuse
+                                     a piece of memory released by @p hipFreeAsync (default enabled).
 
- @param [in] mem_pool The memory pool to modify
- @param [in] attr     The attribute to modify
- @param [in] value    Pointer to the value to assign
+    @param [in] mem_pool The memory pool to modify
+    @param [in] attr     The attribute to modify
+    @param [in] value    Pointer to the value to assign
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute,
- hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAccess, hipMemPoolGetAccess
+    @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute,
+    hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAccess, hipMemPoolGetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemPoolSetAttribute(
         mem_pool: hipMemPool_t,
         attr: hipMemPoolAttr,
@@ -6123,40 +5546,40 @@ extern "C" {
     #[must_use]
     /** @brief Gets attributes of a memory pool
 
- Supported attributes are:
- - @p hipMemPoolAttrReleaseThreshold: (value type = cuuint64_t)
-                                  Amount of reserved memory in bytes to hold onto before trying
-                                  to release memory back to the OS. When more than the release
-                                  threshold bytes of memory are held by the memory pool, the
-                                  allocator will try to release memory back to the OS on the
-                                  next call to stream, event or context synchronize. (default 0)
- - @p hipMemPoolReuseFollowEventDependencies: (value type = int)
-                                  Allow @p hipMallocAsync to use memory asynchronously freed
-                                  in another stream as long as a stream ordering dependency
-                                  of the allocating stream on the free action exists.
-                                  HIP events and null stream interactions can create the required
-                                  stream ordered dependencies. (default enabled)
- - @p hipMemPoolReuseAllowOpportunistic: (value type = int)
-                                  Allow reuse of already completed frees when there is no dependency
-                                  between the free and allocation. (default enabled)
- - @p hipMemPoolReuseAllowInternalDependencies: (value type = int)
-                                  Allow @p hipMallocAsync to insert new stream dependencies
-                                  in order to establish the stream ordering required to reuse
-                                  a piece of memory released by @p hipFreeAsync (default enabled).
+    Supported attributes are:
+    - @p hipMemPoolAttrReleaseThreshold: (value type = cuuint64_t)
+                                     Amount of reserved memory in bytes to hold onto before trying
+                                     to release memory back to the OS. When more than the release
+                                     threshold bytes of memory are held by the memory pool, the
+                                     allocator will try to release memory back to the OS on the
+                                     next call to stream, event or context synchronize. (default 0)
+    - @p hipMemPoolReuseFollowEventDependencies: (value type = int)
+                                     Allow @p hipMallocAsync to use memory asynchronously freed
+                                     in another stream as long as a stream ordering dependency
+                                     of the allocating stream on the free action exists.
+                                     HIP events and null stream interactions can create the required
+                                     stream ordered dependencies. (default enabled)
+    - @p hipMemPoolReuseAllowOpportunistic: (value type = int)
+                                     Allow reuse of already completed frees when there is no dependency
+                                     between the free and allocation. (default enabled)
+    - @p hipMemPoolReuseAllowInternalDependencies: (value type = int)
+                                     Allow @p hipMallocAsync to insert new stream dependencies
+                                     in order to establish the stream ordering required to reuse
+                                     a piece of memory released by @p hipFreeAsync (default enabled).
 
- @param [in] mem_pool The memory pool to get attributes of
- @param [in] attr     The attribute to get
- @param [in] value    Retrieved value
+    @param [in] mem_pool The memory pool to get attributes of
+    @param [in] attr     The attribute to get
+    @param [in] value    Retrieved value
 
- @returns  #hipSuccess, #hipErrorInvalidValue
+    @returns  #hipSuccess, #hipErrorInvalidValue
 
- @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync,
- hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
+    @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync,
+    hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemPoolGetAttribute(
         mem_pool: hipMemPool_t,
         attr: hipMemPoolAttr,
@@ -6167,19 +5590,19 @@ extern "C" {
     #[must_use]
     /** @brief Controls visibility of the specified pool between devices
 
- @param [in] mem_pool   Memory pool for acccess change
- @param [in] desc_list  Array of access descriptors. Each descriptor instructs the access to enable for a single gpu
- @param [in] count  Number of descriptors in the map array.
+    @param [in] mem_pool   Memory pool for acccess change
+    @param [in] desc_list  Array of access descriptors. Each descriptor instructs the access to enable for a single gpu
+    @param [in] count  Number of descriptors in the map array.
 
- @returns  #hipSuccess, #hipErrorInvalidValue
+    @returns  #hipSuccess, #hipErrorInvalidValue
 
- @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute,
- hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolGetAccess
+    @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute,
+    hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolGetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemPoolSetAccess(
         mem_pool: hipMemPool_t,
         desc_list: *const hipMemAccessDesc,
@@ -6190,21 +5613,21 @@ extern "C" {
     #[must_use]
     /** @brief Returns the accessibility of a pool from a device
 
- Returns the accessibility of the pool's memory from the specified location.
+    Returns the accessibility of the pool's memory from the specified location.
 
- @param [out] flags    Accessibility of the memory pool from the specified location/device
- @param [in] mem_pool   Memory pool being queried
- @param [in] location  Location/device for memory pool access
+    @param [out] flags    Accessibility of the memory pool from the specified location/device
+    @param [in] mem_pool   Memory pool being queried
+    @param [in] location  Location/device for memory pool access
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute,
- hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess
+    @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute,
+    hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemPoolGetAccess(
         flags: *mut hipMemAccessFlags,
         mem_pool: hipMemPool_t,
@@ -6215,25 +5638,25 @@ extern "C" {
     #[must_use]
     /** @brief Creates a memory pool
 
- Creates a HIP memory pool and returns the handle in @p mem_pool. The @p pool_props determines
- the properties of the pool such as the backing device and IPC capabilities.
+    Creates a HIP memory pool and returns the handle in @p mem_pool. The @p pool_props determines
+    the properties of the pool such as the backing device and IPC capabilities.
 
- By default, the memory pool will be accessible from the device it is allocated on.
+    By default, the memory pool will be accessible from the device it is allocated on.
 
- @param [out] mem_pool    Contains createed memory pool
- @param [in] pool_props   Memory pool properties
+    @param [out] mem_pool    Contains createed memory pool
+    @param [in] pool_props   Memory pool properties
 
- @note Specifying hipMemHandleTypeNone creates a memory pool that will not support IPC.
+    @note Specifying hipMemHandleTypeNone creates a memory pool that will not support IPC.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute, hipMemPoolDestroy,
- hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
+    @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute, hipMemPoolDestroy,
+    hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemPoolCreate(
         mem_pool: *mut hipMemPool_t,
         pool_props: *const hipMemPoolProps,
@@ -6243,63 +5666,63 @@ extern "C" {
     #[must_use]
     /** @brief Destroys the specified memory pool
 
- If any pointers obtained from this pool haven't been freed or
- the pool has free operations that haven't completed
- when @p hipMemPoolDestroy is invoked, the function will return immediately and the
- resources associated with the pool will be released automatically
- once there are no more outstanding allocations.
+    If any pointers obtained from this pool haven't been freed or
+    the pool has free operations that haven't completed
+    when @p hipMemPoolDestroy is invoked, the function will return immediately and the
+    resources associated with the pool will be released automatically
+    once there are no more outstanding allocations.
 
- Destroying the current mempool of a device sets the default mempool of
- that device as the current mempool for that device.
+    Destroying the current mempool of a device sets the default mempool of
+    that device as the current mempool for that device.
 
- @param [in] mem_pool Memory pool for destruction
+    @param [in] mem_pool Memory pool for destruction
 
- @note A device's default memory pool cannot be destroyed.
+    @note A device's default memory pool cannot be destroyed.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute, hipMemPoolCreate
- hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
+    @see hipMallocFromPoolAsync, hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute, hipMemPoolCreate
+    hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemPoolDestroy(mem_pool: hipMemPool_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Allocates memory from a specified pool with stream ordered semantics.
 
- Inserts an allocation operation into @p stream.
- A pointer to the allocated memory is returned immediately in @p dev_ptr.
- The allocation must not be accessed until the allocation operation completes.
- The allocation comes from the specified memory pool.
+    Inserts an allocation operation into @p stream.
+    A pointer to the allocated memory is returned immediately in @p dev_ptr.
+    The allocation must not be accessed until the allocation operation completes.
+    The allocation comes from the specified memory pool.
 
- @note The specified memory pool may be from a device different than that of the specified @p stream.
+    @note The specified memory pool may be from a device different than that of the specified @p stream.
 
- Basic stream ordering allows future work submitted into the same stream to use the allocation.
- Stream query, stream synchronize, and HIP events can be used to guarantee that the allocation
- operation completes before work submitted in a separate stream runs.
+    Basic stream ordering allows future work submitted into the same stream to use the allocation.
+    Stream query, stream synchronize, and HIP events can be used to guarantee that the allocation
+    operation completes before work submitted in a separate stream runs.
 
- @note During stream capture, this function results in the creation of an allocation node. In this case,
- the allocation is owned by the graph instead of the memory pool. The memory pool's properties
- are used to set the node's creation parameters.
+    @note During stream capture, this function results in the creation of an allocation node. In this case,
+    the allocation is owned by the graph instead of the memory pool. The memory pool's properties
+    are used to set the node's creation parameters.
 
- @param [out] dev_ptr Returned device pointer
- @param [in] size     Number of bytes to allocate
- @param [in] mem_pool The pool to allocate from
- @param [in] stream   The stream establishing the stream ordering semantic
+    @param [out] dev_ptr Returned device pointer
+    @param [in] size     Number of bytes to allocate
+    @param [in] mem_pool The pool to allocate from
+    @param [in] stream   The stream establishing the stream ordering semantic
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported, #hipErrorOutOfMemory
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported, #hipErrorOutOfMemory
 
- @see hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute, hipMemPoolCreate
- hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess,
+    @see hipMallocAsync, hipFreeAsync, hipMemPoolGetAttribute, hipMemPoolCreate
+    hipMemPoolTrimTo, hipDeviceSetMemPool, hipMemPoolSetAttribute, hipMemPoolSetAccess, hipMemPoolGetAccess,
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMallocFromPoolAsync(
         dev_ptr: *mut *mut ::core::ffi::c_void,
         size: usize,
@@ -6311,28 +5734,28 @@ extern "C" {
     #[must_use]
     /** @brief Exports a memory pool to the requested handle type.
 
- Given an IPC capable mempool, create an OS handle to share the pool with another process.
- A recipient process can convert the shareable handle into a mempool with @p hipMemPoolImportFromShareableHandle.
- Individual pointers can then be shared with the @p hipMemPoolExportPointer and @p hipMemPoolImportPointer APIs.
- The implementation of what the shareable handle is and how it can be transferred is defined by the requested
- handle type.
+    Given an IPC capable mempool, create an OS handle to share the pool with another process.
+    A recipient process can convert the shareable handle into a mempool with @p hipMemPoolImportFromShareableHandle.
+    Individual pointers can then be shared with the @p hipMemPoolExportPointer and @p hipMemPoolImportPointer APIs.
+    The implementation of what the shareable handle is and how it can be transferred is defined by the requested
+    handle type.
 
- @note: To create an IPC capable mempool, create a mempool with a @p hipMemAllocationHandleType other
- than @p hipMemHandleTypeNone.
+    @note: To create an IPC capable mempool, create a mempool with a @p hipMemAllocationHandleType other
+    than @p hipMemHandleTypeNone.
 
- @param [out] shared_handle Pointer to the location in which to store the requested handle
- @param [in] mem_pool       Pool to export
- @param [in] handle_type    The type of handle to create
- @param [in] flags          Must be 0
+    @param [out] shared_handle Pointer to the location in which to store the requested handle
+    @param [in] mem_pool       Pool to export
+    @param [in] handle_type    The type of handle to create
+    @param [in] flags          Must be 0
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorOutOfMemory
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorOutOfMemory
 
- @see hipMemPoolImportFromShareableHandle
+    @see hipMemPoolImportFromShareableHandle
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemPoolExportToShareableHandle(
         shared_handle: *mut ::core::ffi::c_void,
         mem_pool: hipMemPool_t,
@@ -6344,25 +5767,25 @@ extern "C" {
     #[must_use]
     /** @brief Imports a memory pool from a shared handle.
 
- Specific allocations can be imported from the imported pool with @p hipMemPoolImportPointer.
+    Specific allocations can be imported from the imported pool with @p hipMemPoolImportPointer.
 
- @note Imported memory pools do not support creating new allocations.
- As such imported memory pools may not be used in @p hipDeviceSetMemPool
- or @p hipMallocFromPoolAsync calls.
+    @note Imported memory pools do not support creating new allocations.
+    As such imported memory pools may not be used in @p hipDeviceSetMemPool
+    or @p hipMallocFromPoolAsync calls.
 
- @param [out] mem_pool     Returned memory pool
- @param [in] shared_handle OS handle of the pool to open
- @param [in] handle_type   The type of handle being imported
- @param [in] flags         Must be 0
+    @param [out] mem_pool     Returned memory pool
+    @param [in] shared_handle OS handle of the pool to open
+    @param [in] handle_type   The type of handle being imported
+    @param [in] flags         Must be 0
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorOutOfMemory
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorOutOfMemory
 
- @see hipMemPoolExportToShareableHandle
+    @see hipMemPoolExportToShareableHandle
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemPoolImportFromShareableHandle(
         mem_pool: *mut hipMemPool_t,
         shared_handle: *mut ::core::ffi::c_void,
@@ -6374,21 +5797,21 @@ extern "C" {
     #[must_use]
     /** @brief Export data to share a memory pool allocation between processes.
 
- Constructs @p export_data for sharing a specific allocation from an already shared memory pool.
- The recipient process can import the allocation with the @p hipMemPoolImportPointer api.
- The data is not a handle and may be shared through any IPC mechanism.
+    Constructs @p export_data for sharing a specific allocation from an already shared memory pool.
+    The recipient process can import the allocation with the @p hipMemPoolImportPointer api.
+    The data is not a handle and may be shared through any IPC mechanism.
 
- @param[out] export_data  Returned export data
- @param[in] dev_ptr       Pointer to memory being exported
+    @param[out] export_data  Returned export data
+    @param[in] dev_ptr       Pointer to memory being exported
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorOutOfMemory
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorOutOfMemory
 
- @see hipMemPoolImportPointer
+    @see hipMemPoolImportPointer
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemPoolExportPointer(
         export_data: *mut hipMemPoolPtrExportData,
         dev_ptr: *mut ::core::ffi::c_void,
@@ -6398,30 +5821,30 @@ extern "C" {
     #[must_use]
     /** @brief Import a memory pool allocation from another process.
 
- Returns in @p dev_ptr a pointer to the imported memory.
- The imported memory must not be accessed before the allocation operation completes
- in the exporting process. The imported memory must be freed from all importing processes before
- being freed in the exporting process. The pointer may be freed with @p hipFree
- or @p hipFreeAsync. If @p hipFreeAsync is used, the free must be completed
- on the importing process before the free operation on the exporting process.
+    Returns in @p dev_ptr a pointer to the imported memory.
+    The imported memory must not be accessed before the allocation operation completes
+    in the exporting process. The imported memory must be freed from all importing processes before
+    being freed in the exporting process. The pointer may be freed with @p hipFree
+    or @p hipFreeAsync. If @p hipFreeAsync is used, the free must be completed
+    on the importing process before the free operation on the exporting process.
 
- @note The @p hipFreeAsync api may be used in the exporting process before
- the @p hipFreeAsync operation completes in its stream as long as the
- @p hipFreeAsync in the exporting process specifies a stream with
- a stream dependency on the importing process's @p hipFreeAsync.
+    @note The @p hipFreeAsync api may be used in the exporting process before
+    the @p hipFreeAsync operation completes in its stream as long as the
+    @p hipFreeAsync in the exporting process specifies a stream with
+    a stream dependency on the importing process's @p hipFreeAsync.
 
- @param [out] dev_ptr     Pointer to imported memory
- @param [in] mem_pool     Memory pool from which to import a pointer
- @param [in] export_data  Data specifying the memory to import
+    @param [out] dev_ptr     Pointer to imported memory
+    @param [in] mem_pool     Memory pool from which to import a pointer
+    @param [in] export_data  Data specifying the memory to import
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized, #hipErrorOutOfMemory
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized, #hipErrorOutOfMemory
 
- @see hipMemPoolExportPointer
+    @see hipMemPoolExportPointer
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemPoolImportPointer(
         dev_ptr: *mut *mut ::core::ffi::c_void,
         mem_pool: hipMemPool_t,
@@ -6432,15 +5855,15 @@ extern "C" {
     #[must_use]
     /**  @brief Allocate device accessible page locked host memory [Deprecated]
 
-  @param[out] ptr Pointer to the allocated host pinned memory
-  @param[in]  size Requested memory size in bytes
-  @param[in]  flags Type of host memory allocation
+    @param[out] ptr Pointer to the allocated host pinned memory
+    @param[in]  size Requested memory size in bytes
+    @param[in]  flags Type of host memory allocation
 
-  If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
+    If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
 
-  @return #hipSuccess, #hipErrorOutOfMemory
+    @return #hipSuccess, #hipErrorOutOfMemory
 
-  @warning This API is deprecated, use hipHostMalloc() instead*/
+    @warning This API is deprecated, use hipHostMalloc() instead*/
     pub fn hipHostAlloc(
         ptr: *mut *mut ::core::ffi::c_void,
         size: usize,
@@ -6451,13 +5874,13 @@ extern "C" {
     #[must_use]
     /**  @brief Get Device pointer from Host Pointer allocated through hipHostMalloc
 
-  @param[out] devPtr Device Pointer mapped to passed host pointer
-  @param[in]  hstPtr Host Pointer allocated through hipHostMalloc
-  @param[in]  flags Flags to be passed for extension
+    @param[out] devPtr Device Pointer mapped to passed host pointer
+    @param[in]  hstPtr Host Pointer allocated through hipHostMalloc
+    @param[in]  flags Flags to be passed for extension
 
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorOutOfMemory
+    @return #hipSuccess, #hipErrorInvalidValue, #hipErrorOutOfMemory
 
-  @see hipSetDeviceFlags, hipHostMalloc*/
+    @see hipSetDeviceFlags, hipHostMalloc*/
     pub fn hipHostGetDevicePointer(
         devPtr: *mut *mut ::core::ffi::c_void,
         hstPtr: *mut ::core::ffi::c_void,
@@ -6468,11 +5891,11 @@ extern "C" {
     #[must_use]
     /**  @brief Return flags associated with host pointer
 
-  @param[out] flagsPtr Memory location to store flags
-  @param[in]  hostPtr Host Pointer allocated through hipHostMalloc
-  @return #hipSuccess, #hipErrorInvalidValue
+    @param[out] flagsPtr Memory location to store flags
+    @param[in]  hostPtr Host Pointer allocated through hipHostMalloc
+    @return #hipSuccess, #hipErrorInvalidValue
 
-  @see hipHostMalloc*/
+    @see hipHostMalloc*/
     pub fn hipHostGetFlags(
         flagsPtr: *mut ::core::ffi::c_uint,
         hostPtr: *mut ::core::ffi::c_void,
@@ -6482,38 +5905,38 @@ extern "C" {
     #[must_use]
     /**  @brief Register host memory so it can be accessed from the current device.
 
-  @param[out] hostPtr Pointer to host memory to be registered.
-  @param[in] sizeBytes Size of the host memory
-  @param[in] flags  See below.
+     @param[out] hostPtr Pointer to host memory to be registered.
+     @param[in] sizeBytes Size of the host memory
+     @param[in] flags  See below.
 
-  Flags:
-  - #hipHostRegisterDefault   Memory is Mapped and Portable
-  - #hipHostRegisterPortable  Memory is considered registered by all contexts.  HIP only supports
- one context so this is always assumed true.
-  - #hipHostRegisterMapped    Map the allocation into the address space for the current device.
- The device pointer can be obtained with #hipHostGetDevicePointer.
+     Flags:
+     - #hipHostRegisterDefault   Memory is Mapped and Portable
+     - #hipHostRegisterPortable  Memory is considered registered by all contexts.  HIP only supports
+    one context so this is always assumed true.
+     - #hipHostRegisterMapped    Map the allocation into the address space for the current device.
+    The device pointer can be obtained with #hipHostGetDevicePointer.
 
 
-  After registering the memory, use #hipHostGetDevicePointer to obtain the mapped device pointer.
-  On many systems, the mapped device pointer will have a different value than the mapped host
- pointer.  Applications must use the device pointer in device code, and the host pointer in device
- code.
+     After registering the memory, use #hipHostGetDevicePointer to obtain the mapped device pointer.
+     On many systems, the mapped device pointer will have a different value than the mapped host
+    pointer.  Applications must use the device pointer in device code, and the host pointer in device
+    code.
 
-  On some systems, registered memory is pinned.  On some systems, registered memory may not be
- actually be pinned but uses OS or hardware facilities to all GPU access to the host memory.
+     On some systems, registered memory is pinned.  On some systems, registered memory may not be
+    actually be pinned but uses OS or hardware facilities to all GPU access to the host memory.
 
-  Developers are strongly encouraged to register memory blocks which are aligned to the host
- cache-line size. (typically 64-bytes but can be obtains from the CPUID instruction).
+     Developers are strongly encouraged to register memory blocks which are aligned to the host
+    cache-line size. (typically 64-bytes but can be obtains from the CPUID instruction).
 
-  If registering non-aligned pointers, the application must take care when register pointers from
- the same cache line on different devices.  HIP's coarse-grained synchronization model does not
- guarantee correct results if different devices write to different parts of the same cache block -
- typically one of the writes will "win" and overwrite data from the other registered memory
- region.
+     If registering non-aligned pointers, the application must take care when register pointers from
+    the same cache line on different devices.  HIP's coarse-grained synchronization model does not
+    guarantee correct results if different devices write to different parts of the same cache block -
+    typically one of the writes will "win" and overwrite data from the other registered memory
+    region.
 
-  @return #hipSuccess, #hipErrorOutOfMemory
+     @return #hipSuccess, #hipErrorOutOfMemory
 
-  @see hipHostUnregister, hipHostGetFlags, hipHostGetDevicePointer*/
+     @see hipHostUnregister, hipHostGetFlags, hipHostGetDevicePointer*/
     pub fn hipHostRegister(
         hostPtr: *mut ::core::ffi::c_void,
         sizeBytes: usize,
@@ -6524,30 +5947,30 @@ extern "C" {
     #[must_use]
     /**  @brief Un-register host pointer
 
-  @param[in] hostPtr Host pointer previously registered with #hipHostRegister
-  @return Error code
+    @param[in] hostPtr Host pointer previously registered with #hipHostRegister
+    @return Error code
 
-  @see hipHostRegister*/
+    @see hipHostRegister*/
     pub fn hipHostUnregister(hostPtr: *mut ::core::ffi::c_void) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  Allocates at least width (in bytes) * height bytes of linear memory
-  Padding may occur to ensure alighnment requirements are met for the given row
-  The change in width size due to padding will be returned in *pitch.
-  Currently the alignment is set to 128 bytes
+     Padding may occur to ensure alighnment requirements are met for the given row
+     The change in width size due to padding will be returned in *pitch.
+     Currently the alignment is set to 128 bytes
 
-  @param[out] ptr Pointer to the allocated device memory
-  @param[out] pitch Pitch for allocation (in bytes)
-  @param[in]  width Requested pitched allocation width (in bytes)
-  @param[in]  height Requested pitched allocation height
+     @param[out] ptr Pointer to the allocated device memory
+     @param[out] pitch Pitch for allocation (in bytes)
+     @param[in]  width Requested pitched allocation width (in bytes)
+     @param[in]  height Requested pitched allocation height
 
-  If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
+     If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
 
-  @return Error code
+     @return Error code
 
-  @see hipMalloc, hipFree, hipMallocArray, hipFreeArray, hipHostFree, hipMalloc3D,
- hipMalloc3DArray, hipHostMalloc*/
+     @see hipMalloc, hipFree, hipMallocArray, hipFreeArray, hipHostFree, hipMalloc3D,
+    hipMalloc3DArray, hipHostMalloc*/
     pub fn hipMallocPitch(
         ptr: *mut *mut ::core::ffi::c_void,
         pitch: *mut usize,
@@ -6558,25 +5981,25 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  Allocates at least width (in bytes) * height bytes of linear memory
-  Padding may occur to ensure alighnment requirements are met for the given row
-  The change in width size due to padding will be returned in *pitch.
-  Currently the alignment is set to 128 bytes
+     Padding may occur to ensure alighnment requirements are met for the given row
+     The change in width size due to padding will be returned in *pitch.
+     Currently the alignment is set to 128 bytes
 
-  @param[out] dptr  Pointer to the allocated device memory
-  @param[out] pitch  Pitch for allocation (in bytes)
-  @param[in]  widthInBytes  Requested pitched allocation width (in bytes)
-  @param[in]  height  Requested pitched allocation height
-  @param[in]  elementSizeBytes  The size of element bytes, should be 4, 8 or 16
+     @param[out] dptr  Pointer to the allocated device memory
+     @param[out] pitch  Pitch for allocation (in bytes)
+     @param[in]  widthInBytes  Requested pitched allocation width (in bytes)
+     @param[in]  height  Requested pitched allocation height
+     @param[in]  elementSizeBytes  The size of element bytes, should be 4, 8 or 16
 
-  If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
-  The intended usage of pitch is as a separate parameter of the allocation, used to compute addresses within the 2D array.
-  Given the row and column of an array element of type T, the address is computed as:
-  T* pElement = (T*)((char*)BaseAddress + Row * Pitch) + Column;
+     If size is 0, no memory is allocated, *ptr returns nullptr, and hipSuccess is returned.
+     The intended usage of pitch is as a separate parameter of the allocation, used to compute addresses within the 2D array.
+     Given the row and column of an array element of type T, the address is computed as:
+     T* pElement = (T*)((char*)BaseAddress + Row * Pitch) + Column;
 
-  @return Error code
+     @return Error code
 
-  @see hipMalloc, hipFree, hipMallocArray, hipFreeArray, hipHostFree, hipMalloc3D,
- hipMalloc3DArray, hipHostMalloc*/
+     @see hipMalloc, hipFree, hipMallocArray, hipFreeArray, hipHostFree, hipMalloc3D,
+    hipMalloc3DArray, hipHostMalloc*/
     pub fn hipMemAllocPitch(
         dptr: *mut hipDeviceptr_t,
         pitch: *mut usize,
@@ -6588,74 +6011,74 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Free memory allocated by the hcc hip memory allocation API.
-  This API performs an implicit hipDeviceSynchronize() call.
-  If pointer is NULL, the hip runtime is initialized and hipSuccess is returned.
+     This API performs an implicit hipDeviceSynchronize() call.
+     If pointer is NULL, the hip runtime is initialized and hipSuccess is returned.
 
-  @param[in] ptr Pointer to memory to be freed
-  @return #hipSuccess
-  @return #hipErrorInvalidDevicePointer (if pointer is invalid, including host pointers allocated
- with hipHostMalloc)
+     @param[in] ptr Pointer to memory to be freed
+     @return #hipSuccess
+     @return #hipErrorInvalidDevicePointer (if pointer is invalid, including host pointers allocated
+    with hipHostMalloc)
 
-  @see hipMalloc, hipMallocPitch, hipMallocArray, hipFreeArray, hipHostFree, hipMalloc3D,
- hipMalloc3DArray, hipHostMalloc*/
+     @see hipMalloc, hipMallocPitch, hipMallocArray, hipFreeArray, hipHostFree, hipMalloc3D,
+    hipMalloc3DArray, hipHostMalloc*/
     pub fn hipFree(ptr: *mut ::core::ffi::c_void) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Free memory allocated by the hcc hip host memory allocation API [Deprecated]
 
-  @param[in] ptr Pointer to memory to be freed
-  @return #hipSuccess,
-          #hipErrorInvalidValue (if pointer is invalid, including device pointers allocated
-  with hipMalloc)
+    @param[in] ptr Pointer to memory to be freed
+    @return #hipSuccess,
+            #hipErrorInvalidValue (if pointer is invalid, including device pointers allocated
+    with hipMalloc)
 
-  @warning  This API is deprecated, use hipHostFree() instead*/
+    @warning  This API is deprecated, use hipHostFree() instead*/
     pub fn hipFreeHost(ptr: *mut ::core::ffi::c_void) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Free memory allocated by the hcc hip host memory allocation API
-  This API performs an implicit hipDeviceSynchronize() call.
-  If pointer is NULL, the hip runtime is initialized and hipSuccess is returned.
+     This API performs an implicit hipDeviceSynchronize() call.
+     If pointer is NULL, the hip runtime is initialized and hipSuccess is returned.
 
-  @param[in] ptr Pointer to memory to be freed
-  @return #hipSuccess,
-          #hipErrorInvalidValue (if pointer is invalid, including device pointers allocated with
- hipMalloc)
+     @param[in] ptr Pointer to memory to be freed
+     @return #hipSuccess,
+             #hipErrorInvalidValue (if pointer is invalid, including device pointers allocated with
+    hipMalloc)
 
-  @see hipMalloc, hipMallocPitch, hipFree, hipMallocArray, hipFreeArray, hipMalloc3D,
- hipMalloc3DArray, hipHostMalloc*/
+     @see hipMalloc, hipMallocPitch, hipFree, hipMallocArray, hipFreeArray, hipMalloc3D,
+    hipMalloc3DArray, hipHostMalloc*/
     pub fn hipHostFree(ptr: *mut ::core::ffi::c_void) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Copy data from src to dst.
 
-  It supports memory from host to device,
-  device to host, device to device and host to host
-  The src and dst must not overlap.
+     It supports memory from host to device,
+     device to host, device to device and host to host
+     The src and dst must not overlap.
 
-  For hipMemcpy, the copy is always performed by the current device (set by hipSetDevice).
-  For multi-gpu or peer-to-peer configurations, it is recommended to set the current device to the
-  device where the src data is physically located. For optimal peer-to-peer copies, the copy device
-  must be able to access the src and dst pointers (by calling hipDeviceEnablePeerAccess with copy
-  agent as the current device and src/dest as the peerDevice argument.  if this is not done, the
-  hipMemcpy will still work, but will perform the copy using a staging buffer on the host.
-  Calling hipMemcpy with dst and src pointers that do not match the hipMemcpyKind results in
-  undefined behavior.
+     For hipMemcpy, the copy is always performed by the current device (set by hipSetDevice).
+     For multi-gpu or peer-to-peer configurations, it is recommended to set the current device to the
+     device where the src data is physically located. For optimal peer-to-peer copies, the copy device
+     must be able to access the src and dst pointers (by calling hipDeviceEnablePeerAccess with copy
+     agent as the current device and src/dest as the peerDevice argument.  if this is not done, the
+     hipMemcpy will still work, but will perform the copy using a staging buffer on the host.
+     Calling hipMemcpy with dst and src pointers that do not match the hipMemcpyKind results in
+     undefined behavior.
 
-  @param[out]  dst Data being copy to
-  @param[in]  src Data being copy from
-  @param[in]  sizeBytes Data size in bytes
-  @param[in]  kind Kind of transfer
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorUnknown
+     @param[out]  dst Data being copy to
+     @param[in]  src Data being copy from
+     @param[in]  sizeBytes Data size in bytes
+     @param[in]  kind Kind of transfer
+     @return #hipSuccess, #hipErrorInvalidValue, #hipErrorUnknown
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
     pub fn hipMemcpy(
         dst: *mut ::core::ffi::c_void,
         src: *const ::core::ffi::c_void,
@@ -6666,17 +6089,17 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Memory copy on the stream.
-  It allows single or multiple devices to do memory copy on single or multiple streams.
+      It allows single or multiple devices to do memory copy on single or multiple streams.
 
-  @param[out]  dst Data being copy to
-  @param[in]  src Data being copy from
-  @param[in]  sizeBytes Data size in bytes
-  @param[in]  kind Kind of transfer
-  @param[in]  stream Valid stream
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorUnknown, #hipErrorContextIsDestroyed
+      @param[out]  dst Data being copy to
+      @param[in]  src Data being copy from
+      @param[in]  sizeBytes Data size in bytes
+      @param[in]  kind Kind of transfer
+      @param[in]  stream Valid stream
+      @return #hipSuccess, #hipErrorInvalidValue, #hipErrorUnknown, #hipErrorContextIsDestroyed
 
-  @see hipMemcpy, hipStreamCreate, hipStreamSynchronize, hipStreamDestroy, hipSetDevice, hipLaunchKernelGGL
-*/
+      @see hipMemcpy, hipStreamCreate, hipStreamSynchronize, hipStreamDestroy, hipSetDevice, hipLaunchKernelGGL
+    */
     pub fn hipMemcpyWithStream(
         dst: *mut ::core::ffi::c_void,
         src: *const ::core::ffi::c_void,
@@ -6689,19 +6112,19 @@ extern "C" {
     #[must_use]
     /**  @brief Copy data from Host to Device
 
-  @param[out]  dst Data being copy to
-  @param[in]   src Data being copy from
-  @param[in]   sizeBytes Data size in bytes
+     @param[out]  dst Data being copy to
+     @param[in]   src Data being copy from
+     @param[in]   sizeBytes Data size in bytes
 
-  @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
     pub fn hipMemcpyHtoD(
         dst: hipDeviceptr_t,
         src: *mut ::core::ffi::c_void,
@@ -6712,19 +6135,19 @@ extern "C" {
     #[must_use]
     /**  @brief Copy data from Device to Host
 
-  @param[out]  dst Data being copy to
-  @param[in]   src Data being copy from
-  @param[in]   sizeBytes Data size in bytes
+     @param[out]  dst Data being copy to
+     @param[in]   src Data being copy from
+     @param[in]   sizeBytes Data size in bytes
 
-  @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
     pub fn hipMemcpyDtoH(
         dst: *mut ::core::ffi::c_void,
         src: hipDeviceptr_t,
@@ -6735,43 +6158,39 @@ extern "C" {
     #[must_use]
     /**  @brief Copy data from Device to Device
 
-  @param[out]  dst Data being copy to
-  @param[in]   src Data being copy from
-  @param[in]   sizeBytes Data size in bytes
+     @param[out]  dst Data being copy to
+     @param[in]   src Data being copy from
+     @param[in]   sizeBytes Data size in bytes
 
-  @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
-    pub fn hipMemcpyDtoD(
-        dst: hipDeviceptr_t,
-        src: hipDeviceptr_t,
-        sizeBytes: usize,
-    ) -> hipError_t;
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
+    pub fn hipMemcpyDtoD(dst: hipDeviceptr_t, src: hipDeviceptr_t, sizeBytes: usize) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Copies from one 1D array to device memory.
 
-  @param[out]  dstDevice Destination device pointer
-  @param[in]   srcArray Source array
-  @param[in]   srcOffset Offset in bytes of source array
-  @param[in]   ByteCount Size of memory copy in bytes
+     @param[out]  dstDevice Destination device pointer
+     @param[in]   srcArray Source array
+     @param[in]   srcOffset Offset in bytes of source array
+     @param[in]   ByteCount Size of memory copy in bytes
 
-  @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
     pub fn hipMemcpyAtoD(
         dstDevice: hipDeviceptr_t,
         srcArray: hipArray_t,
@@ -6783,20 +6202,20 @@ extern "C" {
     #[must_use]
     /**  @brief Copies from device memory to a 1D array.
 
-  @param[out]  dstArray Destination array
-  @param[in]   dstOffset Offset in bytes of destination array
-  @param[in]   srcDevice Source device pointer
-  @param[in]   ByteCount Size of memory copy in bytes
+     @param[out]  dstArray Destination array
+     @param[in]   dstOffset Offset in bytes of destination array
+     @param[in]   srcDevice Source device pointer
+     @param[in]   ByteCount Size of memory copy in bytes
 
-  @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
     pub fn hipMemcpyDtoA(
         dstArray: hipArray_t,
         dstOffset: usize,
@@ -6808,21 +6227,21 @@ extern "C" {
     #[must_use]
     /**  @brief Copies from one 1D array to another.
 
-  @param[out]  dstArray Destination array
-  @param[in]   dstOffset Offset in bytes of destination array
-  @param[in]   srcArray Source array
-  @param[in]   srcOffset Offset in bytes of source array
-  @param[in]   ByteCount Size of memory copy in bytes
+     @param[out]  dstArray Destination array
+     @param[in]   dstOffset Offset in bytes of destination array
+     @param[in]   srcArray Source array
+     @param[in]   srcOffset Offset in bytes of source array
+     @param[in]   ByteCount Size of memory copy in bytes
 
-  @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
     pub fn hipMemcpyAtoA(
         dstArray: hipArray_t,
         dstOffset: usize,
@@ -6835,20 +6254,20 @@ extern "C" {
     #[must_use]
     /**  @brief Copy data from Host to Device asynchronously
 
-  @param[out]  dst  Data being copy to
-  @param[in]   src  Data being copy from
-  @param[in]   sizeBytes  Data size in bytes
-  @param[in]   stream  Stream identifier
+     @param[out]  dst  Data being copy to
+     @param[in]   src  Data being copy from
+     @param[in]   sizeBytes  Data size in bytes
+     @param[in]   stream  Stream identifier
 
-  @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
     pub fn hipMemcpyHtoDAsync(
         dst: hipDeviceptr_t,
         src: *mut ::core::ffi::c_void,
@@ -6860,20 +6279,20 @@ extern "C" {
     #[must_use]
     /**  @brief Copy data from Device to Host asynchronously
 
-  @param[out]  dst Data being copy to
-  @param[in]   src Data being copy from
-  @param[in]   sizeBytes Data size in bytes
-  @param[in]   stream  Stream identifier
+     @param[out]  dst Data being copy to
+     @param[in]   src Data being copy from
+     @param[in]   sizeBytes Data size in bytes
+     @param[in]   stream  Stream identifier
 
-  @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
     pub fn hipMemcpyDtoHAsync(
         dst: *mut ::core::ffi::c_void,
         src: hipDeviceptr_t,
@@ -6885,20 +6304,20 @@ extern "C" {
     #[must_use]
     /**  @brief Copy data from Device to Device asynchronously
 
-  @param[out]  dst  Data being copy to
-  @param[in]   src  Data being copy from
-  @param[in]   sizeBytes  Data size in bytes
-  @param[in]   stream  Stream identifier
+     @param[out]  dst  Data being copy to
+     @param[in]   src  Data being copy from
+     @param[in]   sizeBytes  Data size in bytes
+     @param[in]   stream  Stream identifier
 
-  @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
     pub fn hipMemcpyDtoDAsync(
         dst: hipDeviceptr_t,
         src: hipDeviceptr_t,
@@ -6910,21 +6329,21 @@ extern "C" {
     #[must_use]
     /** @brief Copies from one 1D array to host memory.
 
-  @param[out]  dstHost Destination pointer
-  @param[in]   srcArray Source array
-  @param[in]   srcOffset Offset in bytes of source array
-  @param[in]   ByteCount Size of memory copy in bytes
-  @param[in]   stream Stream identifier
+     @param[out]  dstHost Destination pointer
+     @param[in]   srcArray Source array
+     @param[in]   srcOffset Offset in bytes of source array
+     @param[in]   ByteCount Size of memory copy in bytes
+     @param[in]   stream Stream identifier
 
-  @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
     pub fn hipMemcpyAtoHAsync(
         dstHost: *mut ::core::ffi::c_void,
         srcArray: hipArray_t,
@@ -6937,21 +6356,21 @@ extern "C" {
     #[must_use]
     /** @brief Copies from host memory to a 1D array.
 
-  @param[out]  dstArray Destination array
-  @param[in]   dstOffset Offset in bytes of destination array
-  @param[in]   srcHost Source host pointer
-  @param[in]   ByteCount Size of memory copy in bytes
-  @param[in]   stream Stream identifier
+     @param[out]  dstArray Destination array
+     @param[in]   dstOffset Offset in bytes of destination array
+     @param[in]   srcHost Source host pointer
+     @param[in]   ByteCount Size of memory copy in bytes
+     @param[in]   stream Stream identifier
 
-  @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
- hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
- hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
- hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
- hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
- hipMemHostAlloc, hipMemHostGetDevicePointer*/
+     @see hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc, hipMemAllocHost,
+    hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned, hipMemcpyAtoA,
+    hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync, hipMemcpyDtoA, hipMemcpyDtoD,
+    hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync, hipMemcpyHtoA, hipMemcpyHtoAAsync,
+    hipMemcpyHtoDAsync, hipMemFree, hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo,
+    hipMemHostAlloc, hipMemHostGetDevicePointer*/
     pub fn hipMemcpyHtoAAsync(
         dstArray: hipArray_t,
         dstOffset: usize,
@@ -6963,17 +6382,17 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Returns a global pointer from a module.
-  Returns in *dptr and *bytes the pointer and size of the global of name name located in module hmod.
-  If no variable of that name exists, it returns hipErrorNotFound. Both parameters dptr and bytes are optional.
-  If one of them is NULL, it is ignored and hipSuccess is returned.
+      Returns in *dptr and *bytes the pointer and size of the global of name name located in module hmod.
+      If no variable of that name exists, it returns hipErrorNotFound. Both parameters dptr and bytes are optional.
+      If one of them is NULL, it is ignored and hipSuccess is returned.
 
-  @param[out]  dptr  Returns global device pointer
-  @param[out]  bytes Returns global size in bytes
-  @param[in]   hmod  Module to retrieve global from
-  @param[in]   name  Name of global to retrieve
+      @param[out]  dptr  Returns global device pointer
+      @param[out]  bytes Returns global size in bytes
+      @param[in]   hmod  Module to retrieve global from
+      @param[in]   name  Name of global to retrieve
 
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotFound, #hipErrorInvalidContext
-*/
+      @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotFound, #hipErrorInvalidContext
+    */
     pub fn hipModuleGetGlobal(
         dptr: *mut hipDeviceptr_t,
         bytes: *mut usize,
@@ -6985,11 +6404,11 @@ extern "C" {
     #[must_use]
     /**  @brief Gets device pointer associated with symbol on the device.
 
-  @param[out]  devPtr  pointer to the device associated the symbole
-  @param[in]   symbol  pointer to the symbole of the device
+      @param[out]  devPtr  pointer to the device associated the symbole
+      @param[in]   symbol  pointer to the symbole of the device
 
-  @return #hipSuccess, #hipErrorInvalidValue
-*/
+      @return #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipGetSymbolAddress(
         devPtr: *mut *mut ::core::ffi::c_void,
         symbol: *const ::core::ffi::c_void,
@@ -6999,35 +6418,32 @@ extern "C" {
     #[must_use]
     /**  @brief Gets the size of the given symbol on the device.
 
-  @param[in]   symbol  pointer to the device symbole
-  @param[out]  size  pointer to the size
+      @param[in]   symbol  pointer to the device symbole
+      @param[out]  size  pointer to the size
 
-  @return #hipSuccess, #hipErrorInvalidValue
-*/
-    pub fn hipGetSymbolSize(
-        size: *mut usize,
-        symbol: *const ::core::ffi::c_void,
-    ) -> hipError_t;
+      @return #hipSuccess, #hipErrorInvalidValue
+    */
+    pub fn hipGetSymbolSize(size: *mut usize, symbol: *const ::core::ffi::c_void) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Gets the pointer of requested HIP driver function.
 
- @param[in] symbol  The Symbol name of the driver function to request.
- @param[out] pfn  Output pointer to the requested driver function.
- @param[in] hipVersion  The HIP version for the requested driver function symbol.
- HIP version is defined as 100*version_major + version_minor. For example, in HIP 6.1, the
- hipversion is 601, for the symbol function "hipGetDeviceProperties", the specified hipVersion 601
- is greater or equal to the version 600, the symbol function will be handle properly as backend
- compatible function.
+    @param[in] symbol  The Symbol name of the driver function to request.
+    @param[out] pfn  Output pointer to the requested driver function.
+    @param[in] hipVersion  The HIP version for the requested driver function symbol.
+    HIP version is defined as 100*version_major + version_minor. For example, in HIP 6.1, the
+    hipversion is 601, for the symbol function "hipGetDeviceProperties", the specified hipVersion 601
+    is greater or equal to the version 600, the symbol function will be handle properly as backend
+    compatible function.
 
- @param[in] flags  Currently only default flag is suppported.
- @param[out] symbolStatus  Optional enumeration for returned status of searching for symbol driver
- function based on the input hipVersion.
+    @param[in] flags  Currently only default flag is suppported.
+    @param[out] symbolStatus  Optional enumeration for returned status of searching for symbol driver
+    function based on the input hipVersion.
 
- Returns hipSuccess if the returned pfn is addressed to the pointer of found driver function.
+    Returns hipSuccess if the returned pfn is addressed to the pointer of found driver function.
 
- @return #hipSuccess, #hipErrorInvalidValue.*/
+    @return #hipSuccess, #hipErrorInvalidValue.*/
     pub fn hipGetProcAddress(
         symbol: *const ::core::ffi::c_char,
         pfn: *mut *mut ::core::ffi::c_void,
@@ -7039,23 +6455,23 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Copies data to the given symbol on the device.
- Symbol HIP APIs allow a kernel to define a device-side data symbol which can be accessed on
- the host side. The symbol can be in __constant or device space.
- Note that the symbol name needs to be encased in the HIP_SYMBOL macro.
- This also applies to hipMemcpyFromSymbol, hipGetSymbolAddress, and hipGetSymbolSize.
- For detailed usage, see the
- <a href="https://rocm.docs.amd.com/projects/HIP/en/latest/how-to/hip_porting_guide.html#memcpytosymbol">memcpyToSymbol example</a>
- in the HIP Porting Guide.
+     Symbol HIP APIs allow a kernel to define a device-side data symbol which can be accessed on
+     the host side. The symbol can be in __constant or device space.
+     Note that the symbol name needs to be encased in the HIP_SYMBOL macro.
+     This also applies to hipMemcpyFromSymbol, hipGetSymbolAddress, and hipGetSymbolSize.
+     For detailed usage, see the
+     <a href="https://rocm.docs.amd.com/projects/HIP/en/latest/how-to/hip_porting_guide.html#memcpytosymbol">memcpyToSymbol example</a>
+     in the HIP Porting Guide.
 
 
-  @param[out]  symbol  pointer to the device symbole
-  @param[in]   src  pointer to the source address
-  @param[in]   sizeBytes  size in bytes to copy
-  @param[in]   offset  offset in bytes from start of symbole
-  @param[in]   kind  type of memory transfer
+      @param[out]  symbol  pointer to the device symbole
+      @param[in]   src  pointer to the source address
+      @param[in]   sizeBytes  size in bytes to copy
+      @param[in]   offset  offset in bytes from start of symbole
+      @param[in]   kind  type of memory transfer
 
-  @return #hipSuccess, #hipErrorInvalidValue
-*/
+      @return #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipMemcpyToSymbol(
         symbol: *const ::core::ffi::c_void,
         src: *const ::core::ffi::c_void,
@@ -7068,15 +6484,15 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data to the given symbol on the device asynchronously.
 
-  @param[out]  symbol  pointer to the device symbole
-  @param[in]   src  pointer to the source address
-  @param[in]   sizeBytes  size in bytes to copy
-  @param[in]   offset  offset in bytes from start of symbole
-  @param[in]   kind  type of memory transfer
-  @param[in]   stream  stream identifier
+      @param[out]  symbol  pointer to the device symbole
+      @param[in]   src  pointer to the source address
+      @param[in]   sizeBytes  size in bytes to copy
+      @param[in]   offset  offset in bytes from start of symbole
+      @param[in]   kind  type of memory transfer
+      @param[in]   stream  stream identifier
 
-  @return #hipSuccess, #hipErrorInvalidValue
-*/
+      @return #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipMemcpyToSymbolAsync(
         symbol: *const ::core::ffi::c_void,
         src: *const ::core::ffi::c_void,
@@ -7090,14 +6506,14 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data from the given symbol on the device.
 
-  @param[out]  dst  Returns pointer to destinition memory address
-  @param[in]   symbol  Pointer to the symbole address on the device
-  @param[in]   sizeBytes  Size in bytes to copy
-  @param[in]   offset  Offset in bytes from the start of symbole
-  @param[in]   kind  Type of memory transfer
+      @param[out]  dst  Returns pointer to destinition memory address
+      @param[in]   symbol  Pointer to the symbole address on the device
+      @param[in]   sizeBytes  Size in bytes to copy
+      @param[in]   offset  Offset in bytes from the start of symbole
+      @param[in]   kind  Type of memory transfer
 
-  @return #hipSuccess, #hipErrorInvalidValue
-*/
+      @return #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipMemcpyFromSymbol(
         dst: *mut ::core::ffi::c_void,
         symbol: *const ::core::ffi::c_void,
@@ -7110,15 +6526,15 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data from the given symbol on the device asynchronously.
 
-  @param[out]  dst  Returns pointer to destinition memory address
-  @param[in]   symbol  pointer to the symbole address on the device
-  @param[in]   sizeBytes  size in bytes to copy
-  @param[in]   offset  offset in bytes from the start of symbole
-  @param[in]   kind  type of memory transfer
-  @param[in]   stream  stream identifier
+      @param[out]  dst  Returns pointer to destinition memory address
+      @param[in]   symbol  pointer to the symbole address on the device
+      @param[in]   sizeBytes  size in bytes to copy
+      @param[in]   offset  offset in bytes from the start of symbole
+      @param[in]   kind  type of memory transfer
+      @param[in]   stream  stream identifier
 
-  @return #hipSuccess, #hipErrorInvalidValue
-*/
+      @return #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipMemcpyFromSymbolAsync(
         dst: *mut ::core::ffi::c_void,
         symbol: *const ::core::ffi::c_void,
@@ -7132,31 +6548,31 @@ extern "C" {
     #[must_use]
     /**  @brief Copy data from src to dst asynchronously.
 
-  @warning If host or dest are not pinned, the memory copy will be performed synchronously.  For
- best performance, use hipHostMalloc to allocate host memory that is transferred asynchronously.
+     @warning If host or dest are not pinned, the memory copy will be performed synchronously.  For
+    best performance, use hipHostMalloc to allocate host memory that is transferred asynchronously.
 
-  @warning on HCC hipMemcpyAsync does not support overlapped H2D and D2H copies.
-  For hipMemcpy, the copy is always performed by the device associated with the specified stream.
+     @warning on HCC hipMemcpyAsync does not support overlapped H2D and D2H copies.
+     For hipMemcpy, the copy is always performed by the device associated with the specified stream.
 
-  For multi-gpu or peer-to-peer configurations, it is recommended to use a stream which is a
- attached to the device where the src data is physically located. For optimal peer-to-peer copies,
- the copy device must be able to access the src and dst pointers (by calling
- hipDeviceEnablePeerAccess with copy agent as the current device and src/dest as the peerDevice
- argument.  if this is not done, the hipMemcpy will still work, but will perform the copy using a
- staging buffer on the host.
+     For multi-gpu or peer-to-peer configurations, it is recommended to use a stream which is a
+    attached to the device where the src data is physically located. For optimal peer-to-peer copies,
+    the copy device must be able to access the src and dst pointers (by calling
+    hipDeviceEnablePeerAccess with copy agent as the current device and src/dest as the peerDevice
+    argument.  if this is not done, the hipMemcpy will still work, but will perform the copy using a
+    staging buffer on the host.
 
-  @param[out] dst Data being copy to
-  @param[in]  src Data being copy from
-  @param[in]  sizeBytes Data size in bytes
-  @param[in]  kind  Type of memory transfer
-  @param[in]  stream  Stream identifier
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorUnknown
+     @param[out] dst Data being copy to
+     @param[in]  src Data being copy from
+     @param[in]  sizeBytes Data size in bytes
+     @param[in]  kind  Type of memory transfer
+     @param[in]  stream  Stream identifier
+     @return #hipSuccess, #hipErrorInvalidValue, #hipErrorUnknown
 
-  @see hipMemcpy, hipMemcpy2D, hipMemcpyToArray, hipMemcpy2DToArray, hipMemcpyFromArray,
- hipMemcpy2DFromArray, hipMemcpyArrayToArray, hipMemcpy2DArrayToArray, hipMemcpyToSymbol,
- hipMemcpyFromSymbol, hipMemcpy2DAsync, hipMemcpyToArrayAsync, hipMemcpy2DToArrayAsync,
- hipMemcpyFromArrayAsync, hipMemcpy2DFromArrayAsync, hipMemcpyToSymbolAsync,
- hipMemcpyFromSymbolAsync*/
+     @see hipMemcpy, hipMemcpy2D, hipMemcpyToArray, hipMemcpy2DToArray, hipMemcpyFromArray,
+    hipMemcpy2DFromArray, hipMemcpyArrayToArray, hipMemcpy2DArrayToArray, hipMemcpyToSymbol,
+    hipMemcpyFromSymbol, hipMemcpy2DAsync, hipMemcpyToArrayAsync, hipMemcpy2DToArrayAsync,
+    hipMemcpyFromArrayAsync, hipMemcpy2DFromArrayAsync, hipMemcpyToSymbolAsync,
+    hipMemcpyFromSymbolAsync*/
     pub fn hipMemcpyAsync(
         dst: *mut ::core::ffi::c_void,
         src: *const ::core::ffi::c_void,
@@ -7168,12 +6584,12 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Fills the first sizeBytes bytes of the memory area pointed to by dest with the constant
- byte value value.
+    byte value value.
 
-  @param[out] dst  Data being filled
-  @param[in]  value  Value to be set
-  @param[in]  sizeBytes  Data size in bytes
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
+     @param[out] dst  Data being filled
+     @param[in]  value  Value to be set
+     @param[in]  sizeBytes  Data size in bytes
+     @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
     pub fn hipMemset(
         dst: *mut ::core::ffi::c_void,
         value: ::core::ffi::c_int,
@@ -7183,12 +6599,12 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Fills the first sizeBytes bytes of the memory area pointed to by dest with the constant
- byte value value.
+    byte value value.
 
-  @param[out] dest  Data ptr to be filled
-  @param[in]  value  Value to be set
-  @param[in]  count  Number of values to be set
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
+     @param[out] dest  Data ptr to be filled
+     @param[in]  value  Value to be set
+     @param[in]  count  Number of values to be set
+     @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
     pub fn hipMemsetD8(
         dest: hipDeviceptr_t,
         value: ::core::ffi::c_uchar,
@@ -7198,18 +6614,18 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Fills the first sizeBytes bytes of the memory area pointed to by dest with the constant
- byte value value.
+    byte value value.
 
- hipMemsetD8Async() is asynchronous with respect to the host, so the call may return before the
- memset is complete. The operation can optionally be associated to a stream by passing a non-zero
- stream argument. If stream is non-zero, the operation may overlap with operations in other
- streams.
+    hipMemsetD8Async() is asynchronous with respect to the host, so the call may return before the
+    memset is complete. The operation can optionally be associated to a stream by passing a non-zero
+    stream argument. If stream is non-zero, the operation may overlap with operations in other
+    streams.
 
-  @param[out] dest  Data ptr to be filled
-  @param[in]  value  Constant value to be set
-  @param[in]  count  Number of values to be set
-  @param[in]  stream  Stream identifier
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
+     @param[out] dest  Data ptr to be filled
+     @param[in]  value  Constant value to be set
+     @param[in]  count  Number of values to be set
+     @param[in]  stream  Stream identifier
+     @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
     pub fn hipMemsetD8Async(
         dest: hipDeviceptr_t,
         value: ::core::ffi::c_uchar,
@@ -7220,12 +6636,12 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Fills the first sizeBytes bytes of the memory area pointed to by dest with the constant
- short value value.
+    short value value.
 
-  @param[out] dest  Data ptr to be filled
-  @param[in]  value  Constant value to be set
-  @param[in]  count  Number of values to be set
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
+     @param[out] dest  Data ptr to be filled
+     @param[in]  value  Constant value to be set
+     @param[in]  count  Number of values to be set
+     @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
     pub fn hipMemsetD16(
         dest: hipDeviceptr_t,
         value: ::core::ffi::c_ushort,
@@ -7235,18 +6651,18 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Fills the first sizeBytes bytes of the memory area pointed to by dest with the constant
- short value value.
+    short value value.
 
- hipMemsetD16Async() is asynchronous with respect to the host, so the call may return before the
- memset is complete. The operation can optionally be associated to a stream by passing a non-zero
- stream argument. If stream is non-zero, the operation may overlap with operations in other
- streams.
+    hipMemsetD16Async() is asynchronous with respect to the host, so the call may return before the
+    memset is complete. The operation can optionally be associated to a stream by passing a non-zero
+    stream argument. If stream is non-zero, the operation may overlap with operations in other
+    streams.
 
-  @param[out] dest  Data ptr to be filled
-  @param[in]  value  Constant value to be set
-  @param[in]  count  Number of values to be set
-  @param[in]  stream  Stream identifier
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
+     @param[out] dest  Data ptr to be filled
+     @param[in]  value  Constant value to be set
+     @param[in]  count  Number of values to be set
+     @param[in]  stream  Stream identifier
+     @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
     pub fn hipMemsetD16Async(
         dest: hipDeviceptr_t,
         value: ::core::ffi::c_ushort,
@@ -7257,12 +6673,12 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Fills the memory area pointed to by dest with the constant integer
- value for specified number of times.
+    value for specified number of times.
 
-  @param[out] dest  Data being filled
-  @param[in]  value  Constant value to be set
-  @param[in]  count  Number of values to be set
-  @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
+     @param[out] dest  Data being filled
+     @param[in]  value  Constant value to be set
+     @param[in]  count  Number of values to be set
+     @return #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized*/
     pub fn hipMemsetD32(
         dest: hipDeviceptr_t,
         value: ::core::ffi::c_int,
@@ -7272,18 +6688,18 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Fills the first sizeBytes bytes of the memory area pointed to by dev with the constant
- byte value value.
+    byte value value.
 
- hipMemsetAsync() is asynchronous with respect to the host, so the call may return before the
- memset is complete. The operation can optionally be associated to a stream by passing a non-zero
- stream argument. If stream is non-zero, the operation may overlap with operations in other
- streams.
+    hipMemsetAsync() is asynchronous with respect to the host, so the call may return before the
+    memset is complete. The operation can optionally be associated to a stream by passing a non-zero
+    stream argument. If stream is non-zero, the operation may overlap with operations in other
+    streams.
 
-  @param[out] dst Pointer to device memory
-  @param[in]  value  Value to set for each byte of specified memory
-  @param[in]  sizeBytes  Size in bytes to set
-  @param[in]  stream  Stream identifier
-  @return #hipSuccess, #hipErrorInvalidValue*/
+     @param[out] dst Pointer to device memory
+     @param[in]  value  Value to set for each byte of specified memory
+     @param[in]  sizeBytes  Size in bytes to set
+     @param[in]  stream  Stream identifier
+     @return #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipMemsetAsync(
         dst: *mut ::core::ffi::c_void,
         value: ::core::ffi::c_int,
@@ -7294,18 +6710,18 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Fills the memory area pointed to by dev with the constant integer
- value for specified number of times.
+    value for specified number of times.
 
-  hipMemsetD32Async() is asynchronous with respect to the host, so the call may return before the
- memset is complete. The operation can optionally be associated to a stream by passing a non-zero
- stream argument. If stream is non-zero, the operation may overlap with operations in other
- streams.
+     hipMemsetD32Async() is asynchronous with respect to the host, so the call may return before the
+    memset is complete. The operation can optionally be associated to a stream by passing a non-zero
+    stream argument. If stream is non-zero, the operation may overlap with operations in other
+    streams.
 
-  @param[out] dst Pointer to device memory
-  @param[in]  value  Value to set for each byte of specified memory
-  @param[in]  count  Number of values to be set
-  @param[in]  stream  Stream identifier
-  @return #hipSuccess, #hipErrorInvalidValue*/
+     @param[out] dst Pointer to device memory
+     @param[in]  value  Value to set for each byte of specified memory
+     @param[in]  count  Number of values to be set
+     @param[in]  stream  Stream identifier
+     @return #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipMemsetD32Async(
         dst: hipDeviceptr_t,
         value: ::core::ffi::c_int,
@@ -7317,12 +6733,12 @@ extern "C" {
     #[must_use]
     /**  @brief Fills the memory area pointed to by dst with the constant value.
 
-  @param[out] dst Pointer to device memory
-  @param[in]  pitch  Data size in bytes
-  @param[in]  value  Constant value to be set
-  @param[in]  width
-  @param[in]  height
-  @return #hipSuccess, #hipErrorInvalidValue*/
+    @param[out] dst Pointer to device memory
+    @param[in]  pitch  Data size in bytes
+    @param[in]  value  Constant value to be set
+    @param[in]  width
+    @param[in]  height
+    @return #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipMemset2D(
         dst: *mut ::core::ffi::c_void,
         pitch: usize,
@@ -7335,13 +6751,13 @@ extern "C" {
     #[must_use]
     /**  @brief Fills asynchronously the memory area pointed to by dst with the constant value.
 
-  @param[in]  dst Pointer to 2D device memory
-  @param[in]  pitch  Pitch size in bytes
-  @param[in]  value  Value to be set for each byte of specified memory
-  @param[in]  width  Width of matrix set columns in bytes
-  @param[in]  height  Height of matrix set rows in bytes
-  @param[in]  stream  Stream identifier
-  @return #hipSuccess, #hipErrorInvalidValue*/
+    @param[in]  dst Pointer to 2D device memory
+    @param[in]  pitch  Pitch size in bytes
+    @param[in]  value  Value to be set for each byte of specified memory
+    @param[in]  width  Width of matrix set columns in bytes
+    @param[in]  height  Height of matrix set rows in bytes
+    @param[in]  stream  Stream identifier
+    @return #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipMemset2DAsync(
         dst: *mut ::core::ffi::c_void,
         pitch: usize,
@@ -7355,10 +6771,10 @@ extern "C" {
     #[must_use]
     /**  @brief Fills synchronously the memory area pointed to by pitchedDevPtr with the constant value.
 
-  @param[in] pitchedDevPtr  Pointer to pitched device memory
-  @param[in]  value  Value to set for each byte of specified memory
-  @param[in]  extent  Size parameters for width field in bytes in device memory
-  @return #hipSuccess, #hipErrorInvalidValue*/
+    @param[in] pitchedDevPtr  Pointer to pitched device memory
+    @param[in]  value  Value to set for each byte of specified memory
+    @param[in]  extent  Size parameters for width field in bytes in device memory
+    @return #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipMemset3D(
         pitchedDevPtr: hipPitchedPtr,
         value: ::core::ffi::c_int,
@@ -7369,11 +6785,11 @@ extern "C" {
     #[must_use]
     /**  @brief Fills asynchronously the memory area pointed to by pitchedDevPtr with the constant value.
 
-  @param[in] pitchedDevPtr  Pointer to pitched device memory
-  @param[in]  value  Value to set for each byte of specified memory
-  @param[in]  extent  Size parameters for width field in bytes in device memory
-  @param[in]  stream  Stream identifier
-  @return #hipSuccess, #hipErrorInvalidValue*/
+    @param[in] pitchedDevPtr  Pointer to pitched device memory
+    @param[in]  value  Value to set for each byte of specified memory
+    @param[in]  extent  Size parameters for width field in bytes in device memory
+    @param[in]  stream  Stream identifier
+    @return #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipMemset3DAsync(
         pitchedDevPtr: hipPitchedPtr,
         value: ::core::ffi::c_int,
@@ -7385,48 +6801,45 @@ extern "C" {
     #[must_use]
     /** @brief Query memory info.
 
- On ROCM, this function gets the actual free memory left on the current device, so supports
- the cases while running multi-workload (such as multiple processes, multiple threads, and
- multiple GPUs).
+     On ROCM, this function gets the actual free memory left on the current device, so supports
+     the cases while running multi-workload (such as multiple processes, multiple threads, and
+     multiple GPUs).
 
- @warning On Windows, the free memory only accounts for memory allocated by this process and may
- be optimistic.
+     @warning On Windows, the free memory only accounts for memory allocated by this process and may
+     be optimistic.
 
- @param[out] free Returns free memory on the current device in bytes
- @param[out] total Returns total allocatable memory on the current device in bytes
+     @param[out] free Returns free memory on the current device in bytes
+     @param[out] total Returns total allocatable memory on the current device in bytes
 
- @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
-*/
+     @return #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue
+    */
     pub fn hipMemGetInfo(free: *mut usize, total: *mut usize) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Get allocated memory size via memory pointer.
 
- This function gets the allocated shared virtual memory size from memory pointer.
+     This function gets the allocated shared virtual memory size from memory pointer.
 
- @param[in] ptr Pointer to allocated memory
- @param[out] size Returns the allocated memory size in bytes
+     @param[in] ptr Pointer to allocated memory
+     @param[out] size Returns the allocated memory size in bytes
 
- @return #hipSuccess, #hipErrorInvalidValue
-*/
-    pub fn hipMemPtrGetInfo(
-        ptr: *mut ::core::ffi::c_void,
-        size: *mut usize,
-    ) -> hipError_t;
+     @return #hipSuccess, #hipErrorInvalidValue
+    */
+    pub fn hipMemPtrGetInfo(ptr: *mut ::core::ffi::c_void, size: *mut usize) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Allocate an array on the device.
 
-  @param[out]  array  Pointer to allocated array in device memory
-  @param[in]   desc   Requested channel format
-  @param[in]   width  Requested array allocation width
-  @param[in]   height Requested array allocation height
-  @param[in]   flags  Requested properties of allocated array
-  @return      #hipSuccess, #hipErrorOutOfMemory
+    @param[out]  array  Pointer to allocated array in device memory
+    @param[in]   desc   Requested channel format
+    @param[in]   width  Requested array allocation width
+    @param[in]   height Requested array allocation height
+    @param[in]   flags  Requested properties of allocated array
+    @return      #hipSuccess, #hipErrorOutOfMemory
 
-  @see hipMalloc, hipMallocPitch, hipFree, hipFreeArray, hipHostMalloc, hipHostFree*/
+    @see hipMalloc, hipMallocPitch, hipFree, hipFreeArray, hipHostMalloc, hipHostFree*/
     pub fn hipMallocArray(
         array: *mut hipArray_t,
         desc: *const hipChannelFormatDesc,
@@ -7439,12 +6852,12 @@ extern "C" {
     #[must_use]
     /**  @brief Create an array memory pointer on the device.
 
-  @param[out]  pHandle  Pointer to the array memory
-  @param[in]   pAllocateArray   Requested array desciptor
+    @param[out]  pHandle  Pointer to the array memory
+    @param[in]   pAllocateArray   Requested array desciptor
 
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
-  @see hipMallocArray, hipArrayDestroy, hipFreeArray*/
+    @see hipMallocArray, hipArrayDestroy, hipFreeArray*/
     pub fn hipArrayCreate(
         pHandle: *mut hipArray_t,
         pAllocateArray: *const HIP_ARRAY_DESCRIPTOR,
@@ -7454,23 +6867,23 @@ extern "C" {
     #[must_use]
     /**  @brief Destroy an array memory pointer on the device.
 
-  @param[in]  array  Pointer to the array memory
+    @param[in]  array  Pointer to the array memory
 
-  @return      #hipSuccess, #hipErrorInvalidValue
+    @return      #hipSuccess, #hipErrorInvalidValue
 
-  @see hipArrayCreate, hipArrayDestroy, hipFreeArray*/
+    @see hipArrayCreate, hipArrayDestroy, hipFreeArray*/
     pub fn hipArrayDestroy(array: hipArray_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Create a 3D array memory pointer on the device.
 
-  @param[out]  array  Pointer to the 3D array memory
-  @param[in]   pAllocateArray   Requested array desciptor
+    @param[out]  array  Pointer to the 3D array memory
+    @param[in]   pAllocateArray   Requested array desciptor
 
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
-  @see hipMallocArray, hipArrayDestroy, hipFreeArray*/
+    @see hipMallocArray, hipArrayDestroy, hipFreeArray*/
     pub fn hipArray3DCreate(
         array: *mut hipArray_t,
         pAllocateArray: *const HIP_ARRAY3D_DESCRIPTOR,
@@ -7480,38 +6893,35 @@ extern "C" {
     #[must_use]
     /**  @brief Create a 3D memory pointer on the device.
 
-  @param[out]  pitchedDevPtr  Pointer to the 3D memory
-  @param[in]   extent   Requested extent
+    @param[out]  pitchedDevPtr  Pointer to the 3D memory
+    @param[in]   extent   Requested extent
 
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
-  @see hipMallocPitch, hipMemGetInfo, hipFree*/
-    pub fn hipMalloc3D(
-        pitchedDevPtr: *mut hipPitchedPtr,
-        extent: hipExtent,
-    ) -> hipError_t;
+    @see hipMallocPitch, hipMemGetInfo, hipFree*/
+    pub fn hipMalloc3D(pitchedDevPtr: *mut hipPitchedPtr, extent: hipExtent) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Frees an array on the device.
 
-  @param[in]  array  Pointer to array to free
-  @return     #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized
+    @param[in]  array  Pointer to array to free
+    @return     #hipSuccess, #hipErrorInvalidValue, #hipErrorNotInitialized
 
-  @see hipMalloc, hipMallocPitch, hipFree, hipMallocArray, hipHostMalloc, hipHostFree*/
+    @see hipMalloc, hipMallocPitch, hipFree, hipMallocArray, hipHostMalloc, hipHostFree*/
     pub fn hipFreeArray(array: hipArray_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Allocate an array on the device.
 
-  @param[out]  array  Pointer to allocated array in device memory
-  @param[in]   desc   Requested channel format
-  @param[in]   extent Requested array allocation width, height and depth
-  @param[in]   flags  Requested properties of allocated array
-  @return      #hipSuccess, #hipErrorOutOfMemory
+    @param[out]  array  Pointer to allocated array in device memory
+    @param[in]   desc   Requested channel format
+    @param[in]   extent Requested array allocation width, height and depth
+    @param[in]   flags  Requested properties of allocated array
+    @return      #hipSuccess, #hipErrorOutOfMemory
 
-  @see hipMalloc, hipMallocPitch, hipFree, hipFreeArray, hipHostMalloc, hipHostFree*/
+    @see hipMalloc, hipMallocPitch, hipFree, hipFreeArray, hipHostMalloc, hipHostFree*/
     pub fn hipMalloc3DArray(
         array: *mut hipArray_t,
         desc: *const hipChannelFormatDesc,
@@ -7523,14 +6933,14 @@ extern "C" {
     #[must_use]
     /** @brief Gets info about the specified array
 
- @param[out] desc   - Returned array type
- @param[out] extent - Returned array shape. 2D arrays will have depth of zero
- @param[out] flags  - Returned array flags
- @param[in]  array  - The HIP array to get info for
+    @param[out] desc   - Returned array type
+    @param[out] extent - Returned array shape. 2D arrays will have depth of zero
+    @param[out] flags  - Returned array flags
+    @param[in]  array  - The HIP array to get info for
 
- @return #hipSuccess, #hipErrorInvalidValue #hipErrorInvalidHandle
+    @return #hipSuccess, #hipErrorInvalidValue #hipErrorInvalidHandle
 
- @see hipArrayGetDescriptor, hipArray3DGetDescriptor*/
+    @see hipArrayGetDescriptor, hipArray3DGetDescriptor*/
     pub fn hipArrayGetInfo(
         desc: *mut hipChannelFormatDesc,
         extent: *mut hipExtent,
@@ -7542,19 +6952,19 @@ extern "C" {
     #[must_use]
     /** @brief Gets a 1D or 2D array descriptor
 
- @param[out] pArrayDescriptor - Returned array descriptor
- @param[in]  array            - Array to get descriptor of
+    @param[out] pArrayDescriptor - Returned array descriptor
+    @param[in]  array            - Array to get descriptor of
 
- @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue #hipErrorInvalidHandle
+    @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue #hipErrorInvalidHandle
 
- @see hipArray3DCreate, hipArray3DGetDescriptor, hipArrayCreate, hipArrayDestroy, hipMemAlloc,
- hipMemAllocHost, hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned,
- hipMemcpy3D, hipMemcpy3DAsync, hipMemcpyAtoA, hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync,
- hipMemcpyDtoA, hipMemcpyDtoD, hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync,
- hipMemcpyHtoA, hipMemcpyHtoAAsync, hipMemcpyHtoD, hipMemcpyHtoDAsync, hipMemFree,
- hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo, hipMemHostAlloc,
- hipMemHostGetDevicePointer, hipMemsetD8, hipMemsetD16, hipMemsetD32, hipArrayGetInfo*/
+    @see hipArray3DCreate, hipArray3DGetDescriptor, hipArrayCreate, hipArrayDestroy, hipMemAlloc,
+    hipMemAllocHost, hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned,
+    hipMemcpy3D, hipMemcpy3DAsync, hipMemcpyAtoA, hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync,
+    hipMemcpyDtoA, hipMemcpyDtoD, hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync,
+    hipMemcpyHtoA, hipMemcpyHtoAAsync, hipMemcpyHtoD, hipMemcpyHtoDAsync, hipMemFree,
+    hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo, hipMemHostAlloc,
+    hipMemHostGetDevicePointer, hipMemsetD8, hipMemsetD16, hipMemsetD32, hipArrayGetInfo*/
     pub fn hipArrayGetDescriptor(
         pArrayDescriptor: *mut HIP_ARRAY_DESCRIPTOR,
         array: hipArray_t,
@@ -7564,19 +6974,19 @@ extern "C" {
     #[must_use]
     /** @brief Gets a 3D array descriptor
 
- @param[out] pArrayDescriptor - Returned 3D array descriptor
- @param[in]  array            - 3D array to get descriptor of
+    @param[out] pArrayDescriptor - Returned 3D array descriptor
+    @param[in]  array            - 3D array to get descriptor of
 
- @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidValue #hipErrorInvalidHandle, #hipErrorContextIsDestroyed
+    @return #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidValue #hipErrorInvalidHandle, #hipErrorContextIsDestroyed
 
- @see hipArray3DCreate, hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc,
- hipMemAllocHost, hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned,
- hipMemcpy3D, hipMemcpy3DAsync, hipMemcpyAtoA, hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync,
- hipMemcpyDtoA, hipMemcpyDtoD, hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync,
- hipMemcpyHtoA, hipMemcpyHtoAAsync, hipMemcpyHtoD, hipMemcpyHtoDAsync, hipMemFree,
- hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo, hipMemHostAlloc,
- hipMemHostGetDevicePointer, hipMemsetD8, hipMemsetD16, hipMemsetD32, hipArrayGetInfo*/
+    @see hipArray3DCreate, hipArrayCreate, hipArrayDestroy, hipArrayGetDescriptor, hipMemAlloc,
+    hipMemAllocHost, hipMemAllocPitch, hipMemcpy2D, hipMemcpy2DAsync, hipMemcpy2DUnaligned,
+    hipMemcpy3D, hipMemcpy3DAsync, hipMemcpyAtoA, hipMemcpyAtoD, hipMemcpyAtoH, hipMemcpyAtoHAsync,
+    hipMemcpyDtoA, hipMemcpyDtoD, hipMemcpyDtoDAsync, hipMemcpyDtoH, hipMemcpyDtoHAsync,
+    hipMemcpyHtoA, hipMemcpyHtoAAsync, hipMemcpyHtoD, hipMemcpyHtoDAsync, hipMemFree,
+    hipMemFreeHost, hipMemGetAddressRange, hipMemGetInfo, hipMemHostAlloc,
+    hipMemHostGetDevicePointer, hipMemsetD8, hipMemsetD16, hipMemsetD32, hipArrayGetInfo*/
     pub fn hipArray3DGetDescriptor(
         pArrayDescriptor: *mut HIP_ARRAY3D_DESCRIPTOR,
         array: hipArray_t,
@@ -7586,18 +6996,18 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   dst    Destination memory address
-  @param[in]   dpitch Pitch of destination memory
-  @param[in]   src    Source memory address
-  @param[in]   spitch Pitch of source memory
-  @param[in]   width  Width of matrix transfer (columns in bytes)
-  @param[in]   height Height of matrix transfer (rows)
-  @param[in]   kind   Type of transfer
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   dst    Destination memory address
+     @param[in]   dpitch Pitch of destination memory
+     @param[in]   src    Source memory address
+     @param[in]   spitch Pitch of source memory
+     @param[in]   width  Width of matrix transfer (columns in bytes)
+     @param[in]   height Height of matrix transfer (rows)
+     @param[in]   kind   Type of transfer
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpyToArray, hipMemcpy2DToArray, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpyToArray, hipMemcpy2DToArray, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
     pub fn hipMemcpy2D(
         dst: *mut ::core::ffi::c_void,
         dpitch: usize,
@@ -7611,46 +7021,43 @@ extern "C" {
 extern "C" {
     #[must_use]
     /**  @brief Copies memory for 2D arrays.
-  @param[in]   pCopy Parameters for the memory copy
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
-  #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   pCopy Parameters for the memory copy
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+     #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2D, hipMemcpyToArray, hipMemcpy2DToArray, hipMemcpyFromArray,
- hipMemcpyToSymbol, hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpy2D, hipMemcpyToArray, hipMemcpy2DToArray, hipMemcpyFromArray,
+    hipMemcpyToSymbol, hipMemcpyAsync*/
     pub fn hipMemcpyParam2D(pCopy: *const hip_Memcpy2D) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Copies memory for 2D arrays.
-  @param[in]   pCopy Parameters for the memory copy
-  @param[in]   stream Stream to use
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   pCopy Parameters for the memory copy
+     @param[in]   stream Stream to use
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2D, hipMemcpyToArray, hipMemcpy2DToArray, hipMemcpyFromArray,
- hipMemcpyToSymbol, hipMemcpyAsync*/
-    pub fn hipMemcpyParam2DAsync(
-        pCopy: *const hip_Memcpy2D,
-        stream: hipStream_t,
-    ) -> hipError_t;
+     @see hipMemcpy, hipMemcpy2D, hipMemcpyToArray, hipMemcpy2DToArray, hipMemcpyFromArray,
+    hipMemcpyToSymbol, hipMemcpyAsync*/
+    pub fn hipMemcpyParam2DAsync(pCopy: *const hip_Memcpy2D, stream: hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   dst    Destination memory address
-  @param[in]   dpitch Pitch of destination memory
-  @param[in]   src    Source memory address
-  @param[in]   spitch Pitch of source memory
-  @param[in]   width  Width of matrix transfer (columns in bytes)
-  @param[in]   height Height of matrix transfer (rows)
-  @param[in]   kind   Type of transfer
-  @param[in]   stream Stream to use
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   dst    Destination memory address
+     @param[in]   dpitch Pitch of destination memory
+     @param[in]   src    Source memory address
+     @param[in]   spitch Pitch of source memory
+     @param[in]   width  Width of matrix transfer (columns in bytes)
+     @param[in]   height Height of matrix transfer (rows)
+     @param[in]   kind   Type of transfer
+     @param[in]   stream Stream to use
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpyToArray, hipMemcpy2DToArray, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpyToArray, hipMemcpy2DToArray, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
     pub fn hipMemcpy2DAsync(
         dst: *mut ::core::ffi::c_void,
         dpitch: usize,
@@ -7666,19 +7073,19 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   dst     Destination memory address
-  @param[in]   wOffset Destination starting X offset
-  @param[in]   hOffset Destination starting Y offset
-  @param[in]   src     Source memory address
-  @param[in]   spitch  Pitch of source memory
-  @param[in]   width   Width of matrix transfer (columns in bytes)
-  @param[in]   height  Height of matrix transfer (rows)
-  @param[in]   kind    Type of transfer
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   dst     Destination memory address
+     @param[in]   wOffset Destination starting X offset
+     @param[in]   hOffset Destination starting Y offset
+     @param[in]   src     Source memory address
+     @param[in]   spitch  Pitch of source memory
+     @param[in]   width   Width of matrix transfer (columns in bytes)
+     @param[in]   height  Height of matrix transfer (rows)
+     @param[in]   kind    Type of transfer
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpyToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpyToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
     pub fn hipMemcpy2DToArray(
         dst: hipArray_t,
         wOffset: usize,
@@ -7694,20 +7101,20 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   dst     Destination memory address
-  @param[in]   wOffset Destination starting X offset
-  @param[in]   hOffset Destination starting Y offset
-  @param[in]   src     Source memory address
-  @param[in]   spitch  Pitch of source memory
-  @param[in]   width   Width of matrix transfer (columns in bytes)
-  @param[in]   height  Height of matrix transfer (rows)
-  @param[in]   kind    Type of transfer
-  @param[in]   stream    Accelerator view which the copy is being enqueued
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   dst     Destination memory address
+     @param[in]   wOffset Destination starting X offset
+     @param[in]   hOffset Destination starting Y offset
+     @param[in]   src     Source memory address
+     @param[in]   spitch  Pitch of source memory
+     @param[in]   width   Width of matrix transfer (columns in bytes)
+     @param[in]   height  Height of matrix transfer (rows)
+     @param[in]   kind    Type of transfer
+     @param[in]   stream    Accelerator view which the copy is being enqueued
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpyToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpyToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
     pub fn hipMemcpy2DToArrayAsync(
         dst: hipArray_t,
         wOffset: usize,
@@ -7724,20 +7131,20 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   dst Destination memory address
-  @param[in]   wOffsetDst Destination starting X offset
-  @param[in]   hOffsetDst Destination starting Y offset
-  @param[in]   src  Source memory address
-  @param[in]   wOffsetSrc Source starting X offset
-  @param[in]   hOffsetSrc Source starting Y offset (columns in bytes)
-  @param[in]   width  Width of matrix transfer (columns in bytes)
-  @param[in]   height  Height of matrix transfer (rows)
-  @param[in]   kind Type of transfer
+     @param[in]   dst Destination memory address
+     @param[in]   wOffsetDst Destination starting X offset
+     @param[in]   hOffsetDst Destination starting Y offset
+     @param[in]   src  Source memory address
+     @param[in]   wOffsetSrc Source starting X offset
+     @param[in]   hOffsetSrc Source starting Y offset (columns in bytes)
+     @param[in]   width  Width of matrix transfer (columns in bytes)
+     @param[in]   height  Height of matrix transfer (rows)
+     @param[in]   kind Type of transfer
 
-  @returns      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidMemcpyDirection
+     @returns      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpyToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpyToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
     pub fn hipMemcpy2DArrayToArray(
         dst: hipArray_t,
         wOffsetDst: usize,
@@ -7754,18 +7161,18 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   dst     Destination memory address
-  @param[in]   wOffset Destination starting X offset
-  @param[in]   hOffset Destination starting Y offset
-  @param[in]   src     Source memory address
-  @param[in]   count   size in bytes to copy
-  @param[in]   kind    Type of transfer
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   dst     Destination memory address
+     @param[in]   wOffset Destination starting X offset
+     @param[in]   hOffset Destination starting Y offset
+     @param[in]   src     Source memory address
+     @param[in]   count   size in bytes to copy
+     @param[in]   kind    Type of transfer
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
-  hipMemcpyAsync
-  @warning  This API is deprecated.*/
+     @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+     hipMemcpyAsync
+     @warning  This API is deprecated.*/
     pub fn hipMemcpyToArray(
         dst: hipArray_t,
         wOffset: usize,
@@ -7779,18 +7186,18 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   dst       Destination memory address
-  @param[in]   srcArray  Source memory address
-  @param[in]   wOffset   Source starting X offset
-  @param[in]   hOffset   Source starting Y offset
-  @param[in]   count     Size in bytes to copy
-  @param[in]   kind      Type of transfer
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   dst       Destination memory address
+     @param[in]   srcArray  Source memory address
+     @param[in]   wOffset   Source starting X offset
+     @param[in]   hOffset   Source starting Y offset
+     @param[in]   count     Size in bytes to copy
+     @param[in]   kind      Type of transfer
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync
- @warning  This API is deprecated.*/
+     @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync
+    @warning  This API is deprecated.*/
     pub fn hipMemcpyFromArray(
         dst: *mut ::core::ffi::c_void,
         srcArray: hipArray_const_t,
@@ -7804,19 +7211,19 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   dst       Destination memory address
-  @param[in]   dpitch    Pitch of destination memory
-  @param[in]   src       Source memory address
-  @param[in]   wOffset   Source starting X offset
-  @param[in]   hOffset   Source starting Y offset
-  @param[in]   width     Width of matrix transfer (columns in bytes)
-  @param[in]   height    Height of matrix transfer (rows)
-  @param[in]   kind      Type of transfer
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   dst       Destination memory address
+     @param[in]   dpitch    Pitch of destination memory
+     @param[in]   src       Source memory address
+     @param[in]   wOffset   Source starting X offset
+     @param[in]   hOffset   Source starting Y offset
+     @param[in]   width     Width of matrix transfer (columns in bytes)
+     @param[in]   height    Height of matrix transfer (rows)
+     @param[in]   kind      Type of transfer
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
     pub fn hipMemcpy2DFromArray(
         dst: *mut ::core::ffi::c_void,
         dpitch: usize,
@@ -7832,20 +7239,20 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device asynchronously.
 
-  @param[in]   dst       Destination memory address
-  @param[in]   dpitch    Pitch of destination memory
-  @param[in]   src       Source memory address
-  @param[in]   wOffset   Source starting X offset
-  @param[in]   hOffset   Source starting Y offset
-  @param[in]   width     Width of matrix transfer (columns in bytes)
-  @param[in]   height    Height of matrix transfer (rows)
-  @param[in]   kind      Type of transfer
-  @param[in]   stream    Accelerator view which the copy is being enqueued
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   dst       Destination memory address
+     @param[in]   dpitch    Pitch of destination memory
+     @param[in]   src       Source memory address
+     @param[in]   wOffset   Source starting X offset
+     @param[in]   hOffset   Source starting Y offset
+     @param[in]   width     Width of matrix transfer (columns in bytes)
+     @param[in]   height    Height of matrix transfer (rows)
+     @param[in]   kind      Type of transfer
+     @param[in]   stream    Accelerator view which the copy is being enqueued
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
     pub fn hipMemcpy2DFromArrayAsync(
         dst: *mut ::core::ffi::c_void,
         dpitch: usize,
@@ -7862,15 +7269,15 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   dst       Destination memory address
-  @param[in]   srcArray  Source array
-  @param[in]   srcOffset Offset in bytes of source array
-  @param[in]   count     Size of memory copy in bytes
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   dst       Destination memory address
+     @param[in]   srcArray  Source array
+     @param[in]   srcOffset Offset in bytes of source array
+     @param[in]   count     Size of memory copy in bytes
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
     pub fn hipMemcpyAtoH(
         dst: *mut ::core::ffi::c_void,
         srcArray: hipArray_t,
@@ -7882,15 +7289,15 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   dstArray   Destination memory address
-  @param[in]   dstOffset  Offset in bytes of destination array
-  @param[in]   srcHost    Source host pointer
-  @param[in]   count      Size of memory copy in bytes
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   dstArray   Destination memory address
+     @param[in]   dstOffset  Offset in bytes of destination array
+     @param[in]   srcHost    Source host pointer
+     @param[in]   count      Size of memory copy in bytes
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
     pub fn hipMemcpyHtoA(
         dstArray: hipArray_t,
         dstOffset: usize,
@@ -7902,57 +7309,51 @@ extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   p   3D memory copy parameters
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   p   3D memory copy parameters
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
     pub fn hipMemcpy3D(p: *const hipMemcpy3DParms) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device asynchronously.
 
-  @param[in]   p        3D memory copy parameters
-  @param[in]   stream   Stream to use
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
- #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   p        3D memory copy parameters
+     @param[in]   stream   Stream to use
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+    #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
-    pub fn hipMemcpy3DAsync(
-        p: *const hipMemcpy3DParms,
-        stream: hipStream_t,
-    ) -> hipError_t;
+     @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
+    pub fn hipMemcpy3DAsync(p: *const hipMemcpy3DParms, stream: hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device.
 
-  @param[in]   pCopy   3D memory copy parameters
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
-  #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   pCopy   3D memory copy parameters
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+     #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
+     @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
     pub fn hipDrvMemcpy3D(pCopy: *const HIP_MEMCPY3D) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /**  @brief Copies data between host and device asynchronously.
 
-  @param[in]   pCopy    3D memory copy parameters
-  @param[in]   stream   Stream to use
-  @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
-  #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
+     @param[in]   pCopy    3D memory copy parameters
+     @param[in]   stream   Stream to use
+     @return      #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidPitchValue,
+     #hipErrorInvalidDevicePointer, #hipErrorInvalidMemcpyDirection
 
-  @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
- hipMemcpyAsync*/
-    pub fn hipDrvMemcpy3DAsync(
-        pCopy: *const HIP_MEMCPY3D,
-        stream: hipStream_t,
-    ) -> hipError_t;
+     @see hipMemcpy, hipMemcpy2DToArray, hipMemcpy2D, hipMemcpyFromArray, hipMemcpyToSymbol,
+    hipMemcpyAsync*/
+    pub fn hipDrvMemcpy3DAsync(pCopy: *const HIP_MEMCPY3D, stream: hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
@@ -7966,19 +7367,19 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Enable direct access from current device's virtual address space to memory allocations
- physically located on a peer device.
+    physically located on a peer device.
 
- Memory which already allocated on peer device will be mapped into the address space of the
- current device.  In addition, all future memory allocations on peerDeviceId will be mapped into
- the address space of the current device when the memory is allocated. The peer memory remains
- accessible from the current device until a call to hipDeviceDisablePeerAccess or hipDeviceReset.
+    Memory which already allocated on peer device will be mapped into the address space of the
+    current device.  In addition, all future memory allocations on peerDeviceId will be mapped into
+    the address space of the current device when the memory is allocated. The peer memory remains
+    accessible from the current device until a call to hipDeviceDisablePeerAccess or hipDeviceReset.
 
 
- @param [in] peerDeviceId  Peer device to enable direct access to from the current device
- @param [in] flags  Reserved for future use, must be zero
+    @param [in] peerDeviceId  Peer device to enable direct access to from the current device
+    @param [in] flags  Reserved for future use, must be zero
 
- Returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue,
- @returns #hipErrorPeerAccessAlreadyEnabled if peer access is already enabled for this device.*/
+    Returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue,
+    @returns #hipErrorPeerAccessAlreadyEnabled if peer access is already enabled for this device.*/
     pub fn hipDeviceEnablePeerAccess(
         peerDeviceId: ::core::ffi::c_int,
         flags: ::core::ffi::c_uint,
@@ -7987,28 +7388,28 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Disable direct access from current device's virtual address space to memory allocations
- physically located on a peer device.
+    physically located on a peer device.
 
- Returns hipErrorPeerAccessNotEnabled if direct access to memory on peerDevice has not yet been
- enabled from the current device.
+    Returns hipErrorPeerAccessNotEnabled if direct access to memory on peerDevice has not yet been
+    enabled from the current device.
 
- @param [in] peerDeviceId  Peer device to disable direct access to
+    @param [in] peerDeviceId  Peer device to disable direct access to
 
- @returns #hipSuccess, #hipErrorPeerAccessNotEnabled*/
+    @returns #hipSuccess, #hipErrorPeerAccessNotEnabled*/
     pub fn hipDeviceDisablePeerAccess(peerDeviceId: ::core::ffi::c_int) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Get information on memory allocations.
 
- @param [out] pbase - BAse pointer address
- @param [out] psize - Size of allocation
- @param [in]  dptr- Device Pointer
+    @param [out] pbase - BAse pointer address
+    @param [out] psize - Size of allocation
+    @param [in]  dptr- Device Pointer
 
- @returns #hipSuccess, #hipErrorNotFound
+    @returns #hipSuccess, #hipErrorNotFound
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice*/
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice*/
     pub fn hipMemGetAddressRange(
         pbase: *mut hipDeviceptr_t,
         psize: *mut usize,
@@ -8019,13 +7420,13 @@ extern "C" {
     #[must_use]
     /** @brief Copies memory from one device to memory on another device.
 
- @param [out] dst - Destination device pointer.
- @param [in] dstDeviceId - Destination device
- @param [in] src - Source device pointer
- @param [in] srcDeviceId - Source device
- @param [in] sizeBytes - Size of memory copy in bytes
+    @param [out] dst - Destination device pointer.
+    @param [in] dstDeviceId - Destination device
+    @param [in] src - Source device pointer
+    @param [in] srcDeviceId - Source device
+    @param [in] sizeBytes - Size of memory copy in bytes
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDevice*/
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDevice*/
     pub fn hipMemcpyPeer(
         dst: *mut ::core::ffi::c_void,
         dstDeviceId: ::core::ffi::c_int,
@@ -8038,14 +7439,14 @@ extern "C" {
     #[must_use]
     /** @brief Copies memory from one device to memory on another device.
 
- @param [out] dst - Destination device pointer.
- @param [in] dstDeviceId - Destination device
- @param [in] src - Source device pointer
- @param [in] srcDevice - Source device
- @param [in] sizeBytes - Size of memory copy in bytes
- @param [in] stream - Stream identifier
+    @param [out] dst - Destination device pointer.
+    @param [in] dstDeviceId - Destination device
+    @param [in] src - Source device pointer
+    @param [in] srcDevice - Source device
+    @param [in] sizeBytes - Size of memory copy in bytes
+    @param [in] stream - Stream identifier
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDevice*/
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDevice*/
     pub fn hipMemcpyPeerAsync(
         dst: *mut ::core::ffi::c_void,
         dstDeviceId: ::core::ffi::c_int,
@@ -8059,18 +7460,18 @@ extern "C" {
     #[must_use]
     /** @brief Create a context and set it as current/default context
 
- @param [out] ctx  Context to create
- @param [in] flags  Context creation flags
- @param [in] device  device handle
+     @param [out] ctx  Context to create
+     @param [in] flags  Context creation flags
+     @param [in] device  device handle
 
- @return #hipSuccess
+     @return #hipSuccess
 
- @see hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent, hipCtxPushCurrent,
- hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+     @see hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent, hipCtxPushCurrent,
+     hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.
-*/
+     @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+     NVIDIA platform.
+    */
     pub fn hipCtxCreate(
         ctx: *mut hipCtx_t,
         flags: ::core::ffi::c_uint,
@@ -8081,283 +7482,277 @@ extern "C" {
     #[must_use]
     /** @brief Destroy a HIP context.
 
- @param [in] ctx Context to destroy
+    @param [in] ctx Context to destroy
 
- @returns #hipSuccess, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @see hipCtxCreate, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,hipCtxSetCurrent,
- hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize , hipCtxGetDevice
+    @see hipCtxCreate, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,hipCtxSetCurrent,
+    hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize , hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxDestroy(ctx: hipCtx_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Pop the current/default context and return the popped context.
 
- @param [out] ctx  The current context to pop
+    @param [out] ctx  The current context to pop
 
- @returns #hipSuccess, #hipErrorInvalidContext
+    @returns #hipSuccess, #hipErrorInvalidContext
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxSetCurrent, hipCtxGetCurrent,
- hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxSetCurrent, hipCtxGetCurrent,
+    hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxPopCurrent(ctx: *mut hipCtx_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Push the context to be set as current/ default context
 
- @param [in] ctx  The current context to push
+    @param [in] ctx  The current context to push
 
- @returns #hipSuccess, #hipErrorInvalidContext
+    @returns #hipSuccess, #hipErrorInvalidContext
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize , hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize , hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxPushCurrent(ctx: hipCtx_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Set the passed context as current/default
 
- @param [in] ctx The context to set as current
+    @param [in] ctx The context to set as current
 
- @returns #hipSuccess, #hipErrorInvalidContext
+    @returns #hipSuccess, #hipErrorInvalidContext
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize , hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize , hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxSetCurrent(ctx: hipCtx_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Get the handle of the current/ default context
 
- @param [out] ctx  The context to get as current
+    @param [out] ctx  The context to get as current
 
- @returns #hipSuccess, #hipErrorInvalidContext
+    @returns #hipSuccess, #hipErrorInvalidContext
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetDevice, hipCtxGetFlags, hipCtxPopCurrent,
- hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetDevice, hipCtxGetFlags, hipCtxPopCurrent,
+    hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxGetCurrent(ctx: *mut hipCtx_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Get the handle of the device associated with current/default context
 
- @param [out] device The device from the current context
+    @param [out] device The device from the current context
 
- @returns #hipSuccess, #hipErrorInvalidContext
+    @returns #hipSuccess, #hipErrorInvalidContext
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxGetDevice(device: *mut hipDevice_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Returns the approximate HIP api version.
 
- @param [in]  ctx Context to check
- @param [out] apiVersion API version to get
+    @param [in]  ctx Context to check
+    @param [out] apiVersion API version to get
 
- @return #hipSuccess
+    @return #hipSuccess
 
- @warning The HIP feature set does not correspond to an exact CUDA SDK api revision.
- This function always set *apiVersion to 4 as an approximation though HIP supports
- some features which were introduced in later CUDA SDK revisions.
- HIP apps code should not rely on the api revision number here and should
- use arch feature flags to test device capabilities or conditional compilation.
+    @warning The HIP feature set does not correspond to an exact CUDA SDK api revision.
+    This function always set *apiVersion to 4 as an approximation though HIP supports
+    some features which were introduced in later CUDA SDK revisions.
+    HIP apps code should not rely on the api revision number here and should
+    use arch feature flags to test device capabilities or conditional compilation.
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetDevice, hipCtxGetFlags, hipCtxPopCurrent,
- hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetDevice, hipCtxGetFlags, hipCtxPopCurrent,
+    hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
-    pub fn hipCtxGetApiVersion(
-        ctx: hipCtx_t,
-        apiVersion: *mut ::core::ffi::c_int,
-    ) -> hipError_t;
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
+    pub fn hipCtxGetApiVersion(ctx: hipCtx_t, apiVersion: *mut ::core::ffi::c_int) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Get Cache configuration for a specific function
 
- @param [out] cacheConfig  Cache configuration
+    @param [out] cacheConfig  Cache configuration
 
- @return #hipSuccess
+    @return #hipSuccess
 
- @warning AMD devices and some Nvidia GPUS do not support reconfigurable cache.  This hint is
- ignored on those architectures.
+    @warning AMD devices and some Nvidia GPUS do not support reconfigurable cache.  This hint is
+    ignored on those architectures.
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxGetCacheConfig(cacheConfig: *mut hipFuncCache_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Set L1/Shared cache partition.
 
- @param [in] cacheConfig  Cache configuration to set
+    @param [in] cacheConfig  Cache configuration to set
 
- @return #hipSuccess
+    @return #hipSuccess
 
- @warning AMD devices and some Nvidia GPUS do not support reconfigurable cache.  This hint is
- ignored on those architectures.
+    @warning AMD devices and some Nvidia GPUS do not support reconfigurable cache.  This hint is
+    ignored on those architectures.
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxSetCacheConfig(cacheConfig: hipFuncCache_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Set Shared memory bank configuration.
 
- @param [in] config  Shared memory configuration to set
+    @param [in] config  Shared memory configuration to set
 
- @return #hipSuccess
+    @return #hipSuccess
 
- @warning AMD devices and some Nvidia GPUS do not support shared cache banking, and the hint is
- ignored on those architectures.
+    @warning AMD devices and some Nvidia GPUS do not support shared cache banking, and the hint is
+    ignored on those architectures.
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxSetSharedMemConfig(config: hipSharedMemConfig) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Get Shared memory bank configuration.
 
- @param [out] pConfig  Pointer of shared memory configuration
+    @param [out] pConfig  Pointer of shared memory configuration
 
- @return #hipSuccess
+    @return #hipSuccess
 
- @warning AMD devices and some Nvidia GPUS do not support shared cache banking, and the hint is
- ignored on those architectures.
+    @warning AMD devices and some Nvidia GPUS do not support shared cache banking, and the hint is
+    ignored on those architectures.
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxGetSharedMemConfig(pConfig: *mut hipSharedMemConfig) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Blocks until the default context has completed all preceding requested tasks.
 
- @return #hipSuccess
+    @return #hipSuccess
 
- @warning This function waits for all streams on the default context to complete execution, and
- then returns.
+    @warning This function waits for all streams on the default context to complete execution, and
+    then returns.
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxSynchronize() -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Return flags used for creating default context.
 
- @param [out] flags  Pointer of flags
+    @param [out] flags  Pointer of flags
 
- @returns #hipSuccess
+    @returns #hipSuccess
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxPopCurrent, hipCtxGetCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxPopCurrent, hipCtxGetCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxGetFlags(flags: *mut ::core::ffi::c_uint) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Enables direct access to memory allocations in a peer context.
 
- Memory which already allocated on peer device will be mapped into the address space of the
- current device.  In addition, all future memory allocations on peerDeviceId will be mapped into
- the address space of the current device when the memory is allocated. The peer memory remains
- accessible from the current device until a call to hipDeviceDisablePeerAccess or hipDeviceReset.
+    Memory which already allocated on peer device will be mapped into the address space of the
+    current device.  In addition, all future memory allocations on peerDeviceId will be mapped into
+    the address space of the current device when the memory is allocated. The peer memory remains
+    accessible from the current device until a call to hipDeviceDisablePeerAccess or hipDeviceReset.
 
 
- @param [in] peerCtx  Peer context
- @param [in] flags  flags, need to set as 0
+    @param [in] peerCtx  Peer context
+    @param [in] flags  flags, need to set as 0
 
- @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue,
- #hipErrorPeerAccessAlreadyEnabled
+    @returns #hipSuccess, #hipErrorInvalidDevice, #hipErrorInvalidValue,
+    #hipErrorPeerAccessAlreadyEnabled
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
- @warning PeerToPeer support is experimental.
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @warning PeerToPeer support is experimental.
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
-    pub fn hipCtxEnablePeerAccess(
-        peerCtx: hipCtx_t,
-        flags: ::core::ffi::c_uint,
-    ) -> hipError_t;
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
+    pub fn hipCtxEnablePeerAccess(peerCtx: hipCtx_t, flags: ::core::ffi::c_uint) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Disable direct access from current context's virtual address space to memory allocations
- physically located on a peer context.Disables direct access to memory allocations in a peer
- context and unregisters any registered allocations.
+    physically located on a peer context.Disables direct access to memory allocations in a peer
+    context and unregisters any registered allocations.
 
- Returns #hipErrorPeerAccessNotEnabled if direct access to memory on peerDevice has not yet been
- enabled from the current device.
+    Returns #hipErrorPeerAccessNotEnabled if direct access to memory on peerDevice has not yet been
+    enabled from the current device.
 
- @param [in] peerCtx  Peer context to be disabled
+    @param [in] peerCtx  Peer context to be disabled
 
- @returns #hipSuccess, #hipErrorPeerAccessNotEnabled
+    @returns #hipSuccess, #hipErrorPeerAccessNotEnabled
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
- @warning PeerToPeer support is experimental.
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @warning PeerToPeer support is experimental.
 
- @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent cuCtx driver API on the
+    NVIDIA platform.*/
     pub fn hipCtxDisablePeerAccess(peerCtx: hipCtx_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Get the state of the primary context.
 
- @param [in] dev  Device to get primary context flags for
- @param [out] flags  Pointer to store flags
- @param [out] active  Pointer to store context state; 0 = inactive, 1 = active
+    @param [in] dev  Device to get primary context flags for
+    @param [out] flags  Pointer to store flags
+    @param [out] active  Pointer to store context state; 0 = inactive, 1 = active
 
- @returns #hipSuccess
+    @returns #hipSuccess
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent driver API on the
- NVIDIA platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent driver API on the
+    NVIDIA platform.*/
     pub fn hipDevicePrimaryCtxGetState(
         dev: hipDevice_t,
         flags: *mut ::core::ffi::c_uint,
@@ -8368,101 +7763,93 @@ extern "C" {
     #[must_use]
     /** @brief Release the primary context on the GPU.
 
- @param [in] dev  Device which primary context is released
+    @param [in] dev  Device which primary context is released
 
- @returns #hipSuccess
+    @returns #hipSuccess
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
- @warning This function return #hipSuccess though doesn't release the primaryCtx by design on
- HIP/HCC path.
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @warning This function return #hipSuccess though doesn't release the primaryCtx by design on
+    HIP/HCC path.
 
- @warning  This API is deprecated on the AMD platform, only for equivalent driver API on the NVIDIA
- platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent driver API on the NVIDIA
+    platform.*/
     pub fn hipDevicePrimaryCtxRelease(dev: hipDevice_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Retain the primary context on the GPU.
 
- @param [out] pctx  Returned context handle of the new context
- @param [in] dev  Device which primary context is released
+    @param [out] pctx  Returned context handle of the new context
+    @param [in] dev  Device which primary context is released
 
- @returns #hipSuccess
+    @returns #hipSuccess
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent driver API on the NVIDIA
- platform.*/
-    pub fn hipDevicePrimaryCtxRetain(
-        pctx: *mut hipCtx_t,
-        dev: hipDevice_t,
-    ) -> hipError_t;
+    @warning  This API is deprecated on the AMD platform, only for equivalent driver API on the NVIDIA
+    platform.*/
+    pub fn hipDevicePrimaryCtxRetain(pctx: *mut hipCtx_t, dev: hipDevice_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Resets the primary context on the GPU.
 
- @param [in] dev  Device which primary context is reset
+    @param [in] dev  Device which primary context is reset
 
- @returns #hipSuccess
+    @returns #hipSuccess
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent driver API on the NVIDIA
- platform.*/
+    @warning  This API is deprecated on the AMD platform, only for equivalent driver API on the NVIDIA
+    platform.*/
     pub fn hipDevicePrimaryCtxReset(dev: hipDevice_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Set flags for the primary context.
 
- @param [in] dev  Device for which the primary context flags are set
- @param [in] flags  New flags for the device
+    @param [in] dev  Device for which the primary context flags are set
+    @param [in] flags  New flags for the device
 
- @returns #hipSuccess, #hipErrorContextAlreadyInUse
+    @returns #hipSuccess, #hipErrorContextAlreadyInUse
 
- @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
- hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
+    @see hipCtxCreate, hipCtxDestroy, hipCtxGetFlags, hipCtxPopCurrent, hipCtxGetCurrent,
+    hipCtxSetCurrent, hipCtxPushCurrent, hipCtxSetCacheConfig, hipCtxSynchronize, hipCtxGetDevice
 
- @warning  This API is deprecated on the AMD platform, only for equivalent driver API on the NVIDIA
- platform.*/
-    pub fn hipDevicePrimaryCtxSetFlags(
-        dev: hipDevice_t,
-        flags: ::core::ffi::c_uint,
-    ) -> hipError_t;
+    @warning  This API is deprecated on the AMD platform, only for equivalent driver API on the NVIDIA
+    platform.*/
+    pub fn hipDevicePrimaryCtxSetFlags(dev: hipDevice_t, flags: ::core::ffi::c_uint) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     #[doc = " @}\n/\n/**\n-------------------------------------------------------------------------------------------------\n-------------------------------------------------------------------------------------------------\n\n  @defgroup Module Module Management\n  @{\n  @ingroup API\n  This section describes the module management functions of HIP runtime API.\n\n/\n/**\n @brief Loads code object from file into a module the currrent context.\n\n @param [in] fname  Filename of code object to load\n\n @param [out] module  Module\n\n @warning File/memory resources allocated in this function are released only in hipModuleUnload.\n\n @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidContext, #hipErrorFileNotFound,\n #hipErrorOutOfMemory, #hipErrorSharedObjectInitFailed, #hipErrorNotInitialized\n"]
-    pub fn hipModuleLoad(
-        module: *mut hipModule_t,
-        fname: *const ::core::ffi::c_char,
-    ) -> hipError_t;
+    pub fn hipModuleLoad(module: *mut hipModule_t, fname: *const ::core::ffi::c_char)
+        -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Frees the module
 
- @param [in] module  Module to free
+    @param [in] module  Module to free
 
- @returns #hipSuccess, #hipErrorInvalidResourceHandle
+    @returns #hipSuccess, #hipErrorInvalidResourceHandle
 
- The module is freed, and the code objects associated with it are destroyed.*/
+    The module is freed, and the code objects associated with it are destroyed.*/
     pub fn hipModuleUnload(module: hipModule_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Function with kname will be extracted if present in module
 
- @param [in] module  Module to get function from
- @param [in] kname  Pointer to the name of function
- @param [out] function  Pointer to function handle
+    @param [in] module  Module to get function from
+    @param [in] kname  Pointer to the name of function
+    @param [out] function  Pointer to function handle
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidContext, #hipErrorNotInitialized,
- #hipErrorNotFound,*/
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidContext, #hipErrorNotInitialized,
+    #hipErrorNotFound,*/
     pub fn hipModuleGetFunction(
         function: *mut hipFunction_t,
         module: hipModule_t,
@@ -8473,10 +7860,10 @@ extern "C" {
     #[must_use]
     /** @brief Find out attributes for a given function.
 
- @param [out] attr  Attributes of funtion
- @param [in] func  Pointer to the function handle
+    @param [out] attr  Attributes of funtion
+    @param [in] func  Pointer to the function handle
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDeviceFunction*/
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDeviceFunction*/
     pub fn hipFuncGetAttributes(
         attr: *mut hipFuncAttributes,
         func: *const ::core::ffi::c_void,
@@ -8486,11 +7873,11 @@ extern "C" {
     #[must_use]
     /** @brief Find out a specific attribute for a given function.
 
- @param [out] value  Pointer to the value
- @param [in]  attrib  Attributes of the given funtion
- @param [in]  hfunc  Function to get attributes from
+    @param [out] value  Pointer to the value
+    @param [in]  attrib  Attributes of the given funtion
+    @param [in]  hfunc  Function to get attributes from
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDeviceFunction*/
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDeviceFunction*/
     pub fn hipFuncGetAttribute(
         value: *mut ::core::ffi::c_int,
         attrib: hipFunction_attribute,
@@ -8501,11 +7888,11 @@ extern "C" {
     #[must_use]
     /** @brief Gets pointer to device entry function that matches entry function symbolPtr.
 
- @param [out] functionPtr  Device entry function
- @param [in]  symbolPtr  Pointer to device entry function to search for
+     @param [out] functionPtr  Device entry function
+     @param [in]  symbolPtr  Pointer to device entry function to search for
 
- @returns #hipSuccess, #hipErrorInvalidDeviceFunction
-*/
+     @returns #hipSuccess, #hipErrorInvalidDeviceFunction
+    */
     pub fn hipGetFuncBySymbol(
         functionPtr: *mut hipFunction_t,
         symbolPtr: *const ::core::ffi::c_void,
@@ -8515,11 +7902,11 @@ extern "C" {
     #[must_use]
     /** @brief returns the handle of the texture reference with the name from the module.
 
- @param [in] hmod  Module
- @param [in] name  Pointer of name of texture reference
- @param [out] texRef  Pointer of texture reference
+    @param [in] hmod  Module
+    @param [in] name  Pointer of name of texture reference
+    @param [out] texRef  Pointer of texture reference
 
- @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorNotFound, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorNotFound, #hipErrorInvalidValue*/
     pub fn hipModuleGetTexRef(
         texRef: *mut *mut textureReference,
         hmod: hipModule_t,
@@ -8529,12 +7916,12 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief builds module from code object which resides in host memory. Image is pointer to that
- location.
+    location.
 
- @param [in] image  The pointer to the location of data
- @param [out] module  Retuned module
+    @param [in] image  The pointer to the location of data
+    @param [out] module  Retuned module
 
- @returns hipSuccess, hipErrorNotInitialized, hipErrorOutOfMemory, hipErrorNotInitialized*/
+    @returns hipSuccess, hipErrorNotInitialized, hipErrorOutOfMemory, hipErrorNotInitialized*/
     pub fn hipModuleLoadData(
         module: *mut hipModule_t,
         image: *const ::core::ffi::c_void,
@@ -8543,15 +7930,15 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief builds module from code object which resides in host memory. Image is pointer to that
- location. Options are not used. hipModuleLoadData is called.
+    location. Options are not used. hipModuleLoadData is called.
 
- @param [in] image  The pointer to the location of data
- @param [out] module  Retuned module
- @param [in] numOptions Number of options
- @param [in] options Options for JIT
- @param [in] optionValues  Option values for JIT
+    @param [in] image  The pointer to the location of data
+    @param [out] module  Retuned module
+    @param [in] numOptions Number of options
+    @param [in] options Options for JIT
+    @param [in] optionValues  Option values for JIT
 
- @returns hipSuccess, hipErrorNotInitialized, hipErrorOutOfMemory, hipErrorNotInitialized*/
+    @returns hipSuccess, hipErrorNotInitialized, hipErrorOutOfMemory, hipErrorNotInitialized*/
     pub fn hipModuleLoadDataEx(
         module: *mut hipModule_t,
         image: *const ::core::ffi::c_void,
@@ -8563,31 +7950,31 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief launches kernel f with launch parameters and shared memory on stream with arguments passed
- to kernelparams or extra
+    to kernelparams or extra
 
- @param [in] f         Kernel to launch.
- @param [in] gridDimX  X grid dimension specified as multiple of blockDimX.
- @param [in] gridDimY  Y grid dimension specified as multiple of blockDimY.
- @param [in] gridDimZ  Z grid dimension specified as multiple of blockDimZ.
- @param [in] blockDimX X block dimensions specified in work-items
- @param [in] blockDimY Y grid dimension specified in work-items
- @param [in] blockDimZ Z grid dimension specified in work-items
- @param [in] sharedMemBytes Amount of dynamic shared memory to allocate for this kernel. The
- HIP-Clang compiler provides support for extern shared declarations.
- @param [in] stream    Stream where the kernel should be dispatched.  May be 0, in which case th
- default stream is used with associated synchronization rules.
- @param [in] kernelParams  Kernel parameters to launch
- @param [in] extra     Pointer to kernel arguments.   These are passed directly to the kernel and
- must be in the memory layout and alignment expected by the kernel.
- All passed arguments must be naturally aligned according to their type. The memory address of each
- argument should be a multiple of its size in bytes. Please refer to hip_porting_driver_api.md
- for sample usage.
+    @param [in] f         Kernel to launch.
+    @param [in] gridDimX  X grid dimension specified as multiple of blockDimX.
+    @param [in] gridDimY  Y grid dimension specified as multiple of blockDimY.
+    @param [in] gridDimZ  Z grid dimension specified as multiple of blockDimZ.
+    @param [in] blockDimX X block dimensions specified in work-items
+    @param [in] blockDimY Y grid dimension specified in work-items
+    @param [in] blockDimZ Z grid dimension specified in work-items
+    @param [in] sharedMemBytes Amount of dynamic shared memory to allocate for this kernel. The
+    HIP-Clang compiler provides support for extern shared declarations.
+    @param [in] stream    Stream where the kernel should be dispatched.  May be 0, in which case th
+    default stream is used with associated synchronization rules.
+    @param [in] kernelParams  Kernel parameters to launch
+    @param [in] extra     Pointer to kernel arguments.   These are passed directly to the kernel and
+    must be in the memory layout and alignment expected by the kernel.
+    All passed arguments must be naturally aligned according to their type. The memory address of each
+    argument should be a multiple of its size in bytes. Please refer to hip_porting_driver_api.md
+    for sample usage.
 
- Please note, HIP does not support kernel launch with total work items defined in dimension with
- size gridDim x blockDim >= 2^32. So gridDim.x * blockDim.x, gridDim.y * blockDim.y
- and gridDim.z * blockDim.z are always less than 2^32.
+    Please note, HIP does not support kernel launch with total work items defined in dimension with
+    size gridDim x blockDim >= 2^32. So gridDim.x * blockDim.x, gridDim.y * blockDim.y
+    and gridDim.z * blockDim.z are always less than 2^32.
 
- @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue*/
     pub fn hipModuleLaunchKernel(
         f: hipFunction_t,
         gridDimX: ::core::ffi::c_uint,
@@ -8605,28 +7992,28 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief launches kernel f with launch parameters and shared memory on stream with arguments passed
- to kernelParams, where thread blocks can cooperate and synchronize as they execute
+    to kernelParams, where thread blocks can cooperate and synchronize as they execute
 
- @param [in] f              Kernel to launch.
- @param [in] gridDimX       X grid dimension specified as multiple of blockDimX.
- @param [in] gridDimY       Y grid dimension specified as multiple of blockDimY.
- @param [in] gridDimZ       Z grid dimension specified as multiple of blockDimZ.
- @param [in] blockDimX      X block dimension specified in work-items.
- @param [in] blockDimY      Y block dimension specified in work-items.
- @param [in] blockDimZ      Z block dimension specified in work-items.
- @param [in] sharedMemBytes Amount of dynamic shared memory to allocate for this kernel. The
- HIP-Clang compiler provides support for extern shared declarations.
- @param [in] stream         Stream where the kernel should be dispatched. May be 0,
- in which case the default stream is used with associated synchronization rules.
- @param [in] kernelParams   A list of kernel arguments.
+    @param [in] f              Kernel to launch.
+    @param [in] gridDimX       X grid dimension specified as multiple of blockDimX.
+    @param [in] gridDimY       Y grid dimension specified as multiple of blockDimY.
+    @param [in] gridDimZ       Z grid dimension specified as multiple of blockDimZ.
+    @param [in] blockDimX      X block dimension specified in work-items.
+    @param [in] blockDimY      Y block dimension specified in work-items.
+    @param [in] blockDimZ      Z block dimension specified in work-items.
+    @param [in] sharedMemBytes Amount of dynamic shared memory to allocate for this kernel. The
+    HIP-Clang compiler provides support for extern shared declarations.
+    @param [in] stream         Stream where the kernel should be dispatched. May be 0,
+    in which case the default stream is used with associated synchronization rules.
+    @param [in] kernelParams   A list of kernel arguments.
 
- Please note, HIP does not support kernel launch with total work items defined in dimension with
- size gridDim x blockDim >= 2^32.
+    Please note, HIP does not support kernel launch with total work items defined in dimension with
+    size gridDim x blockDim >= 2^32.
 
- @returns #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidHandle, #hipErrorInvalidImage, #hipErrorInvalidValue,
- #hipErrorInvalidConfiguration, #hipErrorLaunchFailure, #hipErrorLaunchOutOfResources,
- #hipErrorLaunchTimeOut, #hipErrorCooperativeLaunchTooLarge, #hipErrorSharedObjectInitFailed*/
+    @returns #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidHandle, #hipErrorInvalidImage, #hipErrorInvalidValue,
+    #hipErrorInvalidConfiguration, #hipErrorLaunchFailure, #hipErrorLaunchOutOfResources,
+    #hipErrorLaunchTimeOut, #hipErrorCooperativeLaunchTooLarge, #hipErrorSharedObjectInitFailed*/
     pub fn hipModuleLaunchCooperativeKernel(
         f: hipFunction_t,
         gridDimX: ::core::ffi::c_uint,
@@ -8643,17 +8030,17 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Launches kernels on multiple devices where thread blocks can cooperate and
- synchronize as they execute.
+    synchronize as they execute.
 
- @param [in] launchParamsList         List of launch parameters, one per device.
- @param [in] numDevices               Size of the launchParamsList array.
- @param [in] flags                    Flags to control launch behavior.
+    @param [in] launchParamsList         List of launch parameters, one per device.
+    @param [in] numDevices               Size of the launchParamsList array.
+    @param [in] flags                    Flags to control launch behavior.
 
- @returns #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
- #hipErrorInvalidHandle, #hipErrorInvalidImage, #hipErrorInvalidValue,
- #hipErrorInvalidConfiguration, #hipErrorInvalidResourceHandle, #hipErrorLaunchFailure,
- #hipErrorLaunchOutOfResources, #hipErrorLaunchTimeOut, #hipErrorCooperativeLaunchTooLarge,
- #hipErrorSharedObjectInitFailed*/
+    @returns #hipSuccess, #hipErrorDeinitialized, #hipErrorNotInitialized, #hipErrorInvalidContext,
+    #hipErrorInvalidHandle, #hipErrorInvalidImage, #hipErrorInvalidValue,
+    #hipErrorInvalidConfiguration, #hipErrorInvalidResourceHandle, #hipErrorLaunchFailure,
+    #hipErrorLaunchOutOfResources, #hipErrorLaunchTimeOut, #hipErrorCooperativeLaunchTooLarge,
+    #hipErrorSharedObjectInitFailed*/
     pub fn hipModuleLaunchCooperativeKernelMultiDevice(
         launchParamsList: *mut hipFunctionLaunchParams,
         numDevices: ::core::ffi::c_uint,
@@ -8663,21 +8050,21 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief launches kernel f with launch parameters and shared memory on stream with arguments passed
- to kernelparams or extra, where thread blocks can cooperate and synchronize as they execute
+    to kernelparams or extra, where thread blocks can cooperate and synchronize as they execute
 
- @param [in] f         Kernel to launch.
- @param [in] gridDim   Grid dimensions specified as multiple of blockDim.
- @param [in] blockDimX  Block dimensions specified in work-items
- @param [in] kernelParams A list of kernel arguments
- @param [in] sharedMemBytes Amount of dynamic shared memory to allocate for this kernel. The
- HIP-Clang compiler provides support for extern shared declarations.
- @param [in] stream    Stream where the kernel should be dispatched.  May be 0, in which case th
- default stream is used with associated synchronization rules.
+    @param [in] f         Kernel to launch.
+    @param [in] gridDim   Grid dimensions specified as multiple of blockDim.
+    @param [in] blockDimX  Block dimensions specified in work-items
+    @param [in] kernelParams A list of kernel arguments
+    @param [in] sharedMemBytes Amount of dynamic shared memory to allocate for this kernel. The
+    HIP-Clang compiler provides support for extern shared declarations.
+    @param [in] stream    Stream where the kernel should be dispatched.  May be 0, in which case th
+    default stream is used with associated synchronization rules.
 
- Please note, HIP does not support kernel launch with total work items defined in dimension with
- size gridDim x blockDim >= 2^32.
+    Please note, HIP does not support kernel launch with total work items defined in dimension with
+    size gridDim x blockDim >= 2^32.
 
- @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue, #hipErrorCooperativeLaunchTooLarge*/
+    @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue, #hipErrorCooperativeLaunchTooLarge*/
     pub fn hipLaunchCooperativeKernel(
         f: *const ::core::ffi::c_void,
         gridDim: dim3,
@@ -8690,14 +8077,14 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Launches kernels on multiple devices where thread blocks can cooperate and
- synchronize as they execute.
+    synchronize as they execute.
 
- @param [in] launchParamsList         List of launch parameters, one per device.
- @param [in] numDevices               Size of the launchParamsList array.
- @param [in] flags                    Flags to control launch behavior.
+    @param [in] launchParamsList         List of launch parameters, one per device.
+    @param [in] numDevices               Size of the launchParamsList array.
+    @param [in] flags                    Flags to control launch behavior.
 
- @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue,
-  #hipErrorCooperativeLaunchTooLarge*/
+    @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue,
+     #hipErrorCooperativeLaunchTooLarge*/
     pub fn hipLaunchCooperativeKernelMultiDevice(
         launchParamsList: *mut hipLaunchParams,
         numDevices: ::core::ffi::c_int,
@@ -8707,14 +8094,14 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Launches kernels on multiple devices and guarantees all specified kernels are dispatched
- on respective streams before enqueuing any other work on the specified streams from any other threads
+    on respective streams before enqueuing any other work on the specified streams from any other threads
 
 
- @param [in] launchParamsList          List of launch parameters, one per device.
- @param [in] numDevices               Size of the launchParamsList array.
- @param [in] flags                    Flags to control launch behavior.
+    @param [in] launchParamsList          List of launch parameters, one per device.
+    @param [in] numDevices               Size of the launchParamsList array.
+    @param [in] flags                    Flags to control launch behavior.
 
- @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue*/
     pub fn hipExtLaunchMultiKernelMultiDevice(
         launchParamsList: *mut hipLaunchParams,
         numDevices: ::core::ffi::c_int,
@@ -8736,17 +8123,17 @@ extern "C" {
     #[must_use]
     /** @brief determine the grid and block sizes to achieves maximum occupancy for a kernel
 
- @param [out] gridSize           minimum grid size for maximum potential occupancy
- @param [out] blockSize          block size for maximum potential occupancy
- @param [in]  f                  kernel function for which occupancy is calulated
- @param [in]  dynSharedMemPerBlk dynamic shared memory usage (in bytes) intended for each block
- @param [in]  blockSizeLimit     the maximum block size for the kernel, use 0 for no limit
- @param [in]  flags            Extra flags for occupancy calculation (only default supported)
+    @param [out] gridSize           minimum grid size for maximum potential occupancy
+    @param [out] blockSize          block size for maximum potential occupancy
+    @param [in]  f                  kernel function for which occupancy is calulated
+    @param [in]  dynSharedMemPerBlk dynamic shared memory usage (in bytes) intended for each block
+    @param [in]  blockSizeLimit     the maximum block size for the kernel, use 0 for no limit
+    @param [in]  flags            Extra flags for occupancy calculation (only default supported)
 
- Please note, HIP does not support kernel launch with total work items defined in dimension with
- size gridDim x blockDim >= 2^32.
+    Please note, HIP does not support kernel launch with total work items defined in dimension with
+    size gridDim x blockDim >= 2^32.
 
- @returns #hipSuccess, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipModuleOccupancyMaxPotentialBlockSizeWithFlags(
         gridSize: *mut ::core::ffi::c_int,
         blockSize: *mut ::core::ffi::c_int,
@@ -8760,11 +8147,11 @@ extern "C" {
     #[must_use]
     /** @brief Returns occupancy for a device function.
 
- @param [out] numBlocks        Returned occupancy
- @param [in]  f                Kernel function (hipFunction) for which occupancy is calulated
- @param [in]  blockSize        Block size the kernel is intended to be launched with
- @param [in]  dynSharedMemPerBlk Dynamic shared memory usage (in bytes) intended for each block
- @returns  #hipSuccess, #hipErrorInvalidValue*/
+    @param [out] numBlocks        Returned occupancy
+    @param [in]  f                Kernel function (hipFunction) for which occupancy is calulated
+    @param [in]  blockSize        Block size the kernel is intended to be launched with
+    @param [in]  dynSharedMemPerBlk Dynamic shared memory usage (in bytes) intended for each block
+    @returns  #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipModuleOccupancyMaxActiveBlocksPerMultiprocessor(
         numBlocks: *mut ::core::ffi::c_int,
         f: hipFunction_t,
@@ -8776,12 +8163,12 @@ extern "C" {
     #[must_use]
     /** @brief Returns occupancy for a device function.
 
- @param [out] numBlocks        Returned occupancy
- @param [in]  f                Kernel function(hipFunction_t) for which occupancy is calulated
- @param [in]  blockSize        Block size the kernel is intended to be launched with
- @param [in]  dynSharedMemPerBlk Dynamic shared memory usage (in bytes) intended for each block
- @param [in]  flags            Extra flags for occupancy calculation (only default supported)
- @returns  #hipSuccess, #hipErrorInvalidValue*/
+    @param [out] numBlocks        Returned occupancy
+    @param [in]  f                Kernel function(hipFunction_t) for which occupancy is calulated
+    @param [in]  blockSize        Block size the kernel is intended to be launched with
+    @param [in]  dynSharedMemPerBlk Dynamic shared memory usage (in bytes) intended for each block
+    @param [in]  flags            Extra flags for occupancy calculation (only default supported)
+    @returns  #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipModuleOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
         numBlocks: *mut ::core::ffi::c_int,
         f: hipFunction_t,
@@ -8794,11 +8181,11 @@ extern "C" {
     #[must_use]
     /** @brief Returns occupancy for a device function.
 
- @param [out] numBlocks        Returned occupancy
- @param [in]  f                Kernel function for which occupancy is calulated
- @param [in]  blockSize        Block size the kernel is intended to be launched with
- @param [in]  dynSharedMemPerBlk Dynamic shared memory usage (in bytes) intended for each block
- @returns  #hipSuccess, #hipErrorInvalidDeviceFunction, #hipErrorInvalidValue*/
+    @param [out] numBlocks        Returned occupancy
+    @param [in]  f                Kernel function for which occupancy is calulated
+    @param [in]  blockSize        Block size the kernel is intended to be launched with
+    @param [in]  dynSharedMemPerBlk Dynamic shared memory usage (in bytes) intended for each block
+    @returns  #hipSuccess, #hipErrorInvalidDeviceFunction, #hipErrorInvalidValue*/
     pub fn hipOccupancyMaxActiveBlocksPerMultiprocessor(
         numBlocks: *mut ::core::ffi::c_int,
         f: *const ::core::ffi::c_void,
@@ -8810,12 +8197,12 @@ extern "C" {
     #[must_use]
     /** @brief Returns occupancy for a device function.
 
- @param [out] numBlocks        Returned occupancy
- @param [in]  f                Kernel function for which occupancy is calulated
- @param [in]  blockSize        Block size the kernel is intended to be launched with
- @param [in]  dynSharedMemPerBlk Dynamic shared memory usage (in bytes) intended for each block
- @param [in]  flags            Extra flags for occupancy calculation (currently ignored)
- @returns  #hipSuccess, #hipErrorInvalidDeviceFunction, #hipErrorInvalidValue*/
+    @param [out] numBlocks        Returned occupancy
+    @param [in]  f                Kernel function for which occupancy is calulated
+    @param [in]  blockSize        Block size the kernel is intended to be launched with
+    @param [in]  dynSharedMemPerBlk Dynamic shared memory usage (in bytes) intended for each block
+    @param [in]  flags            Extra flags for occupancy calculation (currently ignored)
+    @returns  #hipSuccess, #hipErrorInvalidDeviceFunction, #hipErrorInvalidValue*/
     pub fn hipOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
         numBlocks: *mut ::core::ffi::c_int,
         f: *const ::core::ffi::c_void,
@@ -8828,16 +8215,16 @@ extern "C" {
     #[must_use]
     /** @brief determine the grid and block sizes to achieves maximum occupancy for a kernel
 
- @param [out] gridSize           minimum grid size for maximum potential occupancy
- @param [out] blockSize          block size for maximum potential occupancy
- @param [in]  f                  kernel function for which occupancy is calulated
- @param [in]  dynSharedMemPerBlk dynamic shared memory usage (in bytes) intended for each block
- @param [in]  blockSizeLimit     the maximum block size for the kernel, use 0 for no limit
+    @param [out] gridSize           minimum grid size for maximum potential occupancy
+    @param [out] blockSize          block size for maximum potential occupancy
+    @param [in]  f                  kernel function for which occupancy is calulated
+    @param [in]  dynSharedMemPerBlk dynamic shared memory usage (in bytes) intended for each block
+    @param [in]  blockSizeLimit     the maximum block size for the kernel, use 0 for no limit
 
- Please note, HIP does not support kernel launch with total work items defined in dimension with
- size gridDim x blockDim >= 2^32.
+    Please note, HIP does not support kernel launch with total work items defined in dimension with
+    size gridDim x blockDim >= 2^32.
 
- @returns #hipSuccess, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipOccupancyMaxPotentialBlockSize(
         gridSize: *mut ::core::ffi::c_int,
         blockSize: *mut ::core::ffi::c_int,
@@ -8849,17 +8236,17 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Start recording of profiling information
- When using this API, start the profiler with profiling disabled.  (--startdisabled)
- @returns  #hipErrorNotSupported
- @warning : hipProfilerStart API is deprecated, use roctracer/rocTX instead.*/
+    When using this API, start the profiler with profiling disabled.  (--startdisabled)
+    @returns  #hipErrorNotSupported
+    @warning : hipProfilerStart API is deprecated, use roctracer/rocTX instead.*/
     pub fn hipProfilerStart() -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Stop recording of profiling information.
- When using this API, start the profiler with profiling disabled.  (--startdisabled)
- @returns  #hipErrorNotSupported
- @warning  hipProfilerStart API is deprecated, use roctracer/rocTX instead.*/
+    When using this API, start the profiler with profiling disabled.  (--startdisabled)
+    @returns  #hipErrorNotSupported
+    @warning  hipProfilerStart API is deprecated, use roctracer/rocTX instead.*/
     pub fn hipProfilerStop() -> hipError_t;
 }
 extern "C" {
@@ -8876,12 +8263,12 @@ extern "C" {
     #[must_use]
     /** @brief Set a kernel argument.
 
- @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue
 
- @param [in] arg    Pointer the argument in host memory.
- @param [in] size   Size of the argument.
- @param [in] offset Offset of the argument on the argument stack.
-*/
+     @param [in] arg    Pointer the argument in host memory.
+     @param [in] size   Size of the argument.
+     @param [in] offset Offset of the argument on the argument stack.
+    */
     pub fn hipSetupArgument(
         arg: *const ::core::ffi::c_void,
         size: usize,
@@ -8892,27 +8279,27 @@ extern "C" {
     #[must_use]
     /** @brief Launch a kernel.
 
- @param [in] func Kernel to launch.
+     @param [in] func Kernel to launch.
 
- @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue
+    */
     pub fn hipLaunchByPtr(func: *const ::core::ffi::c_void) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief C compliant kernel launch API
 
- @param [in] function_address - kernel stub function pointer.
- @param [in] numBlocks - number of blocks
- @param [in] dimBlocks - dimension of a block
- @param [in] args - kernel arguments
- @param [in] sharedMemBytes - Amount of dynamic shared memory to allocate for this kernel. The
- HIP-Clang compiler provides support for extern shared declarations.
- @param [in] stream - Stream where the kernel should be dispatched.  May be 0, in which case th
-  default stream is used with associated synchronization rules.
+     @param [in] function_address - kernel stub function pointer.
+     @param [in] numBlocks - number of blocks
+     @param [in] dimBlocks - dimension of a block
+     @param [in] args - kernel arguments
+     @param [in] sharedMemBytes - Amount of dynamic shared memory to allocate for this kernel. The
+     HIP-Clang compiler provides support for extern shared declarations.
+     @param [in] stream - Stream where the kernel should be dispatched.  May be 0, in which case th
+      default stream is used with associated synchronization rules.
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipLaunchKernel(
         function_address: *const ::core::ffi::c_void,
         numBlocks: dim3,
@@ -8926,27 +8313,27 @@ extern "C" {
     #[must_use]
     /** @brief Enqueues a host function call in a stream.
 
- @param [in] stream - The stream to enqueue work in.
- @param [in] fn - The function to call once enqueued preceeding operations are complete.
- @param [in] userData - User-specified data to be passed to the function.
+    @param [in] stream - The stream to enqueue work in.
+    @param [in] fn - The function to call once enqueued preceeding operations are complete.
+    @param [in] userData - User-specified data to be passed to the function.
 
- @returns #hipSuccess, #hipErrorInvalidResourceHandle, #hipErrorInvalidValue,
- #hipErrorNotSupported
+    @returns #hipSuccess, #hipErrorInvalidResourceHandle, #hipErrorInvalidValue,
+    #hipErrorNotSupported
 
- The host function to call in this API will be executed after the preceding operations in
- the stream are complete. The function is a blocking operation that blocks operations in the
- stream that follow it, until the function is returned.
- Event synchronization and internal callback functions make sure enqueued operations will
- execute in order, in the stream.
+    The host function to call in this API will be executed after the preceding operations in
+    the stream are complete. The function is a blocking operation that blocks operations in the
+    stream that follow it, until the function is returned.
+    Event synchronization and internal callback functions make sure enqueued operations will
+    execute in order, in the stream.
 
- The host function must not make any HIP API calls. The host function is non-reentrant. It must
- not perform sychronization with any operation that may depend on other processing execution
- but is not enqueued to run earlier in the stream.
+    The host function must not make any HIP API calls. The host function is non-reentrant. It must
+    not perform sychronization with any operation that may depend on other processing execution
+    but is not enqueued to run earlier in the stream.
 
- Host functions that are enqueued respectively in different non-blocking streams can run concurrently.
+    Host functions that are enqueued respectively in different non-blocking streams can run concurrently.
 
- @warning  This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @warning  This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipLaunchHostFunc(
         stream: hipStream_t,
         fn_: hipHostFn_t,
@@ -8957,31 +8344,31 @@ extern "C" {
     #[must_use]
     /** Copies memory for 2D arrays.
 
- @param pCopy           - Parameters for the memory copy
+    @param pCopy           - Parameters for the memory copy
 
- @returns #hipSuccess, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipDrvMemcpy2DUnaligned(pCopy: *const hip_Memcpy2D) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Launches kernel from the pointer address, with arguments and shared memory on stream.
 
- @param [in] function_address pointer to the Kernel to launch.
- @param [in] numBlocks number of blocks.
- @param [in] dimBlocks dimension of a block.
- @param [in] args pointer to kernel arguments.
- @param [in] sharedMemBytes  Amount of dynamic shared memory to allocate for this kernel.
- HIP-Clang compiler provides support for extern shared declarations.
- @param [in] stream  Stream where the kernel should be dispatched.
- May be 0, in which case the default stream is used with associated synchronization rules.
- @param [in] startEvent  If non-null, specified event will be updated to track the start time of
- the kernel launch. The event must be created before calling this API.
- @param [in] stopEvent  If non-null, specified event will be updated to track the stop time of
- the kernel launch. The event must be created before calling this API.
- @param [in] flags  The value of hipExtAnyOrderLaunch, signifies if kernel can be
- launched in any order.
- @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue.
-*/
+     @param [in] function_address pointer to the Kernel to launch.
+     @param [in] numBlocks number of blocks.
+     @param [in] dimBlocks dimension of a block.
+     @param [in] args pointer to kernel arguments.
+     @param [in] sharedMemBytes  Amount of dynamic shared memory to allocate for this kernel.
+     HIP-Clang compiler provides support for extern shared declarations.
+     @param [in] stream  Stream where the kernel should be dispatched.
+     May be 0, in which case the default stream is used with associated synchronization rules.
+     @param [in] startEvent  If non-null, specified event will be updated to track the start time of
+     the kernel launch. The event must be created before calling this API.
+     @param [in] stopEvent  If non-null, specified event will be updated to track the stop time of
+     the kernel launch. The event must be created before calling this API.
+     @param [in] flags  The value of hipExtAnyOrderLaunch, signifies if kernel can be
+     launched in any order.
+     @returns #hipSuccess, #hipErrorNotInitialized, #hipErrorInvalidValue.
+    */
     pub fn hipExtLaunchKernel(
         function_address: *const ::core::ffi::c_void,
         numBlocks: dim3,
@@ -8998,16 +8385,16 @@ extern "C" {
     #[must_use]
     /** @brief Creates a texture object.
 
- @param [out] pTexObject  pointer to the texture object to create
- @param [in] pResDesc  pointer to resource descriptor
- @param [in] pTexDesc  pointer to texture descriptor
- @param [in] pResViewDesc  pointer to resource view descriptor
+     @param [out] pTexObject  pointer to the texture object to create
+     @param [in] pResDesc  pointer to resource descriptor
+     @param [in] pTexDesc  pointer to texture descriptor
+     @param [in] pResViewDesc  pointer to resource view descriptor
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported, #hipErrorOutOfMemory
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported, #hipErrorOutOfMemory
 
- @note 3D liner filter isn't supported on GFX90A boards, on which the API @p hipCreateTextureObject will
- return hipErrorNotSupported.
-*/
+     @note 3D liner filter isn't supported on GFX90A boards, on which the API @p hipCreateTextureObject will
+     return hipErrorNotSupported.
+    */
     pub fn hipCreateTextureObject(
         pTexObject: *mut hipTextureObject_t,
         pResDesc: *const hipResourceDesc,
@@ -9019,21 +8406,21 @@ extern "C" {
     #[must_use]
     /** @brief Destroys a texture object.
 
- @param [in] textureObject  texture object to destroy
+     @param [in] textureObject  texture object to destroy
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipDestroyTextureObject(textureObject: hipTextureObject_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Gets the channel descriptor in an array.
 
- @param [in] desc  pointer to channel format descriptor
- @param [out] array  memory array on the device
+     @param [in] desc  pointer to channel format descriptor
+     @param [out] array  memory array on the device
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipGetChannelDesc(
         desc: *mut hipChannelFormatDesc,
         array: hipArray_const_t,
@@ -9043,11 +8430,11 @@ extern "C" {
     #[must_use]
     /** @brief Gets resource descriptor for the texture object.
 
- @param [out] pResDesc  pointer to resource descriptor
- @param [in] textureObject  texture object
+     @param [out] pResDesc  pointer to resource descriptor
+     @param [in] textureObject  texture object
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipGetTextureObjectResourceDesc(
         pResDesc: *mut hipResourceDesc,
         textureObject: hipTextureObject_t,
@@ -9057,11 +8444,11 @@ extern "C" {
     #[must_use]
     /** @brief Gets resource view descriptor for the texture object.
 
- @param [out] pResViewDesc  pointer to resource view descriptor
- @param [in] textureObject  texture object
+     @param [out] pResViewDesc  pointer to resource view descriptor
+     @param [in] textureObject  texture object
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipGetTextureObjectResourceViewDesc(
         pResViewDesc: *mut hipResourceViewDesc,
         textureObject: hipTextureObject_t,
@@ -9071,11 +8458,11 @@ extern "C" {
     #[must_use]
     /** @brief Gets texture descriptor for the texture object.
 
- @param [out] pTexDesc  pointer to texture descriptor
- @param [in] textureObject  texture object
+     @param [out] pTexDesc  pointer to texture descriptor
+     @param [in] textureObject  texture object
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipGetTextureObjectTextureDesc(
         pTexDesc: *mut hipTextureDesc,
         textureObject: hipTextureObject_t,
@@ -9085,13 +8472,13 @@ extern "C" {
     #[must_use]
     /** @brief Creates a texture object.
 
- @param [out] pTexObject  pointer to texture object to create
- @param [in] pResDesc  pointer to resource descriptor
- @param [in] pTexDesc  pointer to texture descriptor
- @param [in] pResViewDesc  pointer to resource view descriptor
+     @param [out] pTexObject  pointer to texture object to create
+     @param [in] pResDesc  pointer to resource descriptor
+     @param [in] pTexDesc  pointer to texture descriptor
+     @param [in] pResViewDesc  pointer to resource view descriptor
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipTexObjectCreate(
         pTexObject: *mut hipTextureObject_t,
         pResDesc: *const HIP_RESOURCE_DESC,
@@ -9103,21 +8490,21 @@ extern "C" {
     #[must_use]
     /** @brief Destroys a texture object.
 
- @param [in] texObject  texture object to destroy
+     @param [in] texObject  texture object to destroy
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipTexObjectDestroy(texObject: hipTextureObject_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Gets resource descriptor of a texture object.
 
- @param [out] pResDesc  pointer to resource descriptor
- @param [in] texObject  texture object
+     @param [out] pResDesc  pointer to resource descriptor
+     @param [in] texObject  texture object
 
- @returns #hipSuccess, #hipErrorNotSupported, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorNotSupported, #hipErrorInvalidValue
+    */
     pub fn hipTexObjectGetResourceDesc(
         pResDesc: *mut HIP_RESOURCE_DESC,
         texObject: hipTextureObject_t,
@@ -9127,11 +8514,11 @@ extern "C" {
     #[must_use]
     /** @brief Gets resource view descriptor of a texture object.
 
- @param [out] pResViewDesc  pointer to resource view descriptor
- @param [in] texObject  texture object
+     @param [out] pResViewDesc  pointer to resource view descriptor
+     @param [in] texObject  texture object
 
- @returns #hipSuccess, #hipErrorNotSupported, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorNotSupported, #hipErrorInvalidValue
+    */
     pub fn hipTexObjectGetResourceViewDesc(
         pResViewDesc: *mut HIP_RESOURCE_VIEW_DESC,
         texObject: hipTextureObject_t,
@@ -9141,11 +8528,11 @@ extern "C" {
     #[must_use]
     /** @brief Gets texture descriptor of a texture object.
 
- @param [out] pTexDesc  pointer to texture descriptor
- @param [in] texObject  texture object
+     @param [out] pTexDesc  pointer to texture descriptor
+     @param [in] texObject  texture object
 
- @returns #hipSuccess, #hipErrorNotSupported, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorNotSupported, #hipErrorInvalidValue
+    */
     pub fn hipTexObjectGetTextureDesc(
         pTexDesc: *mut HIP_TEXTURE_DESC,
         texObject: hipTextureObject_t,
@@ -9155,16 +8542,16 @@ extern "C" {
     #[must_use]
     /** @brief Allocate a mipmapped array on the device.
 
- @param[out] mipmappedArray  - Pointer to allocated mipmapped array in device memory
- @param[in]  desc            - Requested channel format
- @param[in]  extent          - Requested allocation size (width field in elements)
- @param[in]  numLevels       - Number of mipmap levels to allocate
- @param[in]  flags           - Flags for extensions
+     @param[out] mipmappedArray  - Pointer to allocated mipmapped array in device memory
+     @param[in]  desc            - Requested channel format
+     @param[in]  extent          - Requested allocation size (width field in elements)
+     @param[in]  numLevels       - Number of mipmap levels to allocate
+     @param[in]  flags           - Flags for extensions
 
- @return #hipSuccess, #hipErrorInvalidValue, #hipErrorMemoryAllocation
+     @return #hipSuccess, #hipErrorInvalidValue, #hipErrorMemoryAllocation
 
- @note  This API is implemented on Windows, under development on Linux.
-*/
+     @note  This API is implemented on Windows, under development on Linux.
+    */
     pub fn hipMallocMipmappedArray(
         mipmappedArray: *mut hipMipmappedArray_t,
         desc: *const hipChannelFormatDesc,
@@ -9177,26 +8564,26 @@ extern "C" {
     #[must_use]
     /** @brief Frees a mipmapped array on the device.
 
- @param[in] mipmappedArray - Pointer to mipmapped array to free
+     @param[in] mipmappedArray - Pointer to mipmapped array to free
 
- @return #hipSuccess, #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorInvalidValue
 
- @note  This API is implemented on Windows, under development on Linux.
-*/
+     @note  This API is implemented on Windows, under development on Linux.
+    */
     pub fn hipFreeMipmappedArray(mipmappedArray: hipMipmappedArray_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Gets a mipmap level of a HIP mipmapped array.
 
- @param[out] levelArray     - Returned mipmap level HIP array
- @param[in]  mipmappedArray - HIP mipmapped array
- @param[in]  level          - Mipmap level
+     @param[out] levelArray     - Returned mipmap level HIP array
+     @param[in]  mipmappedArray - HIP mipmapped array
+     @param[in]  level          - Mipmap level
 
- @return #hipSuccess, #hipErrorInvalidValue
+     @return #hipSuccess, #hipErrorInvalidValue
 
- @note  This API is implemented on Windows, under development on Linux.
-*/
+     @note  This API is implemented on Windows, under development on Linux.
+    */
     pub fn hipGetMipmappedArrayLevel(
         levelArray: *mut hipArray_t,
         mipmappedArray: hipMipmappedArray_const_t,
@@ -9207,13 +8594,13 @@ extern "C" {
     #[must_use]
     /** @brief Create a mipmapped array.
 
- @param [out] pHandle  pointer to mipmapped array
- @param [in] pMipmappedArrayDesc  mipmapped array descriptor
- @param [in] numMipmapLevels  mipmap level
+    @param [out] pHandle  pointer to mipmapped array
+    @param [in] pMipmappedArrayDesc  mipmapped array descriptor
+    @param [in] numMipmapLevels  mipmap level
 
- @returns #hipSuccess, #hipErrorNotSupported, #hipErrorInvalidValue
+    @returns #hipSuccess, #hipErrorNotSupported, #hipErrorInvalidValue
 
- @note  This API is implemented on Windows, under development on Linux.*/
+    @note  This API is implemented on Windows, under development on Linux.*/
     pub fn hipMipmappedArrayCreate(
         pHandle: *mut hipMipmappedArray_t,
         pMipmappedArrayDesc: *mut HIP_ARRAY3D_DESCRIPTOR,
@@ -9224,26 +8611,26 @@ extern "C" {
     #[must_use]
     /** @brief Destroy a mipmapped array.
 
- @param [out] hMipmappedArray  pointer to mipmapped array to destroy
+     @param [out] hMipmappedArray  pointer to mipmapped array to destroy
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @note  This API is implemented on Windows, under development on Linux.
-*/
+     @note  This API is implemented on Windows, under development on Linux.
+    */
     pub fn hipMipmappedArrayDestroy(hMipmappedArray: hipMipmappedArray_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Get a mipmapped array on a mipmapped level.
 
- @param [in] pLevelArray Pointer of array
- @param [out] hMipMappedArray Pointer of mipmapped array on the requested mipmap level
- @param [out] level  Mipmap level
+     @param [in] pLevelArray Pointer of array
+     @param [out] hMipMappedArray Pointer of mipmapped array on the requested mipmap level
+     @param [out] level  Mipmap level
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @note  This API is implemented on Windows, under development on Linux.
-*/
+     @note  This API is implemented on Windows, under development on Linux.
+    */
     pub fn hipMipmappedArrayGetLevel(
         pLevelArray: *mut hipArray_t,
         hMipMappedArray: hipMipmappedArray_t,
@@ -9254,12 +8641,12 @@ extern "C" {
     #[must_use]
     /** @brief  Binds a mipmapped array to a texture.
 
- @param [in] tex  pointer to the texture reference to bind
- @param [in] mipmappedArray memory mipmapped array on the device
- @param [in] desc  opointer to the channel format
+     @param [in] tex  pointer to the texture reference to bind
+     @param [in] mipmappedArray memory mipmapped array on the device
+     @param [in] desc  opointer to the channel format
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipBindTextureToMipmappedArray(
         tex: *const textureReference,
         mipmappedArray: hipMipmappedArray_const_t,
@@ -9270,12 +8657,12 @@ extern "C" {
     #[must_use]
     /** @brief Gets the texture reference related with the symbol.
 
- @param [out] texref  texture reference
- @param [in] symbol  pointer to the symbol related with the texture for the reference
+     @param [out] texref  texture reference
+     @param [in] symbol  pointer to the symbol related with the texture for the reference
 
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning This API is deprecated.
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+     @warning This API is deprecated.
+    */
     pub fn hipGetTextureReference(
         texref: *mut *const textureReference,
         symbol: *const ::core::ffi::c_void,
@@ -9285,12 +8672,12 @@ extern "C" {
     #[must_use]
     /** @brief Gets the border color used by a texture reference.
 
- @param [out] pBorderColor  Returned Type and Value of RGBA color.
- @param [in] texRef  Texture reference.
+     @param [out] pBorderColor  Returned Type and Value of RGBA color.
+     @param [in] texRef  Texture reference.
 
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning This API is deprecated.
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetBorderColor(
         pBorderColor: *mut f32,
         texRef: *const textureReference,
@@ -9301,12 +8688,12 @@ extern "C" {
     /** @brief Gets the array bound to a texture reference.
 
 
- @param [in] pArray  Returned array.
- @param [in] texRef  texture reference.
+     @param [in] pArray  Returned array.
+     @param [in] texRef  texture reference.
 
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning This API is deprecated.
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetArray(
         pArray: *mut hipArray_t,
         texRef: *const textureReference,
@@ -9316,13 +8703,13 @@ extern "C" {
     #[must_use]
     /** @brief Sets address mode for a texture reference.
 
- @param [in] texRef  texture reference.
- @param [in] dim  Dimension of the texture.
- @param [in] am  Value of the texture address mode.
+     @param [in] texRef  texture reference.
+     @param [in] dim  Dimension of the texture.
+     @param [in] am  Value of the texture address mode.
 
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning This API is deprecated.
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetAddressMode(
         texRef: *mut textureReference,
         dim: ::core::ffi::c_int,
@@ -9333,14 +8720,14 @@ extern "C" {
     #[must_use]
     /** @brief Binds an array as a texture reference.
 
- @param [in] tex  Pointer texture reference.
- @param [in] array  Array to bind.
- @param [in] flags  Flags should be set as HIP_TRSA_OVERRIDE_FORMAT, as a valid value.
+     @param [in] tex  Pointer texture reference.
+     @param [in] array  Array to bind.
+     @param [in] flags  Flags should be set as HIP_TRSA_OVERRIDE_FORMAT, as a valid value.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetArray(
         tex: *mut textureReference,
         array: hipArray_const_t,
@@ -9351,13 +8738,13 @@ extern "C" {
     #[must_use]
     /** @brief Set filter mode for a texture reference.
 
- @param [in] texRef  Pointer texture reference.
- @param [in] fm  Value of texture filter mode.
+     @param [in] texRef  Pointer texture reference.
+     @param [in] fm  Value of texture filter mode.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetFilterMode(
         texRef: *mut textureReference,
         fm: hipTextureFilterMode,
@@ -9367,13 +8754,13 @@ extern "C" {
     #[must_use]
     /** @brief Set flags for a texture reference.
 
- @param [in] texRef  Pointer texture reference.
- @param [in] Flags  Value of flags.
+     @param [in] texRef  Pointer texture reference.
+     @param [in] Flags  Value of flags.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetFlags(
         texRef: *mut textureReference,
         Flags: ::core::ffi::c_uint,
@@ -9383,14 +8770,14 @@ extern "C" {
     #[must_use]
     /** @brief Set format for a texture reference.
 
- @param [in] texRef  Pointer texture reference.
- @param [in] fmt  Value of format.
- @param [in] NumPackedComponents  Number of components per array.
+     @param [in] texRef  Pointer texture reference.
+     @param [in] fmt  Value of format.
+     @param [in] NumPackedComponents  Number of components per array.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetFormat(
         texRef: *mut textureReference,
         fmt: hipArray_Format,
@@ -9401,16 +8788,16 @@ extern "C" {
     #[must_use]
     /** @brief Binds a memory area to a texture.
 
- @param [in] offset  Offset in bytes.
- @param [in] tex  Texture to bind.
- @param [in] devPtr  Pointer of memory on the device.
- @param [in] desc  Pointer of channel format descriptor.
- @param [in] size  Size of memory in bites.
+     @param [in] offset  Offset in bytes.
+     @param [in] tex  Texture to bind.
+     @param [in] devPtr  Pointer of memory on the device.
+     @param [in] desc  Pointer of channel format descriptor.
+     @param [in] size  Size of memory in bites.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipBindTexture(
         offset: *mut usize,
         tex: *const textureReference,
@@ -9423,18 +8810,18 @@ extern "C" {
     #[must_use]
     /** @brief Binds a 2D memory area to a texture.
 
- @param [in] offset  Offset in bytes.
- @param [in] tex  Texture to bind.
- @param [in] devPtr  Pointer of 2D memory area on the device.
- @param [in] desc  Pointer of channel format descriptor.
- @param [in] width  Width in texel units.
- @param [in] height  Height in texel units.
- @param [in] pitch  Pitch in bytes.
+     @param [in] offset  Offset in bytes.
+     @param [in] tex  Texture to bind.
+     @param [in] devPtr  Pointer of 2D memory area on the device.
+     @param [in] desc  Pointer of channel format descriptor.
+     @param [in] width  Width in texel units.
+     @param [in] height  Height in texel units.
+     @param [in] pitch  Pitch in bytes.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipBindTexture2D(
         offset: *mut usize,
         tex: *const textureReference,
@@ -9449,14 +8836,14 @@ extern "C" {
     #[must_use]
     /** @brief Binds a memory area to a texture.
 
- @param [in] tex  Pointer of texture reference.
- @param [in] array  Array to bind.
- @param [in] desc  Pointer of channel format descriptor.
+     @param [in] tex  Pointer of texture reference.
+     @param [in] array  Array to bind.
+     @param [in] desc  Pointer of channel format descriptor.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipBindTextureToArray(
         tex: *const textureReference,
         array: hipArray_const_t,
@@ -9467,13 +8854,13 @@ extern "C" {
     #[must_use]
     /** @brief Get the offset of the alignment in a texture.
 
- @param [in] offset  Offset in bytes.
- @param [in] texref  Pointer of texture reference.
+     @param [in] offset  Offset in bytes.
+     @param [in] texref  Pointer of texture reference.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipGetTextureAlignmentOffset(
         offset: *mut usize,
         texref: *const textureReference,
@@ -9483,25 +8870,25 @@ extern "C" {
     #[must_use]
     /** @brief Unbinds a texture.
 
- @param [in] tex  Texture to unbind.
+     @param [in] tex  Texture to unbind.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipUnbindTexture(tex: *const textureReference) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Gets the address for a texture reference.
 
- @param [out] dev_ptr  Pointer of device address.
- @param [in] texRef  Pointer of texture reference.
+     @param [out] dev_ptr  Pointer of device address.
+     @param [in] texRef  Pointer of texture reference.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetAddress(
         dev_ptr: *mut hipDeviceptr_t,
         texRef: *const textureReference,
@@ -9511,14 +8898,14 @@ extern "C" {
     #[must_use]
     /** @brief Gets the address mode for a texture reference.
 
- @param [out] pam  Pointer of address mode.
- @param [in] texRef  Pointer of texture reference.
- @param [in] dim  Dimension.
+     @param [out] pam  Pointer of address mode.
+     @param [in] texRef  Pointer of texture reference.
+     @param [in] dim  Dimension.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetAddressMode(
         pam: *mut hipTextureAddressMode,
         texRef: *const textureReference,
@@ -9529,13 +8916,13 @@ extern "C" {
     #[must_use]
     /** @brief Gets filter mode for a texture reference.
 
- @param [out] pfm  Pointer of filter mode.
- @param [in] texRef  Pointer of texture reference.
+     @param [out] pfm  Pointer of filter mode.
+     @param [in] texRef  Pointer of texture reference.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetFilterMode(
         pfm: *mut hipTextureFilterMode,
         texRef: *const textureReference,
@@ -9545,13 +8932,13 @@ extern "C" {
     #[must_use]
     /** @brief Gets flags for a texture reference.
 
- @param [out] pFlags  Pointer of flags.
- @param [in] texRef  Pointer of texture reference.
+     @param [out] pFlags  Pointer of flags.
+     @param [in] texRef  Pointer of texture reference.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetFlags(
         pFlags: *mut ::core::ffi::c_uint,
         texRef: *const textureReference,
@@ -9561,14 +8948,14 @@ extern "C" {
     #[must_use]
     /** @brief Gets texture format for a texture reference.
 
- @param [out] pFormat  Pointer of the format.
- @param [out] pNumChannels  Pointer of number of channels.
- @param [in] texRef  Pointer of texture reference.
+     @param [out] pFormat  Pointer of the format.
+     @param [out] pNumChannels  Pointer of number of channels.
+     @param [in] texRef  Pointer of texture reference.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetFormat(
         pFormat: *mut hipArray_Format,
         pNumChannels: *mut ::core::ffi::c_int,
@@ -9579,13 +8966,13 @@ extern "C" {
     #[must_use]
     /** @brief Gets the maximum anisotropy for a texture reference.
 
- @param [out] pmaxAnsio  Pointer of the maximum anisotropy.
- @param [in] texRef  Pointer of texture reference.
+     @param [out] pmaxAnsio  Pointer of the maximum anisotropy.
+     @param [in] texRef  Pointer of texture reference.
 
- @returns #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetMaxAnisotropy(
         pmaxAnsio: *mut ::core::ffi::c_int,
         texRef: *const textureReference,
@@ -9595,13 +8982,13 @@ extern "C" {
     #[must_use]
     /** @brief Gets the mipmap filter mode for a texture reference.
 
- @param [out] pfm  Pointer of the mipmap filter mode.
- @param [in] texRef  Pointer of texture reference.
+     @param [out] pfm  Pointer of the mipmap filter mode.
+     @param [in] texRef  Pointer of texture reference.
 
- @returns #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetMipmapFilterMode(
         pfm: *mut hipTextureFilterMode,
         texRef: *const textureReference,
@@ -9611,13 +8998,13 @@ extern "C" {
     #[must_use]
     /** @brief Gets the mipmap level bias for a texture reference.
 
- @param [out] pbias  Pointer of the mipmap level bias.
- @param [in] texRef  Pointer of texture reference.
+     @param [out] pbias  Pointer of the mipmap level bias.
+     @param [in] texRef  Pointer of texture reference.
 
- @returns #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetMipmapLevelBias(
         pbias: *mut f32,
         texRef: *const textureReference,
@@ -9627,14 +9014,14 @@ extern "C" {
     #[must_use]
     /** @brief Gets the minimum and maximum mipmap level clamps for a texture reference.
 
- @param [out] pminMipmapLevelClamp  Pointer of the minimum mipmap level clamp.
- @param [out] pmaxMipmapLevelClamp  Pointer of the maximum mipmap level clamp.
- @param [in] texRef  Pointer of texture reference.
+     @param [out] pminMipmapLevelClamp  Pointer of the minimum mipmap level clamp.
+     @param [out] pmaxMipmapLevelClamp  Pointer of the maximum mipmap level clamp.
+     @param [in] texRef  Pointer of texture reference.
 
- @returns #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetMipmapLevelClamp(
         pminMipmapLevelClamp: *mut f32,
         pmaxMipmapLevelClamp: *mut f32,
@@ -9645,13 +9032,13 @@ extern "C" {
     #[must_use]
     /** @brief Gets the mipmapped array bound to a texture reference.
 
- @param [out] pArray  Pointer of the mipmapped array.
- @param [in] texRef  Pointer of texture reference.
+     @param [out] pArray  Pointer of the mipmapped array.
+     @param [in] texRef  Pointer of texture reference.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefGetMipMappedArray(
         pArray: *mut hipMipmappedArray_t,
         texRef: *const textureReference,
@@ -9661,15 +9048,15 @@ extern "C" {
     #[must_use]
     /** @brief Sets an bound address for a texture reference.
 
- @param [out] ByteOffset  Pointer of the offset in bytes.
- @param [in] texRef  Pointer of texture reference.
- @param [in] dptr  Pointer of device address to bind.
- @param [in] bytes  Size in bytes.
+     @param [out] ByteOffset  Pointer of the offset in bytes.
+     @param [in] texRef  Pointer of texture reference.
+     @param [in] dptr  Pointer of device address to bind.
+     @param [in] bytes  Size in bytes.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetAddress(
         ByteOffset: *mut usize,
         texRef: *mut textureReference,
@@ -9681,15 +9068,15 @@ extern "C" {
     #[must_use]
     /** @brief Set a bind an address as a 2D texture reference.
 
- @param [in] texRef  Pointer of texture reference.
- @param [in] desc  Pointer of array descriptor.
- @param [in] dptr  Pointer of device address to bind.
- @param [in] Pitch  Pitch in bytes.
+     @param [in] texRef  Pointer of texture reference.
+     @param [in] desc  Pointer of array descriptor.
+     @param [in] dptr  Pointer of device address to bind.
+     @param [in] Pitch  Pitch in bytes.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetAddress2D(
         texRef: *mut textureReference,
         desc: *const HIP_ARRAY_DESCRIPTOR,
@@ -9701,13 +9088,13 @@ extern "C" {
     #[must_use]
     /** @brief Sets the maximum anisotropy for a texture reference.
 
- @param [in] texRef  Pointer of texture reference.
- @param [out] maxAniso  Value of the maximum anisotropy.
+     @param [in] texRef  Pointer of texture reference.
+     @param [out] maxAniso  Value of the maximum anisotropy.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetMaxAnisotropy(
         texRef: *mut textureReference,
         maxAniso: ::core::ffi::c_uint,
@@ -9717,13 +9104,13 @@ extern "C" {
     #[must_use]
     /** @brief Sets border color for a texture reference.
 
- @param [in] texRef  Pointer of texture reference.
- @param [in] pBorderColor  Pointer of border color.
+     @param [in] texRef  Pointer of texture reference.
+     @param [in] pBorderColor  Pointer of border color.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetBorderColor(
         texRef: *mut textureReference,
         pBorderColor: *mut f32,
@@ -9733,13 +9120,13 @@ extern "C" {
     #[must_use]
     /** @brief Sets mipmap filter mode for a texture reference.
 
- @param [in] texRef  Pointer of texture reference.
- @param [in] fm  Value of filter mode.
+     @param [in] texRef  Pointer of texture reference.
+     @param [in] fm  Value of filter mode.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetMipmapFilterMode(
         texRef: *mut textureReference,
         fm: hipTextureFilterMode,
@@ -9749,30 +9136,27 @@ extern "C" {
     #[must_use]
     /** @brief Sets mipmap level bias for a texture reference.
 
- @param [in] texRef  Pointer of texture reference.
- @param [in] bias  Value of mipmap bias.
+     @param [in] texRef  Pointer of texture reference.
+     @param [in] bias  Value of mipmap bias.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
-    pub fn hipTexRefSetMipmapLevelBias(
-        texRef: *mut textureReference,
-        bias: f32,
-    ) -> hipError_t;
+     @warning This API is deprecated.
+    */
+    pub fn hipTexRefSetMipmapLevelBias(texRef: *mut textureReference, bias: f32) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Sets mipmap level clamp for a texture reference.
 
- @param [in] texRef  Pointer of texture reference.
- @param [in] minMipMapLevelClamp  Value of minimum mipmap level clamp.
- @param [in] maxMipMapLevelClamp  Value of maximum mipmap level clamp.
+     @param [in] texRef  Pointer of texture reference.
+     @param [in] minMipMapLevelClamp  Value of minimum mipmap level clamp.
+     @param [in] maxMipMapLevelClamp  Value of maximum mipmap level clamp.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetMipmapLevelClamp(
         texRef: *mut textureReference,
         minMipMapLevelClamp: f32,
@@ -9783,14 +9167,14 @@ extern "C" {
     #[must_use]
     /** @brief Binds mipmapped array to a texture reference.
 
- @param [in] texRef  Pointer of texture reference to bind.
- @param [in] mipmappedArray  Pointer of mipmapped array to bind.
- @param [in] Flags  Flags should be set as HIP_TRSA_OVERRIDE_FORMAT, as a valid value.
+     @param [in] texRef  Pointer of texture reference to bind.
+     @param [in] mipmappedArray  Pointer of mipmapped array to bind.
+     @param [in] Flags  Flags should be set as HIP_TRSA_OVERRIDE_FORMAT, as a valid value.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning This API is deprecated.
-*/
+     @warning This API is deprecated.
+    */
     pub fn hipTexRefSetMipmappedArray(
         texRef: *mut textureReference,
         mipmappedArray: *mut hipMipmappedArray,
@@ -9804,20 +9188,20 @@ extern "C" {
 extern "C" {
     /** @brief Returns kernel name reference by function name.
 
- @param [in] f Name of function
+     @param [in] f Name of function
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipKernelNameRef(f: hipFunction_t) -> *const ::core::ffi::c_char;
 }
 extern "C" {
     /** @brief Retrives kernel for a given host pointer, unless stated otherwise.
 
- @param [in] hostFunction Pointer of host function.
- @param [in] stream Stream the kernel is executed on.
+     @param [in] hostFunction Pointer of host function.
+     @param [in] stream Stream the kernel is executed on.
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipKernelNameRefByPtr(
         hostFunction: *const ::core::ffi::c_void,
         stream: hipStream_t,
@@ -9826,48 +9210,45 @@ extern "C" {
 extern "C" {
     /** @brief Returns device ID on the stream.
 
- @param [in] stream Stream of device executed on.
+     @param [in] stream Stream of device executed on.
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipGetStreamDeviceId(stream: hipStream_t) -> ::core::ffi::c_int;
 }
 extern "C" {
     #[must_use]
     /** @brief Begins graph capture on a stream.
 
- @param [in] stream - Stream to initiate capture.
- @param [in] mode - Controls the interaction of this capture sequence with other API calls that
- are not safe.
+     @param [in] stream - Stream to initiate capture.
+     @param [in] mode - Controls the interaction of this capture sequence with other API calls that
+     are not safe.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
-    pub fn hipStreamBeginCapture(
-        stream: hipStream_t,
-        mode: hipStreamCaptureMode,
-    ) -> hipError_t;
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
+    pub fn hipStreamBeginCapture(stream: hipStream_t, mode: hipStreamCaptureMode) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Begins graph capture on a stream to an existing graph.
 
- @param [in] stream - Stream to initiate capture.
- @param [in] graph - Graph to capture into.
- @param [in] dependencies - Dependencies of the first node captured in the stream. Can be NULL if
- numDependencies is 0.
- @param [in] dependencyData - Optional array of data associated with each dependency.
- @param [in] numDependencies - Number of dependencies.
- @param [in] mode - Controls the interaction of this capture sequence with other API calls that
-are not safe.
+     @param [in] stream - Stream to initiate capture.
+     @param [in] graph - Graph to capture into.
+     @param [in] dependencies - Dependencies of the first node captured in the stream. Can be NULL if
+     numDependencies is 0.
+     @param [in] dependencyData - Optional array of data associated with each dependency.
+     @param [in] numDependencies - Number of dependencies.
+     @param [in] mode - Controls the interaction of this capture sequence with other API calls that
+    are not safe.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : param "const hipGraphEdgeData* dependencyData" is currently not supported and has to
-passed as nullptr. This API is marked as beta, meaning, while this is feature complete, it is still
-open to changes and may have outstanding issues.*/
+     @warning : param "const hipGraphEdgeData* dependencyData" is currently not supported and has to
+    passed as nullptr. This API is marked as beta, meaning, while this is feature complete, it is still
+    open to changes and may have outstanding issues.*/
     pub fn hipStreamBeginCaptureToGraph(
         stream: hipStream_t,
         graph: hipGraph_t,
@@ -9881,32 +9262,29 @@ extern "C" {
     #[must_use]
     /** @brief Ends capture on a stream, returning the captured graph.
 
- @param [in] stream - Stream to end capture.
- @param [out] pGraph - returns the graph captured.
+     @param [in] stream - Stream to end capture.
+     @param [out] pGraph - returns the graph captured.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
-    pub fn hipStreamEndCapture(
-        stream: hipStream_t,
-        pGraph: *mut hipGraph_t,
-    ) -> hipError_t;
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
+    pub fn hipStreamEndCapture(stream: hipStream_t, pGraph: *mut hipGraph_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Get capture status of a stream.
 
- @param [in] stream - Stream under capture.
- @param [out] pCaptureStatus - returns current status of the capture.
- @param [out] pId - unique ID of the capture.
+     @param [in] stream - Stream under capture.
+     @param [out] pCaptureStatus - returns current status of the capture.
+     @param [out] pId - unique ID of the capture.
 
- @returns #hipSuccess, #hipErrorStreamCaptureImplicit
+     @returns #hipSuccess, #hipErrorStreamCaptureImplicit
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipStreamGetCaptureInfo(
         stream: hipStream_t,
         pCaptureStatus: *mut hipStreamCaptureStatus,
@@ -9917,18 +9295,18 @@ extern "C" {
     #[must_use]
     /** @brief Get stream's capture state
 
- @param [in] stream - Stream under capture.
- @param [out] captureStatus_out - returns current status of the capture.
- @param [out] id_out - unique ID of the capture.
- @param [in] graph_out - returns the graph being captured into.
- @param [out] dependencies_out - returns pointer to an array of nodes.
- @param [out] numDependencies_out - returns size of the array returned in dependencies_out.
+     @param [in] stream - Stream under capture.
+     @param [out] captureStatus_out - returns current status of the capture.
+     @param [out] id_out - unique ID of the capture.
+     @param [in] graph_out - returns the graph being captured into.
+     @param [out] dependencies_out - returns pointer to an array of nodes.
+     @param [out] numDependencies_out - returns size of the array returned in dependencies_out.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorStreamCaptureImplicit
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorStreamCaptureImplicit
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipStreamGetCaptureInfo_v2(
         stream: hipStream_t,
         captureStatus_out: *mut hipStreamCaptureStatus,
@@ -9942,14 +9320,14 @@ extern "C" {
     #[must_use]
     /** @brief Get stream's capture state
 
- @param [in] stream - Stream under capture.
- @param [out] pCaptureStatus - returns current status of the capture.
+     @param [in] stream - Stream under capture.
+     @param [out] pCaptureStatus - returns current status of the capture.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorStreamCaptureImplicit
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorStreamCaptureImplicit
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipStreamIsCapturing(
         stream: hipStream_t,
         pCaptureStatus: *mut hipStreamCaptureStatus,
@@ -9959,16 +9337,16 @@ extern "C" {
     #[must_use]
     /** @brief Update the set of dependencies in a capturing stream
 
- @param [in] stream  Stream under capture.
- @param [in] dependencies  pointer to an array of nodes to Add/Replace.
- @param [in] numDependencies  size of the array in dependencies.
- @param [in] flags  Flag how to update dependency set. Should be one of value in enum
- #hipStreamUpdateCaptureDependenciesFlags
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorIllegalState
+     @param [in] stream  Stream under capture.
+     @param [in] dependencies  pointer to an array of nodes to Add/Replace.
+     @param [in] numDependencies  size of the array in dependencies.
+     @param [in] flags  Flag how to update dependency set. Should be one of value in enum
+     #hipStreamUpdateCaptureDependenciesFlags
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorIllegalState
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipStreamUpdateCaptureDependencies(
         stream: hipStream_t,
         dependencies: *mut hipGraphNode_t,
@@ -9980,59 +9358,54 @@ extern "C" {
     #[must_use]
     /** @brief Swaps the stream capture mode of a thread.
 
- @param [in] mode - Pointer to mode value to swap with the current mode
- @returns #hipSuccess, #hipErrorInvalidValue
+     @param [in] mode - Pointer to mode value to swap with the current mode
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
-    pub fn hipThreadExchangeStreamCaptureMode(
-        mode: *mut hipStreamCaptureMode,
-    ) -> hipError_t;
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
+    pub fn hipThreadExchangeStreamCaptureMode(mode: *mut hipStreamCaptureMode) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Creates a graph
 
- @param [out] pGraph - pointer to graph to create.
- @param [in] flags - flags for graph creation, must be 0.
+     @param [out] pGraph - pointer to graph to create.
+     @param [in] flags - flags for graph creation, must be 0.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorMemoryAllocation
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorMemoryAllocation
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
-    pub fn hipGraphCreate(
-        pGraph: *mut hipGraph_t,
-        flags: ::core::ffi::c_uint,
-    ) -> hipError_t;
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
+    pub fn hipGraphCreate(pGraph: *mut hipGraph_t, flags: ::core::ffi::c_uint) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Destroys a graph
 
- @param [in] graph - instance of graph to destroy.
+     @param [in] graph - instance of graph to destroy.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipGraphDestroy(graph: hipGraph_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Adds dependency edges to a graph.
 
- @param [in] graph - instance of the graph to add dependencies.
- @param [in] from - pointer to the graph nodes with dependenties to add from.
- @param [in] to - pointer to the graph nodes to add dependenties to.
- @param [in] numDependencies - the number of dependencies to add.
- @returns #hipSuccess, #hipErrorInvalidValue
+     @param [in] graph - instance of the graph to add dependencies.
+     @param [in] from - pointer to the graph nodes with dependenties to add from.
+     @param [in] to - pointer to the graph nodes to add dependenties to.
+     @param [in] numDependencies - the number of dependencies to add.
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipGraphAddDependencies(
         graph: hipGraph_t,
         from: *const hipGraphNode_t,
@@ -10044,15 +9417,15 @@ extern "C" {
     #[must_use]
     /** @brief Removes dependency edges from a graph.
 
- @param [in] graph - instance of the graph to remove dependencies.
- @param [in] from - Array of nodes that provide the dependencies.
- @param [in] to - Array of dependent nodes.
- @param [in] numDependencies - the number of dependencies to remove.
- @returns #hipSuccess, #hipErrorInvalidValue
+     @param [in] graph - instance of the graph to remove dependencies.
+     @param [in] from - Array of nodes that provide the dependencies.
+     @param [in] to - Array of dependent nodes.
+     @param [in] numDependencies - the number of dependencies to remove.
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipGraphRemoveDependencies(
         graph: hipGraph_t,
         from: *const hipGraphNode_t,
@@ -10064,19 +9437,19 @@ extern "C" {
     #[must_use]
     /** @brief Returns a graph's dependency edges.
 
- @param [in] graph - instance of the graph to get the edges from.
- @param [out] from - pointer to the graph nodes to return edge endpoints.
- @param [out] to - pointer to the graph nodes to return edge endpoints.
- @param [out] numEdges - returns number of edges.
- @returns #hipSuccess, #hipErrorInvalidValue
+     @param [in] graph - instance of the graph to get the edges from.
+     @param [out] from - pointer to the graph nodes to return edge endpoints.
+     @param [out] to - pointer to the graph nodes to return edge endpoints.
+     @param [out] numEdges - returns number of edges.
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- from and to may both be NULL, in which case this function only returns the number of edges in
- numEdges. Otherwise, numEdges entries will be filled in. If numEdges is higher than the actual
- number of edges, the remaining entries in from and to will be set to NULL, and the number of
- edges actually returned will be written to numEdges
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     from and to may both be NULL, in which case this function only returns the number of edges in
+     numEdges. Otherwise, numEdges entries will be filled in. If numEdges is higher than the actual
+     number of edges, the remaining entries in from and to will be set to NULL, and the number of
+     edges actually returned will be written to numEdges
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipGraphGetEdges(
         graph: hipGraph_t,
         from: *mut hipGraphNode_t,
@@ -10088,18 +9461,18 @@ extern "C" {
     #[must_use]
     /** @brief Returns graph nodes.
 
- @param [in] graph - instance of graph to get the nodes.
- @param [out] nodes - pointer to return the  graph nodes.
- @param [out] numNodes - returns number of graph nodes.
- @returns #hipSuccess, #hipErrorInvalidValue
+     @param [in] graph - instance of graph to get the nodes.
+     @param [out] nodes - pointer to return the  graph nodes.
+     @param [out] numNodes - returns number of graph nodes.
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- nodes may be NULL, in which case this function will return the number of nodes in numNodes.
- Otherwise, numNodes entries will be filled in. If numNodes is higher than the actual number of
- nodes, the remaining entries in nodes will be set to NULL, and the number of nodes actually
- obtained will be returned in numNodes.
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     nodes may be NULL, in which case this function will return the number of nodes in numNodes.
+     Otherwise, numNodes entries will be filled in. If numNodes is higher than the actual number of
+     nodes, the remaining entries in nodes will be set to NULL, and the number of nodes actually
+     obtained will be returned in numNodes.
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipGraphGetNodes(
         graph: hipGraph_t,
         nodes: *mut hipGraphNode_t,
@@ -10110,18 +9483,18 @@ extern "C" {
     #[must_use]
     /** @brief Returns graph's root nodes.
 
- @param [in] graph - instance of the graph to get the nodes.
- @param [out] pRootNodes - pointer to return the graph's root nodes.
- @param [out] pNumRootNodes - returns the number of graph's root nodes.
- @returns #hipSuccess, #hipErrorInvalidValue
+     @param [in] graph - instance of the graph to get the nodes.
+     @param [out] pRootNodes - pointer to return the graph's root nodes.
+     @param [out] pNumRootNodes - returns the number of graph's root nodes.
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- pRootNodes may be NULL, in which case this function will return the number of root nodes in
- pNumRootNodes. Otherwise, pNumRootNodes entries will be filled in. If pNumRootNodes is higher
- than the actual number of root nodes, the remaining entries in pRootNodes will be set to NULL,
- and the number of nodes actually obtained will be returned in pNumRootNodes.
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     pRootNodes may be NULL, in which case this function will return the number of root nodes in
+     pNumRootNodes. Otherwise, pNumRootNodes entries will be filled in. If pNumRootNodes is higher
+     than the actual number of root nodes, the remaining entries in pRootNodes will be set to NULL,
+     and the number of nodes actually obtained will be returned in pNumRootNodes.
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipGraphGetRootNodes(
         graph: hipGraph_t,
         pRootNodes: *mut hipGraphNode_t,
@@ -10132,18 +9505,18 @@ extern "C" {
     #[must_use]
     /** @brief Returns a node's dependencies.
 
- @param [in] node - graph node to get the dependencies from.
- @param [out] pDependencies - pointer to to return the dependencies.
- @param [out] pNumDependencies -  returns the number of graph node dependencies.
- @returns #hipSuccess, #hipErrorInvalidValue
+     @param [in] node - graph node to get the dependencies from.
+     @param [out] pDependencies - pointer to to return the dependencies.
+     @param [out] pNumDependencies -  returns the number of graph node dependencies.
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- pDependencies may be NULL, in which case this function will return the number of dependencies in
- pNumDependencies. Otherwise, pNumDependencies entries will be filled in. If pNumDependencies is
- higher than the actual number of dependencies, the remaining entries in pDependencies will be set
- to NULL, and the number of nodes actually obtained will be returned in pNumDependencies.
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     pDependencies may be NULL, in which case this function will return the number of dependencies in
+     pNumDependencies. Otherwise, pNumDependencies entries will be filled in. If pNumDependencies is
+     higher than the actual number of dependencies, the remaining entries in pDependencies will be set
+     to NULL, and the number of nodes actually obtained will be returned in pNumDependencies.
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipGraphNodeGetDependencies(
         node: hipGraphNode_t,
         pDependencies: *mut hipGraphNode_t,
@@ -10154,19 +9527,19 @@ extern "C" {
     #[must_use]
     /** @brief Returns a node's dependent nodes.
 
- @param [in] node - graph node to get the Dependent nodes from.
- @param [out] pDependentNodes - pointer to return the graph dependent nodes.
- @param [out] pNumDependentNodes - returns the number of graph node dependent nodes.
- @returns #hipSuccess, #hipErrorInvalidValue
+     @param [in] node - graph node to get the Dependent nodes from.
+     @param [out] pDependentNodes - pointer to return the graph dependent nodes.
+     @param [out] pNumDependentNodes - returns the number of graph node dependent nodes.
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- DependentNodes may be NULL, in which case this function will return the number of dependent nodes
- in pNumDependentNodes. Otherwise, pNumDependentNodes entries will be filled in. If
- pNumDependentNodes is higher than the actual number of dependent nodes, the remaining entries in
- pDependentNodes will be set to NULL, and the number of nodes actually obtained will be returned
- in pNumDependentNodes.
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     DependentNodes may be NULL, in which case this function will return the number of dependent nodes
+     in pNumDependentNodes. Otherwise, pNumDependentNodes entries will be filled in. If
+     pNumDependentNodes is higher than the actual number of dependent nodes, the remaining entries in
+     pDependentNodes will be set to NULL, and the number of nodes actually obtained will be returned
+     in pNumDependentNodes.
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipGraphNodeGetDependentNodes(
         node: hipGraphNode_t,
         pDependentNodes: *mut hipGraphNode_t,
@@ -10177,58 +9550,52 @@ extern "C" {
     #[must_use]
     /** @brief Returns a node's type.
 
- @param [in] node - instance of the graph to add dependencies.
- @param [out] pType - pointer to the return the type
- @returns #hipSuccess, #hipErrorInvalidValue
+     @param [in] node - instance of the graph to add dependencies.
+     @param [out] pType - pointer to the return the type
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
-    pub fn hipGraphNodeGetType(
-        node: hipGraphNode_t,
-        pType: *mut hipGraphNodeType,
-    ) -> hipError_t;
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
+    pub fn hipGraphNodeGetType(node: hipGraphNode_t, pType: *mut hipGraphNodeType) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Remove a node from the graph.
 
- @param [in] node - graph node to remove
- @returns #hipSuccess, #hipErrorInvalidValue
+     @param [in] node - graph node to remove
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipGraphDestroyNode(node: hipGraphNode_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Clones a graph.
 
- @param [out] pGraphClone - Returns newly created cloned graph.
- @param [in] originalGraph - original graph to clone from.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorMemoryAllocation
+     @param [out] pGraphClone - Returns newly created cloned graph.
+     @param [in] originalGraph - original graph to clone from.
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorMemoryAllocation
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
-    pub fn hipGraphClone(
-        pGraphClone: *mut hipGraph_t,
-        originalGraph: hipGraph_t,
-    ) -> hipError_t;
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
+    pub fn hipGraphClone(pGraphClone: *mut hipGraph_t, originalGraph: hipGraph_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Finds a cloned version of a node.
 
- @param [out] pNode - Returns the cloned node.
- @param [in] originalNode - original node handle.
- @param [in] clonedGraph - Cloned graph to query.
- @returns #hipSuccess, #hipErrorInvalidValue
+     @param [out] pNode - Returns the cloned node.
+     @param [in] originalNode - original node handle.
+     @param [in] clonedGraph - Cloned graph to query.
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipGraphNodeFindInClone(
         pNode: *mut hipGraphNode_t,
         originalNode: hipGraphNode_t,
@@ -10239,18 +9606,18 @@ extern "C" {
     #[must_use]
     /** @brief Creates an executable graph from a graph
 
- @param [out] pGraphExec - pointer to instantiated executable graph that is created.
- @param [in] graph - instance of graph to instantiate.
- @param [out] pErrorNode - pointer to error node in case error occured in graph instantiation,
-  it could modify the correponding node.
- @param [out] pLogBuffer - pointer to log buffer.
- @param [out] bufferSize - the size of log buffer.
+     @param [out] pGraphExec - pointer to instantiated executable graph that is created.
+     @param [in] graph - instance of graph to instantiate.
+     @param [out] pErrorNode - pointer to error node in case error occured in graph instantiation,
+      it could modify the correponding node.
+     @param [out] pLogBuffer - pointer to log buffer.
+     @param [out] bufferSize - the size of log buffer.
 
- @returns #hipSuccess, #hipErrorOutOfMemory
+     @returns #hipSuccess, #hipErrorOutOfMemory
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
-*/
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
+    */
     pub fn hipGraphInstantiate(
         pGraphExec: *mut hipGraphExec_t,
         graph: hipGraph_t,
@@ -10263,14 +9630,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates an executable graph from a graph.
 
- @param [out] pGraphExec - pointer to instantiated executable graph that is created.
- @param [in] graph - instance of graph to instantiate.
- @param [in] flags - Flags to control instantiation.
- @returns #hipSuccess, #hipErrorInvalidValue
+    @param [out] pGraphExec - pointer to instantiated executable graph that is created.
+    @param [in] graph - instance of graph to instantiate.
+    @param [in] flags - Flags to control instantiation.
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.It does not support
- any of flag and is behaving as hipGraphInstantiate.*/
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.It does not support
+    any of flag and is behaving as hipGraphInstantiate.*/
     pub fn hipGraphInstantiateWithFlags(
         pGraphExec: *mut hipGraphExec_t,
         graph: hipGraph_t,
@@ -10281,13 +9648,13 @@ extern "C" {
     #[must_use]
     /** @brief Creates an executable graph from a graph.
 
- @param [out] pGraphExec - pointer to instantiated executable graph that is created.
- @param [in] graph - instance of graph to instantiate.
- @param [in] instantiateParams - Graph Instantiate Params
- @returns #hipSuccess, #hipErrorInvalidValue
+    @param [out] pGraphExec - pointer to instantiated executable graph that is created.
+    @param [in] graph - instance of graph to instantiate.
+    @param [in] instantiateParams - Graph Instantiate Params
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphInstantiateWithParams(
         pGraphExec: *mut hipGraphExec_t,
         graph: hipGraph_t,
@@ -10298,38 +9665,38 @@ extern "C" {
     #[must_use]
     /** @brief launches an executable graph in a stream
 
- @param [in] graphExec - instance of executable graph to launch.
- @param [in] stream - instance of stream in which to launch executable graph.
- @returns #hipSuccess, #hipErrorInvalidValue
+    @param [in] graphExec - instance of executable graph to launch.
+    @param [in] stream - instance of stream in which to launch executable graph.
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphLaunch(graphExec: hipGraphExec_t, stream: hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief uploads an executable graph in a stream
 
- @param [in] graphExec - instance of executable graph to launch.
- @param [in] stream - instance of stream in which to launch executable graph.
- @returns #hipSuccess, #hipErrorInvalidValue
+    @param [in] graphExec - instance of executable graph to launch.
+    @param [in] stream - instance of stream in which to launch executable graph.
+    @returns #hipSuccess, #hipErrorInvalidValue
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphUpload(graphExec: hipGraphExec_t, stream: hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Creates a kernel execution node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to graph node to create.
- @param [in] graph - instance of graph to add the created node.
- @param [in] pDependencies - pointer to the dependencies on the kernel execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] nodeParams - pointer to the parameters for the node.
- @returns #hipSuccess, #hipErrorInvalidValue.
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to graph node to create.
+    @param [in] graph - instance of graph to add the created node.
+    @param [in] pDependencies - pointer to the dependencies on the kernel execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] nodeParams - pointer to the parameters for the node.
+    @returns #hipSuccess, #hipErrorInvalidValue.
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -10342,27 +9709,27 @@ extern "C" {
     #[must_use]
     /** @brief Destroys an executable graph
 
- @param [in] graphExec - instance of executable graph to destry.
+    @param [in] graphExec - instance of executable graph to destry.
 
- @returns #hipSuccess.
+    @returns #hipSuccess.
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecDestroy(graphExec: hipGraphExec_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Check whether an executable graph can be updated with a graph and perform the update if  *
- possible.
+    possible.
 
- @param [in] hGraphExec - instance of executable graph to update.
- @param [in] hGraph - graph that contains the updated parameters.
- @param [in] hErrorNode_out -  node which caused the permissibility check to forbid the update.
- @param [in] updateResult_out - Whether the graph update was permitted.
- @returns #hipSuccess, #hipErrorGraphExecUpdateFailure
+    @param [in] hGraphExec - instance of executable graph to update.
+    @param [in] hGraph - graph that contains the updated parameters.
+    @param [in] hErrorNode_out -  node which caused the permissibility check to forbid the update.
+    @param [in] updateResult_out - Whether the graph update was permitted.
+    @returns #hipSuccess, #hipErrorGraphExecUpdateFailure
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecUpdate(
         hGraphExec: hipGraphExec_t,
         hGraph: hipGraph_t,
@@ -10374,14 +9741,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates a kernel execution node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to graph node to create.
- @param [in] graph - instance of graph to add the created node.
- @param [in] pDependencies - pointer to the dependencies on the kernel execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] pNodeParams - pointer to the parameters to the kernel execution node on the GPU.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDeviceFunction
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to graph node to create.
+    @param [in] graph - instance of graph to add the created node.
+    @param [in] pDependencies - pointer to the dependencies on the kernel execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] pNodeParams - pointer to the parameters to the kernel execution node on the GPU.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorInvalidDeviceFunction
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddKernelNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -10394,11 +9761,11 @@ extern "C" {
     #[must_use]
     /** @brief Gets kernel node's parameters.
 
- @param [in] node - instance of the node to get parameters from.
- @param [out] pNodeParams - pointer to the parameters
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instance of the node to get parameters from.
+    @param [out] pNodeParams - pointer to the parameters
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphKernelNodeGetParams(
         node: hipGraphNode_t,
         pNodeParams: *mut hipKernelNodeParams,
@@ -10408,11 +9775,11 @@ extern "C" {
     #[must_use]
     /** @brief Sets a kernel node's parameters.
 
- @param [in] node - instance of the node to set parameters to.
- @param [in] pNodeParams - const pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] pNodeParams - const pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphKernelNodeSetParams(
         node: hipGraphNode_t,
         pNodeParams: *const hipKernelNodeParams,
@@ -10422,12 +9789,12 @@ extern "C" {
     #[must_use]
     /** @brief Sets the parameters for a kernel node in the given graphExec.
 
- @param [in] hGraphExec - instance of the executable graph with the node.
- @param [in] node - instance of the node to set parameters to.
- @param [in] pNodeParams - const pointer to the kernel node parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] hGraphExec - instance of the executable graph with the node.
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] pNodeParams - const pointer to the kernel node parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecKernelNodeSetParams(
         hGraphExec: hipGraphExec_t,
         node: hipGraphNode_t,
@@ -10438,15 +9805,15 @@ extern "C" {
     #[must_use]
     /** @brief Creates a memcpy node and adds it to a graph.
 
- @param [out] phGraphNode - pointer to graph node to create.
- @param [in] hGraph - instance of graph to add the created node.
- @param [in] dependencies - const pointer to the dependencies on the memcpy execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] copyParams - const pointer to the parameters for the memory copy.
- @param [in] ctx - cotext related to current device.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] phGraphNode - pointer to graph node to create.
+    @param [in] hGraph - instance of graph to add the created node.
+    @param [in] dependencies - const pointer to the dependencies on the memcpy execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] copyParams - const pointer to the parameters for the memory copy.
+    @param [in] ctx - cotext related to current device.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipDrvGraphAddMemcpyNode(
         phGraphNode: *mut hipGraphNode_t,
         hGraph: hipGraph_t,
@@ -10460,14 +9827,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates a memcpy node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to graph node to create.
- @param [in] graph - instance of graph to add the created node.
- @param [in] pDependencies - const pointer to the dependencies on the memcpy execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] pCopyParams - const pointer to the parameters for the memory copy.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to graph node to create.
+    @param [in] graph - instance of graph to add the created node.
+    @param [in] pDependencies - const pointer to the dependencies on the memcpy execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] pCopyParams - const pointer to the parameters for the memory copy.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddMemcpyNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -10480,11 +9847,11 @@ extern "C" {
     #[must_use]
     /** @brief Gets a memcpy node's parameters.
 
- @param [in] node - instance of the node to get parameters from.
- @param [out] pNodeParams - pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instance of the node to get parameters from.
+    @param [out] pNodeParams - pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphMemcpyNodeGetParams(
         node: hipGraphNode_t,
         pNodeParams: *mut hipMemcpy3DParms,
@@ -10494,11 +9861,11 @@ extern "C" {
     #[must_use]
     /** @brief Sets a memcpy node's parameters.
 
- @param [in] node - instance of the node to set parameters to.
- @param [in] pNodeParams - const pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] pNodeParams - const pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphMemcpyNodeSetParams(
         node: hipGraphNode_t,
         pNodeParams: *const hipMemcpy3DParms,
@@ -10508,12 +9875,12 @@ extern "C" {
     #[must_use]
     /** @brief Sets a node attribute.
 
- @param [in] hNode - instance of the node to set parameters to.
- @param [in] attr - the attribute node is set to.
- @param [in] value - const pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] hNode - instance of the node to set parameters to.
+    @param [in] attr - the attribute node is set to.
+    @param [in] value - const pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphKernelNodeSetAttribute(
         hNode: hipGraphNode_t,
         attr: hipLaunchAttributeID,
@@ -10524,12 +9891,12 @@ extern "C" {
     #[must_use]
     /** @brief Gets a node attribute.
 
- @param [in] hNode - instance of the node to set parameters to.
- @param [in] attr - the attribute node is set to.
- @param [in] value - const pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] hNode - instance of the node to set parameters to.
+    @param [in] attr - the attribute node is set to.
+    @param [in] value - const pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphKernelNodeGetAttribute(
         hNode: hipGraphNode_t,
         attr: hipLaunchAttributeID,
@@ -10540,12 +9907,12 @@ extern "C" {
     #[must_use]
     /** @brief Sets the parameters for a memcpy node in the given graphExec.
 
- @param [in] hGraphExec - instance of the executable graph with the node.
- @param [in] node - instance of the node to set parameters to.
- @param [in] pNodeParams - const pointer to the kernel node parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] hGraphExec - instance of the executable graph with the node.
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] pNodeParams - const pointer to the kernel node parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecMemcpyNodeSetParams(
         hGraphExec: hipGraphExec_t,
         node: hipGraphNode_t,
@@ -10556,17 +9923,17 @@ extern "C" {
     #[must_use]
     /** @brief Creates a 1D memcpy node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to graph node to create.
- @param [in] graph - instance of graph to add the created node.
- @param [in] pDependencies - const pointer to the dependencies on the memcpy execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] dst - pointer to memory address to the destination.
- @param [in] src - pointer to memory address to the source.
- @param [in] count - the size of the memory to copy.
- @param [in] kind - the type of memory copy.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to graph node to create.
+    @param [in] graph - instance of graph to add the created node.
+    @param [in] pDependencies - const pointer to the dependencies on the memcpy execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] dst - pointer to memory address to the destination.
+    @param [in] src - pointer to memory address to the source.
+    @param [in] count - the size of the memory to copy.
+    @param [in] kind - the type of memory copy.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddMemcpyNode1D(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -10582,14 +9949,14 @@ extern "C" {
     #[must_use]
     /** @brief Sets a memcpy node's parameters to perform a 1-dimensional copy.
 
- @param [in] node - instance of the node to set parameters to.
- @param [in] dst - pointer to memory address to the destination.
- @param [in] src - pointer to memory address to the source.
- @param [in] count - the size of the memory to copy.
- @param [in] kind - the type of memory copy.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] dst - pointer to memory address to the destination.
+    @param [in] src - pointer to memory address to the source.
+    @param [in] count - the size of the memory to copy.
+    @param [in] kind - the type of memory copy.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphMemcpyNodeSetParams1D(
         node: hipGraphNode_t,
         dst: *mut ::core::ffi::c_void,
@@ -10601,17 +9968,17 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Sets the parameters for a memcpy node in the given graphExec to perform a 1-dimensional
- copy.
+    copy.
 
- @param [in] hGraphExec - instance of the executable graph with the node.
- @param [in] node - instance of the node to set parameters to.
- @param [in] dst - pointer to memory address to the destination.
- @param [in] src - pointer to memory address to the source.
- @param [in] count - the size of the memory to copy.
- @param [in] kind - the type of memory copy.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] hGraphExec - instance of the executable graph with the node.
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] dst - pointer to memory address to the destination.
+    @param [in] src - pointer to memory address to the source.
+    @param [in] count - the size of the memory to copy.
+    @param [in] kind - the type of memory copy.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecMemcpyNodeSetParams1D(
         hGraphExec: hipGraphExec_t,
         node: hipGraphNode_t,
@@ -10625,18 +9992,18 @@ extern "C" {
     #[must_use]
     /** @brief Creates a memcpy node to copy from a symbol on the device and adds it to a graph.
 
- @param [out] pGraphNode - pointer to graph node to create.
- @param [in] graph - instance of graph to add the created node.
- @param [in] pDependencies - const pointer to the dependencies on the memcpy execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] dst - pointer to memory address to the destination.
- @param [in] symbol - Device symbol address.
- @param [in] count - the size of the memory to copy.
- @param [in] offset - Offset from start of symbol in bytes.
- @param [in] kind - the type of memory copy.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to graph node to create.
+    @param [in] graph - instance of graph to add the created node.
+    @param [in] pDependencies - const pointer to the dependencies on the memcpy execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] dst - pointer to memory address to the destination.
+    @param [in] symbol - Device symbol address.
+    @param [in] count - the size of the memory to copy.
+    @param [in] offset - Offset from start of symbol in bytes.
+    @param [in] kind - the type of memory copy.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddMemcpyNodeFromSymbol(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -10653,15 +10020,15 @@ extern "C" {
     #[must_use]
     /** @brief Sets a memcpy node's parameters to copy from a symbol on the device.
 
- @param [in] node - instance of the node to set parameters to.
- @param [in] dst - pointer to memory address to the destination.
- @param [in] symbol - Device symbol address.
- @param [in] count - the size of the memory to copy.
- @param [in] offset - Offset from start of symbol in bytes.
- @param [in] kind - the type of memory copy.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] dst - pointer to memory address to the destination.
+    @param [in] symbol - Device symbol address.
+    @param [in] count - the size of the memory to copy.
+    @param [in] offset - Offset from start of symbol in bytes.
+    @param [in] kind - the type of memory copy.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphMemcpyNodeSetParamsFromSymbol(
         node: hipGraphNode_t,
         dst: *mut ::core::ffi::c_void,
@@ -10674,18 +10041,18 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Sets the parameters for a memcpy node in the given graphExec to copy from a symbol on the
- * device.
+    * device.
 
- @param [in] hGraphExec - instance of the executable graph with the node.
- @param [in] node - instance of the node to set parameters to.
- @param [in] dst - pointer to memory address to the destination.
- @param [in] symbol - Device symbol address.
- @param [in] count - the size of the memory to copy.
- @param [in] offset - Offset from start of symbol in bytes.
- @param [in] kind - the type of memory copy.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] hGraphExec - instance of the executable graph with the node.
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] dst - pointer to memory address to the destination.
+    @param [in] symbol - Device symbol address.
+    @param [in] count - the size of the memory to copy.
+    @param [in] offset - Offset from start of symbol in bytes.
+    @param [in] kind - the type of memory copy.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecMemcpyNodeSetParamsFromSymbol(
         hGraphExec: hipGraphExec_t,
         node: hipGraphNode_t,
@@ -10700,18 +10067,18 @@ extern "C" {
     #[must_use]
     /** @brief Creates a memcpy node to copy to a symbol on the device and adds it to a graph.
 
- @param [out] pGraphNode - pointer to graph node to create.
- @param [in] graph - instance of graph to add the created node.
- @param [in] pDependencies - const pointer to the dependencies on the memcpy execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] symbol - Device symbol address.
- @param [in] src - pointer to memory address of the src.
- @param [in] count - the size of the memory to copy.
- @param [in] offset - Offset from start of symbol in bytes.
- @param [in] kind - the type of memory copy.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to graph node to create.
+    @param [in] graph - instance of graph to add the created node.
+    @param [in] pDependencies - const pointer to the dependencies on the memcpy execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] symbol - Device symbol address.
+    @param [in] src - pointer to memory address of the src.
+    @param [in] count - the size of the memory to copy.
+    @param [in] offset - Offset from start of symbol in bytes.
+    @param [in] kind - the type of memory copy.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddMemcpyNodeToSymbol(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -10728,15 +10095,15 @@ extern "C" {
     #[must_use]
     /** @brief Sets a memcpy node's parameters to copy to a symbol on the device.
 
- @param [in] node - instance of the node to set parameters to.
- @param [in] symbol - Device symbol address.
- @param [in] src - pointer to memory address of the src.
- @param [in] count - the size of the memory to copy.
- @param [in] offset - Offset from start of symbol in bytes.
- @param [in] kind - the type of memory copy.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] symbol - Device symbol address.
+    @param [in] src - pointer to memory address of the src.
+    @param [in] count - the size of the memory to copy.
+    @param [in] offset - Offset from start of symbol in bytes.
+    @param [in] kind - the type of memory copy.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphMemcpyNodeSetParamsToSymbol(
         node: hipGraphNode_t,
         symbol: *const ::core::ffi::c_void,
@@ -10749,17 +10116,17 @@ extern "C" {
 extern "C" {
     #[must_use]
     /** @brief Sets the parameters for a memcpy node in the given graphExec to copy to a symbol on the
- device.
- @param [in] hGraphExec - instance of the executable graph with the node.
- @param [in] node - instance of the node to set parameters to.
- @param [in] symbol - Device symbol address.
- @param [in] src - pointer to memory address of the src.
- @param [in] count - the size of the memory to copy.
- @param [in] offset - Offset from start of symbol in bytes.
- @param [in] kind - the type of memory copy.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    device.
+    @param [in] hGraphExec - instance of the executable graph with the node.
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] symbol - Device symbol address.
+    @param [in] src - pointer to memory address of the src.
+    @param [in] count - the size of the memory to copy.
+    @param [in] offset - Offset from start of symbol in bytes.
+    @param [in] kind - the type of memory copy.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecMemcpyNodeSetParamsToSymbol(
         hGraphExec: hipGraphExec_t,
         node: hipGraphNode_t,
@@ -10774,14 +10141,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates a memset node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to the graph node to create.
- @param [in] graph - instance of the graph to add the created node.
- @param [in] pDependencies - const pointer to the dependencies on the memset execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] pMemsetParams - const pointer to the parameters for the memory set.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to the graph node to create.
+    @param [in] graph - instance of the graph to add the created node.
+    @param [in] pDependencies - const pointer to the dependencies on the memset execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] pMemsetParams - const pointer to the parameters for the memory set.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddMemsetNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -10794,11 +10161,11 @@ extern "C" {
     #[must_use]
     /** @brief Gets a memset node's parameters.
 
- @param [in] node - instane of the node to get parameters from.
- @param [out] pNodeParams - pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instane of the node to get parameters from.
+    @param [out] pNodeParams - pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphMemsetNodeGetParams(
         node: hipGraphNode_t,
         pNodeParams: *mut hipMemsetParams,
@@ -10808,11 +10175,11 @@ extern "C" {
     #[must_use]
     /** @brief Sets a memset node's parameters.
 
- @param [in] node - instance of the node to set parameters to.
- @param [in] pNodeParams - pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] pNodeParams - pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphMemsetNodeSetParams(
         node: hipGraphNode_t,
         pNodeParams: *const hipMemsetParams,
@@ -10822,12 +10189,12 @@ extern "C" {
     #[must_use]
     /** @brief Sets the parameters for a memset node in the given graphExec.
 
- @param [in] hGraphExec - instance of the executable graph with the node.
- @param [in] node - instance of the node to set parameters to.
- @param [in] pNodeParams - pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] hGraphExec - instance of the executable graph with the node.
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] pNodeParams - pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecMemsetNodeSetParams(
         hGraphExec: hipGraphExec_t,
         node: hipGraphNode_t,
@@ -10838,14 +10205,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates a host execution node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to the graph node to create.
- @param [in] graph - instance of the graph to add the created node.
- @param [in] pDependencies - const pointer to the dependencies on the memset execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] pNodeParams -pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to the graph node to create.
+    @param [in] graph - instance of the graph to add the created node.
+    @param [in] pDependencies - const pointer to the dependencies on the memset execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] pNodeParams -pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddHostNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -10858,11 +10225,11 @@ extern "C" {
     #[must_use]
     /** @brief Returns a host node's parameters.
 
- @param [in] node - instane of the node to get parameters from.
- @param [out] pNodeParams - pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instane of the node to get parameters from.
+    @param [out] pNodeParams - pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphHostNodeGetParams(
         node: hipGraphNode_t,
         pNodeParams: *mut hipHostNodeParams,
@@ -10872,11 +10239,11 @@ extern "C" {
     #[must_use]
     /** @brief Sets a host node's parameters.
 
- @param [in] node - instance of the node to set parameters to.
- @param [in] pNodeParams - pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] pNodeParams - pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphHostNodeSetParams(
         node: hipGraphNode_t,
         pNodeParams: *const hipHostNodeParams,
@@ -10886,12 +10253,12 @@ extern "C" {
     #[must_use]
     /** @brief Sets the parameters for a host node in the given graphExec.
 
- @param [in] hGraphExec - instance of the executable graph with the node.
- @param [in] node - instance of the node to set parameters to.
- @param [in] pNodeParams - pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] hGraphExec - instance of the executable graph with the node.
+    @param [in] node - instance of the node to set parameters to.
+    @param [in] pNodeParams - pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecHostNodeSetParams(
         hGraphExec: hipGraphExec_t,
         node: hipGraphNode_t,
@@ -10902,14 +10269,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates a child graph node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to the graph node to create.
- @param [in] graph - instance of the graph to add the created node.
- @param [in] pDependencies - const pointer to the dependencies on the memset execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] childGraph - the graph to clone into this node
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to the graph node to create.
+    @param [in] graph - instance of the graph to add the created node.
+    @param [in] pDependencies - const pointer to the dependencies on the memset execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] childGraph - the graph to clone into this node
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddChildGraphNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -10922,11 +10289,11 @@ extern "C" {
     #[must_use]
     /** @brief Gets a handle to the embedded graph of a child graph node.
 
- @param [in] node - instane of the node to get child graph.
- @param [out] pGraph - pointer to get the graph.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node - instane of the node to get child graph.
+    @param [out] pGraph - pointer to get the graph.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphChildGraphNodeGetGraph(
         node: hipGraphNode_t,
         pGraph: *mut hipGraph_t,
@@ -10936,12 +10303,12 @@ extern "C" {
     #[must_use]
     /** @brief Updates node parameters in the child graph node in the given graphExec.
 
- @param [in] hGraphExec - instance of the executable graph with the node.
- @param [in] node - node from the graph which was used to instantiate graphExec.
- @param [in] childGraph - child graph with updated parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] hGraphExec - instance of the executable graph with the node.
+    @param [in] node - node from the graph which was used to instantiate graphExec.
+    @param [in] childGraph - child graph with updated parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecChildGraphNodeSetParams(
         hGraphExec: hipGraphExec_t,
         node: hipGraphNode_t,
@@ -10952,13 +10319,13 @@ extern "C" {
     #[must_use]
     /** @brief Creates an empty node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to the graph node to create and add to the graph.
- @param [in] graph - instane of the graph the node is add to.
- @param [in] pDependencies - const pointer to the node dependenties.
- @param [in] numDependencies - the number of dependencies.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to the graph node to create and add to the graph.
+    @param [in] graph - instane of the graph the node is add to.
+    @param [in] pDependencies - const pointer to the node dependenties.
+    @param [in] numDependencies - the number of dependencies.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddEmptyNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -10970,14 +10337,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates an event record node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to the graph node to create and add to the graph.
- @param [in] graph - instane of the graph the node to be added.
- @param [in] pDependencies - const pointer to the node dependenties.
- @param [in] numDependencies - the number of dependencies.
- @param [in] event - Event for the node.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to the graph node to create and add to the graph.
+    @param [in] graph - instane of the graph the node to be added.
+    @param [in] pDependencies - const pointer to the node dependenties.
+    @param [in] numDependencies - the number of dependencies.
+    @param [in] event - Event for the node.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddEventRecordNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -10990,11 +10357,11 @@ extern "C" {
     #[must_use]
     /** @brief Returns the event associated with an event record node.
 
- @param [in] node -  instane of the node to get event from.
- @param [out] event_out - Pointer to return the event.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node -  instane of the node to get event from.
+    @param [out] event_out - Pointer to return the event.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphEventRecordNodeGetEvent(
         node: hipGraphNode_t,
         event_out: *mut hipEvent_t,
@@ -11004,26 +10371,23 @@ extern "C" {
     #[must_use]
     /** @brief Sets an event record node's event.
 
- @param [in] node - instane of the node to set event to.
- @param [in] event - pointer to the event.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
-    pub fn hipGraphEventRecordNodeSetEvent(
-        node: hipGraphNode_t,
-        event: hipEvent_t,
-    ) -> hipError_t;
+    @param [in] node - instane of the node to set event to.
+    @param [in] event - pointer to the event.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
+    pub fn hipGraphEventRecordNodeSetEvent(node: hipGraphNode_t, event: hipEvent_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Sets the event for an event record node in the given graphExec.
 
- @param [in] hGraphExec - instance of the executable graph with the node.
- @param [in] hNode - node from the graph which was used to instantiate graphExec.
- @param [in] event - pointer to the event.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] hGraphExec - instance of the executable graph with the node.
+    @param [in] hNode - node from the graph which was used to instantiate graphExec.
+    @param [in] event - pointer to the event.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecEventRecordNodeSetEvent(
         hGraphExec: hipGraphExec_t,
         hNode: hipGraphNode_t,
@@ -11034,14 +10398,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates an event wait node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to the graph node to create and add to the graph.
- @param [in] graph - instane of the graph the node to be added.
- @param [in] pDependencies - const pointer to the node dependenties.
- @param [in] numDependencies - the number of dependencies.
- @param [in] event - Event for the node.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to the graph node to create and add to the graph.
+    @param [in] graph - instane of the graph the node to be added.
+    @param [in] pDependencies - const pointer to the node dependenties.
+    @param [in] numDependencies - the number of dependencies.
+    @param [in] event - Event for the node.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddEventWaitNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -11054,11 +10418,11 @@ extern "C" {
     #[must_use]
     /** @brief Returns the event associated with an event wait node.
 
- @param [in] node -  instane of the node to get event from.
- @param [out] event_out - Pointer to return the event.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node -  instane of the node to get event from.
+    @param [out] event_out - Pointer to return the event.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphEventWaitNodeGetEvent(
         node: hipGraphNode_t,
         event_out: *mut hipEvent_t,
@@ -11068,26 +10432,23 @@ extern "C" {
     #[must_use]
     /** @brief Sets an event wait node's event.
 
- @param [in] node - instane of the node to set event to.
- @param [in] event - pointer to the event.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
-    pub fn hipGraphEventWaitNodeSetEvent(
-        node: hipGraphNode_t,
-        event: hipEvent_t,
-    ) -> hipError_t;
+    @param [in] node - instane of the node to set event to.
+    @param [in] event - pointer to the event.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
+    pub fn hipGraphEventWaitNodeSetEvent(node: hipGraphNode_t, event: hipEvent_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Sets the event for an event record node in the given graphExec.
 
- @param [in] hGraphExec - instance of the executable graph with the node.
- @param [in] hNode - node from the graph which was used to instantiate graphExec.
- @param [in] event - pointer to the event.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] hGraphExec - instance of the executable graph with the node.
+    @param [in] hNode - node from the graph which was used to instantiate graphExec.
+    @param [in] event - pointer to the event.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecEventWaitNodeSetEvent(
         hGraphExec: hipGraphExec_t,
         hNode: hipGraphNode_t,
@@ -11098,14 +10459,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates a memory allocation node and adds it to a graph
 
- @param [out] pGraphNode      - Pointer to the graph node to create and add to the graph
- @param [in] graph            - Instane of the graph the node to be added
- @param [in] pDependencies    - Const pointer to the node dependenties
- @param [in] numDependencies  - The number of dependencies
- @param [in] pNodeParams      - Node parameters for memory allocation
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode      - Pointer to the graph node to create and add to the graph
+    @param [in] graph            - Instane of the graph the node to be added
+    @param [in] pDependencies    - Const pointer to the node dependenties
+    @param [in] numDependencies  - The number of dependencies
+    @param [in] pNodeParams      - Node parameters for memory allocation
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddMemAllocNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -11118,11 +10479,11 @@ extern "C" {
     #[must_use]
     /** @brief Returns parameters for memory allocation node
 
- @param [in] node         - Memory allocation node for a query
- @param [out] pNodeParams - Parameters for the specified memory allocation node
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node         - Memory allocation node for a query
+    @param [out] pNodeParams - Parameters for the specified memory allocation node
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphMemAllocNodeGetParams(
         node: hipGraphNode_t,
         pNodeParams: *mut hipMemAllocNodeParams,
@@ -11132,14 +10493,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates a memory free node and adds it to a graph
 
- @param [out] pGraphNode      - Pointer to the graph node to create and add to the graph
- @param [in] graph            - Instane of the graph the node to be added
- @param [in] pDependencies    - Const pointer to the node dependenties
- @param [in] numDependencies  - The number of dependencies
- @param [in] dev_ptr          - Pointer to the memory to be freed
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode      - Pointer to the graph node to create and add to the graph
+    @param [in] graph            - Instane of the graph the node to be added
+    @param [in] pDependencies    - Const pointer to the node dependenties
+    @param [in] numDependencies  - The number of dependencies
+    @param [in] dev_ptr          - Pointer to the memory to be freed
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddMemFreeNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -11152,11 +10513,11 @@ extern "C" {
     #[must_use]
     /** @brief Returns parameters for memory free node
 
- @param [in] node     - Memory free node for a query
- @param [out] dev_ptr - Device pointer for the specified memory free node
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] node     - Memory free node for a query
+    @param [out] dev_ptr - Device pointer for the specified memory free node
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphMemFreeNodeGetParams(
         node: hipGraphNode_t,
         dev_ptr: *mut ::core::ffi::c_void,
@@ -11166,12 +10527,12 @@ extern "C" {
     #[must_use]
     /** @brief Get the mem attribute for graphs.
 
- @param [in] device - device the attr is get for.
- @param [in] attr - attr to get.
- @param [out] value - value for specific attr.
- @returns #hipSuccess, #hipErrorInvalidDevice
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] device - device the attr is get for.
+    @param [in] attr - attr to get.
+    @param [out] value - value for specific attr.
+    @returns #hipSuccess, #hipErrorInvalidDevice
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipDeviceGetGraphMemAttribute(
         device: ::core::ffi::c_int,
         attr: hipGraphMemAttributeType,
@@ -11182,12 +10543,12 @@ extern "C" {
     #[must_use]
     /** @brief Set the mem attribute for graphs.
 
- @param [in] device - device the attr is set for.
- @param [in] attr - attr to set.
- @param [in] value - value for specific attr.
- @returns #hipSuccess, #hipErrorInvalidDevice
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] device - device the attr is set for.
+    @param [in] attr - attr to set.
+    @param [in] value - value for specific attr.
+    @returns #hipSuccess, #hipErrorInvalidDevice
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipDeviceSetGraphMemAttribute(
         device: ::core::ffi::c_int,
         attr: hipGraphMemAttributeType,
@@ -11198,25 +10559,25 @@ extern "C" {
     #[must_use]
     /** @brief Free unused memory on specific device used for graph back to OS.
 
- @param [in] device - device the memory is used for graphs
- @returns #hipSuccess, #hipErrorInvalidDevice
+    @param [in] device - device the memory is used for graphs
+    @returns #hipSuccess, #hipErrorInvalidDevice
 
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipDeviceGraphMemTrim(device: ::core::ffi::c_int) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Create an instance of userObject to manage lifetime of a resource.
 
- @param [out] object_out - pointer to instace of userobj.
- @param [in] ptr - pointer to pass to destroy function.
- @param [in] destroy - destroy callback to remove resource.
- @param [in] initialRefcount - reference to resource.
- @param [in] flags - flags passed to API.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] object_out - pointer to instace of userobj.
+    @param [in] ptr - pointer to pass to destroy function.
+    @param [in] destroy - destroy callback to remove resource.
+    @param [in] initialRefcount - reference to resource.
+    @param [in] flags - flags passed to API.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipUserObjectCreate(
         object_out: *mut hipUserObject_t,
         ptr: *mut ::core::ffi::c_void,
@@ -11229,41 +10590,35 @@ extern "C" {
     #[must_use]
     /** @brief Release number of references to resource.
 
- @param [in] object - pointer to instace of userobj.
- @param [in] count - reference to resource to be retained.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
-    pub fn hipUserObjectRelease(
-        object: hipUserObject_t,
-        count: ::core::ffi::c_uint,
-    ) -> hipError_t;
+    @param [in] object - pointer to instace of userobj.
+    @param [in] count - reference to resource to be retained.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
+    pub fn hipUserObjectRelease(object: hipUserObject_t, count: ::core::ffi::c_uint) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Retain number of references to resource.
 
- @param [in] object - pointer to instace of userobj.
- @param [in] count - reference to resource to be retained.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
-    pub fn hipUserObjectRetain(
-        object: hipUserObject_t,
-        count: ::core::ffi::c_uint,
-    ) -> hipError_t;
+    @param [in] object - pointer to instace of userobj.
+    @param [in] count - reference to resource to be retained.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
+    pub fn hipUserObjectRetain(object: hipUserObject_t, count: ::core::ffi::c_uint) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Retain user object for graphs.
 
- @param [in] graph - pointer to graph to retain the user object for.
- @param [in] object - pointer to instace of userobj.
- @param [in] count - reference to resource to be retained.
- @param [in] flags - flags passed to API.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] graph - pointer to graph to retain the user object for.
+    @param [in] object - pointer to instace of userobj.
+    @param [in] count - reference to resource to be retained.
+    @param [in] flags - flags passed to API.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphRetainUserObject(
         graph: hipGraph_t,
         object: hipUserObject_t,
@@ -11275,12 +10630,12 @@ extern "C" {
     #[must_use]
     /** @brief Release user object from graphs.
 
- @param [in] graph - pointer to graph to retain the user object for.
- @param [in] object - pointer to instace of userobj.
- @param [in] count - reference to resource to be retained.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] graph - pointer to graph to retain the user object for.
+    @param [in] object - pointer to instace of userobj.
+    @param [in] count - reference to resource to be retained.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphReleaseUserObject(
         graph: hipGraph_t,
         object: hipUserObject_t,
@@ -11291,12 +10646,12 @@ extern "C" {
     #[must_use]
     /** @brief Write a DOT file describing graph structure.
 
- @param [in] graph - graph object for which DOT file has to be generated.
- @param [in] path - path to write the DOT file.
- @param [in] flags - Flags from hipGraphDebugDotFlags to get additional node information.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorOperatingSystem
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in] graph - graph object for which DOT file has to be generated.
+    @param [in] path - path to write the DOT file.
+    @param [in] flags - Flags from hipGraphDebugDotFlags to get additional node information.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorOperatingSystem
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphDebugDotPrint(
         graph: hipGraph_t,
         path: *const ::core::ffi::c_char,
@@ -11307,16 +10662,16 @@ extern "C" {
     #[must_use]
     /** @brief Copies attributes from source node to destination node.
 
- Copies attributes from source node to destination node.
- Both node must have the same context.
+    Copies attributes from source node to destination node.
+    Both node must have the same context.
 
- @param [out] hDst - Destination node.
- @param [in] hSrc - Source node.
- For list of attributes see ::hipKernelNodeAttrID.
+    @param [out] hDst - Destination node.
+    @param [in] hSrc - Source node.
+    For list of attributes see ::hipKernelNodeAttrID.
 
- @returns #hipSuccess, #hipErrorInvalidContext
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @returns #hipSuccess, #hipErrorInvalidContext
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphKernelNodeCopyAttributes(
         hSrc: hipGraphNode_t,
         hDst: hipGraphNode_t,
@@ -11326,24 +10681,24 @@ extern "C" {
     #[must_use]
     /** @brief Enables or disables the specified node in the given graphExec
 
- Sets hNode to be either enabled or disabled. Disabled nodes are functionally equivalent
- to empty nodes until they are reenabled. Existing node parameters are not affected by
- disabling/enabling the node.
+    Sets hNode to be either enabled or disabled. Disabled nodes are functionally equivalent
+    to empty nodes until they are reenabled. Existing node parameters are not affected by
+    disabling/enabling the node.
 
- The node is identified by the corresponding hNode in the non-executable graph, from which the
- executable graph was instantiated.
+    The node is identified by the corresponding hNode in the non-executable graph, from which the
+    executable graph was instantiated.
 
- hNode must not have been removed from the original graph.
+    hNode must not have been removed from the original graph.
 
- @note Currently only kernel, memset and memcpy nodes are supported.
+    @note Currently only kernel, memset and memcpy nodes are supported.
 
- @param [in] hGraphExec - The executable graph in which to set the specified node.
- @param [in] hNode      - Node from the graph from which graphExec was instantiated.
- @param [in] isEnabled  - Node is enabled if != 0, otherwise the node is disabled.
+    @param [in] hGraphExec - The executable graph in which to set the specified node.
+    @param [in] hNode      - Node from the graph from which graphExec was instantiated.
+    @param [in] isEnabled  - Node is enabled if != 0, otherwise the node is disabled.
 
- @returns #hipSuccess, #hipErrorInvalidValue,
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @returns #hipSuccess, #hipErrorInvalidValue,
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphNodeSetEnabled(
         hGraphExec: hipGraphExec_t,
         hNode: hipGraphNode_t,
@@ -11354,22 +10709,22 @@ extern "C" {
     #[must_use]
     /** @brief Query whether a node in the given graphExec is enabled
 
- Sets isEnabled to 1 if hNode is enabled, or 0 if it is disabled.
+    Sets isEnabled to 1 if hNode is enabled, or 0 if it is disabled.
 
- The node is identified by the corresponding node in the non-executable graph, from which the
- executable graph was instantiated.
+    The node is identified by the corresponding node in the non-executable graph, from which the
+    executable graph was instantiated.
 
- hNode must not have been removed from the original graph.
+    hNode must not have been removed from the original graph.
 
- @note Currently only kernel, memset and memcpy nodes are supported.
+    @note Currently only kernel, memset and memcpy nodes are supported.
 
- @param [in]  hGraphExec - The executable graph in which to set the specified node.
- @param [in]  hNode      - Node from the graph from which graphExec was instantiated.
- @param [out] isEnabled  - Location to return the enabled status of the node.
+    @param [in]  hGraphExec - The executable graph in which to set the specified node.
+    @param [in]  hNode      - Node from the graph from which graphExec was instantiated.
+    @param [out] isEnabled  - Location to return the enabled status of the node.
 
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphNodeGetEnabled(
         hGraphExec: hipGraphExec_t,
         hNode: hipGraphNode_t,
@@ -11380,14 +10735,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates a external semaphor wait node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to the graph node to create.
- @param [in] graph - instance of the graph to add the created node.
- @param [in] pDependencies - const pointer to the dependencies on the memset execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] nodeParams -pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to the graph node to create.
+    @param [in] graph - instance of the graph to add the created node.
+    @param [in] pDependencies - const pointer to the dependencies on the memset execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] nodeParams -pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddExternalSemaphoresWaitNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -11400,14 +10755,14 @@ extern "C" {
     #[must_use]
     /** @brief Creates a external semaphor signal node and adds it to a graph.
 
- @param [out] pGraphNode - pointer to the graph node to create.
- @param [in] graph - instance of the graph to add the created node.
- @param [in] pDependencies - const pointer to the dependencies on the memset execution node.
- @param [in] numDependencies - the number of the dependencies.
- @param [in] nodeParams -pointer to the parameters.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] pGraphNode - pointer to the graph node to create.
+    @param [in] graph - instance of the graph to add the created node.
+    @param [in] pDependencies - const pointer to the dependencies on the memset execution node.
+    @param [in] numDependencies - the number of the dependencies.
+    @param [in] nodeParams -pointer to the parameters.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphAddExternalSemaphoresSignalNode(
         pGraphNode: *mut hipGraphNode_t,
         graph: hipGraph_t,
@@ -11420,11 +10775,11 @@ extern "C" {
     #[must_use]
     /** @brief Updates node parameters in the external semaphore signal node.
 
- @param [in]  hNode      - Node from the graph from which graphExec was instantiated.
- @param [in]  nodeParams  - Pointer to the params to be set.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in]  hNode      - Node from the graph from which graphExec was instantiated.
+    @param [in]  nodeParams  - Pointer to the params to be set.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExternalSemaphoresSignalNodeSetParams(
         hNode: hipGraphNode_t,
         nodeParams: *const hipExternalSemaphoreSignalNodeParams,
@@ -11434,11 +10789,11 @@ extern "C" {
     #[must_use]
     /** @brief Updates node parameters in the external semaphore wait node.
 
- @param [in]  hNode      - Node from the graph from which graphExec was instantiated.
- @param [in]  nodeParams  - Pointer to the params to be set.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in]  hNode      - Node from the graph from which graphExec was instantiated.
+    @param [in]  nodeParams  - Pointer to the params to be set.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExternalSemaphoresWaitNodeSetParams(
         hNode: hipGraphNode_t,
         nodeParams: *const hipExternalSemaphoreWaitNodeParams,
@@ -11448,11 +10803,11 @@ extern "C" {
     #[must_use]
     /** @brief Returns external semaphore signal node params.
 
- @param [in]   hNode       - Node from the graph from which graphExec was instantiated.
- @param [out]  params_out  - Pointer to params.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in]   hNode       - Node from the graph from which graphExec was instantiated.
+    @param [out]  params_out  - Pointer to params.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExternalSemaphoresSignalNodeGetParams(
         hNode: hipGraphNode_t,
         params_out: *mut hipExternalSemaphoreSignalNodeParams,
@@ -11462,11 +10817,11 @@ extern "C" {
     #[must_use]
     /** @brief Returns external semaphore wait node params.
 
- @param [in]   hNode       - Node from the graph from which graphExec was instantiated.
- @param [out]  params_out  - Pointer to params.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in]   hNode       - Node from the graph from which graphExec was instantiated.
+    @param [out]  params_out  - Pointer to params.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExternalSemaphoresWaitNodeGetParams(
         hNode: hipGraphNode_t,
         params_out: *mut hipExternalSemaphoreWaitNodeParams,
@@ -11476,12 +10831,12 @@ extern "C" {
     #[must_use]
     /** @brief Updates node parameters in the external semaphore signal node in the given graphExec.
 
- @param [in]  hGraphExec - The executable graph in which to set the specified node.
- @param [in]  hNode      - Node from the graph from which graphExec was instantiated.
- @param [in]  nodeParams  - Pointer to the params to be set.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in]  hGraphExec - The executable graph in which to set the specified node.
+    @param [in]  hNode      - Node from the graph from which graphExec was instantiated.
+    @param [in]  nodeParams  - Pointer to the params to be set.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecExternalSemaphoresSignalNodeSetParams(
         hGraphExec: hipGraphExec_t,
         hNode: hipGraphNode_t,
@@ -11492,12 +10847,12 @@ extern "C" {
     #[must_use]
     /** @brief Updates node parameters in the external semaphore wait node in the given graphExec.
 
- @param [in]  hGraphExec - The executable graph in which to set the specified node.
- @param [in]  hNode      - Node from the graph from which graphExec was instantiated.
- @param [in]  nodeParams  - Pointer to the params to be set.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [in]  hGraphExec - The executable graph in which to set the specified node.
+    @param [in]  hNode      - Node from the graph from which graphExec was instantiated.
+    @param [in]  nodeParams  - Pointer to the params to be set.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipGraphExecExternalSemaphoresWaitNodeSetParams(
         hGraphExec: hipGraphExec_t,
         hNode: hipGraphNode_t,
@@ -11508,15 +10863,15 @@ extern "C" {
     #[must_use]
     /** @brief Creates a memset node and adds it to a graph.
 
- @param [out] phGraphNode - pointer to graph node to create.
- @param [in] hGraph - instance of graph to add the created node to.
- @param [in] dependencies - const pointer to the dependencies on the memset execution node.
- @param [in] numDependencies - number of the dependencies.
- @param [in] memsetParams - const pointer to the parameters for the memory set.
- @param [in] ctx - cotext related to current device.
- @returns #hipSuccess, #hipErrorInvalidValue
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.*/
+    @param [out] phGraphNode - pointer to graph node to create.
+    @param [in] hGraph - instance of graph to add the created node to.
+    @param [in] dependencies - const pointer to the dependencies on the memset execution node.
+    @param [in] numDependencies - number of the dependencies.
+    @param [in] memsetParams - const pointer to the parameters for the memory set.
+    @param [in] ctx - cotext related to current device.
+    @returns #hipSuccess, #hipErrorInvalidValue
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.*/
     pub fn hipDrvGraphAddMemsetNode(
         phGraphNode: *mut hipGraphNode_t,
         hGraph: hipGraph_t,
@@ -11530,32 +10885,29 @@ extern "C" {
     #[must_use]
     /** @brief Frees an address range reservation made via hipMemAddressReserve
 
- @param [in] devPtr - starting address of the range.
- @param [in] size - size of the range.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [in] devPtr - starting address of the range.
+    @param [in] size - size of the range.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
-    pub fn hipMemAddressFree(
-        devPtr: *mut ::core::ffi::c_void,
-        size: usize,
-    ) -> hipError_t;
+    @note  This API is implemented on Linux, under development on Windows.*/
+    pub fn hipMemAddressFree(devPtr: *mut ::core::ffi::c_void, size: usize) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Reserves an address range
 
- @param [out] ptr - starting address of the reserved range.
- @param [in] size - size of the reservation.
- @param [in] alignment - alignment of the address.
- @param [in] addr - requested starting address of the range.
- @param [in] flags - currently unused, must be zero.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [out] ptr - starting address of the reserved range.
+    @param [in] size - size of the reservation.
+    @param [in] alignment - alignment of the address.
+    @param [in] addr - requested starting address of the range.
+    @param [in] flags - currently unused, must be zero.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemAddressReserve(
         ptr: *mut *mut ::core::ffi::c_void,
         size: usize,
@@ -11568,15 +10920,15 @@ extern "C" {
     #[must_use]
     /** @brief Creates a memory allocation described by the properties and size
 
- @param [out] handle - value of the returned handle.
- @param [in] size - size of the allocation.
- @param [in] prop - properties of the allocation.
- @param [in] flags - currently unused, must be zero.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [out] handle - value of the returned handle.
+    @param [in] size - size of the allocation.
+    @param [in] prop - properties of the allocation.
+    @param [in] flags - currently unused, must be zero.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemCreate(
         handle: *mut hipMemGenericAllocationHandle_t,
         size: usize,
@@ -11588,15 +10940,15 @@ extern "C" {
     #[must_use]
     /** @brief Exports an allocation to a requested shareable handle type.
 
- @param [out] shareableHandle - value of the returned handle.
- @param [in] handle - handle to share.
- @param [in] handleType - type of the shareable handle.
- @param [in] flags - currently unused, must be zero.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [out] shareableHandle - value of the returned handle.
+    @param [in] handle - handle to share.
+    @param [in] handleType - type of the shareable handle.
+    @param [in] flags - currently unused, must be zero.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemExportToShareableHandle(
         shareableHandle: *mut ::core::ffi::c_void,
         handle: hipMemGenericAllocationHandle_t,
@@ -11608,14 +10960,14 @@ extern "C" {
     #[must_use]
     /** @brief Get the access flags set for the given location and ptr.
 
- @param [out] flags - flags for this location.
- @param [in] location - target location.
- @param [in] ptr - address to check the access flags.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [out] flags - flags for this location.
+    @param [in] location - target location.
+    @param [in] ptr - address to check the access flags.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemGetAccess(
         flags: *mut ::core::ffi::c_ulonglong,
         location: *const hipMemLocation,
@@ -11626,15 +10978,15 @@ extern "C" {
     #[must_use]
     /** @brief Calculates either the minimal or recommended granularity.
 
- @param [out] granularity - returned granularity.
- @param [in] prop - location properties.
- @param [in] option - determines which granularity to return.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+     @param [out] granularity - returned granularity.
+     @param [in] prop - location properties.
+     @param [in] option - determines which granularity to return.
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+     @warning : This API is marked as beta, meaning, while this is feature complete,
+     it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.
-*/
+     @note  This API is implemented on Linux, under development on Windows.
+    */
     pub fn hipMemGetAllocationGranularity(
         granularity: *mut usize,
         prop: *const hipMemAllocationProp,
@@ -11645,13 +10997,13 @@ extern "C" {
     #[must_use]
     /** @brief Retrieve the property structure of the given handle.
 
- @param [out] prop - properties of the given handle.
- @param [in] handle - handle to perform the query on.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [out] prop - properties of the given handle.
+    @param [in] handle - handle to perform the query on.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux under development on Windows.*/
+    @note  This API is implemented on Linux under development on Windows.*/
     pub fn hipMemGetAllocationPropertiesFromHandle(
         prop: *mut hipMemAllocationProp,
         handle: hipMemGenericAllocationHandle_t,
@@ -11661,14 +11013,14 @@ extern "C" {
     #[must_use]
     /** @brief Imports an allocation from a requested shareable handle type.
 
- @param [out] handle - returned value.
- @param [in] osHandle - shareable handle representing the memory allocation.
- @param [in] shHandleType - handle type.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [out] handle - returned value.
+    @param [in] osHandle - shareable handle representing the memory allocation.
+    @param [in] shHandleType - handle type.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemImportFromShareableHandle(
         handle: *mut hipMemGenericAllocationHandle_t,
         osHandle: *mut ::core::ffi::c_void,
@@ -11679,16 +11031,16 @@ extern "C" {
     #[must_use]
     /** @brief Maps an allocation handle to a reserved virtual address range.
 
- @param [in] ptr - address where the memory will be mapped.
- @param [in] size - size of the mapping.
- @param [in] offset - offset into the memory, currently must be zero.
- @param [in] handle - memory allocation to be mapped.
- @param [in] flags - currently unused, must be zero.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [in] ptr - address where the memory will be mapped.
+    @param [in] size - size of the mapping.
+    @param [in] offset - offset into the memory, currently must be zero.
+    @param [in] handle - memory allocation to be mapped.
+    @param [in] flags - currently unused, must be zero.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemMap(
         ptr: *mut ::core::ffi::c_void,
         size: usize,
@@ -11701,14 +11053,14 @@ extern "C" {
     #[must_use]
     /** @brief Maps or unmaps subregions of sparse HIP arrays and sparse HIP mipmapped arrays.
 
- @param [in] mapInfoList - list of hipArrayMapInfo.
- @param [in] count - number of hipArrayMapInfo in mapInfoList.
- @param [in] stream - stream identifier for the stream to use for map or unmap operations.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [in] mapInfoList - list of hipArrayMapInfo.
+    @param [in] count - number of hipArrayMapInfo in mapInfoList.
+    @param [in] stream - stream identifier for the stream to use for map or unmap operations.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemMapArrayAsync(
         mapInfoList: *mut hipArrayMapInfo,
         count: ::core::ffi::c_uint,
@@ -11719,25 +11071,25 @@ extern "C" {
     #[must_use]
     /** @brief Release a memory handle representing a memory allocation which was previously allocated through hipMemCreate.
 
- @param [in] handle - handle of the memory allocation.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [in] handle - handle of the memory allocation.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemRelease(handle: hipMemGenericAllocationHandle_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Returns the allocation handle of the backing memory allocation given the address.
 
- @param [out] handle - handle representing addr.
- @param [in] addr - address to look up.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [out] handle - handle representing addr.
+    @param [in] addr - address to look up.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemRetainAllocationHandle(
         handle: *mut hipMemGenericAllocationHandle_t,
         addr: *mut ::core::ffi::c_void,
@@ -11747,15 +11099,15 @@ extern "C" {
     #[must_use]
     /** @brief Set the access flags for each location specified in desc for the given virtual address range.
 
- @param [in] ptr - starting address of the virtual address range.
- @param [in] size - size of the range.
- @param [in] desc - array of hipMemAccessDesc.
- @param [in] count - number of hipMemAccessDesc in desc.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [in] ptr - starting address of the virtual address range.
+    @param [in] size - size of the range.
+    @param [in] desc - array of hipMemAccessDesc.
+    @param [in] count - number of hipMemAccessDesc in desc.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemSetAccess(
         ptr: *mut ::core::ffi::c_void,
         size: usize,
@@ -11767,25 +11119,25 @@ extern "C" {
     #[must_use]
     /** @brief Unmap memory allocation of a given address range.
 
- @param [in] ptr - starting address of the range to unmap.
- @param [in] size - size of the virtual address range.
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
- @warning : This API is marked as beta, meaning, while this is feature complete,
- it is still open to changes and may have outstanding issues.
+    @param [in] ptr - starting address of the range to unmap.
+    @param [in] size - size of the virtual address range.
+    @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorNotSupported
+    @warning : This API is marked as beta, meaning, while this is feature complete,
+    it is still open to changes and may have outstanding issues.
 
- @note  This API is implemented on Linux, under development on Windows.*/
+    @note  This API is implemented on Linux, under development on Windows.*/
     pub fn hipMemUnmap(ptr: *mut ::core::ffi::c_void, size: usize) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Maps a graphics resource for access.
 
- @param [in] count - Number of resources to map.
- @param [in] resources - Pointer of resources to map.
- @param [in] stream - Stream for synchronization.
+     @param [in] count - Number of resources to map.
+     @param [in] resources - Pointer of resources to map.
+     @param [in] stream - Stream for synchronization.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorUnknown, #hipErrorInvalidResourceHandle
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorUnknown, #hipErrorInvalidResourceHandle
+    */
     pub fn hipGraphicsMapResources(
         count: ::core::ffi::c_int,
         resources: *mut hipGraphicsResource_t,
@@ -11796,15 +11148,15 @@ extern "C" {
     #[must_use]
     /** @brief Get an array through which to access a subresource of a mapped graphics resource.
 
- @param [out] array - Pointer of array through which a subresource of resource may be accessed.
- @param [in] resource - Mapped resource to access.
- @param [in] arrayIndex - Array index for the subresource to access.
- @param [in] mipLevel - Mipmap level for the subresource to access.
+     @param [out] array - Pointer of array through which a subresource of resource may be accessed.
+     @param [in] resource - Mapped resource to access.
+     @param [in] arrayIndex - Array index for the subresource to access.
+     @param [in] mipLevel - Mipmap level for the subresource to access.
 
- @returns #hipSuccess, #hipErrorInvalidValue
+     @returns #hipSuccess, #hipErrorInvalidValue
 
- @note  In this API, the value of arrayIndex higher than zero is currently not supported.
-*/
+     @note  In this API, the value of arrayIndex higher than zero is currently not supported.
+    */
     pub fn hipGraphicsSubResourceGetMappedArray(
         array: *mut hipArray_t,
         resource: hipGraphicsResource_t,
@@ -11816,12 +11168,12 @@ extern "C" {
     #[must_use]
     /** @brief Gets device accessible address of a graphics resource.
 
- @param [out] devPtr - Pointer of device through which graphic resource may be accessed.
- @param [out] size - Size of the buffer accessible from devPtr.
- @param [in] resource - Mapped resource to access.
+     @param [out] devPtr - Pointer of device through which graphic resource may be accessed.
+     @param [out] size - Size of the buffer accessible from devPtr.
+     @param [in] resource - Mapped resource to access.
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipGraphicsResourceGetMappedPointer(
         devPtr: *mut *mut ::core::ffi::c_void,
         size: *mut usize,
@@ -11832,12 +11184,12 @@ extern "C" {
     #[must_use]
     /** @brief Unmaps graphics resources.
 
- @param [in] count - Number of resources to unmap.
- @param [in] resources - Pointer of resources to unmap.
- @param [in] stream - Stream for synchronization.
+     @param [in] count - Number of resources to unmap.
+     @param [in] resources - Pointer of resources to unmap.
+     @param [in] stream - Stream for synchronization.
 
- @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorUnknown, #hipErrorContextIsDestroyed
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue, #hipErrorUnknown, #hipErrorContextIsDestroyed
+    */
     pub fn hipGraphicsUnmapResources(
         count: ::core::ffi::c_int,
         resources: *mut hipGraphicsResource_t,
@@ -11848,21 +11200,21 @@ extern "C" {
     #[must_use]
     /** @brief Unregisters a graphics resource.
 
- @param [in] resource - Graphics resources to unregister.
+     @param [in] resource - Graphics resources to unregister.
 
- @returns #hipSuccess
-*/
+     @returns #hipSuccess
+    */
     pub fn hipGraphicsUnregisterResource(resource: hipGraphicsResource_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
     /** @brief Create a surface object.
 
- @param [out] pSurfObject  Pointer of surface object to be created.
- @param [in] pResDesc  Pointer of suface object descriptor.
+     @param [out] pSurfObject  Pointer of surface object to be created.
+     @param [in] pResDesc  Pointer of suface object descriptor.
 
- @returns #hipSuccess, #hipErrorInvalidValue
-*/
+     @returns #hipSuccess, #hipErrorInvalidValue
+    */
     pub fn hipCreateSurfaceObject(
         pSurfObject: *mut hipSurfaceObject_t,
         pResDesc: *const hipResourceDesc,
@@ -11872,9 +11224,9 @@ extern "C" {
     #[must_use]
     /** @brief Destroy a surface object.
 
- @param [in] surfaceObject  Surface object to be destroyed.
+    @param [in] surfaceObject  Surface object to be destroyed.
 
- @returns #hipSuccess, #hipErrorInvalidValue*/
+    @returns #hipSuccess, #hipErrorInvalidValue*/
     pub fn hipDestroySurfaceObject(surfaceObject: hipSurfaceObject_t) -> hipError_t;
 }
 extern "C" {
@@ -12002,10 +11354,7 @@ extern "C" {
 }
 extern "C" {
     #[must_use]
-    pub fn hipMemcpy3DAsync_spt(
-        p: *const hipMemcpy3DParms,
-        stream: hipStream_t,
-    ) -> hipError_t;
+    pub fn hipMemcpy3DAsync_spt(p: *const hipMemcpy3DParms, stream: hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
@@ -12161,24 +11510,16 @@ extern "C" {
 }
 extern "C" {
     #[must_use]
-    pub fn hipGraphLaunch_spt(
-        graphExec: hipGraphExec_t,
-        stream: hipStream_t,
-    ) -> hipError_t;
+    pub fn hipGraphLaunch_spt(graphExec: hipGraphExec_t, stream: hipStream_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
-    pub fn hipStreamBeginCapture_spt(
-        stream: hipStream_t,
-        mode: hipStreamCaptureMode,
-    ) -> hipError_t;
+    pub fn hipStreamBeginCapture_spt(stream: hipStream_t, mode: hipStreamCaptureMode)
+        -> hipError_t;
 }
 extern "C" {
     #[must_use]
-    pub fn hipStreamEndCapture_spt(
-        stream: hipStream_t,
-        pGraph: *mut hipGraph_t,
-    ) -> hipError_t;
+    pub fn hipStreamEndCapture_spt(stream: hipStream_t, pGraph: *mut hipGraph_t) -> hipError_t;
 }
 extern "C" {
     #[must_use]
@@ -12215,237 +11556,160 @@ extern "C" {
     ) -> hipError_t;
 }
 impl hipErrorCode_t {
-    pub const InvalidValue: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(1)
-    });
-    pub const OutOfMemory: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(2)
-    });
-    pub const MemoryAllocation: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(2)
-    });
-    pub const NotInitialized: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(3)
-    });
-    pub const InitializationError: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(3)
-    });
-    pub const Deinitialized: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(4)
-    });
-    pub const ProfilerDisabled: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(5)
-    });
-    pub const ProfilerNotInitialized: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(6)
-    });
-    pub const ProfilerAlreadyStarted: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(7)
-    });
-    pub const ProfilerAlreadyStopped: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(8)
-    });
-    pub const InvalidConfiguration: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(9)
-    });
-    pub const InvalidPitchValue: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(12)
-    });
-    pub const InvalidSymbol: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(13)
-    });
-    pub const InvalidDevicePointer: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(17)
-    });
-    pub const InvalidMemcpyDirection: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(21)
-    });
-    pub const InsufficientDriver: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(35)
-    });
-    pub const MissingConfiguration: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(52)
-    });
-    pub const PriorLaunchFailure: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(53)
-    });
-    pub const InvalidDeviceFunction: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(98)
-    });
-    pub const NoDevice: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(100)
-    });
-    pub const InvalidDevice: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(101)
-    });
-    pub const InvalidImage: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(200)
-    });
-    pub const InvalidContext: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(201)
-    });
-    pub const ContextAlreadyCurrent: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(202)
-    });
-    pub const MapFailed: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(205)
-    });
-    pub const MapBufferObjectFailed: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(205)
-    });
-    pub const UnmapFailed: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(206)
-    });
-    pub const ArrayIsMapped: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(207)
-    });
-    pub const AlreadyMapped: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(208)
-    });
-    pub const NoBinaryForGpu: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(209)
-    });
-    pub const AlreadyAcquired: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(210)
-    });
-    pub const NotMapped: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(211)
-    });
-    pub const NotMappedAsArray: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(212)
-    });
-    pub const NotMappedAsPointer: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(213)
-    });
-    pub const ECCNotCorrectable: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(214)
-    });
-    pub const UnsupportedLimit: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(215)
-    });
-    pub const ContextAlreadyInUse: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(216)
-    });
-    pub const PeerAccessUnsupported: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(217)
-    });
-    pub const InvalidKernelFile: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(218)
-    });
-    pub const InvalidGraphicsContext: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(219)
-    });
-    pub const InvalidSource: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(300)
-    });
-    pub const FileNotFound: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(301)
-    });
-    pub const SharedObjectSymbolNotFound: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(302)
-    });
-    pub const SharedObjectInitFailed: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(303)
-    });
-    pub const OperatingSystem: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(304)
-    });
-    pub const InvalidHandle: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(400)
-    });
-    pub const InvalidResourceHandle: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(400)
-    });
-    pub const IllegalState: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(401)
-    });
-    pub const NotFound: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(500)
-    });
-    pub const NotReady: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(600)
-    });
-    pub const IllegalAddress: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(700)
-    });
-    pub const LaunchOutOfResources: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(701)
-    });
-    pub const LaunchTimeOut: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(702)
-    });
-    pub const PeerAccessAlreadyEnabled: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(704)
-    });
-    pub const PeerAccessNotEnabled: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(705)
-    });
-    pub const SetOnActiveProcess: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(708)
-    });
-    pub const ContextIsDestroyed: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(709)
-    });
-    pub const Assert: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(710)
-    });
-    pub const HostMemoryAlreadyRegistered: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(712)
-    });
-    pub const HostMemoryNotRegistered: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(713)
-    });
-    pub const LaunchFailure: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(719)
-    });
-    pub const CooperativeLaunchTooLarge: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(720)
-    });
-    pub const NotSupported: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(801)
-    });
-    pub const StreamCaptureUnsupported: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(900)
-    });
-    pub const StreamCaptureInvalidated: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(901)
-    });
-    pub const StreamCaptureMerge: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(902)
-    });
-    pub const StreamCaptureUnmatched: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(903)
-    });
-    pub const StreamCaptureUnjoined: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(904)
-    });
-    pub const StreamCaptureIsolation: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(905)
-    });
-    pub const StreamCaptureImplicit: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(906)
-    });
-    pub const CapturedEvent: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(907)
-    });
-    pub const StreamCaptureWrongThread: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(908)
-    });
-    pub const GraphExecUpdateFailure: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(910)
-    });
-    pub const Unknown: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(999)
-    });
-    pub const RuntimeMemory: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(1052)
-    });
-    pub const RuntimeOther: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(1053)
-    });
-    pub const Tbd: hipErrorCode_t = hipErrorCode_t(unsafe {
-        ::core::num::NonZeroU32::new_unchecked(1054)
-    });
+    pub const InvalidValue: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(1) });
+    pub const OutOfMemory: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(2) });
+    pub const MemoryAllocation: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(2) });
+    pub const NotInitialized: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(3) });
+    pub const InitializationError: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(3) });
+    pub const Deinitialized: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(4) });
+    pub const ProfilerDisabled: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(5) });
+    pub const ProfilerNotInitialized: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(6) });
+    pub const ProfilerAlreadyStarted: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(7) });
+    pub const ProfilerAlreadyStopped: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(8) });
+    pub const InvalidConfiguration: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(9) });
+    pub const InvalidPitchValue: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(12) });
+    pub const InvalidSymbol: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(13) });
+    pub const InvalidDevicePointer: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(17) });
+    pub const InvalidMemcpyDirection: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(21) });
+    pub const InsufficientDriver: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(35) });
+    pub const MissingConfiguration: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(52) });
+    pub const PriorLaunchFailure: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(53) });
+    pub const InvalidDeviceFunction: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(98) });
+    pub const NoDevice: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(100) });
+    pub const InvalidDevice: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(101) });
+    pub const InvalidImage: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(200) });
+    pub const InvalidContext: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(201) });
+    pub const ContextAlreadyCurrent: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(202) });
+    pub const MapFailed: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(205) });
+    pub const MapBufferObjectFailed: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(205) });
+    pub const UnmapFailed: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(206) });
+    pub const ArrayIsMapped: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(207) });
+    pub const AlreadyMapped: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(208) });
+    pub const NoBinaryForGpu: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(209) });
+    pub const AlreadyAcquired: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(210) });
+    pub const NotMapped: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(211) });
+    pub const NotMappedAsArray: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(212) });
+    pub const NotMappedAsPointer: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(213) });
+    pub const ECCNotCorrectable: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(214) });
+    pub const UnsupportedLimit: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(215) });
+    pub const ContextAlreadyInUse: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(216) });
+    pub const PeerAccessUnsupported: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(217) });
+    pub const InvalidKernelFile: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(218) });
+    pub const InvalidGraphicsContext: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(219) });
+    pub const InvalidSource: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(300) });
+    pub const FileNotFound: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(301) });
+    pub const SharedObjectSymbolNotFound: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(302) });
+    pub const SharedObjectInitFailed: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(303) });
+    pub const OperatingSystem: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(304) });
+    pub const InvalidHandle: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(400) });
+    pub const InvalidResourceHandle: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(400) });
+    pub const IllegalState: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(401) });
+    pub const NotFound: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(500) });
+    pub const NotReady: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(600) });
+    pub const IllegalAddress: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(700) });
+    pub const LaunchOutOfResources: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(701) });
+    pub const LaunchTimeOut: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(702) });
+    pub const PeerAccessAlreadyEnabled: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(704) });
+    pub const PeerAccessNotEnabled: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(705) });
+    pub const SetOnActiveProcess: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(708) });
+    pub const ContextIsDestroyed: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(709) });
+    pub const Assert: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(710) });
+    pub const HostMemoryAlreadyRegistered: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(712) });
+    pub const HostMemoryNotRegistered: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(713) });
+    pub const LaunchFailure: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(719) });
+    pub const CooperativeLaunchTooLarge: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(720) });
+    pub const NotSupported: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(801) });
+    pub const StreamCaptureUnsupported: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(900) });
+    pub const StreamCaptureInvalidated: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(901) });
+    pub const StreamCaptureMerge: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(902) });
+    pub const StreamCaptureUnmatched: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(903) });
+    pub const StreamCaptureUnjoined: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(904) });
+    pub const StreamCaptureIsolation: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(905) });
+    pub const StreamCaptureImplicit: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(906) });
+    pub const CapturedEvent: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(907) });
+    pub const StreamCaptureWrongThread: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(908) });
+    pub const GraphExecUpdateFailure: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(910) });
+    pub const Unknown: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(999) });
+    pub const RuntimeMemory: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(1052) });
+    pub const RuntimeOther: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(1053) });
+    pub const Tbd: hipErrorCode_t =
+        hipErrorCode_t(unsafe { ::core::num::NonZeroU32::new_unchecked(1054) });
 }
 #[repr(transparent)]
 #[derive(Debug, Hash, Copy, Clone, PartialEq, Eq)]
@@ -12454,201 +11718,110 @@ pub trait hipError_tConsts {
     const Success: hipError_t = hipError_t::Ok(());
     const ErrorInvalidValue: hipError_t = hipError_t::Err(hipErrorCode_t::InvalidValue);
     const ErrorOutOfMemory: hipError_t = hipError_t::Err(hipErrorCode_t::OutOfMemory);
-    const ErrorMemoryAllocation: hipError_t = hipError_t::Err(
-        hipErrorCode_t::MemoryAllocation,
-    );
-    const ErrorNotInitialized: hipError_t = hipError_t::Err(
-        hipErrorCode_t::NotInitialized,
-    );
-    const ErrorInitializationError: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InitializationError,
-    );
-    const ErrorDeinitialized: hipError_t = hipError_t::Err(
-        hipErrorCode_t::Deinitialized,
-    );
-    const ErrorProfilerDisabled: hipError_t = hipError_t::Err(
-        hipErrorCode_t::ProfilerDisabled,
-    );
-    const ErrorProfilerNotInitialized: hipError_t = hipError_t::Err(
-        hipErrorCode_t::ProfilerNotInitialized,
-    );
-    const ErrorProfilerAlreadyStarted: hipError_t = hipError_t::Err(
-        hipErrorCode_t::ProfilerAlreadyStarted,
-    );
-    const ErrorProfilerAlreadyStopped: hipError_t = hipError_t::Err(
-        hipErrorCode_t::ProfilerAlreadyStopped,
-    );
-    const ErrorInvalidConfiguration: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidConfiguration,
-    );
-    const ErrorInvalidPitchValue: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidPitchValue,
-    );
-    const ErrorInvalidSymbol: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidSymbol,
-    );
-    const ErrorInvalidDevicePointer: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidDevicePointer,
-    );
-    const ErrorInvalidMemcpyDirection: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidMemcpyDirection,
-    );
-    const ErrorInsufficientDriver: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InsufficientDriver,
-    );
-    const ErrorMissingConfiguration: hipError_t = hipError_t::Err(
-        hipErrorCode_t::MissingConfiguration,
-    );
-    const ErrorPriorLaunchFailure: hipError_t = hipError_t::Err(
-        hipErrorCode_t::PriorLaunchFailure,
-    );
-    const ErrorInvalidDeviceFunction: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidDeviceFunction,
-    );
+    const ErrorMemoryAllocation: hipError_t = hipError_t::Err(hipErrorCode_t::MemoryAllocation);
+    const ErrorNotInitialized: hipError_t = hipError_t::Err(hipErrorCode_t::NotInitialized);
+    const ErrorInitializationError: hipError_t =
+        hipError_t::Err(hipErrorCode_t::InitializationError);
+    const ErrorDeinitialized: hipError_t = hipError_t::Err(hipErrorCode_t::Deinitialized);
+    const ErrorProfilerDisabled: hipError_t = hipError_t::Err(hipErrorCode_t::ProfilerDisabled);
+    const ErrorProfilerNotInitialized: hipError_t =
+        hipError_t::Err(hipErrorCode_t::ProfilerNotInitialized);
+    const ErrorProfilerAlreadyStarted: hipError_t =
+        hipError_t::Err(hipErrorCode_t::ProfilerAlreadyStarted);
+    const ErrorProfilerAlreadyStopped: hipError_t =
+        hipError_t::Err(hipErrorCode_t::ProfilerAlreadyStopped);
+    const ErrorInvalidConfiguration: hipError_t =
+        hipError_t::Err(hipErrorCode_t::InvalidConfiguration);
+    const ErrorInvalidPitchValue: hipError_t = hipError_t::Err(hipErrorCode_t::InvalidPitchValue);
+    const ErrorInvalidSymbol: hipError_t = hipError_t::Err(hipErrorCode_t::InvalidSymbol);
+    const ErrorInvalidDevicePointer: hipError_t =
+        hipError_t::Err(hipErrorCode_t::InvalidDevicePointer);
+    const ErrorInvalidMemcpyDirection: hipError_t =
+        hipError_t::Err(hipErrorCode_t::InvalidMemcpyDirection);
+    const ErrorInsufficientDriver: hipError_t = hipError_t::Err(hipErrorCode_t::InsufficientDriver);
+    const ErrorMissingConfiguration: hipError_t =
+        hipError_t::Err(hipErrorCode_t::MissingConfiguration);
+    const ErrorPriorLaunchFailure: hipError_t = hipError_t::Err(hipErrorCode_t::PriorLaunchFailure);
+    const ErrorInvalidDeviceFunction: hipError_t =
+        hipError_t::Err(hipErrorCode_t::InvalidDeviceFunction);
     const ErrorNoDevice: hipError_t = hipError_t::Err(hipErrorCode_t::NoDevice);
-    const ErrorInvalidDevice: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidDevice,
-    );
+    const ErrorInvalidDevice: hipError_t = hipError_t::Err(hipErrorCode_t::InvalidDevice);
     const ErrorInvalidImage: hipError_t = hipError_t::Err(hipErrorCode_t::InvalidImage);
-    const ErrorInvalidContext: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidContext,
-    );
-    const ErrorContextAlreadyCurrent: hipError_t = hipError_t::Err(
-        hipErrorCode_t::ContextAlreadyCurrent,
-    );
+    const ErrorInvalidContext: hipError_t = hipError_t::Err(hipErrorCode_t::InvalidContext);
+    const ErrorContextAlreadyCurrent: hipError_t =
+        hipError_t::Err(hipErrorCode_t::ContextAlreadyCurrent);
     const ErrorMapFailed: hipError_t = hipError_t::Err(hipErrorCode_t::MapFailed);
-    const ErrorMapBufferObjectFailed: hipError_t = hipError_t::Err(
-        hipErrorCode_t::MapBufferObjectFailed,
-    );
+    const ErrorMapBufferObjectFailed: hipError_t =
+        hipError_t::Err(hipErrorCode_t::MapBufferObjectFailed);
     const ErrorUnmapFailed: hipError_t = hipError_t::Err(hipErrorCode_t::UnmapFailed);
-    const ErrorArrayIsMapped: hipError_t = hipError_t::Err(
-        hipErrorCode_t::ArrayIsMapped,
-    );
-    const ErrorAlreadyMapped: hipError_t = hipError_t::Err(
-        hipErrorCode_t::AlreadyMapped,
-    );
-    const ErrorNoBinaryForGpu: hipError_t = hipError_t::Err(
-        hipErrorCode_t::NoBinaryForGpu,
-    );
-    const ErrorAlreadyAcquired: hipError_t = hipError_t::Err(
-        hipErrorCode_t::AlreadyAcquired,
-    );
+    const ErrorArrayIsMapped: hipError_t = hipError_t::Err(hipErrorCode_t::ArrayIsMapped);
+    const ErrorAlreadyMapped: hipError_t = hipError_t::Err(hipErrorCode_t::AlreadyMapped);
+    const ErrorNoBinaryForGpu: hipError_t = hipError_t::Err(hipErrorCode_t::NoBinaryForGpu);
+    const ErrorAlreadyAcquired: hipError_t = hipError_t::Err(hipErrorCode_t::AlreadyAcquired);
     const ErrorNotMapped: hipError_t = hipError_t::Err(hipErrorCode_t::NotMapped);
-    const ErrorNotMappedAsArray: hipError_t = hipError_t::Err(
-        hipErrorCode_t::NotMappedAsArray,
-    );
-    const ErrorNotMappedAsPointer: hipError_t = hipError_t::Err(
-        hipErrorCode_t::NotMappedAsPointer,
-    );
-    const ErrorECCNotCorrectable: hipError_t = hipError_t::Err(
-        hipErrorCode_t::ECCNotCorrectable,
-    );
-    const ErrorUnsupportedLimit: hipError_t = hipError_t::Err(
-        hipErrorCode_t::UnsupportedLimit,
-    );
-    const ErrorContextAlreadyInUse: hipError_t = hipError_t::Err(
-        hipErrorCode_t::ContextAlreadyInUse,
-    );
-    const ErrorPeerAccessUnsupported: hipError_t = hipError_t::Err(
-        hipErrorCode_t::PeerAccessUnsupported,
-    );
-    const ErrorInvalidKernelFile: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidKernelFile,
-    );
-    const ErrorInvalidGraphicsContext: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidGraphicsContext,
-    );
-    const ErrorInvalidSource: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidSource,
-    );
+    const ErrorNotMappedAsArray: hipError_t = hipError_t::Err(hipErrorCode_t::NotMappedAsArray);
+    const ErrorNotMappedAsPointer: hipError_t = hipError_t::Err(hipErrorCode_t::NotMappedAsPointer);
+    const ErrorECCNotCorrectable: hipError_t = hipError_t::Err(hipErrorCode_t::ECCNotCorrectable);
+    const ErrorUnsupportedLimit: hipError_t = hipError_t::Err(hipErrorCode_t::UnsupportedLimit);
+    const ErrorContextAlreadyInUse: hipError_t =
+        hipError_t::Err(hipErrorCode_t::ContextAlreadyInUse);
+    const ErrorPeerAccessUnsupported: hipError_t =
+        hipError_t::Err(hipErrorCode_t::PeerAccessUnsupported);
+    const ErrorInvalidKernelFile: hipError_t = hipError_t::Err(hipErrorCode_t::InvalidKernelFile);
+    const ErrorInvalidGraphicsContext: hipError_t =
+        hipError_t::Err(hipErrorCode_t::InvalidGraphicsContext);
+    const ErrorInvalidSource: hipError_t = hipError_t::Err(hipErrorCode_t::InvalidSource);
     const ErrorFileNotFound: hipError_t = hipError_t::Err(hipErrorCode_t::FileNotFound);
-    const ErrorSharedObjectSymbolNotFound: hipError_t = hipError_t::Err(
-        hipErrorCode_t::SharedObjectSymbolNotFound,
-    );
-    const ErrorSharedObjectInitFailed: hipError_t = hipError_t::Err(
-        hipErrorCode_t::SharedObjectInitFailed,
-    );
-    const ErrorOperatingSystem: hipError_t = hipError_t::Err(
-        hipErrorCode_t::OperatingSystem,
-    );
-    const ErrorInvalidHandle: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidHandle,
-    );
-    const ErrorInvalidResourceHandle: hipError_t = hipError_t::Err(
-        hipErrorCode_t::InvalidResourceHandle,
-    );
+    const ErrorSharedObjectSymbolNotFound: hipError_t =
+        hipError_t::Err(hipErrorCode_t::SharedObjectSymbolNotFound);
+    const ErrorSharedObjectInitFailed: hipError_t =
+        hipError_t::Err(hipErrorCode_t::SharedObjectInitFailed);
+    const ErrorOperatingSystem: hipError_t = hipError_t::Err(hipErrorCode_t::OperatingSystem);
+    const ErrorInvalidHandle: hipError_t = hipError_t::Err(hipErrorCode_t::InvalidHandle);
+    const ErrorInvalidResourceHandle: hipError_t =
+        hipError_t::Err(hipErrorCode_t::InvalidResourceHandle);
     const ErrorIllegalState: hipError_t = hipError_t::Err(hipErrorCode_t::IllegalState);
     const ErrorNotFound: hipError_t = hipError_t::Err(hipErrorCode_t::NotFound);
     const ErrorNotReady: hipError_t = hipError_t::Err(hipErrorCode_t::NotReady);
-    const ErrorIllegalAddress: hipError_t = hipError_t::Err(
-        hipErrorCode_t::IllegalAddress,
-    );
-    const ErrorLaunchOutOfResources: hipError_t = hipError_t::Err(
-        hipErrorCode_t::LaunchOutOfResources,
-    );
-    const ErrorLaunchTimeOut: hipError_t = hipError_t::Err(
-        hipErrorCode_t::LaunchTimeOut,
-    );
-    const ErrorPeerAccessAlreadyEnabled: hipError_t = hipError_t::Err(
-        hipErrorCode_t::PeerAccessAlreadyEnabled,
-    );
-    const ErrorPeerAccessNotEnabled: hipError_t = hipError_t::Err(
-        hipErrorCode_t::PeerAccessNotEnabled,
-    );
-    const ErrorSetOnActiveProcess: hipError_t = hipError_t::Err(
-        hipErrorCode_t::SetOnActiveProcess,
-    );
-    const ErrorContextIsDestroyed: hipError_t = hipError_t::Err(
-        hipErrorCode_t::ContextIsDestroyed,
-    );
+    const ErrorIllegalAddress: hipError_t = hipError_t::Err(hipErrorCode_t::IllegalAddress);
+    const ErrorLaunchOutOfResources: hipError_t =
+        hipError_t::Err(hipErrorCode_t::LaunchOutOfResources);
+    const ErrorLaunchTimeOut: hipError_t = hipError_t::Err(hipErrorCode_t::LaunchTimeOut);
+    const ErrorPeerAccessAlreadyEnabled: hipError_t =
+        hipError_t::Err(hipErrorCode_t::PeerAccessAlreadyEnabled);
+    const ErrorPeerAccessNotEnabled: hipError_t =
+        hipError_t::Err(hipErrorCode_t::PeerAccessNotEnabled);
+    const ErrorSetOnActiveProcess: hipError_t = hipError_t::Err(hipErrorCode_t::SetOnActiveProcess);
+    const ErrorContextIsDestroyed: hipError_t = hipError_t::Err(hipErrorCode_t::ContextIsDestroyed);
     const ErrorAssert: hipError_t = hipError_t::Err(hipErrorCode_t::Assert);
-    const ErrorHostMemoryAlreadyRegistered: hipError_t = hipError_t::Err(
-        hipErrorCode_t::HostMemoryAlreadyRegistered,
-    );
-    const ErrorHostMemoryNotRegistered: hipError_t = hipError_t::Err(
-        hipErrorCode_t::HostMemoryNotRegistered,
-    );
-    const ErrorLaunchFailure: hipError_t = hipError_t::Err(
-        hipErrorCode_t::LaunchFailure,
-    );
-    const ErrorCooperativeLaunchTooLarge: hipError_t = hipError_t::Err(
-        hipErrorCode_t::CooperativeLaunchTooLarge,
-    );
+    const ErrorHostMemoryAlreadyRegistered: hipError_t =
+        hipError_t::Err(hipErrorCode_t::HostMemoryAlreadyRegistered);
+    const ErrorHostMemoryNotRegistered: hipError_t =
+        hipError_t::Err(hipErrorCode_t::HostMemoryNotRegistered);
+    const ErrorLaunchFailure: hipError_t = hipError_t::Err(hipErrorCode_t::LaunchFailure);
+    const ErrorCooperativeLaunchTooLarge: hipError_t =
+        hipError_t::Err(hipErrorCode_t::CooperativeLaunchTooLarge);
     const ErrorNotSupported: hipError_t = hipError_t::Err(hipErrorCode_t::NotSupported);
-    const ErrorStreamCaptureUnsupported: hipError_t = hipError_t::Err(
-        hipErrorCode_t::StreamCaptureUnsupported,
-    );
-    const ErrorStreamCaptureInvalidated: hipError_t = hipError_t::Err(
-        hipErrorCode_t::StreamCaptureInvalidated,
-    );
-    const ErrorStreamCaptureMerge: hipError_t = hipError_t::Err(
-        hipErrorCode_t::StreamCaptureMerge,
-    );
-    const ErrorStreamCaptureUnmatched: hipError_t = hipError_t::Err(
-        hipErrorCode_t::StreamCaptureUnmatched,
-    );
-    const ErrorStreamCaptureUnjoined: hipError_t = hipError_t::Err(
-        hipErrorCode_t::StreamCaptureUnjoined,
-    );
-    const ErrorStreamCaptureIsolation: hipError_t = hipError_t::Err(
-        hipErrorCode_t::StreamCaptureIsolation,
-    );
-    const ErrorStreamCaptureImplicit: hipError_t = hipError_t::Err(
-        hipErrorCode_t::StreamCaptureImplicit,
-    );
-    const ErrorCapturedEvent: hipError_t = hipError_t::Err(
-        hipErrorCode_t::CapturedEvent,
-    );
-    const ErrorStreamCaptureWrongThread: hipError_t = hipError_t::Err(
-        hipErrorCode_t::StreamCaptureWrongThread,
-    );
-    const ErrorGraphExecUpdateFailure: hipError_t = hipError_t::Err(
-        hipErrorCode_t::GraphExecUpdateFailure,
-    );
+    const ErrorStreamCaptureUnsupported: hipError_t =
+        hipError_t::Err(hipErrorCode_t::StreamCaptureUnsupported);
+    const ErrorStreamCaptureInvalidated: hipError_t =
+        hipError_t::Err(hipErrorCode_t::StreamCaptureInvalidated);
+    const ErrorStreamCaptureMerge: hipError_t = hipError_t::Err(hipErrorCode_t::StreamCaptureMerge);
+    const ErrorStreamCaptureUnmatched: hipError_t =
+        hipError_t::Err(hipErrorCode_t::StreamCaptureUnmatched);
+    const ErrorStreamCaptureUnjoined: hipError_t =
+        hipError_t::Err(hipErrorCode_t::StreamCaptureUnjoined);
+    const ErrorStreamCaptureIsolation: hipError_t =
+        hipError_t::Err(hipErrorCode_t::StreamCaptureIsolation);
+    const ErrorStreamCaptureImplicit: hipError_t =
+        hipError_t::Err(hipErrorCode_t::StreamCaptureImplicit);
+    const ErrorCapturedEvent: hipError_t = hipError_t::Err(hipErrorCode_t::CapturedEvent);
+    const ErrorStreamCaptureWrongThread: hipError_t =
+        hipError_t::Err(hipErrorCode_t::StreamCaptureWrongThread);
+    const ErrorGraphExecUpdateFailure: hipError_t =
+        hipError_t::Err(hipErrorCode_t::GraphExecUpdateFailure);
     const ErrorUnknown: hipError_t = hipError_t::Err(hipErrorCode_t::Unknown);
-    const ErrorRuntimeMemory: hipError_t = hipError_t::Err(
-        hipErrorCode_t::RuntimeMemory,
-    );
+    const ErrorRuntimeMemory: hipError_t = hipError_t::Err(hipErrorCode_t::RuntimeMemory);
     const ErrorRuntimeOther: hipError_t = hipError_t::Err(hipErrorCode_t::RuntimeOther);
     const ErrorTbd: hipError_t = hipError_t::Err(hipErrorCode_t::Tbd);
 }

@@ -1547,11 +1547,11 @@ impl<I: Stream> ParserError<I> for TokenError {
     fn from_input(input: &I) -> Self {
         TokenError(0..0)
     }
-    
+
     fn from_error_kind(input: &I, kind: ErrorKind) -> Self {
         TokenError(0..0)
     }
-    
+
     fn append(self, input: &I, checkpoint: &I::Checkpoint, kind: ErrorKind) -> Self {
         self
     }

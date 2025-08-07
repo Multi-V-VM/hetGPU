@@ -1,13 +1,13 @@
+use crate::r#impl::context;
 #[cfg(feature = "intel")]
 use crate::r#impl::ze_to_cuda_result;
 #[cfg(feature = "intel")]
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
+use std::ptr;
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
-use std::ptr;
-use crate::r#impl::context;
 #[cfg(feature = "amd")]
 pub(crate) fn alloc_v2(dptr: *mut hipDeviceptr_t, bytesize: usize) -> hipError_t {
     unsafe { hipMalloc(dptr.cast(), bytesize) }?;

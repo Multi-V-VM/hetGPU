@@ -136,7 +136,6 @@ pub fn to_mlir_module<'input>(ast: ast::Module<'input>) -> Result<String, Transl
     // eprintln!("{:#?}", directives);
     eprintln!("ZLUDA DEBUG: Completed hoist_globals");
 
-
     eprintln!("=== AST before mlir codegen ===");
     eprintln!("{:#?}", directives);
     // Convert directly to Linalg MLIR
@@ -340,7 +339,7 @@ pub fn to_llvm_module_with_debug_round_trip<'input>(
                 "-march=nvptx64",
                 "-mcpu=sm_61", // Use newer compute capability for better debug support
                 "-filetype=asm", // Generate assembly (PTX)
-                "-O0", // No optimization to preserve debug info
+                "-O0",         // No optimization to preserve debug info
                 &llvm_temp_path,
                 "-o",
                 &ptx_temp_path,
@@ -470,7 +469,7 @@ pub fn to_llvm_module_with_debug_round_trip_and_filename<'input>(
                 "-march=nvptx64",
                 "-mcpu=sm_61", // Use newer compute capability for better debug support
                 "-filetype=asm", // Generate assembly (PTX)
-                "-O0", // No optimization to preserve debug info
+                "-O0",         // No optimization to preserve debug info
                 &llvm_temp_path,
                 "-o",
                 &ptx_temp_path,
@@ -696,7 +695,11 @@ impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
                     array_init: var.array_init,
                 })
             }
-            Statement::PredicatedInstruction { predicate, negated, instruction } => {
+            Statement::PredicatedInstruction {
+                predicate,
+                negated,
+                instruction,
+            } => {
                 let predicate = visitor.visit_ident(
                     predicate,
                     Some((&ast::ScalarType::Pred.into(), ast::StateSpace::Reg)),

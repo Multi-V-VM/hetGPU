@@ -30,15 +30,18 @@ fn main() {
         .define("LLVM_BUILD_TOOLS", "OFF")
         .define("LLVM_TARGETS_TO_BUILD", "")
         .define("LLVM_ENABLE_PROJECTS", "");
-    
+
     // For some reason Rust always links to release MSVCRT
     #[cfg(windows)]
     cmake.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
-    
+
     // Override problematic Windows-specific C++ flags on non-Windows platforms
     #[cfg(not(windows))]
-    cmake.define("CMAKE_CXX_FLAGS", "-ffunction-sections -fdata-sections -fPIC -m64");
-    
+    cmake.define(
+        "CMAKE_CXX_FLAGS",
+        "-ffunction-sections -fdata-sections -fPIC -m64",
+    );
+
     cmake.build_target("llvm-config");
     let llvm_dir = cmake.build();
     for c in COMPONENTS {
@@ -111,28 +114,31 @@ fn llvm_config(
 }
 
 fn compile_cxx_lib(cxxflags: String) {
-    println!("cargo:warning=Compiling C++ library with CXXFLAGS: {}", cxxflags);
+    println!(
+        "cargo:warning=Compiling C++ library with CXXFLAGS: {}",
+        cxxflags
+    );
     let mut cc = cc::Build::new();
-    
+
     // Force use of GCC toolchain on non-Windows platforms
     #[cfg(not(windows))]
     {
         cc.compiler("g++");
         cc.archiver("ar");
     }
-    
+
     for flag in cxxflags.split_whitespace() {
         cc.flag(flag);
     }
     cc.cpp(true).file("src/lib.cpp");
-    
+
     // Add required includes for LLVM
     cc.include("../ext/llvm-project/llvm/include");
-    
+
     println!("cargo:warning=About to compile lib.cpp");
     cc.compile("llvm_zluda_cpp");
     println!("cargo:warning=Finished compiling lib.cpp");
-    
+
     println!("cargo:rerun-if-changed=src/lib.cpp");
     println!("cargo:rerun-if-changed=src/lib.rs");
 }

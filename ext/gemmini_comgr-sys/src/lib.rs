@@ -35,10 +35,13 @@ pub type gemmini_comgr_language_t = gemmini_comgr_language_s;
 
 impl gemmini_comgr_language_s {
     pub const GEMMINI_COMGR_LANGUAGE_NONE: gemmini_comgr_language_s = gemmini_comgr_language_s(0);
-    pub const GEMMINI_COMGR_LANGUAGE_OPENCL_1_2: gemmini_comgr_language_s = gemmini_comgr_language_s(1);
-    pub const GEMMINI_COMGR_LANGUAGE_OPENCL_2_0: gemmini_comgr_language_s = gemmini_comgr_language_s(2);
+    pub const GEMMINI_COMGR_LANGUAGE_OPENCL_1_2: gemmini_comgr_language_s =
+        gemmini_comgr_language_s(1);
+    pub const GEMMINI_COMGR_LANGUAGE_OPENCL_2_0: gemmini_comgr_language_s =
+        gemmini_comgr_language_s(2);
     pub const GEMMINI_COMGR_LANGUAGE_SYCL: gemmini_comgr_language_s = gemmini_comgr_language_s(3);
-    pub const GEMMINI_COMGR_LANGUAGE_LLVM_IR: gemmini_comgr_language_s = gemmini_comgr_language_s(4);
+    pub const GEMMINI_COMGR_LANGUAGE_LLVM_IR: gemmini_comgr_language_s =
+        gemmini_comgr_language_s(4);
     pub const GEMMINI_COMGR_LANGUAGE_LAST: gemmini_comgr_language_s = gemmini_comgr_language_s(4);
 }
 
@@ -48,9 +51,12 @@ pub struct gemmini_comgr_data_kind_s(pub c_uint);
 pub type gemmini_comgr_data_kind_t = gemmini_comgr_data_kind_s;
 
 impl gemmini_comgr_data_kind_s {
-    pub const GEMMINI_COMGR_DATA_KIND_UNDEF: gemmini_comgr_data_kind_s = gemmini_comgr_data_kind_s(0);
-    pub const GEMMINI_COMGR_DATA_KIND_SOURCE: gemmini_comgr_data_kind_s = gemmini_comgr_data_kind_s(1);
-    pub const GEMMINI_COMGR_DATA_KIND_INCLUDE: gemmini_comgr_data_kind_s = gemmini_comgr_data_kind_s(2);
+    pub const GEMMINI_COMGR_DATA_KIND_UNDEF: gemmini_comgr_data_kind_s =
+        gemmini_comgr_data_kind_s(0);
+    pub const GEMMINI_COMGR_DATA_KIND_SOURCE: gemmini_comgr_data_kind_s =
+        gemmini_comgr_data_kind_s(1);
+    pub const GEMMINI_COMGR_DATA_KIND_INCLUDE: gemmini_comgr_data_kind_s =
+        gemmini_comgr_data_kind_s(2);
     pub const GEMMINI_COMGR_DATA_KIND_PRECOMPILED_HEADER: gemmini_comgr_data_kind_s =
         gemmini_comgr_data_kind_s(3);
     pub const GEMMINI_COMGR_DATA_KIND_DIAGNOSTIC: gemmini_comgr_data_kind_s =
@@ -61,9 +67,12 @@ impl gemmini_comgr_data_kind_s {
         gemmini_comgr_data_kind_s(7);
     pub const GEMMINI_COMGR_DATA_KIND_EXECUTABLE: gemmini_comgr_data_kind_s =
         gemmini_comgr_data_kind_s(8);
-    pub const GEMMINI_COMGR_DATA_KIND_BYTES: gemmini_comgr_data_kind_s = gemmini_comgr_data_kind_s(9);
-    pub const GEMMINI_COMGR_DATA_KIND_FATBIN: gemmini_comgr_data_kind_s = gemmini_comgr_data_kind_s(16);
-    pub const GEMMINI_COMGR_DATA_KIND_LAST: gemmini_comgr_data_kind_s = gemmini_comgr_data_kind_s(16);
+    pub const GEMMINI_COMGR_DATA_KIND_BYTES: gemmini_comgr_data_kind_s =
+        gemmini_comgr_data_kind_s(9);
+    pub const GEMMINI_COMGR_DATA_KIND_FATBIN: gemmini_comgr_data_kind_s =
+        gemmini_comgr_data_kind_s(16);
+    pub const GEMMINI_COMGR_DATA_KIND_LAST: gemmini_comgr_data_kind_s =
+        gemmini_comgr_data_kind_s(16);
 }
 
 // Data structures similar to AMD
@@ -135,7 +144,8 @@ impl gemmini_comgr_action_kind_s {
         gemmini_comgr_action_kind_s(7);
     pub const GEMMINI_COMGR_ACTION_COMPILE_SOURCE_TO_FATBIN: gemmini_comgr_action_kind_s =
         gemmini_comgr_action_kind_s(8);
-    pub const GEMMINI_COMGR_ACTION_LAST: gemmini_comgr_action_kind_s = gemmini_comgr_action_kind_s(8);
+    pub const GEMMINI_COMGR_ACTION_LAST: gemmini_comgr_action_kind_s =
+        gemmini_comgr_action_kind_s(8);
 }
 
 // Symbol type and info constants
@@ -274,7 +284,9 @@ pub fn gemmini_comgr_data_set_name(
     }
 }
 
-pub fn gemmini_comgr_create_data_set(data_set: *mut gemmini_comgr_data_set_t) -> gemmini_comgr_status_t {
+pub fn gemmini_comgr_create_data_set(
+    data_set: *mut gemmini_comgr_data_set_t,
+) -> gemmini_comgr_status_t {
     // Validate params
     if data_set.is_null() {
         return Err(gemmini_comgr_status_s::GEMMINI_COMGR_STATUS_ERROR_INVALID_ARGUMENT);
@@ -297,7 +309,9 @@ pub fn gemmini_comgr_create_data_set(data_set: *mut gemmini_comgr_data_set_t) ->
     Ok(())
 }
 
-pub fn gemmini_comgr_release_data_set(data_set: gemmini_comgr_data_set_t) -> gemmini_comgr_status_t {
+pub fn gemmini_comgr_release_data_set(
+    data_set: gemmini_comgr_data_set_t,
+) -> gemmini_comgr_status_t {
     // Remove the data set from the store
     let mut data_set_store = command_wrapper::DATA_SET_STORE.lock().unwrap();
     data_set_store.remove(&data_set.handle);
@@ -556,7 +570,9 @@ pub fn gemmini_comgr_create_metadata(
     Ok(())
 }
 
-pub fn gemmini_comgr_release_metadata(metadata: gemmini_comgr_metadata_node_t) -> gemmini_comgr_status_t {
+pub fn gemmini_comgr_release_metadata(
+    metadata: gemmini_comgr_metadata_node_t,
+) -> gemmini_comgr_status_t {
     // In a more complex implementation, we would need to clean up metadata resources
     Ok(())
 }
@@ -747,7 +763,8 @@ mod tests {
 
         // Set content
         let content = "void main() {}";
-        let result = gemmini_comgr_data_set_bytes(data1, content.as_ptr() as *const _, content.len());
+        let result =
+            gemmini_comgr_data_set_bytes(data1, content.as_ptr() as *const _, content.len());
         assert!(result.is_ok());
 
         // Add to data set

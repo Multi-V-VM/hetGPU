@@ -1213,7 +1213,11 @@ impl<'a> MethodEmitContext<'a> {
             Statement::FunctionPointer(_) => todo!(),
             Statement::VectorRead(vector_read) => self.emit_vector_read(vector_read)?,
             Statement::VectorWrite(vector_write) => self.emit_vector_write(vector_write)?,
-            Statement::PredicatedInstruction { predicate, negated, instruction } => {
+            Statement::PredicatedInstruction {
+                predicate,
+                negated,
+                instruction,
+            } => {
                 // LLVM backend doesn't support the new predicated instruction approach yet
                 // For now, just emit the instruction unconditionally
                 // TODO: Implement proper predicated execution in LLVM backend
@@ -1235,7 +1239,9 @@ impl<'a> MethodEmitContext<'a> {
                 return Ok(());
             }
             Statement::Label(_) => "label",
-            Statement::PredicatedInstruction { instruction, .. } => get_instruction_name(instruction),
+            Statement::PredicatedInstruction { instruction, .. } => {
+                get_instruction_name(instruction)
+            }
             Statement::Conversion(_) => "conversion",
             Statement::Constant(_) => "constant",
             Statement::RetValue(_, _) => "ret_value",

@@ -2,7 +2,7 @@ use super::context;
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
-use std::{mem, ptr, ffi::c_void};
+use std::{ffi::c_void, mem, ptr};
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
 
@@ -51,28 +51,28 @@ pub(crate) fn get(device: *mut ze_device_handle_t, ordinal: i32) -> ze_result_t 
     unsafe {
         // Initialize Level Zero
         match zeInit(0) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
 
         // Get driver count
         let mut driver_count = 0;
         match zeDriverGet(&mut driver_count, ptr::null_mut()) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
 
         // Get drivers
         let mut drivers = vec![ptr::null_mut(); driver_count as usize];
         match zeDriverGet(&mut driver_count, *drivers.as_mut_ptr()) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
 
         // Get device count for the first driver
         let mut device_count = 0;
         match zeDeviceGet(*drivers[0], &mut device_count, ptr::null_mut()) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
 
@@ -83,7 +83,7 @@ pub(crate) fn get(device: *mut ze_device_handle_t, ordinal: i32) -> ze_result_t 
         // Get devices
         let mut devices = vec![ptr::null_mut(); device_count as usize];
         match zeDeviceGet(*drivers[0], &mut device_count, *devices.as_mut_ptr()) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
 
@@ -461,7 +461,7 @@ pub(crate) fn get_attribute(
 
     unsafe {
         match zeDeviceGetProperties(dev_idx, &mut props) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
     }
@@ -584,11 +584,11 @@ pub(crate) fn get_attribute(
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_BUS_ID => {
-            *pi = 0;  // Default value
+            *pi = 0; // Default value
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID => {
-            *pi = 0;  // Default value
+            *pi = 0; // Default value
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE => {
@@ -616,7 +616,7 @@ pub(crate) fn get_attribute(
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID => {
-            *pi = 0;  // Default value
+            *pi = 0; // Default value
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TEXTURE_PITCH_ALIGNMENT => {
@@ -727,18 +727,14 @@ pub(crate) fn get_uuid(uuid: *mut ze_device_uuid_t, device: ze_device_handle_t) 
 
     unsafe {
         match zeDeviceGetProperties(device, &mut props) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
     }
 
     // Copy UUID from device properties
     unsafe {
-        ptr::copy_nonoverlapping(
-            props.uuid.id.as_ptr(),
-            (*uuid).id.as_mut_ptr(),
-            16,
-        );
+        ptr::copy_nonoverlapping(props.uuid.id.as_ptr(), (*uuid).id.as_mut_ptr(), 16);
     }
 
     ze_result_t::ZE_RESULT_SUCCESS
@@ -782,7 +778,8 @@ pub(crate) fn get_luid(
         luid.cast::<[i8; 8]>()
             .as_mut()
             .ok_or(ze_result_t::ZE_RESULT_ERROR_INVALID_ARGUMENT)
-    }.unwrap();
+    }
+    .unwrap();
 
     let mut props: ze_device_properties_t = unsafe { mem::zeroed() };
     props.stype = ze_structure_type_t::ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
@@ -943,28 +940,28 @@ pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> ze_result_t {
     unsafe {
         // Initialize Level Zero
         match zeInit(0) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
 
         // Get driver count
         let mut driver_count = 0;
         match zeDriverGet(&mut driver_count, ptr::null_mut()) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
 
         // Get first driver
         let mut drivers = vec![ptr::null_mut(); driver_count as usize];
         match zeDriverGet(&mut driver_count, *drivers.as_mut_ptr()) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
 
         // Get device count for the first driver
         let mut device_count = 0;
         match zeDeviceGet(*drivers[0], &mut device_count, ptr::null_mut()) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
 
@@ -1107,7 +1104,9 @@ impl ZeResultExt for ze_result_t {
             ze_result_t::ZE_RESULT_ERROR_INVALID_SIZE => Err(CUerror::INVALID_VALUE),
             ze_result_t::ZE_RESULT_ERROR_UNSUPPORTED_SIZE => Err(CUerror::INVALID_VALUE),
             ze_result_t::ZE_RESULT_ERROR_UNSUPPORTED_FEATURE => Err(CUerror::NOT_SUPPORTED),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_SYNCHRONIZATION_OBJECT => Err(CUerror::INVALID_HANDLE),
+            ze_result_t::ZE_RESULT_ERROR_INVALID_SYNCHRONIZATION_OBJECT => {
+                Err(CUerror::INVALID_HANDLE)
+            }
             ze_result_t::ZE_RESULT_ERROR_INVALID_ENUMERATION => Err(CUerror::INVALID_VALUE),
             ze_result_t::ZE_RESULT_ERROR_UNSUPPORTED_ENUMERATION => Err(CUerror::NOT_SUPPORTED),
             ze_result_t::ZE_RESULT_ERROR_UNSUPPORTED_IMAGE_FORMAT => Err(CUerror::INVALID_VALUE),
@@ -1115,11 +1114,21 @@ impl ZeResultExt for ze_result_t {
             ze_result_t::ZE_RESULT_ERROR_INVALID_GLOBAL_NAME => Err(CUerror::NOT_FOUND),
             ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_NAME => Err(CUerror::NOT_FOUND),
             ze_result_t::ZE_RESULT_ERROR_INVALID_FUNCTION_NAME => Err(CUerror::NOT_FOUND),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_GROUP_SIZE_DIMENSION => Err(CUerror::INVALID_VALUE),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_GLOBAL_WIDTH_DIMENSION => Err(CUerror::INVALID_VALUE),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_INDEX => Err(CUerror::INVALID_VALUE),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_SIZE => Err(CUerror::INVALID_VALUE),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ATTRIBUTE_VALUE => Err(CUerror::INVALID_VALUE),
+            ze_result_t::ZE_RESULT_ERROR_INVALID_GROUP_SIZE_DIMENSION => {
+                Err(CUerror::INVALID_VALUE)
+            }
+            ze_result_t::ZE_RESULT_ERROR_INVALID_GLOBAL_WIDTH_DIMENSION => {
+                Err(CUerror::INVALID_VALUE)
+            }
+            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_INDEX => {
+                Err(CUerror::INVALID_VALUE)
+            }
+            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_SIZE => {
+                Err(CUerror::INVALID_VALUE)
+            }
+            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ATTRIBUTE_VALUE => {
+                Err(CUerror::INVALID_VALUE)
+            }
             ze_result_t::ZE_RESULT_ERROR_INVALID_MODULE_UNLINKED => Err(CUerror::INVALID_PTX),
             ze_result_t::ZE_RESULT_ERROR_INVALID_COMMAND_LIST_TYPE => Err(CUerror::INVALID_VALUE),
             ze_result_t::ZE_RESULT_ERROR_OVERLAPPING_REGIONS => Err(CUerror::INVALID_VALUE),
@@ -1155,7 +1164,7 @@ pub(crate) fn get_attribute(
     if pi.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let devices = super::driver::global_state()?;
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
@@ -1193,11 +1202,15 @@ pub(crate) fn get_attribute(
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR => 2048,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT => 2,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING => 1,
-        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR => COMPUTE_CAPABILITY_MAJOR,
-        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR => COMPUTE_CAPABILITY_MINOR,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR => {
+            COMPUTE_CAPABILITY_MAJOR
+        }
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR => {
+            COMPUTE_CAPABILITY_MINOR
+        }
         _ => return Err(CUerror::INVALID_VALUE),
     };
-    
+
     unsafe { *pi = result };
     Ok(())
 }
@@ -1218,7 +1231,7 @@ pub(crate) fn get_name(
     if name.is_null() || len <= 0 {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let devices = super::driver::global_state()?;
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
@@ -1226,12 +1239,12 @@ pub(crate) fn get_name(
 
     let device_name = b"Tenstorrent Device\0";
     let copy_len = std::cmp::min(device_name.len(), len as usize - 1);
-    
+
     unsafe {
         std::ptr::copy_nonoverlapping(device_name.as_ptr() as *const i8, name, copy_len);
         *name.add(copy_len) = 0;
     }
-    
+
     Ok(())
 }
 
@@ -1240,7 +1253,7 @@ pub(crate) fn get_uuid(uuid: *mut [u8; 16], dev: i32) -> CUresult {
     if uuid.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let devices = super::driver::global_state()?;
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
@@ -1251,7 +1264,7 @@ pub(crate) fn get_uuid(uuid: *mut [u8; 16], dev: i32) -> CUresult {
     device_uuid[0..4].copy_from_slice(&(dev as u32).to_le_bytes());
     device_uuid[4..8].copy_from_slice(b"TTTT"); // Tenstorrent marker
     device_uuid[8..16].copy_from_slice(b"ZLUDA001"); // ZLUDA version
-    
+
     unsafe { *uuid = device_uuid };
     Ok(())
 }
@@ -1270,7 +1283,7 @@ pub(crate) fn get_luid(
     if luid.is_null() || device_node_mask.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let devices = super::driver::global_state()?;
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
@@ -1280,12 +1293,12 @@ pub(crate) fn get_luid(
     let mut device_luid = [0u8; 8];
     device_luid[0..4].copy_from_slice(&(dev as u32).to_le_bytes());
     device_luid[4..8].copy_from_slice(b"TTTT");
-    
+
     unsafe {
         *luid = device_luid;
         *device_node_mask = 1u32 << (dev as u32 % 32);
     }
-    
+
     Ok(())
 }
 
@@ -1294,7 +1307,7 @@ pub(crate) fn total_mem_v2(bytes: *mut usize, dev: i32) -> CUresult {
     if bytes.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let devices = super::driver::global_state()?;
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
@@ -1322,22 +1335,19 @@ pub(crate) fn get_properties(prop: &mut CUdevprop, dev: i32) -> CUresult {
     prop.regsPerBlock = 65536;
     prop.clockRate = 1000;
     prop.textureAlign = 512;
-    
+
     Ok(())
 }
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
-pub(crate) fn primary_context_retain(
-    pctx: *mut CUcontext,
-    dev: i32,
-) -> CUresult {
+pub(crate) fn primary_context_retain(pctx: *mut CUcontext, dev: i32) -> CUresult {
     if pctx.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let (primary_ctx, handle) = super::context::get_primary_tt(dev)?;
     primary_ctx.increment_ref_count();
-    
+
     unsafe { *pctx = handle };
     Ok(())
 }
@@ -1346,11 +1356,11 @@ pub(crate) fn primary_context_retain(
 pub(crate) fn primary_context_release(dev: i32) -> CUresult {
     let (primary_ctx, _) = super::context::get_primary_tt(dev)?;
     let ref_count = primary_ctx.decrement_ref_count();
-    
+
     if ref_count == 0 {
         // Clean up context when reference count reaches zero
         primary_ctx.destroy()?;
     }
-    
+
     Ok(())
 }

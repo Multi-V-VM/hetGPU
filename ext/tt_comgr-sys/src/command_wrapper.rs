@@ -15,11 +15,10 @@ use crate::{
     tt_comgr_action_info_set_language, tt_comgr_action_info_set_option_list,
     tt_comgr_action_info_set_target, tt_comgr_action_info_t, tt_comgr_action_kind_s,
     tt_comgr_create_action_info, tt_comgr_create_data, tt_comgr_create_data_set,
-    tt_comgr_data_get_bytes, tt_comgr_data_kind_s, tt_comgr_data_set_add,
-    tt_comgr_data_set_bytes, tt_comgr_data_set_name, tt_comgr_data_set_t,
-    tt_comgr_data_t, tt_comgr_do_action, tt_comgr_get_data, tt_comgr_get_data_count,
-    tt_comgr_language_s, tt_comgr_release_action_info, tt_comgr_release_data,
-    tt_comgr_release_data_set, tt_comgr_status_s, tt_comgr_status_t,
+    tt_comgr_data_get_bytes, tt_comgr_data_kind_s, tt_comgr_data_set_add, tt_comgr_data_set_bytes,
+    tt_comgr_data_set_name, tt_comgr_data_set_t, tt_comgr_data_t, tt_comgr_do_action,
+    tt_comgr_get_data, tt_comgr_get_data_count, tt_comgr_language_s, tt_comgr_release_action_info,
+    tt_comgr_release_data, tt_comgr_release_data_set, tt_comgr_status_s, tt_comgr_status_t,
 };
 
 // Actual internal representation of data
@@ -184,10 +183,7 @@ pub fn perform_action(
 }
 
 // Helper function to add output files to the output set
-fn add_outputs_to_set(
-    ctx: &ActionContext,
-    output_set: tt_comgr_data_set_t,
-) -> tt_comgr_status_t {
+fn add_outputs_to_set(ctx: &ActionContext, output_set: tt_comgr_data_set_t) -> tt_comgr_status_t {
     let output_dir = ctx.temp_dir.clone();
 
     // Get all files in the output directory
@@ -288,8 +284,7 @@ fn add_outputs_to_set(
     // If no files were added, add a dummy empty relocatable file
     // This ensures downstream code has something to process
     if !added_files
-        && ctx.action_kind.0
-            == tt_comgr_action_kind_s::TT_COMGR_ACTION_CODEGEN_BC_TO_RELOCATABLE.0
+        && ctx.action_kind.0 == tt_comgr_action_kind_s::TT_COMGR_ACTION_CODEGEN_BC_TO_RELOCATABLE.0
     {
         eprintln!("No output files found - creating dummy relocatable output");
 
@@ -527,9 +522,9 @@ fn add_file_to_set(
     };
 
     // Set the data content
-    if let Err(e) = unsafe {
-        tt_comgr_data_set_bytes(data, content.as_ptr() as *const c_void, content.len())
-    } {
+    if let Err(e) =
+        unsafe { tt_comgr_data_set_bytes(data, content.as_ptr() as *const c_void, content.len()) }
+    {
         eprintln!("Failed to set data bytes: {:?}", e);
         unsafe { tt_comgr_release_data(data).ok() };
         return Err(e);
@@ -768,9 +763,7 @@ fn compile_source_to_bc(ctx: &ActionContext) -> tt_comgr_status_t {
     let pch_files: Vec<_> = ctx
         .input_files
         .iter()
-        .filter(|(_, kind)| {
-            kind.0 == tt_comgr_data_kind_s::TT_COMGR_DATA_KIND_PRECOMPILED_HEADER.0
-        })
+        .filter(|(_, kind)| kind.0 == tt_comgr_data_kind_s::TT_COMGR_DATA_KIND_PRECOMPILED_HEADER.0)
         .map(|(path, _)| path.clone())
         .collect();
 
@@ -1397,9 +1390,12 @@ fn compile_to_fatbin(ctx: &ActionContext) -> tt_comgr_status_t {
 }
 
 // Preprocess MLIR to convert llvm.mlir.constant to arith.constant for ttmlir compatibility
-fn preprocess_mlir_constants(input_file: &PathBuf, output_file: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn preprocess_mlir_constants(
+    input_file: &PathBuf,
+    output_file: &PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
     let content = fs::read_to_string(input_file)?;
-    
+
     // Transform llvm.mlir.constant operations to arith.constant operations
     // Pattern: %0 = llvm.mlir.constant(VALUE : TYPE) : TYPE
     // Replace with: %0 = arith.constant VALUE : TYPE
@@ -1410,14 +1406,20 @@ fn preprocess_mlir_constants(input_file: &PathBuf, output_file: &PathBuf) -> Res
                 // Use regex to transform the pattern
                 // Match: %var = llvm.mlir.constant(value : type) : type
                 // Replace with: %var = arith.constant value : type
-                if let Some(captures) = regex::Regex::new(r"(\s*)(%\w+)\s*=\s*llvm\.mlir\.constant\(([^:]+)\s*:\s*([^)]+)\)\s*:\s*(.+)")
-                    .unwrap()
-                    .captures(line) {
+                if let Some(captures) = regex::Regex::new(
+                    r"(\s*)(%\w+)\s*=\s*llvm\.mlir\.constant\(([^:]+)\s*:\s*([^)]+)\)\s*:\s*(.+)",
+                )
+                .unwrap()
+                .captures(line)
+                {
                     let indent = &captures[1];
-                    let var = &captures[2]; 
+                    let var = &captures[2];
                     let value = &captures[3];
                     let type_name = &captures[5];
-                    format!("{}{}= arith.constant {} : {}", indent, var, value, type_name)
+                    format!(
+                        "{}{}= arith.constant {} : {}",
+                        indent, var, value, type_name
+                    )
                 } else {
                     line.to_string()
                 }
@@ -1427,70 +1429,89 @@ fn preprocess_mlir_constants(input_file: &PathBuf, output_file: &PathBuf) -> Res
         })
         .collect::<Vec<String>>()
         .join("\n");
-    
+
     fs::write(output_file, transformed_content)?;
-    eprintln!("Successfully preprocessed MLIR constants: {} -> {}", 
-              input_file.display(), output_file.display());
+    eprintln!(
+        "Successfully preprocessed MLIR constants: {} -> {}",
+        input_file.display(),
+        output_file.display()
+    );
     Ok(())
 }
 
 // Process MLIR files using ttmlir-opt and ttmlir-translate
 fn process_mlir_file(ctx: &ActionContext, input_file: &PathBuf) -> tt_comgr_status_t {
-    eprintln!("Processing MLIR file with TTMLIR tools: {}", input_file.display());
-    
+    eprintln!(
+        "Processing MLIR file with TTMLIR tools: {}",
+        input_file.display()
+    );
+
     let file_stem = input_file
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("input");
-    
+
     // Preprocess MLIR to fix llvm.mlir.constant incompatibility
-    let preprocessed_file = ctx.temp_dir.join(format!("{}_preprocessed.mlir", file_stem));
-    let input_for_ttmlir = if let Err(e) = preprocess_mlir_constants(input_file, &preprocessed_file) {
-        eprintln!("Warning: MLIR preprocessing failed: {}, using original file", e);
+    let preprocessed_file = ctx
+        .temp_dir
+        .join(format!("{}_preprocessed.mlir", file_stem));
+    let input_for_ttmlir = if let Err(e) = preprocess_mlir_constants(input_file, &preprocessed_file)
+    {
+        eprintln!(
+            "Warning: MLIR preprocessing failed: {}, using original file",
+            e
+        );
         input_file
     } else {
         &preprocessed_file
     };
-    
+
     // Step 1: Use ttmlir-opt with --ttir-to-emitc-pipeline
     let intermediate_file = ctx.temp_dir.join(format!("{}_emitc.mlir", file_stem));
     let result = run_ttmlir_opt(input_for_ttmlir, &intermediate_file, ctx);
-    
+
     if result.is_err() {
         eprintln!("Warning: ttmlir-opt failed, falling back to mock processing");
         return create_mock_mlir_output(ctx, input_file);
     }
-    
+
     // Step 2: Use ttmlir-translate --mlir-to-cpp
     let cpp_output_file = ctx.temp_dir.join("ttnn-standalone.cpp");
     let result = run_ttmlir_translate(&intermediate_file, &cpp_output_file, ctx);
-    
+
     if result.is_err() {
         eprintln!("Warning: ttmlir-translate failed, falling back to mock processing");
         return create_mock_mlir_output(ctx, input_file);
     }
-    
+
     eprintln!("Successfully processed MLIR file and generated C++ output");
     Ok(())
 }
 
 // Run ttmlir-opt with --ttir-to-emitc-pipeline
-fn run_ttmlir_opt(input_file: &PathBuf, output_file: &PathBuf, ctx: &ActionContext) -> tt_comgr_status_t {
-    eprintln!("Running ttmlir-opt --ttir-to-emitc-pipeline on {}", input_file.display());
-    
+fn run_ttmlir_opt(
+    input_file: &PathBuf,
+    output_file: &PathBuf,
+    ctx: &ActionContext,
+) -> tt_comgr_status_t {
+    eprintln!(
+        "Running ttmlir-opt --ttir-to-emitc-pipeline on {}",
+        input_file.display()
+    );
+
     let mut cmd = Command::new("ttmlir-opt");
     cmd.arg("--ttir-to-emitc-pipeline")
-       .arg(input_file)
-       .stdout(std::process::Stdio::piped())
-       .stderr(std::process::Stdio::piped());
-    
+        .arg(input_file)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
     // Add any additional options from context
     for option in &ctx.options {
         if option.starts_with("--") {
             cmd.arg(option);
         }
     }
-    
+
     match cmd.output() {
         Ok(output) => {
             if output.status.success() {
@@ -1499,7 +1520,7 @@ fn run_ttmlir_opt(input_file: &PathBuf, output_file: &PathBuf, ctx: &ActionConte
                     eprintln!("Error writing ttmlir-opt output: {}", e);
                     return Err(tt_comgr_status_s::TT_COMGR_STATUS_ERROR);
                 }
-                
+
                 // Write stderr to log file for debugging
                 let log_file = ctx.temp_dir.join("ttmlir_opt.log");
                 let log_content = format!(
@@ -1513,13 +1534,13 @@ fn run_ttmlir_opt(input_file: &PathBuf, output_file: &PathBuf, ctx: &ActionConte
                 if let Err(e) = fs::write(&log_file, log_content) {
                     eprintln!("Warning: Could not write ttmlir-opt log: {}", e);
                 }
-                
+
                 eprintln!("ttmlir-opt completed successfully");
                 Ok(())
             } else {
                 let error_msg = String::from_utf8_lossy(&output.stderr);
                 eprintln!("ttmlir-opt failed with error: {}", error_msg);
-                
+
                 // Write error log
                 let log_file = ctx.temp_dir.join("ttmlir_opt_error.log");
                 let log_content = format!(
@@ -1537,13 +1558,13 @@ fn run_ttmlir_opt(input_file: &PathBuf, output_file: &PathBuf, ctx: &ActionConte
                 if let Err(e) = fs::write(&log_file, log_content) {
                     eprintln!("Warning: Could not write ttmlir-opt error log: {}", e);
                 }
-                
+
                 Err(tt_comgr_status_s::TT_COMGR_STATUS_ERROR)
             }
         }
         Err(e) => {
             eprintln!("Failed to execute ttmlir-opt: {}", e);
-            
+
             // Write error log
             let log_file = ctx.temp_dir.join("ttmlir_opt_exec_error.log");
             let log_content = format!(
@@ -1553,31 +1574,41 @@ fn run_ttmlir_opt(input_file: &PathBuf, output_file: &PathBuf, ctx: &ActionConte
                 input_file, e
             );
             if let Err(e) = fs::write(&log_file, log_content) {
-                eprintln!("Warning: Could not write ttmlir-opt execution error log: {}", e);
+                eprintln!(
+                    "Warning: Could not write ttmlir-opt execution error log: {}",
+                    e
+                );
             }
-            
+
             Err(tt_comgr_status_s::TT_COMGR_STATUS_ERROR)
         }
     }
 }
 
 // Run ttmlir-translate --mlir-to-cpp
-fn run_ttmlir_translate(input_file: &PathBuf, output_file: &PathBuf, ctx: &ActionContext) -> tt_comgr_status_t {
-    eprintln!("Running ttmlir-translate --mlir-to-cpp on {}", input_file.display());
-    
+fn run_ttmlir_translate(
+    input_file: &PathBuf,
+    output_file: &PathBuf,
+    ctx: &ActionContext,
+) -> tt_comgr_status_t {
+    eprintln!(
+        "Running ttmlir-translate --mlir-to-cpp on {}",
+        input_file.display()
+    );
+
     let mut cmd = Command::new("ttmlir-translate");
     cmd.arg("--mlir-to-cpp")
-       .arg(input_file)
-       .stdout(std::process::Stdio::piped())
-       .stderr(std::process::Stdio::piped());
-    
+        .arg(input_file)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
     // Add any additional options from context
     for option in &ctx.options {
         if option.starts_with("--") {
             cmd.arg(option);
         }
     }
-    
+
     match cmd.output() {
         Ok(output) => {
             if output.status.success() {
@@ -1586,7 +1617,7 @@ fn run_ttmlir_translate(input_file: &PathBuf, output_file: &PathBuf, ctx: &Actio
                     eprintln!("Error writing ttmlir-translate output: {}", e);
                     return Err(tt_comgr_status_s::TT_COMGR_STATUS_ERROR);
                 }
-                
+
                 // Write stderr to log file for debugging
                 let log_file = ctx.temp_dir.join("ttmlir_translate.log");
                 let log_content = format!(
@@ -1602,13 +1633,16 @@ fn run_ttmlir_translate(input_file: &PathBuf, output_file: &PathBuf, ctx: &Actio
                 if let Err(e) = fs::write(&log_file, log_content) {
                     eprintln!("Warning: Could not write ttmlir-translate log: {}", e);
                 }
-                
-                eprintln!("ttmlir-translate completed successfully, output written to: {}", output_file.display());
+
+                eprintln!(
+                    "ttmlir-translate completed successfully, output written to: {}",
+                    output_file.display()
+                );
                 Ok(())
             } else {
                 let error_msg = String::from_utf8_lossy(&output.stderr);
                 eprintln!("ttmlir-translate failed with error: {}", error_msg);
-                
+
                 // Write error log
                 let log_file = ctx.temp_dir.join("ttmlir_translate_error.log");
                 let log_content = format!(
@@ -1628,13 +1662,13 @@ fn run_ttmlir_translate(input_file: &PathBuf, output_file: &PathBuf, ctx: &Actio
                 if let Err(e) = fs::write(&log_file, log_content) {
                     eprintln!("Warning: Could not write ttmlir-translate error log: {}", e);
                 }
-                
+
                 Err(tt_comgr_status_s::TT_COMGR_STATUS_ERROR)
             }
         }
         Err(e) => {
             eprintln!("Failed to execute ttmlir-translate: {}", e);
-            
+
             // Write error log
             let log_file = ctx.temp_dir.join("ttmlir_translate_exec_error.log");
             let log_content = format!(
@@ -1645,9 +1679,12 @@ fn run_ttmlir_translate(input_file: &PathBuf, output_file: &PathBuf, ctx: &Actio
                 input_file, output_file, e
             );
             if let Err(e) = fs::write(&log_file, log_content) {
-                eprintln!("Warning: Could not write ttmlir-translate execution error log: {}", e);
+                eprintln!(
+                    "Warning: Could not write ttmlir-translate execution error log: {}",
+                    e
+                );
             }
-            
+
             Err(tt_comgr_status_s::TT_COMGR_STATUS_ERROR)
         }
     }
@@ -1656,12 +1693,12 @@ fn run_ttmlir_translate(input_file: &PathBuf, output_file: &PathBuf, ctx: &Actio
 // Create mock MLIR output when real tools are not available
 fn create_mock_mlir_output(ctx: &ActionContext, input_file: &PathBuf) -> tt_comgr_status_t {
     eprintln!("Creating mock MLIR processing output as fallback");
-    
+
     let file_stem = input_file
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("input");
-    
+
     // Create mock intermediate MLIR file
     let intermediate_file = ctx.temp_dir.join(format!("{}_emitc.mlir", file_stem));
     let mock_emitc_content = format!(
@@ -1677,12 +1714,12 @@ fn create_mock_mlir_output(ctx: &ActionContext, input_file: &PathBuf) -> tt_comg
          }}\n",
         input_file
     );
-    
+
     if let Err(e) = fs::write(&intermediate_file, mock_emitc_content) {
         eprintln!("Error writing mock EmitC file: {}", e);
         return Err(tt_comgr_status_s::TT_COMGR_STATUS_ERROR);
     }
-    
+
     // Create mock C++ output file
     let cpp_output_file = ctx.temp_dir.join("ttnn-standalone.cpp");
     let mock_cpp_content = format!(
@@ -1713,12 +1750,12 @@ fn create_mock_mlir_output(ctx: &ActionContext, input_file: &PathBuf) -> tt_comg
          }}\n",
         input_file
     );
-    
+
     if let Err(e) = fs::write(&cpp_output_file, mock_cpp_content) {
         eprintln!("Error writing mock C++ file: {}", e);
         return Err(tt_comgr_status_s::TT_COMGR_STATUS_ERROR);
     }
-    
+
     // Create a detailed log explaining the mock processing
     let log_file = ctx.temp_dir.join("mlir_mock_processing.log");
     let log_content = format!(
@@ -1736,21 +1773,20 @@ fn create_mock_mlir_output(ctx: &ActionContext, input_file: &PathBuf) -> tt_comg
          NOTE: This is a mock implementation created because the actual TTMLIR tools\n\
          were not available or failed to execute. The generated C++ file contains\n\
          placeholder code that demonstrates the expected structure.\n",
-        input_file,
-        input_file,
-        intermediate_file,
-        intermediate_file,
-        cpp_output_file
+        input_file, input_file, intermediate_file, intermediate_file, cpp_output_file
     );
-    
+
     if let Err(e) = fs::write(&log_file, log_content) {
         eprintln!("Warning: Could not write mock processing log: {}", e);
     }
-    
+
     eprintln!("Mock MLIR processing completed successfully");
     eprintln!("Generated files:");
-    eprintln!("  - Intermediate EmitC MLIR: {}", intermediate_file.display());
+    eprintln!(
+        "  - Intermediate EmitC MLIR: {}",
+        intermediate_file.display()
+    );
     eprintln!("  - Final C++ output: {}", cpp_output_file.display());
-    
+
     Ok(())
 }

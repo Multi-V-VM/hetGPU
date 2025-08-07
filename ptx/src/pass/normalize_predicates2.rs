@@ -57,9 +57,9 @@ fn run_statement<'input>(
     if statements.is_empty() {
         return Ok(0);
     }
-    
+
     let statement = &statements[0];
-    
+
     match statement {
         Statement::Label(label) => {
             result.push(Statement::Label(*label));
@@ -97,13 +97,13 @@ fn process_predicated_instruction_generic<'input>(
     // We need to clone the instruction - using unsafe read as a workaround
     let inst_ptr = instruction as *const _;
     let inst = unsafe { std::ptr::read(inst_ptr) };
-    
+
     result.push(Statement::PredicatedInstruction {
         predicate: pred.label,
         negated: pred.not,
         instruction: inst,
     });
-    
+
     Ok(())
 }
 
@@ -116,13 +116,12 @@ fn convert_instruction_to_unconditional<'input>(
     // This requires manual reconstruction since Instruction doesn't implement Clone
     // For now, we'll use a placeholder that maintains the same behavior
     // In a real implementation, you'd want to implement proper conversion for each instruction variant
-    
+
     // This is a workaround - in production code, you'd implement proper conversion
     // for each instruction variant to avoid unsafe code
     let inst_ptr = instruction as *const _;
     let inst = unsafe { std::ptr::read(inst_ptr) };
     result.push(Statement::Instruction(inst));
-    
+
     Ok(())
 }
-

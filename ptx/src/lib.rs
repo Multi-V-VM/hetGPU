@@ -14,9 +14,9 @@ pub use pass::{
     to_llvm_module, to_llvm_module_with_debug_round_trip, to_llvm_module_with_filename,
     to_mlir_module,
 };
+use regex;
 use std::collections::HashMap;
 use std::ptr;
-use regex;
 
 // Implementation for PTX to LLVM IR conversion
 pub fn ptx_to_llvm(ast: ptx_parser::Module) -> Result<Module, TranslateError> {

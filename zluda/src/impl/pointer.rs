@@ -1,11 +1,11 @@
+#[cfg(feature = "intel")]
+use crate::r#impl::ZeResult;
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
 use std::{ffi::c_void, ptr};
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
-#[cfg(feature = "intel")]
-use crate::r#impl::ZeResult;
 #[cfg(feature = "amd")]
 pub(crate) unsafe fn get_attribute(
     data: *mut c_void,
@@ -336,7 +336,8 @@ pub(crate) unsafe fn get_attribute(
         CUpointer_attribute::CU_POINTER_ATTRIBUTE_CONTEXT => {
             // For Tenstorrent, return the current context handle
             // In a real implementation, this would query the context associated with the pointer
-            *(data.cast::<CUcontext>()) = super::context::get_current().unwrap_or(CUcontext(ptr::null_mut()));
+            *(data.cast::<CUcontext>()) =
+                super::context::get_current().unwrap_or(CUcontext(ptr::null_mut()));
             Ok(())
         }
 

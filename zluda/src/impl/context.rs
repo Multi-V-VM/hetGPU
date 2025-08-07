@@ -1,8 +1,8 @@
 use super::{driver, FromCuda, ZludaObject};
 use cuda_types::cuda::*;
 use rustc_hash::FxHashSet;
-use std::{cell::RefCell, ptr, sync::Mutex};
 use std::ffi::c_uint;
+use std::{cell::RefCell, ptr, sync::Mutex};
 
 // Feature-specific imports
 #[cfg(feature = "amd")]
@@ -89,7 +89,7 @@ impl Clone for Context {
 
 #[cfg(feature = "amd")]
 pub(crate) struct OwnedByContext {
-    pub(crate) ref_count: usize, 
+    pub(crate) ref_count: usize,
     pub(crate) _memory: FxHashSet<hipDeviceptr_t>,
     pub(crate) _streams: FxHashSet<hipStream_t>,
     pub(crate) _modules: FxHashSet<CUmodule>,
@@ -177,7 +177,7 @@ impl Context {
         let mut context_handle = ze_context_handle_t(ptr::null_mut());
         let mut drivers = vec![ze_driver_handle_t(ptr::null_mut()); 1];
         let mut driver_count = 1;
-        
+
         unsafe {
             // This is a simplified initialization - in reality you'd need proper error handling
             let _ = zeInit(0);
@@ -284,9 +284,9 @@ impl Clone for Context {
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 pub(crate) struct OwnedByContext {
     pub(crate) ref_count: usize,
-    pub(crate) _memory: FxHashSet<usize>,    
-    pub(crate) _streams: FxHashSet<usize>,   
-    pub(crate) _modules: FxHashSet<usize>,   
+    pub(crate) _memory: FxHashSet<usize>,
+    pub(crate) _streams: FxHashSet<usize>,
+    pub(crate) _modules: FxHashSet<usize>,
 }
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
@@ -496,7 +496,7 @@ pub(crate) fn get_device_properties(
 ) -> Result<ze_device_properties_t, CUerror> {
     let mut props: ze_device_properties_t = unsafe { std::mem::zeroed() };
     props.stype = ze_structure_type_t::ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
-    
+
     unsafe { zeDeviceGetProperties(device, &mut props).to_cuda_result(props) }
 }
 
@@ -577,12 +577,11 @@ pub(crate) fn push(ctx: CUcontext, device_id: i32) {
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 pub(crate) fn get_device_properties(device_id: i32) -> Result<String, CUerror> {
-    let tt_device = tt_runtime_sys::Device::new(device_id as u32)
-        .map_err(|_| CUerror::INVALID_DEVICE)?;
-    
-    let device_name = tt_device.get_name()
-        .map_err(|_| CUerror::UNKNOWN)?;
-    
+    let tt_device =
+        tt_runtime_sys::Device::new(device_id as u32).map_err(|_| CUerror::INVALID_DEVICE)?;
+
+    let device_name = tt_device.get_name().map_err(|_| CUerror::UNKNOWN)?;
+
     Ok(device_name)
 }
 

@@ -4,8 +4,8 @@ use super::{
 };
 use crate::{PtxError, PtxParserState};
 use bitflags::bitflags;
-use std::{alloc::Layout, cmp::Ordering, num::NonZeroU8, fmt};
-use std::fmt::Debug;  
+use std::fmt::Debug;
+use std::{alloc::Layout, cmp::Ordering, fmt, num::NonZeroU8};
 #[derive(Debug)]
 pub enum Statement<P: Operand> {
     Label(P::Ident),
@@ -695,7 +695,8 @@ pub trait VisitorMap<From: Operand, To: Operand, Err> {
     ) -> Result<To::Ident, Err>;
 }
 
-impl<T: Copy + std::fmt::Debug, U: Copy + std::fmt::Debug, Err, Fn> VisitorMap<ParsedOperand<T>, ParsedOperand<U>, Err> for Fn
+impl<T: Copy + std::fmt::Debug, U: Copy + std::fmt::Debug, Err, Fn>
+    VisitorMap<ParsedOperand<T>, ParsedOperand<U>, Err> for Fn
 where
     Fn: FnMut(T, Option<(&Type, StateSpace)>, bool, bool) -> Result<U, Err>,
 {
@@ -1725,14 +1726,13 @@ impl CvtDetails {
                 Ordering::Equal => CvtMode::Bitcast,
                 Ordering::Less => CvtMode::Truncate,
             },
-            (ScalarKind::Unsigned, ScalarKind::Unsigned) => match dst.size_of().cmp(&src.size_of()) {
+            (ScalarKind::Unsigned, ScalarKind::Unsigned) => match dst.size_of().cmp(&src.size_of())
+            {
                 Ordering::Greater => CvtMode::ZeroExtend,
                 Ordering::Equal => CvtMode::Bitcast,
                 Ordering::Less => CvtMode::Truncate,
             },
-            (_, _) => {
-                CvtMode::Bitcast
-            }
+            (_, _) => CvtMode::Bitcast,
         };
         CvtDetails {
             mode,
@@ -1782,12 +1782,11 @@ pub enum CvtaDirection {
     ExplicitToGeneric,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug )]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct TypeFtz {
     pub flush_to_zero: Option<bool>,
     pub type_: ScalarType,
 }
-
 
 #[derive(Debug, Clone, Copy)]
 pub enum MadDetails {
@@ -1825,7 +1824,6 @@ impl MadDetails {
     }
 }
 
-
 #[derive(Debug, Clone, Copy)]
 pub enum MinMaxDetails {
     Signed(ScalarType),
@@ -1843,14 +1841,12 @@ impl MinMaxDetails {
     }
 }
 
-
 #[derive(Debug, Clone, Copy)]
 pub struct MinMaxFloat {
     pub flush_to_zero: Option<bool>,
     pub nan: bool,
     pub type_: ScalarType,
 }
-
 
 #[derive(Debug, Clone, Copy)]
 pub struct RcpData {
@@ -1951,7 +1947,7 @@ pub struct DivFloatDetails {
     pub kind: DivFloatKind,
 }
 
-#[derive(Debug,Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum DivFloatKind {
     Approx,
     ApproxFull,
