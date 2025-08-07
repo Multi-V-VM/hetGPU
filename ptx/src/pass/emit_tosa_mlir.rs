@@ -3642,18 +3642,32 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let dst_ssa = self.next_ssa_value();
         let src_ssa = self.get_ssa_value(src)?;
 
-        // SQRT is only for floating point
-        let tensor_type = self.get_default_tensor_type();
+        // Get the tensor type based on the scalar type
+        let tensor_type = self.get_scalar_tensor_type(data);
 
-        // TOSA doesn't have sqrt directly, so we can use rsqrt + reciprocal or decompose
-        // For now, use a placeholder that could be lowered later
+        // TOSA doesn't have sqrt directly, so implement as: sqrt(x) = x * rsqrt(x)
+        // First compute rsqrt(x)
+        let rsqrt_ssa = self.next_ssa_value();
         self.write_line(&format!(
-            "{} = \"tosa.exp\"({}) : ({}) -> {}",
-            dst_ssa, src_ssa, tensor_type, tensor_type
+            "{} = \"tosa.rsqrt\"({}) : ({}) -> {}",
+            rsqrt_ssa, src_ssa, tensor_type, tensor_type
         ));
-        self.write_line(&format!("// TODO: Replace with proper sqrt implementation"));
+
+        // Create a shift value (0 for no shift)
+        let shift_ssa = self.next_ssa_value();
+        self.write_line(&format!(
+            "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
+            shift_ssa
+        ));
+
+        // Then multiply by x to get sqrt(x)
+        self.write_line(&format!(
+            "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, tensor<1xi8>) -> {}",
+            dst_ssa, src_ssa, rsqrt_ssa, shift_ssa, tensor_type, tensor_type, tensor_type
+        ));
 
         self.value_map.insert(dst, dst_ssa.clone());
+        self.ssa_types.insert(dst_ssa.clone(), tensor_type);
         Ok(dst_ssa)
     }
 
@@ -3666,8 +3680,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let dst_ssa = self.next_ssa_value();
         let src_ssa = self.get_ssa_value(src)?;
 
-        // RSQRT is only for floating point
-        let tensor_type = self.get_default_tensor_type();
+        // Get the tensor type based on the scalar type
+        let tensor_type = self.get_scalar_tensor_type(data);
 
         self.write_line(&format!(
             "{} = \"tosa.rsqrt\"({}) : ({}) -> {}",
@@ -3675,6 +3689,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         ));
 
         self.value_map.insert(dst, dst_ssa.clone());
+        self.ssa_types.insert(dst_ssa.clone(), tensor_type);
         Ok(dst_ssa)
     }
 
