@@ -1778,13 +1778,13 @@ fn run_tosa_conversion(
                                                         || response_text == "no"
                                                     {
                                                         eprintln!("ZLUDA ERROR: LLM detected issues in MLIR code");
-                                                        let _ =
-                                                            std::fs::remove_file(&temp_mlir_file);
+                                                        // let _ =
+                                                        //     std::fs::remove_file(&temp_mlir_file);
                                                         return Err("LLM validation failed: MLIR code has issues".to_string());
                                                     } else {
                                                         eprintln!("ZLUDA ERROR: LLM gave unclear response: '{}'. Test requires explicit 'yes' to pass", response_text);
-                                                        let _ =
-                                                            std::fs::remove_file(&temp_mlir_file);
+                                                        // let _ =
+                                                        //     std::fs::remove_file(&temp_mlir_file);
                                                         return Err(format!("LLM validation failed: unclear response '{}' (expected 'yes' or 'no')", response_text));
                                                     }
                                                 }

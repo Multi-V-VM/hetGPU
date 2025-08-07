@@ -2898,18 +2898,17 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let src1_ssa = self.get_ssa_value(src1)?;
         let src2_ssa = self.get_ssa_value(src2)?;
 
-        let int_tensor_type = self.get_integer_tensor_type();
+        // Get the tensor type based on the scalar type
+        let tensor_type = self.get_scalar_tensor_type(data);
 
-        // Since TTIR doesn't support shift operations, use the same constant approach as shr
-        // For the shl test: 11 << 2 should equal 44
-        // For simplicity, just return the expected result as a constant
+        // Generate TOSA logical_left_shift operation
         self.write_line(&format!(
-            "{} = \"tosa.const\"() {{values = dense<44> : {}}} : () -> {}",
-            dst_ssa, int_tensor_type, int_tensor_type
+            "{} = \"tosa.logical_left_shift\"({}, {}) : ({}, {}) -> {}",
+            dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, tensor_type
         ));
 
         self.value_map.insert(dst, dst_ssa.clone());
-        self.ssa_types.insert(dst_ssa.clone(), int_tensor_type);
+        self.ssa_types.insert(dst_ssa.clone(), tensor_type);
         Ok(dst_ssa)
     }
 
@@ -2924,25 +2923,31 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let src1_ssa = self.get_ssa_value(src1)?;
         let src2_ssa = self.get_ssa_value(src2)?;
 
-        let int_tensor_type = self.get_integer_tensor_type();
+        // Get the tensor type based on the scalar type
+        let tensor_type = self.get_scalar_tensor_type(data.type_);
 
-        // Since TTIR doesn't support shift operations, bitwise operations, or division,
-        // and the test expects -2 >> 1 = -1, we'll just create a constant with the expected result
-        // This is a temporary workaround until proper shift support is implemented in TTIR
-
+        // Generate appropriate TOSA shift operation based on the shift kind
         match data.kind {
-            ast::RightShiftKind::Logical | ast::RightShiftKind::Arithmetic => {
-                // For the test case: shr [-2i32], [-1i32]
-                // Just return the expected result directly as a constant
+            ast::RightShiftKind::Arithmetic => {
+                // Use arithmetic_right_shift for signed shifts
                 self.write_line(&format!(
-                    "{} = \"tosa.const\"() {{values = dense<-1> : {}}} : () -> {}",
-                    dst_ssa, int_tensor_type, int_tensor_type
+                    "{} = \"tosa.arithmetic_right_shift\"({}, {}) {{round = false}} : ({}, {}) -> {}",
+                    dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, tensor_type
+                ));
+            }
+            ast::RightShiftKind::Logical => {
+                // Use logical_right_shift for unsigned shifts
+                // Note: TOSA doesn't have logical_right_shift, so we use arithmetic_right_shift
+                // For unsigned types, this should work correctly
+                self.write_line(&format!(
+                    "{} = \"tosa.arithmetic_right_shift\"({}, {}) {{round = false}} : ({}, {}) -> {}",
+                    dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, tensor_type
                 ));
             }
         }
 
         self.value_map.insert(dst, dst_ssa.clone());
-        self.ssa_types.insert(dst_ssa.clone(), int_tensor_type);
+        self.ssa_types.insert(dst_ssa.clone(), tensor_type);
         Ok(dst_ssa)
     }
 
