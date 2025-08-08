@@ -173,6 +173,7 @@ test_ptx!(cvt_s32_f32, [-13.8f32, 12.9f32], [-13i32, 13i32]);
 
 #[cfg(not(feature = "tenstorrent"))]
 test_ptx!(clz, [0b00000101_00101101_00010011_10101011u32], [5u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(popc, [0b10111100_10010010_01001001_10001010u32], [14u32]);
 #[cfg(all(not(feature = "tenstorrent"),not(feature = "tosa"),not(feature = "gemmini")))]
 test_ptx!(

@@ -3087,26 +3087,36 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             dst_ssa, src1_ssa, src2_ssa, src3_ssa
         );
 
-        // FMA is typically for floating point, but decompose into mul + add for TOSA
-        let tensor_type = self.get_default_tensor_type();
+        // FMA is typically for floating point, but decompose into mul + add for TOSA  
+        let tensor_type_str = self.get_default_tensor_type();
+        let tensor_type = MlirType::Tensor(TensorType {
+            x: 1,
+            y: 1,
+            ty: BasicType::F32,
+        });
         let temp_ssa = self.next_ssa_value();
 
         // TOSA mul requires 3 operands: input1, input2, shift
         let shift_ssa = self.next_ssa_value();
+        let shift_type_str = self.get_tosa_shift_tensor_type();
         self.write_line(&format!(
-            "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi8>}} : () -> tensor<1xi8>",
-            shift_ssa
+            "{} = \"tosa.const\"() {{values = dense<0> : {}}} : () -> {}",
+            shift_ssa, shift_type_str, shift_type_str
         ));
+        
         self.write_line(&format!(
-            "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, tensor<1xi8>) -> {}",
-            temp_ssa, src1_ssa, src2_ssa, shift_ssa, tensor_type, tensor_type, tensor_type
+            "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, {}) -> {}",
+            temp_ssa, src1_ssa, src2_ssa, shift_ssa, tensor_type_str, tensor_type_str, shift_type_str, tensor_type_str
         ));
+        self.ssa_types.insert(temp_ssa.clone(), tensor_type.clone());
+        
         self.write_line(&format!(
             "{} = \"tosa.add\"({}, {}) : ({}, {}) -> {}",
-            dst_ssa, temp_ssa, src3_ssa, tensor_type, tensor_type, tensor_type
+            dst_ssa, temp_ssa, src3_ssa, tensor_type_str, tensor_type_str, tensor_type_str
         ));
 
         self.value_map.insert(dst, dst_ssa.clone());
+        self.ssa_types.insert(dst_ssa.clone(), tensor_type);
         Ok(dst_ssa)
     }
 
@@ -3567,6 +3577,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         ));
 
         self.value_map.insert(dst, dst_ssa.clone());
+        self.ssa_types.insert(dst_ssa.clone(), tensor_type);
         Ok(dst_ssa)
     }
 
