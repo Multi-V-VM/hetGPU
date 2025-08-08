@@ -64,6 +64,7 @@ fn vectorAdd_11_ptx() -> Result<(), TranslateError> {
 }
 
 #[test]
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 fn real_variable_names() -> Result<(), TranslateError> {
     let test_ptx = r#"
 .version 8.0

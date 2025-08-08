@@ -121,6 +121,7 @@ struct PtxToTosaConverter<'a, 'input> {
     tensor_shapes: HashMap<SpirvWord, Vec<i64>>,
     last_result_type: Option<MlirType>,
     last_result_ssa: Option<String>,
+    stored_values: Vec<(SpirvWord, String)>, // Track all stored values (address, ssa_value)
     ssa_types: HashMap<String, MlirType>, // Track type of each SSA value
     parameter_values: HashMap<String, String>, // Track actual parameter data
     current_function_return_type: Option<MlirType>, // Track the expected return type of current function
@@ -234,6 +235,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             tensor_shapes: HashMap::new(),
             last_result_type: None,
             last_result_ssa: None,
+            stored_values: Vec::new(),
             ssa_types: HashMap::new(),
             parameter_values: HashMap::new(),
             current_function_return_type: None,
@@ -757,12 +759,22 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 }
             }
 
-            // If we found store instructions, use the last one's type
-            if let Some(store_type) = store_types.last() {
+            // If we have multiple stores, build a tuple return type
+            if store_types.len() > 1 {
+                // MLIR requires parentheses for multiple return values
+                let types_str = store_types.iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                signature.push_str(&format!("({})", types_str));
+                // Return the first type for compatibility
+                store_types[0].clone()
+            } else if let Some(store_type) = store_types.last() {
                 eprintln!(
                     "ZLUDA DEBUG: Using store type {} for function return type",
                     store_type
                 );
+                signature.push_str(&store_type.to_string());
                 store_type.clone()
             } else {
                 // Fall back to output parameter type if no stores found
@@ -771,19 +783,22 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let output_param = &method.func_decl.input_arguments[output_param_index];
 
                 eprintln!("ZLUDA DEBUG: No store instructions found, using output parameter type");
-                match &output_param.v_type {
+                let result_type = match &output_param.v_type {
                     ast::Type::Pointer(scalar_type, _) => self.get_scalar_tensor_type(*scalar_type),
                     _ => self.convert_type_to_tosa(&output_param.v_type)?,
-                }
+                };
+                signature.push_str(&result_type.to_string());
+                result_type
             }
         } else {
             // Default return type
             eprintln!("ZLUDA DEBUG: No input arguments, using default return type");
-            self.get_scalar_tensor_type(ast::ScalarType::U64)
+            let result_type = self.get_scalar_tensor_type(ast::ScalarType::U64);
+            signature.push_str(&result_type.to_string());
+            result_type
         };
 
         let output_type_str = output_type_mlir.to_string();
-        signature.push_str(&output_type_str);
         self.current_function_return_type = Some(output_type_mlir);
 
         signature.push_str(" {");
@@ -884,30 +899,36 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         // Generate appropriate return statement
         eprintln!("ZLUDA DEBUG: Generating return statement");
-        eprintln!("  result_tensor: {:?}", result_tensor);
+        eprintln!("  stored_values: {:?}", self.stored_values);
         eprintln!("  last_result_ssa: {:?}", self.last_result_ssa);
-        eprintln!("  output_stores count: {}", output_stores.len());
 
-        // If we have output stores, find the SSA values for those stored values
-        if !output_stores.is_empty() {
-            // For now, handle single return value case
-            if let Some((value_id, _dest_addr)) = output_stores.first() {
-                if let Some(ssa_value) = self.value_map.get(value_id) {
-                    eprintln!(
-                        "ZLUDA DEBUG: Returning SSA value {} for stored value {}",
-                        ssa_value, value_id.0
-                    );
-                    self.write_line(&format!("return {} : {}", ssa_value, output_type_str));
-                    self.indent_level -= 1;
-                    self.write_line("}");
-                    return Ok(());
+        // If we have stored values, return them
+        if !self.stored_values.is_empty() {
+            // Build the return values and types
+            let mut return_values = Vec::new();
+            let mut return_types = Vec::new();
+            
+            for (_addr, value_ssa) in &self.stored_values {
+                return_values.push(value_ssa.clone());
+                // Get the type of each value
+                if let Some(value_type) = self.ssa_types.get(value_ssa) {
+                    return_types.push(value_type.clone());
                 } else {
-                    eprintln!(
-                        "ZLUDA ERROR: Could not find SSA value for stored value {}",
-                        value_id.0
-                    );
+                    // Default to tensor<1x1xi32> if type unknown
+                    return_types.push(self.get_scalar_tensor_type(ast::ScalarType::S32));
                 }
             }
+            
+            // Generate the return statement with multiple values
+            let values_str = return_values.join(", ");
+            let types_str = return_types.iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.write_line(&format!("return {} : {}", values_str, types_str));
+            self.indent_level -= 1;
+            self.write_line("}");
+            return Ok(());
         }
 
         // Fall back to existing logic if no output stores
@@ -1942,38 +1963,38 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             dst.0, src.0, data.state_space
         );
 
-        // Debug: Print current state
-        eprintln!(
-            "ZLUDA DEBUG: Current param_addresses: {:?}",
-            self.param_addresses
-        );
-        eprintln!(
-            "ZLUDA DEBUG: Current next_arg_index: {}",
-            self.next_arg_index
-        );
-
-        // Debug: Print current value_map state with variable names
-        self.debug_print_value_map();
-
-        // For param state space loads, we're loading an address
+        // For param state space loads, we're loading an address - skip these
         if data.state_space == ast::StateSpace::Param
             || data.state_space == ast::StateSpace::ParamEntry
         {
-            let src_name = self
-                .id_defs
-                .ident_map
-                .get(&src)
-                .and_then(|entry| entry.name.as_ref())
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| format!("param_{}", src.0));
+            // Don't map these - they're just loading addresses
+            return Ok(());
+        }
+        
+        // For generic/global loads, map directly to input arguments
+        if data.state_space == ast::StateSpace::Generic
+            || data.state_space == ast::StateSpace::Global
+        {
+            // Map this load to an input argument
+            let arg_name = format!("%arg{}", self.next_arg_index);
+            self.next_arg_index += 1;
 
-            eprintln!("ZLUDA DEBUG: Parameter space load - loading address from parameter '{}' into dst {}", 
-                     src_name, dst.0);
+            eprintln!(
+                "ZLUDA DEBUG: Mapping load dst {} to input argument {}",
+                dst.0, arg_name
+            );
 
-            // Track that this destination variable holds an address from this parameter
-            self.param_addresses.insert(dst, src_name.clone());
+            // Determine the tensor type based on the load type
+            let tensor_type = match &data.typ {
+                ast::Type::Vector(len, scalar) => self.get_vector_tensor_type(*len, *scalar),
+                ast::Type::Scalar(scalar) => self.get_scalar_tensor_type(*scalar),
+                _ => self.get_tensor_type(&data.typ)?,
+            };
 
-            // Don't create any SSA mapping yet - we'll do that when we load through this address
+            // Update the value map for the destination
+            self.value_map.insert(dst, arg_name.clone());
+            self.ssa_types.insert(arg_name, tensor_type);
+
             return Ok(());
         }
 
@@ -2181,47 +2202,28 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             src1.0, src2.0, data.state_space
         );
 
-        // For local/generic stores after insert_explicit_load_store pass,
-        // we need to track the mapping so subsequent loads can find the value
-        if data.state_space == ast::StateSpace::Local
-            || data.state_space == ast::StateSpace::Generic
+        // For generic/global stores, track the values for the return statement
+        if data.state_space == ast::StateSpace::Generic
+            || data.state_space == ast::StateSpace::Global
         {
             // Get the value being stored
             if let Ok(value_ssa) = self.get_ssa_value(src2) {
-                // Map the destination address to this value
-                self.value_map.insert(src1, value_ssa.clone());
+                // Track this as a value to be returned
+                self.stored_values.push((src1, value_ssa.clone()));
                 eprintln!(
-                    "ZLUDA DEBUG: Stored value {} at address {}",
+                    "ZLUDA DEBUG: Tracked store of value {} at address {} for return",
                     value_ssa, src1.0
                 );
-
-                // Also copy type information if available
-                if let Some(value_type) = self.ssa_types.get(&value_ssa).cloned() {
-                    self.ssa_types.insert(value_ssa, value_type);
-                }
             } else {
                 eprintln!(
                     "ZLUDA WARNING: Failed to get value for store src2: {}",
                     src2.0
                 );
             }
-        } else if data.state_space == ast::StateSpace::Param {
-            // This is storing to an output parameter
-            eprintln!("ZLUDA DEBUG: Store to parameter space");
-
-            // Get the value being stored
-            if let Ok(value_ssa) = self.get_ssa_value(src2) {
-                // This value should be returned by the function
-                self.last_result_ssa = Some(value_ssa.clone());
-                eprintln!(
-                    "ZLUDA DEBUG: Set last_result_ssa to {} for parameter store",
-                    value_ssa
-                );
-            }
         }
 
         // TOSA doesn't have explicit store operations, so we add a comment
-        self.write_line("// Store operation (value tracking only)");
+        self.write_line("// Store operation (tracked for return)");
         Ok(())
     }
 
