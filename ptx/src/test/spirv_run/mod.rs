@@ -149,6 +149,7 @@ test_ptx!(and, [[6u32], [3u32]], [2u32]);
 test_ptx!(selp, [100u16, 200u16], [200u16]);
 test_ptx!(selp_true, [100u16, 200u16], [100u16]);
 test_ptx!(fma, [[2f32], [3f32], [5f32]], [11f32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(shared_variable, [513u32], [513u32]);
 #[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(shared_ptr_32, [513u32], [513u32]);
@@ -240,11 +241,13 @@ test_ptx!(
 );
 #[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(non_scalar_ptr_offset, [1u32, 2u32, 3u32, 4u32], [7u32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(stateful_neg_offset, [1237518u32], [1237518u32]);
 #[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(const, [0u16], [10u16, 20, 30, 40]);
 test_ptx!(cvt_s16_s8, [0x139231C2u32], [0xFFFFFFC2u32]);
 test_ptx!(cvt_f64_f32, [0.125f32], [0.125f64]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(prmt, [0x70c507d6u32, 0x6fbd4b5cu32], [0x6fbdd65cu32]);
 #[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(activemask, [0u32], [1u32]);
