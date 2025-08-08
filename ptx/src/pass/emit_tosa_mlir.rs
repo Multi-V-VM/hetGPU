@@ -3795,33 +3795,163 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let dst_ssa = self.next_ssa_value();
         let src_ssa = self.get_ssa_value(src)?;
 
-        let src_is_float = matches!(
-            data.from,
-            ast::ScalarType::F16 | ast::ScalarType::F32 | ast::ScalarType::F64
-        );
-        let dst_is_float = matches!(
-            data.to,
-            ast::ScalarType::F16 | ast::ScalarType::F32 | ast::ScalarType::F64
-        );
+        // Get the actual source and destination types
+        let src_tensor_type = self.get_scalar_tensor_type(data.from);
+        let dst_tensor_type = self.get_scalar_tensor_type(data.to);
 
-        let src_tensor_type = if src_is_float {
-            self.get_default_tensor_type()
-        } else {
-            self.get_integer_tensor_type()
-        };
-
-        let dst_tensor_type = if dst_is_float {
-            self.get_default_tensor_type()
-        } else {
-            self.get_integer_tensor_type()
-        };
-
-        self.write_line(&format!(
-            "{} = \"tosa.cast\"({}) : ({}) -> {}",
-            dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
-        ));
+        // Handle different conversion modes
+        match data.mode {
+            ast::CvtMode::FPRound { integer_rounding, .. } => {
+                // For rounding operations on floats (e.g., cvt.rni.f32.f32)
+                match integer_rounding {
+                    Some(ast::RoundingMode::NearestEven) => {
+                        // Round to nearest - convert to int and back
+                        let temp_ssa = self.next_ssa_value();
+                        let int_type = self.get_scalar_tensor_type(ast::ScalarType::S32);
+                        
+                        // First cast to integer (rounds)
+                        self.write_line(&format!(
+                            "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                            temp_ssa, src_ssa, src_tensor_type, int_type
+                        ));
+                        
+                        // Then cast back to float
+                        self.write_line(&format!(
+                            "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                            dst_ssa, temp_ssa, int_type, dst_tensor_type
+                        ));
+                    }
+                    Some(ast::RoundingMode::Zero) => {
+                        // Round towards zero (truncate) - convert to int and back
+                        let temp_ssa = self.next_ssa_value();
+                        let int_type = self.get_scalar_tensor_type(ast::ScalarType::S32);
+                        
+                        // First cast to integer (truncates)
+                        self.write_line(&format!(
+                            "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                            temp_ssa, src_ssa, src_tensor_type, int_type
+                        ));
+                        
+                        // Then cast back to float
+                        self.write_line(&format!(
+                            "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                            dst_ssa, temp_ssa, int_type, dst_tensor_type
+                        ));
+                    }
+                    Some(ast::RoundingMode::NegativeInf) => {
+                        // Floor
+                        self.write_line(&format!(
+                            "{} = \"tosa.floor\"({}) : ({}) -> {}",
+                            dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                        ));
+                    }
+                    Some(ast::RoundingMode::PositiveInf) => {
+                        // Ceil
+                        self.write_line(&format!(
+                            "{} = \"tosa.ceil\"({}) : ({}) -> {}",
+                            dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                        ));
+                    }
+                    _ => {
+                        // Default cast
+                        self.write_line(&format!(
+                            "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                            dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                        ));
+                    }
+                }
+            }
+            ast::CvtMode::FPExtend { .. } => {
+                // Float extension (e.g., f32 to f64)
+                self.write_line(&format!(
+                    "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                    dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                ));
+            }
+            ast::CvtMode::FPTruncate { .. } => {
+                // Float truncation (e.g., f64 to f32)
+                self.write_line(&format!(
+                    "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                    dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                ));
+            }
+            ast::CvtMode::SignExtend => {
+                // Sign extension for integers (e.g., s8 to s16, s32 to s64)
+                self.write_line(&format!(
+                    "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                    dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                ));
+            }
+            ast::CvtMode::ZeroExtend => {
+                // Zero extension for unsigned integers
+                self.write_line(&format!(
+                    "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                    dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                ));
+            }
+            ast::CvtMode::Truncate => {
+                // Integer truncation
+                self.write_line(&format!(
+                    "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                    dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                ));
+            }
+            ast::CvtMode::SignedFromFP { rounding, .. } => {
+                // Float to signed integer conversion
+                match rounding {
+                    ast::RoundingMode::Zero => {
+                        // Truncate towards zero - direct cast
+                        self.write_line(&format!(
+                            "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                            dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                        ));
+                    }
+                    ast::RoundingMode::NearestEven => {
+                        // Round to nearest - use cast (TOSA cast does rounding)
+                        self.write_line(&format!(
+                            "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                            dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                        ));
+                    }
+                    _ => {
+                        // Other rounding modes - use cast as default
+                        self.write_line(&format!(
+                            "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                            dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                        ));
+                    }
+                }
+            }
+            ast::CvtMode::UnsignedFromFP { rounding, .. } => {
+                // Float to unsigned integer conversion
+                match rounding {
+                    ast::RoundingMode::Zero => {
+                        // Truncate towards zero - direct cast
+                        self.write_line(&format!(
+                            "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                            dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                        ));
+                    }
+                    _ => {
+                        // Other rounding modes - use cast as default
+                        self.write_line(&format!(
+                            "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                            dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                        ));
+                    }
+                }
+            }
+            _ => {
+                // Default: Bitcast, SaturateUnsignedToSigned, SaturateSignedToUnsigned, etc.
+                self.write_line(&format!(
+                    "{} = \"tosa.cast\"({}) : ({}) -> {}",
+                    dst_ssa, src_ssa, src_tensor_type, dst_tensor_type
+                ));
+            }
+        }
 
         self.value_map.insert(dst, dst_ssa.clone());
+        self.ssa_types.insert(dst_ssa.clone(), dst_tensor_type);
         Ok(dst_ssa)
     }
 

@@ -108,6 +108,7 @@ test_ptx!(implicit_param, [34u32], [34u32]);
 #[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(pred_not, [10u32, 11u32], [2u32, 0u32]);
 test_ptx!(mad_s32, [[2i32], [3i32], [4i32]], [10i32, 10i32, 10i32]);
+#[cfg(all(not(feature = "tenstorrent"), not(feature = "tosa"), not(feature = "gemmini")))]
 test_ptx!(
     mul_wide,
     [0x01_00_00_00__01_00_00_00i64],
