@@ -8,10 +8,13 @@ use ptx_parser as ast;
 use std::collections::HashMap;
 use std::fmt::Write;
 
-// Configurable constant for tensor batch dimension
-// This allows tensor types to be polymorphic: tensor<TENSOR_BATCH_DIM x y x t>
+// Configurable constants for tensor dimensions
+// This allows tensor types to be polymorphic: tensor<TENSOR_BATCH_DIM_X x TENSOR_BATCH_DIM_Y x t>
 // where y and t depend on PTX assembly
-const TENSOR_BATCH_DIM: i64 = 1;
+const TENSOR_BATCH_DIM_X: i64 = 32;
+const TENSOR_BATCH_DIM_Y: i64 = 32;
+// Default vector length for tensor operations
+const DEFAULT_VLEN: i64 = 1;
 
 // Type system for MLIR types
 #[derive(Debug, Clone, PartialEq)]
@@ -31,6 +34,7 @@ enum BasicType {
 struct TensorType {
     x: i64,        // Batch dimension (polymorphic)
     y: i64,        // Size dimension (1 for scalars, n for vectors)
+    vlen: Option<i64>, // Optional vector length
     ty: BasicType, // Element type
 }
 
@@ -58,7 +62,13 @@ impl std::fmt::Display for BasicType {
 
 impl std::fmt::Display for TensorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "tensor<{}x{}x{}>", self.x, self.y, self.ty)
+        if let Some(vlen) = self.vlen {
+            // If vlen is specified, include it in the tensor format
+            write!(f, "tensor<{}x{}x{}x{}>", self.x, self.y, vlen, self.ty)
+        } else {
+            // Default format without vlen
+            write!(f, "tensor<{}x{}x{}>", self.x, self.y, self.ty)
+        }
     }
 }
 
@@ -357,12 +367,14 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     fn get_param_type_for_function(&self, func_name: &str) -> MlirType {
         match self.get_function_category(func_name) {
             FunctionCategory::Bitwise => MlirType::Tensor(TensorType {
-                x: TENSOR_BATCH_DIM, y: 1,
+                x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+                vlen: None,
                 ty: BasicType::I32,
             }),
             FunctionCategory::Comparison | FunctionCategory::Shift => {
                 MlirType::Tensor(TensorType {
-                    x: TENSOR_BATCH_DIM, y: 1,
+                    x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+                    vlen: None,
                     ty: BasicType::I32,
                 })
             }
@@ -373,12 +385,14 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     fn get_return_type_for_function(&self, func_name: &str) -> MlirType {
         match self.get_function_category(func_name) {
             FunctionCategory::Bitwise => MlirType::Tensor(TensorType {
-                x: TENSOR_BATCH_DIM, y: 1,
+                x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+                vlen: None,
                 ty: BasicType::I32,
             }),
             FunctionCategory::Comparison | FunctionCategory::Shift => {
                 MlirType::Tensor(TensorType {
-                    x: TENSOR_BATCH_DIM, y: 1,
+                    x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+                    vlen: None,
                     ty: BasicType::I32,
                 })
             }
@@ -1251,7 +1265,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
                 // Create proper i1 tensor type for predicate
                 let pred_type = MlirType::Tensor(TensorType {
-                    x: TENSOR_BATCH_DIM, y: 1,
+                    x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+                    vlen: None,
                     ty: BasicType::I1,
                 });
 
@@ -1901,7 +1916,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                         // Extract the 4th element (index 3) using tosa.slice
                         let slice_ssa = self.next_ssa_value();
                         let tensor_type = MlirType::Tensor(TensorType {
-                            x: TENSOR_BATCH_DIM, y: 1,
+                            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+                            vlen: None,
                             ty: BasicType::I32,
                         });
                         let tensor_type_str = tensor_type.to_string();
@@ -3085,7 +3101,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // FMA is typically for floating point, but decompose into mul + add for TOSA  
         let tensor_type_str = self.get_default_tensor_type();
         let tensor_type = MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM, y: 1,
+            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+            vlen: None,
             ty: BasicType::F32,
         });
         let temp_ssa = self.next_ssa_value();
@@ -3540,7 +3557,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         self.value_map.insert(dst, dst_ssa.clone());
         let i1_tensor = MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM, y: 1,
+            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+            vlen: None,
             ty: BasicType::I1,
         });
         self.ssa_types.insert(dst_ssa.clone(), i1_tensor);
@@ -4085,7 +4103,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         self.value_map.insert(dst, dst_ssa.clone());
         let clz_type = MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM, y: 1,
+            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+            vlen: None,
             ty: BasicType::I32,
         });
         self.ssa_types.insert(dst_ssa.clone(), clz_type);
@@ -4151,8 +4170,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 // This is a simplification for now
                 let total_size: i64 = dimensions.iter().map(|d| *d as i64).product();
                 Ok(MlirType::Tensor(TensorType {
-                    x: TENSOR_BATCH_DIM,
-                    y: total_size,
+                    x: TENSOR_BATCH_DIM_X,
+                    y: TENSOR_BATCH_DIM_Y,
+                    vlen: Some(total_size),
                     ty: Self::ptx_scalar_to_basic_type(*scalar_type),
                 }))
             }
@@ -4173,36 +4193,41 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
     fn get_default_tensor_type(&self) -> MlirType {
         MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM, y: 1,
+            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+            vlen: None,
             ty: BasicType::F32,
         })
     }
 
     fn get_integer_tensor_type(&self) -> MlirType {
         MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM, y: 1,
+            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+            vlen: None,
             ty: BasicType::I32,
         })
     }
 
     fn get_scalar_tensor_type(&self, scalar_type: ast::ScalarType) -> MlirType {
         MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM, y: 1,
+            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+            vlen: None,
             ty: Self::ptx_scalar_to_basic_type(scalar_type),
         })
     }
 
     fn get_vector_tensor_type(&self, len: u8, scalar_type: ast::ScalarType) -> MlirType {
         MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM,
-            y: len as i64,
+            x: TENSOR_BATCH_DIM_X,
+            y: TENSOR_BATCH_DIM_Y,
+            vlen: Some(len as i64),
             ty: Self::ptx_scalar_to_basic_type(scalar_type),
         })
     }
 
     fn get_i8_tensor_type(&self) -> MlirType {
         MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM, y: 1,
+            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
+            vlen: None,
             ty: BasicType::I8,
         })
     }
