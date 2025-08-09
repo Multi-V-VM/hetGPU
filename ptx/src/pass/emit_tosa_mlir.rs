@@ -3161,6 +3161,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 self.get_integer_tensor_type()
             }
         };
+        // Get the predicate tensor type string once for reuse
+        let pred_type = self.get_predicate_tensor_type_str();
         eprintln!("{:?}", data.cmp_op);
         // panic!();
 
@@ -3168,52 +3170,52 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ast::SetpCompareOp::Integer(ast::SetpCompareInt::Eq)
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::Eq) => {
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Integer(ast::SetpCompareInt::NotEq)
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::NotEq) => {
                 let temp_ssa = self.next_ssa_value();
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    temp_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    temp_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    dst_ssa, temp_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+                    dst_ssa, temp_ssa, pred_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Integer(ast::SetpCompareInt::UnsignedLess)
             | ast::SetpCompareOp::Integer(ast::SetpCompareInt::SignedLess)
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::Less) => {
                 self.write_line(&format!(
-                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    dst_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Integer(ast::SetpCompareInt::UnsignedLessOrEq)
             | ast::SetpCompareOp::Integer(ast::SetpCompareInt::SignedLessOrEq)
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::LessOrEq) => {
                 self.write_line(&format!(
-                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    dst_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Integer(ast::SetpCompareInt::UnsignedGreater)
             | ast::SetpCompareOp::Integer(ast::SetpCompareInt::SignedGreater)
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::Greater) => {
                 self.write_line(&format!(
-                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Integer(ast::SetpCompareInt::UnsignedGreaterOrEq)
             | ast::SetpCompareOp::Integer(ast::SetpCompareInt::SignedGreaterOrEq)
             | ast::SetpCompareOp::Float(ast::SetpCompareFloat::GreaterOrEq) => {
                 self.write_line(&format!(
-                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
             }
             // NaN-aware comparisons
@@ -3228,38 +3230,38 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
                 // Check equality
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    eq_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    eq_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
 
                 // Check if src1 is NaN (x != x)
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan1_not_ssa, nan1_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan1_not_ssa, nan1_ssa, pred_type, pred_type
                 ));
 
                 // Check if src2 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan2_not_ssa, nan2_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan2_not_ssa, nan2_ssa, pred_type, pred_type
                 ));
 
                 // Result is true if equal OR either is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    or1_ssa, eq_ssa, nan1_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    or1_ssa, eq_ssa, nan1_not_ssa, pred_type, pred_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    dst_ssa, or1_ssa, nan2_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, or1_ssa, nan2_not_ssa, pred_type, pred_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Float(ast::SetpCompareFloat::NanNotEq) => {
@@ -3274,42 +3276,42 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 // Check not equal
                 let eq_ssa = self.next_ssa_value();
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    eq_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    eq_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    neq_ssa, eq_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+                    neq_ssa, eq_ssa, pred_type, pred_type
                 ));
 
                 // Check if src1 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan1_not_ssa, nan1_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan1_not_ssa, nan1_ssa, pred_type, pred_type
                 ));
 
                 // Check if src2 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan2_not_ssa, nan2_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan2_not_ssa, nan2_ssa, pred_type, pred_type
                 ));
 
                 // Result is true if not equal OR either is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    or1_ssa, neq_ssa, nan1_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    or1_ssa, neq_ssa, nan1_not_ssa, pred_type, pred_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    dst_ssa, or1_ssa, nan2_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, or1_ssa, nan2_not_ssa, pred_type, pred_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Float(ast::SetpCompareFloat::NanLess) => {
@@ -3323,38 +3325,38 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
                 // Check less than
                 self.write_line(&format!(
-                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    lt_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> {}",
+                    lt_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
 
                 // Check if src1 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan1_not_ssa, nan1_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan1_not_ssa, nan1_ssa, pred_type, pred_type
                 ));
 
                 // Check if src2 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan2_not_ssa, nan2_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan2_not_ssa, nan2_ssa, pred_type, pred_type
                 ));
 
                 // Result is true if less than OR either is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    or1_ssa, lt_ssa, nan1_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    or1_ssa, lt_ssa, nan1_not_ssa, pred_type, pred_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    dst_ssa, or1_ssa, nan2_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, or1_ssa, nan2_not_ssa, pred_type, pred_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Float(ast::SetpCompareFloat::NanLessOrEq) => {
@@ -3368,38 +3370,38 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
                 // Check less than or equal
                 self.write_line(&format!(
-                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    le_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> {}",
+                    le_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
 
                 // Check if src1 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan1_not_ssa, nan1_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan1_not_ssa, nan1_ssa, pred_type, pred_type
                 ));
 
                 // Check if src2 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan2_not_ssa, nan2_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan2_not_ssa, nan2_ssa, pred_type, pred_type
                 ));
 
                 // Result is true if less than or equal OR either is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    or1_ssa, le_ssa, nan1_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    or1_ssa, le_ssa, nan1_not_ssa, pred_type, pred_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    dst_ssa, or1_ssa, nan2_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, or1_ssa, nan2_not_ssa, pred_type, pred_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Float(ast::SetpCompareFloat::NanGreater) => {
@@ -3413,38 +3415,38 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
                 // Check greater than
                 self.write_line(&format!(
-                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    gt_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> {}",
+                    gt_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
 
                 // Check if src1 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan1_not_ssa, nan1_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan1_not_ssa, nan1_ssa, pred_type, pred_type
                 ));
 
                 // Check if src2 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan2_not_ssa, nan2_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan2_not_ssa, nan2_ssa, pred_type, pred_type
                 ));
 
                 // Result is true if greater than OR either is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    or1_ssa, gt_ssa, nan1_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    or1_ssa, gt_ssa, nan1_not_ssa, pred_type, pred_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    dst_ssa, or1_ssa, nan2_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, or1_ssa, nan2_not_ssa, pred_type, pred_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Float(ast::SetpCompareFloat::NanGreaterOrEq) => {
@@ -3458,38 +3460,38 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
                 // Check greater than or equal
                 self.write_line(&format!(
-                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    ge_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> {}",
+                    ge_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
 
                 // Check if src1 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan1_not_ssa, nan1_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan1_not_ssa, nan1_ssa, pred_type, pred_type
                 ));
 
                 // Check if src2 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan2_not_ssa, nan2_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan2_not_ssa, nan2_ssa, pred_type, pred_type
                 ));
 
                 // Result is true if greater than or equal OR either is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    or1_ssa, ge_ssa, nan1_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    or1_ssa, ge_ssa, nan1_not_ssa, pred_type, pred_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    dst_ssa, or1_ssa, nan2_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, or1_ssa, nan2_not_ssa, pred_type, pred_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Float(ast::SetpCompareFloat::IsNotNan) => {
@@ -3501,20 +3503,20 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
                 // Check if src1 is NaN (x == x means NOT NaN)
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    not_nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    not_nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
 
                 // Check if src2 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    not_nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    not_nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
 
                 // Result is true if NEITHER is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_and\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    dst_ssa, not_nan1_ssa, not_nan2_ssa
+                    "{} = \"tosa.logical_and\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, not_nan1_ssa, not_nan2_ssa, pred_type, pred_type, pred_type
                 ));
             }
             ast::SetpCompareOp::Float(ast::SetpCompareFloat::IsAnyNan) => {
@@ -3526,28 +3528,28 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
                 // Check if src1 is NaN (x != x)
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan1_not_ssa, nan1_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan1_not_ssa, nan1_ssa, pred_type, pred_type
                 ));
 
                 // Check if src2 is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
-                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type
+                    "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> {}",
+                    nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type, pred_type
                 ));
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    nan2_not_ssa, nan2_ssa
+                    "{} = \"tosa.logical_not\"({}) : ({}) -> {}",
+nan2_not_ssa, nan2_ssa, pred_type, pred_type
                 ));
 
                 // Result is true if EITHER is NaN
                 self.write_line(&format!(
-                    "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
-                    dst_ssa, nan1_not_ssa, nan2_not_ssa
+                    "{} = \"tosa.logical_or\"({}, {}) : ({}, {}) -> {}",
+                    dst_ssa, nan1_not_ssa, nan2_not_ssa, pred_type, pred_type, pred_type
                 ));
             }
             _ => {
@@ -3580,10 +3582,11 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         // Use the actual scalar type for the tensor
         let tensor_type = self.get_scalar_tensor_type(data);
+        let pred_type = self.get_predicate_tensor_type_str();
 
         self.write_line(&format!(
-            "{} = \"tosa.select\"({}, {}, {}) : (tensor<1x1xi1>, {}, {}) -> {}",
-            dst_ssa, src3_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type, tensor_type
+            "{} = \"tosa.select\"({}, {}, {}) : ({}, {}, {}) -> {}",
+            dst_ssa, src3_ssa, src1_ssa, src2_ssa, pred_type, tensor_type, tensor_type, tensor_type
         ));
 
         self.value_map.insert(dst, dst_ssa.clone());
@@ -4235,6 +4238,19 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     fn get_tosa_shift_tensor_type(&self) -> String {
         // TOSA mul shift parameter must be a 1D scalar tensor
         format!("tensor<1x{}>", BasicType::I8)
+    }
+
+    fn get_predicate_tensor_type(&self) -> MlirType {
+        MlirType::Tensor(TensorType {
+            x: TENSOR_BATCH_DIM_X,
+            y: TENSOR_BATCH_DIM_Y,
+            vlen: None,
+            ty: BasicType::I1,
+        })
+    }
+
+    fn get_predicate_tensor_type_str(&self) -> String {
+        self.get_predicate_tensor_type().to_string()
     }
 
     fn create_default_return(&mut self, func_name: &str) -> (String, String) {
