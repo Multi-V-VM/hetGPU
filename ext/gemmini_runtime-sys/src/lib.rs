@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::ptr;
 use std::sync::Mutex;
-use tempfile::TempDir;
+use std::time::SystemTime;
 
 // Gemmini configuration constants
 pub const GEMMINI_DIM: usize = 16;
@@ -86,13 +86,15 @@ pub struct gemmini_BufferConfig {
 static SPIKE_STATE: Mutex<Option<SpikeState>> = Mutex::new(None);
 
 struct SpikeState {
-    temp_dir: TempDir,
+    temp_dir: PathBuf,
+    kernel_name: String,
     programs: Vec<ProgramData>,
     buffers: Vec<BufferData>,
 }
 
 struct ProgramData {
     id: usize,
+    kernel_name: Option<String>,
 }
 
 struct BufferData {
@@ -119,20 +121,15 @@ pub unsafe extern "C" fn gemmini_CreateDevice(
     let mut state = SPIKE_STATE.lock().unwrap();
 
     if state.is_none() {
-        match TempDir::new() {
-            Ok(temp_dir) => {
-                *state = Some(SpikeState {
-                    temp_dir,
-                    programs: Vec::new(),
-                    buffers: Vec::new(),
-                });
-                eprintln!("Gemmini/Spike: Initialized device {}", device_id);
-            }
-            Err(e) => {
-                eprintln!("Gemmini/Spike: Failed to create temp directory: {}", e);
-                return ptr::null_mut();
-            }
-        }
+        // Initially use a pending directory - will be updated when kernel is created
+        let temp_dir = PathBuf::from("/tmp/gemmini_pending");
+        *state = Some(SpikeState {
+            temp_dir,
+            kernel_name: String::new(),
+            programs: Vec::new(),
+            buffers: Vec::new(),
+        });
+        eprintln!("Gemmini/Spike: Initialized device {}", device_id);
     }
 
     // Return a dummy pointer (we only support one device in Spike)
@@ -157,7 +154,10 @@ pub unsafe extern "C" fn gemmini_CreateProgram() -> *mut gemmini_Program {
 
     if let Some(ref mut spike_state) = *state {
         let program_id = spike_state.programs.len();
-        spike_state.programs.push(ProgramData { id: program_id });
+        spike_state.programs.push(ProgramData { 
+            id: program_id,
+            kernel_name: None,
+        });
 
         return (program_id + 1) as *mut gemmini_Program;
     }
@@ -209,6 +209,14 @@ pub unsafe extern "C" fn gemmini_CreateKernel(
         if !validate_program_id(spike_state, program_id) {
             return ptr::null_mut();
         }
+
+        // Store kernel name for later use when creating directory
+        spike_state.kernel_name = kernel_name.clone();
+        if program_id < spike_state.programs.len() {
+            spike_state.programs[program_id].kernel_name = Some(kernel_name.clone());
+        }
+        
+        eprintln!("Gemmini/Spike: Stored kernel name: {}", kernel_name.clone());
 
         // Kernels are not actually tracked in this implementation
         return 1 as *mut gemmini_Kernel;
@@ -335,8 +343,35 @@ pub unsafe extern "C" fn gemmini_LoadFromMLIR(
             return gemmini_Result_Error;
         }
 
+        // Create unique directory if we're still using the pending directory
+        if spike_state.temp_dir == PathBuf::from("/tmp/gemmini_pending") {
+            let kernel_suffix = if !spike_state.kernel_name.is_empty() {
+                &spike_state.kernel_name
+            } else {
+                "unknown"
+            };
+            
+            let timestamp = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_micros();
+            let unique_dir = format!("/tmp/gemmini_{}_{}", kernel_suffix, timestamp);
+            
+            spike_state.temp_dir = PathBuf::from(unique_dir);
+            eprintln!("Gemmini/Spike: Created unique directory: {}", spike_state.temp_dir.display());
+        }
+        
         // Write MLIR to file in temp directory
-        let temp_dir = spike_state.temp_dir.path();
+        let temp_dir = &spike_state.temp_dir;
+        
+        // Ensure the directory exists
+        if !temp_dir.exists() {
+            if let Err(e) = std::fs::create_dir_all(&temp_dir) {
+                eprintln!("Gemmini/Spike: Failed to create directory: {}", e);
+                return gemmini_Result_Error;
+            }
+        }
+        
         let mlir_file = temp_dir.join(format!("gemmini_mlir_{}.mlir", program_id));
         if let Err(e) = fs::write(&mlir_file, &mlir_str) {
             eprintln!("Gemmini/Spike: Failed to write MLIR file: {}", e);
@@ -589,7 +624,7 @@ impl Drop for Buffer {
 
 fn run_on_spike(spike_state: &mut SpikeState, program_id: usize) -> Result<(), String> {
     // Look for the compiled object file
-    let temp_dir = spike_state.temp_dir.path();
+    let temp_dir = &spike_state.temp_dir;
     let obj_file = temp_dir.join(format!("gemmini_program_{}.o", program_id));
 
     if !obj_file.exists() {
@@ -732,7 +767,7 @@ fn create_executable_from_object(
     spike_state: &mut SpikeState,
     obj_file: &str,
 ) -> Result<std::path::PathBuf, String> {
-    let temp_dir = spike_state.temp_dir.path();
+    let temp_dir = &spike_state.temp_dir;
     let executable = temp_dir.join("gemmini_kernel");
 
     // Create input data assembly file that embeds the buffer data
@@ -957,7 +992,7 @@ fn convert_mlir_to_executable(
     program_id: usize,
 ) -> Result<PathBuf, String> {
     // Output files
-    let temp_dir = spike_state.temp_dir.path();
+    let temp_dir = &spike_state.temp_dir;
     let base_name = format!("{}/gemmini_program_{}", temp_dir.display(), program_id);
     let tosa_mlir = format!("{}_linalg.mlir", base_name);
     let mut llvm_ir = format!("{}.ll", base_name);

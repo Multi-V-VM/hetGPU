@@ -1590,18 +1590,18 @@ fn run_gemmini<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug +
     let program = device.create_program()?;
     eprintln!("ZLUDA DEBUG: Created Gemmini program");
 
-    // 4. Generate TOSA MLIR from PTX AST
-    let tosa_mlir = generate_tosa_mlir_from_ast_gemmini(ast)?;
-    eprintln!("ZLUDA DEBUG: Generated TOSA MLIR for Gemmini");
-
-    // 5. Load TOSA MLIR into the program
-    program.load_from_mlir(&tosa_mlir)?;
-    eprintln!("ZLUDA DEBUG: Loaded TOSA MLIR into Gemmini program");
-
-    // 5. Create kernel with default core location
+    // 4. Create kernel with default core location (do this first to set kernel name)
     let core = GemminiCoreCoord { x: 0, y: 0 };
     let kernel = program.create_kernel(kernel_name, core)?;
     eprintln!("ZLUDA DEBUG: Created kernel '{}'", kernel_name);
+    
+    // 5. Generate TOSA MLIR from PTX AST
+    let tosa_mlir = generate_tosa_mlir_from_ast_gemmini(ast)?;
+    eprintln!("ZLUDA DEBUG: Generated TOSA MLIR for Gemmini");
+
+    // 6. Load TOSA MLIR into the program
+    program.load_from_mlir(&tosa_mlir)?;
+    eprintln!("ZLUDA DEBUG: Loaded TOSA MLIR into Gemmini program");
 
     // 6. Create input and output buffers
     let input_size = input.len() * size_of::<Input>();
