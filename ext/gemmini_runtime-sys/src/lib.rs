@@ -12,6 +12,10 @@ use std::ptr;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
+// Tensor dimensions - must match those in ptx/src/pass/emit_tosa_mlir.rs
+const TENSOR_BATCH_DIM_X: i64 = 32;
+const TENSOR_BATCH_DIM_Y: i64 = 32;
+
 // Gemmini configuration constants
 pub const GEMMINI_DIM: usize = 16;
 pub const GEMMINI_SPAD_ROWS: usize = 256;
@@ -796,9 +800,11 @@ fn create_executable_from_object(
     let input_data_o = temp_dir.join("input_data.o");
     let constants_o = temp_dir.join("constants.o");
 
-    // Compile startup.c
+    // Compile startup.c with matrix dimensions from TOSA configuration
     let compile_c_cmd = format!(
-        "riscv64-unknown-elf-gcc -c -march=rv64gc -mabi=lp64d -mcmodel=medany {} -o {}",
+        "riscv64-unknown-elf-gcc -c -march=rv64gc -mabi=lp64d -mcmodel=medany \
+         -DMATRIX_DIM_X={} -DMATRIX_DIM_Y={} {} -o {}",
+        TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y,
         startup_c.display(),
         startup_o.display()
     );
@@ -909,6 +915,11 @@ fn read_spike_output_from_memory(
     let stdout_text = String::from_utf8_lossy(&spike_output.stdout);
     let stderr_text = String::from_utf8_lossy(&spike_output.stderr);
     let combined_output = format!("{}\n{}", stdout_text, stderr_text);
+    
+    // Debug: Print the full Spike output (commented out for normal use)
+    // eprintln!("=== SPIKE FULL OUTPUT ===");
+    // eprintln!("{}", combined_output);
+    // eprintln!("=== END SPIKE OUTPUT ===");
 
     // Look for our specific GEMMINI_OUTPUT line with hex bytes
     let mut result_bytes = Vec::new();

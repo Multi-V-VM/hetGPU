@@ -68,8 +68,8 @@ extern uint8_t __input_data_start[] __attribute__((weak));
 extern uint8_t __input_data_end[] __attribute__((weak));
 extern uint64_t __input_data_size __attribute__((weak));
 // Global buffers for input/output data (as bytes for arbitrary types)
-static uint8_t input_buffer[4096];  // 4KB for various data types
-static uint8_t output_buffer[4096]; // 4KB for various data types
+static uint8_t input_buffer[8192];  // 8KB for two 32x32 matrices
+static uint8_t output_buffer[4096]; // 4KB for one 32x32 matrix
 void print_uint(uint32_t value) {
     char buffer[32];
     int len = 0;
@@ -172,9 +172,17 @@ int main() {
         write(1, no_data_msg, strlen__(no_data_msg));
     }
     
+    // Use dimensions from preprocessor or default to 1x1
+    #ifndef MATRIX_DIM_X
+    #define MATRIX_DIM_X 1
+    #endif
+    #ifndef MATRIX_DIM_Y
+    #define MATRIX_DIM_Y 1
+    #endif
+    
     memref_2d_f32_t input1_desc, input2_desc, output_desc;
     
-    int dim1 = 1, dim2 = 1;
+    int dim1 = MATRIX_DIM_X, dim2 = MATRIX_DIM_Y;
     
     int element_size = sizeof(float);
     
@@ -229,8 +237,37 @@ int main() {
         const char* and_msg = "GEMMINI_KERNEL: Found and\n";
         write(1, and_msg, strlen__(and_msg));
         
+        // Debug: Print first few values of input matrices
+        const char* input1_msg = "GEMMINI_DEBUG: Input1 first 10 values (as i32): ";
+        write(1, input1_msg, strlen__(input1_msg));
+        int32_t* input1_data = (int32_t*)input1_desc.aligned_data;
+        for (int i = 0; i < 10 && i < dim1 * dim2; i++) {
+            print_uint((uint32_t)input1_data[i]);
+            write(1, " ", 1);
+        }
+        write(1, "\n", 1);
+        
+        const char* input2_msg = "GEMMINI_DEBUG: Input2 first 10 values (as i32): ";
+        write(1, input2_msg, strlen__(input2_msg));
+        int32_t* input2_data = (int32_t*)input2_desc.aligned_data;
+        for (int i = 0; i < 10 && i < dim1 * dim2; i++) {
+            print_uint((uint32_t)input2_data[i]);
+            write(1, " ", 1);
+        }
+        write(1, "\n", 1);
+        
         memref_2d_f32_t result_desc;
         _mlir_ciface_and(&result_desc, &input1_desc, &input2_desc);
+        
+        // Debug: Print first few values of result
+        const char* result_msg = "GEMMINI_DEBUG: Result first 10 values (as i32): ";
+        write(1, result_msg, strlen__(result_msg));
+        int32_t* result_data_i32 = (int32_t*)result_desc.aligned_data;
+        for (int i = 0; i < 10 && i < dim1 * dim2; i++) {
+            print_uint((uint32_t)result_data_i32[i]);
+            write(1, " ", 1);
+        }
+        write(1, "\n", 1);
         
         uint8_t* result_data = (uint8_t*)result_desc.aligned_data;
         int copy_size = dim1 * dim2 * sizeof(float);
