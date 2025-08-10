@@ -67,9 +67,15 @@ extern void _mlir_ciface_add(memref_2d_f32_t* input1, memref_2d_f32_t* input2, m
 extern uint8_t __input_data_start[] __attribute__((weak));
 extern uint8_t __input_data_end[] __attribute__((weak));
 extern uint64_t __input_data_size __attribute__((weak));
+// Calculate buffer sizes based on matrix dimensions
+// For two input matrices of MATRIX_DIM_X x MATRIX_DIM_Y int32 elements
+#define INPUT_BUFFER_SIZE (2 * MATRIX_DIM_X * MATRIX_DIM_Y * sizeof(int32_t))
+// For one output matrix of MATRIX_DIM_X x MATRIX_DIM_Y int32 elements  
+#define OUTPUT_BUFFER_SIZE (MATRIX_DIM_X * MATRIX_DIM_Y * sizeof(int32_t))
+
 // Global buffers for input/output data (as bytes for arbitrary types)
-static uint8_t input_buffer[8192];  // 8KB for two 32x32 matrices
-static uint8_t output_buffer[4096]; // 4KB for one 32x32 matrix
+static uint8_t input_buffer[INPUT_BUFFER_SIZE];
+static uint8_t output_buffer[OUTPUT_BUFFER_SIZE];
 void print_uint(uint32_t value) {
     char buffer[32];
     int len = 0;
@@ -145,7 +151,7 @@ void write_output_data(uint8_t* buffer, int size) {
     const char* output_prefix = "GEMMINI_OUTPUT: ";
     write(1, output_prefix, strlen__(output_prefix));
     
-    int bytes_to_print = size < 16 ? size : 16;
+    int bytes_to_print = size;  // Print all bytes, not just first 16
     print_bytes_hex(buffer, bytes_to_print);
     
     const char* newline = "\n";
@@ -280,7 +286,7 @@ int main() {
         _mlir_ciface_add(&input1_desc, &input2_desc, &output_desc);
     }
     
-    write_output_data(output_buffer, sizeof(output_buffer));
+    write_output_data(output_buffer, OUTPUT_BUFFER_SIZE);
     
     const char* end_msg = "GEMMINI_END: Kernel execution completed\n";
     write(1, end_msg, strlen__(end_msg));

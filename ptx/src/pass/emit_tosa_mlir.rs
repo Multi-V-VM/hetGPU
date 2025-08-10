@@ -11,8 +11,8 @@ use std::fmt::Write;
 // Configurable constants for tensor dimensions
 // This allows tensor types to be polymorphic: tensor<TENSOR_BATCH_DIM_X x TENSOR_BATCH_DIM_Y x t>
 // where y and t depend on PTX assembly
-pub const TENSOR_BATCH_DIM_X: i64 = 2;
-pub const TENSOR_BATCH_DIM_Y: i64 = 2;
+pub const TENSOR_BATCH_DIM_X: i64 = 32;
+pub const TENSOR_BATCH_DIM_Y: i64 = 32;
 // Default vector length for tensor operations
 const DEFAULT_VLEN: i64 = 1;
 

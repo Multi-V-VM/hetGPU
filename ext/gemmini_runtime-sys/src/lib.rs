@@ -932,7 +932,7 @@ fn read_spike_output_from_memory(
                     if hex_byte.len() == 2 {
                         if let Ok(byte_val) = u8::from_str_radix(hex_byte, 16) {
                             result_bytes.push(byte_val);
-                            eprintln!("Gemmini/Spike: Parsed hex byte: 0x{:02x}", byte_val)
+                            // eprintln!("Gemmini/Spike: Parsed hex byte: 0x{:02x}", byte_val)
                         }
                     }
                 }

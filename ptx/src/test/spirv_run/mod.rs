@@ -1680,7 +1680,7 @@ fn run_gemmini<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug +
         // Optionally verify all values are the same
         let all_same = full_result.iter().all(|&x| x == first_val);
         if all_same {
-            eprintln!("ZLUDA DEBUG: All {} output values are identical (good!)", full_result.len());
+            eprintln!("ZLUDA DEBUG: All {} output values are identical", full_result.len());
         } else {
             eprintln!("ZLUDA DEBUG: First 20 values: {:?}", &full_result[..20.min(full_result.len())]);
             eprintln!("ZLUDA DEBUG: Last 20 values: {:?}", &full_result[full_result.len().saturating_sub(20)..]);
