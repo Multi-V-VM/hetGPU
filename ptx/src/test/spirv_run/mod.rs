@@ -439,7 +439,6 @@ fn test_hip_assert<
                 name.as_c_str(),
                 ptx_text,
                 ast_gemmini,
-                module,
                 input,
                 output,
             ) {
@@ -1569,7 +1568,6 @@ fn run_gemmini<Input: From<u8> + Copy + Debug, Output: From<u8> + Copy + Debug +
     name: &CStr,
     ptx_text: &str,
     ast: ptx_parser::Module,
-    module: pass::Module,
     input: &[Input],
     output: &mut [Output],
 ) -> Result<Vec<Output>, String> {
