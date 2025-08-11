@@ -1322,7 +1322,7 @@ pub fn cuFuncGetAttribute(pi: *mut i32, attrib: CUfunction_attribute, hfunc: CUf
     
     CUresult::ERROR_NOT_INITIALIZED
 }
-
+，
 /// 切换到指定的CUDA设备（多卡支持）
 pub fn cuDeviceSetCurrent(device: CUdevice) -> CUresult {
     eprintln!("[NvidiaBackend] cuDeviceSetCurrent(device={})", device);

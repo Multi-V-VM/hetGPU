@@ -17,6 +17,8 @@ pub(super) mod pointer;
 #[cfg(feature = "nvidia")]
 pub(super) mod nvidia_backend;
 pub(super) mod simple_memory_tracer;
+pub(super) mod nccl_fault_tolerance;
+pub(super) mod nccl_hooks;
 
 #[cfg(feature = "intel")]
 pub mod ze_device;
