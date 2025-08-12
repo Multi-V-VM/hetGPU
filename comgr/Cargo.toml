@@ -10,6 +10,7 @@ amd = []
 intel = []
 tenstorrent = []
 gemmini = []
+nvidia = []
 
 [lib]
 

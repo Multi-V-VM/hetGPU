@@ -21,13 +21,13 @@ pub enum ncclResult_t {
 // NCCL communicator handle
 #[repr(C)]
 pub struct ncclComm {
-    _private: [u8; 0],
+    pub _private: [u8; 0],
 }
 pub type ncclComm_t = *mut ncclComm;
 
 // NCCL unique ID for communicator creation
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct ncclUniqueId {
     pub internal: [u8; 128],
 }

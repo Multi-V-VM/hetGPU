@@ -1,7 +1,7 @@
 [package]
 name = "ze_runtime_sys"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 description = "Rust bindings for oneAPI Level Zero Runtime API"
 license = "MIT"
 authors = ["ZLUDA Team"]

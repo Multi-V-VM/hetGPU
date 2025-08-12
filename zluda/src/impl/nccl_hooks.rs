@@ -47,11 +47,18 @@ static mut ORIGINAL_FUNCTIONS: Option<NcclOriginalFunctions> = None;
 // Load original NCCL functions
 pub fn load_original_functions() {
     unsafe {
-        let lib = libc::dlopen(b"libnccl.so.2\0".as_ptr() as *const c_char, libc::RTLD_LAZY | libc::RTLD_NOLOAD);
+        // Try to load NCCL library - first try without RTLD_NOLOAD to actually load it
+        let mut lib = libc::dlopen(b"libnccl.so.2\0".as_ptr() as *const c_char, libc::RTLD_LAZY);
         if lib.is_null() {
-            eprintln!("Warning: Could not load original NCCL library");
-            return;
+            // Try alternative name
+            lib = libc::dlopen(b"libnccl.so\0".as_ptr() as *const c_char, libc::RTLD_LAZY);
+            if lib.is_null() {
+                eprintln!("[NCCL Hook] Warning: Could not load original NCCL library");
+                return;
+            }
         }
+        
+        eprintln!("[NCCL Hook] Successfully loaded NCCL library");
         
         ORIGINAL_FUNCTIONS = Some(NcclOriginalFunctions {
             ncclCommInitRank: std::mem::transmute(libc::dlsym(lib, b"ncclCommInitRank\0".as_ptr() as *const c_char)),
@@ -65,7 +72,8 @@ pub fn load_original_functions() {
             ncclGetErrorString: std::mem::transmute(libc::dlsym(lib, b"ncclGetErrorString\0".as_ptr() as *const c_char)),
         });
         
-        libc::dlclose(lib);
+        // Don't close the library to keep symbols available
+        // libc::dlclose(lib);
     }
 }
 
@@ -78,16 +86,22 @@ pub unsafe extern "C" fn ncclCommInitRank(
     commId: ncclUniqueId,
     rank: c_int,
 ) -> ncclResult_t {
+    eprintln!("[NCCL Hook] ncclCommInitRank called with nranks={}, rank={}", nranks, rank);
+    
     initialize_fault_tolerance();
+    load_original_functions();  // Ensure original functions are loaded
     
     // Call original function
     let result = if let Some(ref funcs) = ORIGINAL_FUNCTIONS {
         if let Some(orig_fn) = funcs.ncclCommInitRank {
+            eprintln!("[NCCL Hook] Calling original ncclCommInitRank");
             orig_fn(comm, nranks, commId, rank)
         } else {
+            eprintln!("[NCCL Hook] Original ncclCommInitRank not found");
             ncclResult_t::ncclInternalError
         }
     } else {
+        eprintln!("[NCCL Hook] No original functions loaded, using fallback");
         // Fallback implementation
         *comm = Box::into_raw(Box::new(ncclComm { _private: [] }));
         ncclResult_t::ncclSuccess
@@ -96,7 +110,7 @@ pub unsafe extern "C" fn ncclCommInitRank(
     // Register with fault tolerance manager
     if result == ncclResult_t::ncclSuccess {
         if let Some(manager) = get_manager() {
-            let mgr = manager.lock().unwrap();
+            let mut mgr = manager.lock().unwrap();
             let ranks: Vec<i32> = (0..nranks).collect();
             mgr.register_communicator(*comm, commId, ranks);
             mgr.register_gpu(rank, rank);
@@ -107,7 +121,42 @@ pub unsafe extern "C" fn ncclCommInitRank(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn ncclCommInitAll(
+    comms: *mut ncclComm_t,
+    ndevs: c_int,
+    devlist: *const c_int,
+) -> ncclResult_t {
+    eprintln!("[NCCL Hook] ncclCommInitAll called with ndevs={}", ndevs);
+    
+    initialize_fault_tolerance();
+    load_original_functions();
+    
+    // Call original function
+    let result = if let Some(ref funcs) = ORIGINAL_FUNCTIONS {
+        if let Some(orig_fn) = funcs.ncclCommInitAll {
+            eprintln!("[NCCL Hook] Calling original ncclCommInitAll");
+            orig_fn(comms, ndevs, devlist)
+        } else {
+            eprintln!("[NCCL Hook] Original ncclCommInitAll not found");
+            ncclResult_t::ncclInternalError
+        }
+    } else {
+        eprintln!("[NCCL Hook] No original functions loaded, using fallback");
+        // Fallback implementation
+        for i in 0..ndevs {
+            let comm = comms.offset(i as isize);
+            *comm = Box::into_raw(Box::new(ncclComm { _private: [] }));
+        }
+        ncclResult_t::ncclSuccess
+    };
+    
+    result
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn ncclCommDestroy(comm: ncclComm_t) -> ncclResult_t {
+    eprintln!("[NCCL Hook] ncclCommDestroy called");
+    
     // Call original function
     let result = if let Some(ref funcs) = ORIGINAL_FUNCTIONS {
         if let Some(orig_fn) = funcs.ncclCommDestroy {
@@ -127,6 +176,62 @@ pub unsafe extern "C" fn ncclCommDestroy(comm: ncclComm_t) -> ncclResult_t {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn ncclCommCount(
+    comm: ncclComm_t,
+    count: *mut c_int,
+) -> ncclResult_t {
+    eprintln!("[NCCL Hook] ncclCommCount called");
+    // This is a stub - would need actual implementation
+    if !count.is_null() {
+        *count = 1;  // Default to 1 for single GPU
+    }
+    ncclResult_t::ncclSuccess
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ncclCommAbort(comm: ncclComm_t) -> ncclResult_t {
+    eprintln!("[NCCL Hook] ncclCommAbort called");
+    ncclCommDestroy(comm)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ncclCommGetAsyncError(
+    comm: ncclComm_t,
+    asyncError: *mut ncclResult_t,
+) -> ncclResult_t {
+    eprintln!("[NCCL Hook] ncclCommGetAsyncError called");
+    if !asyncError.is_null() {
+        *asyncError = ncclResult_t::ncclSuccess;
+    }
+    ncclResult_t::ncclSuccess
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ncclCommRegister(
+    comm: ncclComm_t,
+    buff: *mut c_void,
+    size: usize,
+    handle: *mut *mut c_void,
+) -> ncclResult_t {
+    eprintln!("[NCCL Hook] ncclCommRegister called with size={}", size);
+    // Stub implementation
+    if !handle.is_null() {
+        *handle = buff;
+    }
+    ncclResult_t::ncclSuccess
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ncclCommDeregister(
+    comm: ncclComm_t,
+    handle: *mut c_void,
+) -> ncclResult_t {
+    eprintln!("[NCCL Hook] ncclCommDeregister called");
+    // Stub implementation
+    ncclResult_t::ncclSuccess
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn ncclAllReduce(
     sendbuff: *const c_void,
     recvbuff: *mut c_void,
@@ -136,6 +241,7 @@ pub unsafe extern "C" fn ncclAllReduce(
     comm: ncclComm_t,
     stream: *mut c_void,
 ) -> ncclResult_t {
+    eprintln!("[NCCL Hook] ncclAllReduce called with count={}", count);
     // Heartbeat update
     if let Some(manager) = get_manager() {
         let mgr = manager.lock().unwrap();

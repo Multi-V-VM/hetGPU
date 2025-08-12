@@ -32,6 +32,7 @@ hip_runtime_sys = { path = "../ext/hip_runtime-sys" }
 tt_runtime_sys = { path = "../ext/tt_runtime-sys" }
 tt_comgr_sys = { path = "../ext/tt_comgr-sys" }
 libc = "0.2"
+rand = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["heapapi", "std"] }

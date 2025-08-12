@@ -221,32 +221,32 @@ cuda_base::cuda_function_declarations!(
 );
 
 // CUDA Runtime API 函数导出 (仅在 nvidia feature 启用时)
-#[cfg(feature = "nvidia")]
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn cudaMallocHost(ptr: *mut *mut std::ffi::c_void, size: usize) -> cuda_types::cuda::CUresult {
     crate::r#impl::nvidia_backend::cudaMallocHost(ptr, size)
 }
 
-#[cfg(feature = "nvidia")]
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn cudaFreeHost(ptr: *mut std::ffi::c_void) -> cuda_types::cuda::CUresult {
     crate::r#impl::nvidia_backend::cudaFreeHost(ptr)
 }
 
-#[cfg(feature = "nvidia")]
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn cudaMalloc(devPtr: *mut *mut std::ffi::c_void, size: usize) -> cuda_types::cuda::CUresult {
     crate::r#impl::nvidia_backend::cudaMalloc(devPtr, size)
 }
 
-#[cfg(feature = "nvidia")]
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn cudaFree(devPtr: *mut std::ffi::c_void) -> cuda_types::cuda::CUresult {
     crate::r#impl::nvidia_backend::cudaFree(devPtr)
 }
 
-#[cfg(feature = "nvidia")]
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn cudaMemcpy(dst: *mut std::ffi::c_void, src: *const std::ffi::c_void, count: usize, kind: std::ffi::c_int) -> cuda_types::cuda::CUresult {
     crate::r#impl::nvidia_backend::cudaMemcpy(dst, src, count, kind)
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaMemset(devPtr: *mut std::ffi::c_void, value: std::ffi::c_int, count: usize) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaMemset(devPtr, value, count)
 }

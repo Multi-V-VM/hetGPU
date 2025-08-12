@@ -1,7 +1,7 @@
 [package]
 name = "gemmini_comgr_sys"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 description = "Rust bindings for Gemmini Compiler (COMGR) using Buddy Compiler"
 license = "MIT"
 authors = ["ZLUDA Team"]

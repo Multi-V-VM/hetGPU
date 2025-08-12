@@ -14,7 +14,6 @@ pub(super) mod function;
 pub(super) mod memory;
 pub(super) mod module;
 pub(super) mod pointer;
-#[cfg(feature = "nvidia")]
 pub(super) mod nvidia_backend;
 pub(super) mod simple_memory_tracer;
 pub(super) mod nccl_fault_tolerance;

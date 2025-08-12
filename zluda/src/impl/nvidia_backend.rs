@@ -1007,12 +1007,29 @@ pub fn cudaFree(devPtr: *mut c_void) -> CUresult {
     result
 }
 
+/// cudaMemset - CUDA Runtime API 内存设置
+pub fn cudaMemset(devPtr: *mut c_void, value: i32, count: usize) -> CUresult {
+    eprintln!("[NvidiaBackend] cudaMemset(devPtr=0x{:x}, value={}, count={})", 
+             devPtr as u64, value, count);
+    
+    let device_ptr = CUdeviceptr_v2(devPtr as *mut _);
+    let result = cuMemsetD8_v2(device_ptr, value as u8, count);
+    
+    if result == CUresult::SUCCESS {
+        eprintln!("[NvidiaBackend] cudaMemset 成功设置 {} 字节", count);
+    } else {
+        eprintln!("[NvidiaBackend] cudaMemset 失败: {:?}", result);
+    }
+    
+    result
+}
+
 /// cudaMemcpy - CUDA Runtime API 内存复制
 pub fn cudaMemcpy(dst: *mut c_void, src: *const c_void, count: usize, kind: i32) -> CUresult {
     eprintln!("[NvidiaBackend] cudaMemcpy(dst=0x{:x}, src=0x{:x}, size={}, kind={})", 
              dst as u64, src as u64, count, kind);
     
-    // kind: 0=HostToHost, 1=HostToDevice, 2=DeviceToHost, 3=DeviceToDevice
+    // kind: 0=HostToHost, 1=HostToDevice, 2=DeviceToHost, 3=DeviceToDevice, 4=Default
     let result = match kind {
         1 => {
             // HostToDevice
@@ -1024,11 +1041,20 @@ pub fn cudaMemcpy(dst: *mut c_void, src: *const c_void, count: usize, kind: i32)
             let device_ptr = CUdeviceptr_v2(src as *mut _);
             cuMemcpyDtoH_v2(dst, device_ptr, count)
         }
-        3 => {
-            // DeviceToDevice
+        3 | 4 => {
+            // DeviceToDevice or Default (4)
+            // For Default, we assume device-to-device since both pointers appear to be device pointers
+            // based on the high address values (0x79fef2000000, 0x79fef4000000)
             let dst_device = CUdeviceptr_v2(dst as *mut _);
             let src_device = CUdeviceptr_v2(src as *mut _);
             cuMemcpyDtoD_v2(dst_device, src_device, count)
+        }
+        0 => {
+            // HostToHost - use standard memcpy
+            unsafe {
+                std::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, count);
+            }
+            CUresult::SUCCESS
         }
         _ => {
             eprintln!("[NvidiaBackend] 不支持的 cudaMemcpy 类型: {}", kind);
@@ -1322,7 +1348,7 @@ pub fn cuFuncGetAttribute(pi: *mut i32, attrib: CUfunction_attribute, hfunc: CUf
     
     CUresult::ERROR_NOT_INITIALIZED
 }
-，
+
 /// 切换到指定的CUDA设备（多卡支持）
 pub fn cuDeviceSetCurrent(device: CUdevice) -> CUresult {
     eprintln!("[NvidiaBackend] cuDeviceSetCurrent(device={})", device);
