@@ -32,10 +32,8 @@ enum BasicType {
 
 #[derive(Debug, Clone, PartialEq)]
 struct TensorType {
-    x: i64,        // Batch dimension (polymorphic)
-    y: i64,        // Size dimension (1 for scalars, n for vectors)
-    vlen: Option<i64>, // Optional vector length
-    ty: BasicType, // Element type
+    dims: Vec<i64>,    // Flexible dimensions list
+    ty: BasicType,     // Element type
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,12 +60,16 @@ impl std::fmt::Display for BasicType {
 
 impl std::fmt::Display for TensorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(vlen) = self.vlen {
-            // If vlen is specified, include it in the tensor format
-            write!(f, "tensor<{}x{}x{}x{}>", self.x, self.y, vlen, self.ty)
+        if self.dims.is_empty() {
+            // Scalar tensor
+            write!(f, "tensor<{}>", self.ty)
         } else {
-            // Default format without vlen
-            write!(f, "tensor<{}x{}x{}>", self.x, self.y, self.ty)
+            // Format as tensor<d1xd2x...xdnxtype>
+            let dims_str = self.dims.iter()
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>()
+                .join("x");
+            write!(f, "tensor<{}x{}>", dims_str, self.ty)
         }
     }
 }
@@ -367,14 +369,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     fn get_param_type_for_function(&self, func_name: &str) -> MlirType {
         match self.get_function_category(func_name) {
             FunctionCategory::Bitwise => MlirType::Tensor(TensorType {
-                x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-                vlen: None,
+                dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
                 ty: BasicType::I32,
             }),
             FunctionCategory::Comparison | FunctionCategory::Shift => {
                 MlirType::Tensor(TensorType {
-                    x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-                    vlen: None,
+                    dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
                     ty: BasicType::I32,
                 })
             }
@@ -385,14 +385,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     fn get_return_type_for_function(&self, func_name: &str) -> MlirType {
         match self.get_function_category(func_name) {
             FunctionCategory::Bitwise => MlirType::Tensor(TensorType {
-                x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-                vlen: None,
+                dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
                 ty: BasicType::I32,
             }),
             FunctionCategory::Comparison | FunctionCategory::Shift => {
                 MlirType::Tensor(TensorType {
-                    x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-                    vlen: None,
+                    dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
                     ty: BasicType::I32,
                 })
             }
@@ -1265,8 +1263,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
                 // Create proper i1 tensor type for predicate
                 let pred_type = MlirType::Tensor(TensorType {
-                    x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-                    vlen: None,
+                    dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
                     ty: BasicType::I1,
                 });
 
@@ -1799,6 +1796,120 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             .cloned()
             .unwrap_or_else(|| self.get_default_tensor_type());
 
+        // Check if we should use matrix multiplication
+        // For now, detect based on whether both sources are function arguments
+        // This is a simple heuristic - in matmul_simple, both inputs come from function arguments
+        let use_matmul = {
+            // Check if both sources are function arguments (they start with %arg)
+            let src1_is_arg = src1_ssa.starts_with("%arg");
+            let src2_is_arg = src2_ssa.starts_with("%arg");
+            
+            eprintln!("ZLUDA DEBUG: Matmul detection - src1_ssa: {}, src2_ssa: {}", src1_ssa, src2_ssa);
+            eprintln!("ZLUDA DEBUG: src1_is_arg: {}, src2_is_arg: {}", src1_is_arg, src2_is_arg);
+            
+            // Use matmul when both inputs are function arguments (indicating matrix inputs)
+            // and they are different arguments
+            src1_is_arg && src2_is_arg && (src1_ssa != src2_ssa)
+        };
+
+        if use_matmul {
+            // Generate TOSA matmul operation for matrix multiplication
+            eprintln!("ZLUDA DEBUG: Generating tosa.matmul for matrix multiplication");
+            
+            // TOSA matmul requires 3D tensors (batch x m x n format)
+            // We need to reshape our 2D tensors to 3D by adding a batch dimension of 1
+            
+            // First, reshape 2D inputs to 3D
+            let src1_3d_ssa = self.next_ssa_value();
+            let src2_3d_ssa = self.next_ssa_value();
+            
+            // Create the 3D tensor type (add batch dimension of 1)
+            let tensor_3d_type = format!("tensor<1x{}x{}xi32>", TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y);
+            
+            // Create shape for 3D tensor using tosa.const_shape
+            let shape_3d_ssa = self.next_ssa_value();
+            self.write_line(&format!(
+                "{} = tosa.const_shape {{values = dense<[1, {}, {}]> : tensor<3xindex>}} : () -> !tosa.shape<3>",
+                shape_3d_ssa,
+                TENSOR_BATCH_DIM_X,
+                TENSOR_BATCH_DIM_Y
+            ));
+            
+            // Reshape operations to add batch dimension
+            self.write_line(&format!(
+                "{} = tosa.reshape {}, {} : ({}, !tosa.shape<3>) -> {}",
+                src1_3d_ssa,
+                src1_ssa,
+                shape_3d_ssa,
+                src_tensor_type,
+                tensor_3d_type
+            ));
+            
+            self.write_line(&format!(
+                "{} = tosa.reshape {}, {} : ({}, !tosa.shape<3>) -> {}",
+                src2_3d_ssa,
+                src2_ssa,
+                shape_3d_ssa,
+                src_tensor_type,
+                tensor_3d_type
+            ));
+            
+            // Create zero-point tensors (required for TOSA matmul)
+            let a_zp_ssa = self.next_ssa_value();
+            let b_zp_ssa = self.next_ssa_value();
+            
+            self.write_line(&format!(
+                "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi32>}} : () -> tensor<1xi32>",
+                a_zp_ssa
+            ));
+            
+            self.write_line(&format!(
+                "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi32>}} : () -> tensor<1xi32>",
+                b_zp_ssa
+            ));
+            
+            // Perform 3D matmul
+            let matmul_3d_result_ssa = self.next_ssa_value();
+            self.write_line(&format!(
+                "{} = \"tosa.matmul\"({}, {}, {}, {}) : ({}, {}, tensor<1xi32>, tensor<1xi32>) -> {}",
+                matmul_3d_result_ssa,
+                src1_3d_ssa,
+                src2_3d_ssa,
+                a_zp_ssa,
+                b_zp_ssa,
+                tensor_3d_type,
+                tensor_3d_type,
+                tensor_3d_type
+            ));
+            
+            // Create shape for 2D tensor using tosa.const_shape
+            let shape_2d_ssa = self.next_ssa_value();
+            self.write_line(&format!(
+                "{} = tosa.const_shape {{values = dense<[{}, {}]> : tensor<2xindex>}} : () -> !tosa.shape<2>",
+                shape_2d_ssa,
+                TENSOR_BATCH_DIM_X,
+                TENSOR_BATCH_DIM_Y
+            ));
+            
+            // Reshape result back to 2D
+            let matmul_result_ssa = self.next_ssa_value();
+            self.write_line(&format!(
+                "{} = tosa.reshape {}, {} : ({}, !tosa.shape<2>) -> {}",
+                matmul_result_ssa,
+                matmul_3d_result_ssa,
+                shape_2d_ssa,
+                tensor_3d_type,
+                src_tensor_type
+            ));
+            
+            self.ssa_types
+                .insert(matmul_result_ssa.clone(), src_tensor_type.clone());
+            self.value_map.insert(dst, matmul_result_ssa.clone());
+            
+            return Ok(matmul_result_ssa);
+        }
+
+        // Original element-wise multiplication code
         // Check if the original type was integer
         let needs_cast_back = Self::is_integer_type(&src_tensor_type);
 
@@ -1916,8 +2027,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                         // Extract the 4th element (index 3) using tosa.slice
                         let slice_ssa = self.next_ssa_value();
                         let tensor_type = MlirType::Tensor(TensorType {
-                            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-                            vlen: None,
+                            dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
                             ty: BasicType::I32,
                         });
                         let tensor_type_str = tensor_type.to_string();
@@ -3101,8 +3211,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // FMA is typically for floating point, but decompose into mul + add for TOSA  
         let tensor_type_str = self.get_default_tensor_type();
         let tensor_type = MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-            vlen: None,
+            dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
             ty: BasicType::F32,
         });
         let temp_ssa = self.next_ssa_value();
@@ -3559,8 +3668,7 @@ nan2_not_ssa, nan2_ssa, pred_type, pred_type
 
         self.value_map.insert(dst, dst_ssa.clone());
         let i1_tensor = MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-            vlen: None,
+            dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
             ty: BasicType::I1,
         });
         self.ssa_types.insert(dst_ssa.clone(), i1_tensor);
@@ -4106,8 +4214,7 @@ nan2_not_ssa, nan2_ssa, pred_type, pred_type
 
         self.value_map.insert(dst, dst_ssa.clone());
         let clz_type = MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-            vlen: None,
+            dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
             ty: BasicType::I32,
         });
         self.ssa_types.insert(dst_ssa.clone(), clz_type);
@@ -4173,9 +4280,7 @@ nan2_not_ssa, nan2_ssa, pred_type, pred_type
                 // This is a simplification for now
                 let total_size: i64 = dimensions.iter().map(|d| *d as i64).product();
                 Ok(MlirType::Tensor(TensorType {
-                    x: TENSOR_BATCH_DIM_X,
-                    y: TENSOR_BATCH_DIM_Y,
-                    vlen: Some(total_size),
+                    dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y, total_size],
                     ty: Self::ptx_scalar_to_basic_type(*scalar_type),
                 }))
             }
@@ -4196,41 +4301,35 @@ nan2_not_ssa, nan2_ssa, pred_type, pred_type
 
     fn get_default_tensor_type(&self) -> MlirType {
         MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-            vlen: None,
+            dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
             ty: BasicType::F32,
         })
     }
 
     fn get_integer_tensor_type(&self) -> MlirType {
         MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-            vlen: None,
+            dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
             ty: BasicType::I32,
         })
     }
 
     fn get_scalar_tensor_type(&self, scalar_type: ast::ScalarType) -> MlirType {
         MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-            vlen: None,
+            dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
             ty: Self::ptx_scalar_to_basic_type(scalar_type),
         })
     }
 
     fn get_vector_tensor_type(&self, len: u8, scalar_type: ast::ScalarType) -> MlirType {
         MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM_X,
-            y: TENSOR_BATCH_DIM_Y,
-            vlen: Some(len as i64),
+            dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y, len as i64],
             ty: Self::ptx_scalar_to_basic_type(scalar_type),
         })
     }
 
     fn get_i8_tensor_type(&self) -> MlirType {
         MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM_X, y: TENSOR_BATCH_DIM_Y,
-            vlen: None,
+            dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
             ty: BasicType::I8,
         })
     }
@@ -4242,9 +4341,7 @@ nan2_not_ssa, nan2_ssa, pred_type, pred_type
 
     fn get_predicate_tensor_type(&self) -> MlirType {
         MlirType::Tensor(TensorType {
-            x: TENSOR_BATCH_DIM_X,
-            y: TENSOR_BATCH_DIM_Y,
-            vlen: None,
+            dims: vec![TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y],
             ty: BasicType::I1,
         })
     }

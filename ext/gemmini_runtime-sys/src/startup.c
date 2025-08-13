@@ -62,7 +62,7 @@ extern void _mlir_ciface_matmul_kernel(memref_2d_f32_t* input1, memref_2d_f32_t*
 extern void _mlir_ciface_atom_add_float(memref_2d_f32_t* input1, memref_2d_f32_t* input2, memref_2d_f32_t* output) __attribute__((weak));
 extern void _mlir_ciface_xor(memref_2d_f32_t* result, memref_2d_f32_t* input1, memref_2d_f32_t* input2) __attribute__((weak));
 extern void _mlir_ciface_and(memref_2d_f32_t* result, memref_2d_f32_t* input1, memref_2d_f32_t* input2) __attribute__((weak));
-extern void _mlir_ciface_add(memref_2d_f32_t* input1, memref_2d_f32_t* input2, memref_2d_f32_t* output) __attribute__((weak));
+extern void _mlir_ciface_add(memref_2d_f32_t* result, memref_2d_f32_t* input) __attribute__((weak));
 // External symbols for input data embedded in the executable
 extern uint8_t __input_data_start[] __attribute__((weak));
 extern uint8_t __input_data_end[] __attribute__((weak));
@@ -283,7 +283,16 @@ int main() {
     } else if (_mlir_ciface_add) {
         const char* add_msg = "GEMMINI_KERNEL: Found add\n";
         write(1, add_msg, strlen__(add_msg));
-        _mlir_ciface_add(&input1_desc, &input2_desc, &output_desc);
+        
+        memref_2d_f32_t result_desc;
+        _mlir_ciface_add(&result_desc, &input1_desc);  // ADD is unary - only takes one input
+        
+        // Copy result to output buffer
+        uint8_t* result_data = (uint8_t*)result_desc.aligned_data;
+        int copy_size = dim1 * dim2 * sizeof(float);
+        for (int i = 0; i < copy_size; i++) {
+            output_buffer[i] = result_data[i];
+        }
     }
     
     write_output_data(output_buffer, OUTPUT_BUFFER_SIZE);
