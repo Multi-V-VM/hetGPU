@@ -1823,8 +1823,11 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             let src1_3d_ssa = self.next_ssa_value();
             let src2_3d_ssa = self.next_ssa_value();
             
+            // Get the element type from the source tensor
+            let element_type = Self::get_element_type(&src_tensor_type);
+            
             // Create the 3D tensor type (add batch dimension of 1)
-            let tensor_3d_type = format!("tensor<1x{}x{}xi32>", TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y);
+            let tensor_3d_type = format!("tensor<1x{}x{}x{}>", TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y, element_type);
             
             // Create shape for 3D tensor using tosa.const_shape
             let shape_3d_ssa = self.next_ssa_value();
@@ -1855,23 +1858,36 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ));
             
             // Create zero-point tensors (required for TOSA matmul)
+            // For floating-point types, use floating-point zeros; for integers, use integer zeros
             let a_zp_ssa = self.next_ssa_value();
             let b_zp_ssa = self.next_ssa_value();
             
+            let zp_type = match element_type {
+                BasicType::F16 | BasicType::F32 | BasicType::F64 | BasicType::BF16 => {
+                    format!("tensor<1x{}>", element_type)
+                }
+                _ => "tensor<1xi32>".to_string()
+            };
+            
+            let zp_value = match element_type {
+                BasicType::F16 | BasicType::F32 | BasicType::F64 | BasicType::BF16 => "0.0",
+                _ => "0"
+            };
+            
             self.write_line(&format!(
-                "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi32>}} : () -> tensor<1xi32>",
-                a_zp_ssa
+                "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
+                a_zp_ssa, zp_value, zp_type, zp_type
             ));
             
             self.write_line(&format!(
-                "{} = \"tosa.const\"() {{values = dense<0> : tensor<1xi32>}} : () -> tensor<1xi32>",
-                b_zp_ssa
+                "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
+                b_zp_ssa, zp_value, zp_type, zp_type
             ));
             
             // Perform 3D matmul
             let matmul_3d_result_ssa = self.next_ssa_value();
             self.write_line(&format!(
-                "{} = \"tosa.matmul\"({}, {}, {}, {}) : ({}, {}, tensor<1xi32>, tensor<1xi32>) -> {}",
+                "{} = \"tosa.matmul\"({}, {}, {}, {}) : ({}, {}, {}, {}) -> {}",
                 matmul_3d_result_ssa,
                 src1_3d_ssa,
                 src2_3d_ssa,
@@ -1879,6 +1895,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 b_zp_ssa,
                 tensor_3d_type,
                 tensor_3d_type,
+                zp_type,
+                zp_type,
                 tensor_3d_type
             ));
             
