@@ -162,9 +162,9 @@ test_ptx!(atom_inc, [100u32], [100u32, 101u32, 0u32]);
 test_ptx!(atom_add, [2u32, 4u32], [2u32, 6u32]);
 test_ptx!(div_approx, [[1f32], [2f32]], [0.5f32]);
 test_ptx!(sqrt, [0.25f32], [0.5f32]);
-// Matrix multiplication test: for 32x32 matrices filled with same values
-// Result: each element = value_a * value_b * 32 (dot product of rows/columns)
-test_ptx!(matmul_simple, [[2i32], [3i32]], [192i32]);  // 2 * 3 * 32 = 192
+// Matrix multiplication test: for 16x16 matrices filled with same values  
+// Result: each element = value_a * value_b * 16 (dot product of rows/columns)
+test_ptx!(matmul_simple, [[2i32], [3i32]], [96i32]);  // 2 * 3 * 16 = 96
 test_ptx!(rsqrt, [0.25f64], [2f64]);
 test_ptx!(neg, [181i32], [-181i32]);
 test_ptx!(sin, [std::f32::consts::PI / 2f32], [1f32]);

@@ -13,8 +13,9 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 
 // Tensor dimensions - must match those in ptx/src/pass/emit_tosa_mlir.rs
-const TENSOR_BATCH_DIM_X: i64 = 32;
-const TENSOR_BATCH_DIM_Y: i64 = 32;
+// And must match Gemmini hardware configuration (DIM = 16)
+const TENSOR_BATCH_DIM_X: i64 = 16;
+const TENSOR_BATCH_DIM_Y: i64 = 16;
 
 // Gemmini configuration constants
 pub const GEMMINI_DIM: usize = 16;
@@ -1057,6 +1058,7 @@ fn convert_mlir_to_executable(
             --one-shot-bufferize='bufferize-function-boundaries' \
             -buffer-deallocation-pipeline \
             -convert-bufferization-to-memref \
+            -convert-linalg-to-gemmini \
             -convert-linalg-to-loops \
             -lower-affine \
             -convert-scf-to-cf \

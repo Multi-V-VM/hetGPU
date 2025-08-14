@@ -13,6 +13,12 @@ void* malloc(size_t size) {
     heap_ptr += size;
     return result;
 }
+// Simple free implementation for bare metal - just a no-op
+// Since we have a simple bump allocator, we don't actually free memory
+void free(void* ptr) {
+    // No-op: memory is not actually freed in this simple allocator
+    // This is acceptable for single-run programs
+}
 // RISC-V 64-bit multiplication helper (for systems without M extension)
 long long __muldi3(long long a, long long b) {
     // Simple multiplication - this assumes the processor has mul instruction
@@ -58,7 +64,7 @@ typedef struct {
 } memref_2d_f32_t;
 // External kernel function from the object file
 // Use weak symbols so missing functions don't cause link errors
-extern void _mlir_ciface_matmul_kernel(memref_2d_f32_t* input1, memref_2d_f32_t* input2, memref_2d_f32_t* output) __attribute__((weak));
+extern void _mlir_ciface_matmul_simple(memref_2d_f32_t* input1, memref_2d_f32_t* input2, memref_2d_f32_t* output) __attribute__((weak));
 extern void _mlir_ciface_atom_add_float(memref_2d_f32_t* input1, memref_2d_f32_t* input2, memref_2d_f32_t* output) __attribute__((weak));
 extern void _mlir_ciface_xor(memref_2d_f32_t* result, memref_2d_f32_t* input1, memref_2d_f32_t* input2) __attribute__((weak));
 extern void _mlir_ciface_and(memref_2d_f32_t* result, memref_2d_f32_t* input1, memref_2d_f32_t* input2) __attribute__((weak));
@@ -219,10 +225,10 @@ int main() {
     const char* kernel_msg = "GEMMINI_KERNEL: Calling compiled kernel\n";
     write(1, kernel_msg, strlen__(kernel_msg));
     
-    if (_mlir_ciface_matmul_kernel) {
-        const char* matmul_msg = "GEMMINI_KERNEL: Found matmul_kernel\n";
+    if (_mlir_ciface_matmul_simple) {
+        const char* matmul_msg = "GEMMINI_KERNEL: Found matmul_simple\n";
         write(1, matmul_msg, strlen__(matmul_msg));
-        _mlir_ciface_matmul_kernel(&input1_desc, &input2_desc, &output_desc);
+        _mlir_ciface_matmul_simple(&input1_desc, &input2_desc, &output_desc);
     } else if (_mlir_ciface_atom_add_float) {
         const char* atom_msg = "GEMMINI_KERNEL: Found atom_add_float\n";
         write(1, atom_msg, strlen__(atom_msg));
@@ -286,7 +292,7 @@ int main() {
         
         memref_2d_f32_t result_desc;
         _mlir_ciface_add(&result_desc, &input1_desc);  // ADD is unary - only takes one input
-        
+         
         // Copy result to output buffer
         uint8_t* result_data = (uint8_t*)result_desc.aligned_data;
         int copy_size = dim1 * dim2 * sizeof(float);
