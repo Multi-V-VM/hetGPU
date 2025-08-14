@@ -1799,7 +1799,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Check if we should use matrix multiplication
         // For now, detect based on whether both sources are function arguments
         // This is a simple heuristic - in matmul_simple, both inputs come from function arguments
-        let use_matmul = {
+        let mut use_matmul = {
             // Check if both sources are function arguments (they start with %arg)
             let src1_is_arg = src1_ssa.starts_with("%arg");
             let src2_is_arg = src2_ssa.starts_with("%arg");
@@ -1813,110 +1813,55 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         };
 
         if use_matmul {
-            // Generate TOSA matmul operation for matrix multiplication
-            eprintln!("ZLUDA DEBUG: Generating tosa.matmul for matrix multiplication");
-            
-            // TOSA matmul requires 3D tensors (batch x m x n format)
-            // We need to reshape our 2D tensors to 3D by adding a batch dimension of 1
-            
-            // First, reshape 2D inputs to 3D
-            let src1_3d_ssa = self.next_ssa_value();
-            let src2_3d_ssa = self.next_ssa_value();
+            // Generate linalg.matmul directly for 2D matrix multiplication
+            eprintln!("ZLUDA DEBUG: Generating linalg.matmul for matrix multiplication");
             
             // Get the element type from the source tensor
             let element_type = Self::get_element_type(&src_tensor_type);
             
-            // Create the 3D tensor type (add batch dimension of 1)
-            let tensor_3d_type = format!("tensor<1x{}x{}x{}>", TENSOR_BATCH_DIM_X, TENSOR_BATCH_DIM_Y, element_type);
-            
-            // Create shape for 3D tensor using tosa.const_shape
-            let shape_3d_ssa = self.next_ssa_value();
-            self.write_line(&format!(
-                "{} = tosa.const_shape {{values = dense<[1, {}, {}]> : tensor<3xindex>}} : () -> !tosa.shape<3>",
-                shape_3d_ssa,
-                TENSOR_BATCH_DIM_X,
-                TENSOR_BATCH_DIM_Y
-            ));
-            
-            // Reshape operations to add batch dimension
-            self.write_line(&format!(
-                "{} = tosa.reshape {}, {} : ({}, !tosa.shape<3>) -> {}",
-                src1_3d_ssa,
-                src1_ssa,
-                shape_3d_ssa,
-                src_tensor_type,
-                tensor_3d_type
-            ));
-            
-            self.write_line(&format!(
-                "{} = tosa.reshape {}, {} : ({}, !tosa.shape<3>) -> {}",
-                src2_3d_ssa,
-                src2_ssa,
-                shape_3d_ssa,
-                src_tensor_type,
-                tensor_3d_type
-            ));
-            
-            // Create zero-point tensors (required for TOSA matmul)
-            // For floating-point types, use floating-point zeros; for integers, use integer zeros
-            let a_zp_ssa = self.next_ssa_value();
-            let b_zp_ssa = self.next_ssa_value();
-            
-            let zp_type = match element_type {
+            // Create initial value for matmul accumulator (0 for the appropriate type)
+            let init_value_ssa = self.next_ssa_value();
+            let init_value = match element_type {
                 BasicType::F16 | BasicType::F32 | BasicType::F64 | BasicType::BF16 => {
-                    format!("tensor<1x{}>", element_type)
+                    format!("{} = arith.constant 0.0 : {}", init_value_ssa, element_type)
                 }
-                _ => "tensor<1xi32>".to_string()
+                _ => {
+                    format!("{} = arith.constant 0 : {}", init_value_ssa, element_type)
+                }
             };
+            self.write_line(&init_value);
             
-            let zp_value = match element_type {
-                BasicType::F16 | BasicType::F32 | BasicType::F64 | BasicType::BF16 => "0.0",
-                _ => "0"
-            };
-            
+            // Create empty tensor for output (same shape as inputs: 32x32)
+            let empty_tensor_ssa = self.next_ssa_value();
             self.write_line(&format!(
-                "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
-                a_zp_ssa, zp_value, zp_type, zp_type
+                "{} = tensor.empty() : {}",
+                empty_tensor_ssa,
+                src_tensor_type
             ));
             
+            // Fill tensor with initial value
+            let filled_tensor_ssa = self.next_ssa_value();
             self.write_line(&format!(
-                "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
-                b_zp_ssa, zp_value, zp_type, zp_type
+                "{} = linalg.fill ins({} : {}) outs({} : {}) -> {}",
+                filled_tensor_ssa,
+                init_value_ssa,
+                element_type,
+                empty_tensor_ssa,
+                src_tensor_type,
+                src_tensor_type
             ));
             
-            // Perform 3D matmul
-            let matmul_3d_result_ssa = self.next_ssa_value();
-            self.write_line(&format!(
-                "{} = \"tosa.matmul\"({}, {}, {}, {}) : ({}, {}, {}, {}) -> {}",
-                matmul_3d_result_ssa,
-                src1_3d_ssa,
-                src2_3d_ssa,
-                a_zp_ssa,
-                b_zp_ssa,
-                tensor_3d_type,
-                tensor_3d_type,
-                zp_type,
-                zp_type,
-                tensor_3d_type
-            ));
-            
-            // Create shape for 2D tensor using tosa.const_shape
-            let shape_2d_ssa = self.next_ssa_value();
-            self.write_line(&format!(
-                "{} = tosa.const_shape {{values = dense<[{}, {}]> : tensor<2xindex>}} : () -> !tosa.shape<2>",
-                shape_2d_ssa,
-                TENSOR_BATCH_DIM_X,
-                TENSOR_BATCH_DIM_Y
-            ));
-            
-            // Reshape result back to 2D
+            // Perform 2D matmul using linalg.matmul (not batch_matmul)
             let matmul_result_ssa = self.next_ssa_value();
             self.write_line(&format!(
-                "{} = tosa.reshape {}, {} : ({}, !tosa.shape<2>) -> {}",
+                "{} = linalg.matmul ins({}, {} : {}, {}) outs({} : {}) -> {}",
                 matmul_result_ssa,
-                matmul_3d_result_ssa,
-                shape_2d_ssa,
-                tensor_3d_type,
+                src1_ssa,
+                src2_ssa,
+                src_tensor_type,
+                src_tensor_type,
+                filled_tensor_ssa,
+                src_tensor_type,
                 src_tensor_type
             ));
             
