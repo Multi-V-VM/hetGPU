@@ -79,8 +79,9 @@ pub fn load_original_functions() {
 
 // Wrapped NCCL functions with fault tolerance
 
-#[no_mangle]
-pub unsafe extern "C" fn ncclCommInitRank(
+// Commented out to avoid duplicate symbol with nccl_fault_tolerant.rs
+// Use nccl_fault_tolerant.rs version instead
+pub unsafe extern "C" fn ncclCommInitRank_hooks(
     comm: *mut ncclComm_t,
     nranks: c_int,
     commId: ncclUniqueId,
@@ -153,8 +154,9 @@ pub unsafe extern "C" fn ncclCommInitAll(
     result
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ncclCommDestroy(comm: ncclComm_t) -> ncclResult_t {
+// Commented out to avoid duplicate symbol with nccl_fault_tolerant.rs
+// Use nccl_fault_tolerant.rs version instead
+pub unsafe extern "C" fn ncclCommDestroy_hooks(comm: ncclComm_t) -> ncclResult_t {
     eprintln!("[NCCL Hook] ncclCommDestroy called");
     
     // Call original function
@@ -191,7 +193,7 @@ pub unsafe extern "C" fn ncclCommCount(
 #[no_mangle]
 pub unsafe extern "C" fn ncclCommAbort(comm: ncclComm_t) -> ncclResult_t {
     eprintln!("[NCCL Hook] ncclCommAbort called");
-    ncclCommDestroy(comm)
+    ncclCommDestroy_hooks(comm)
 }
 
 #[no_mangle]
@@ -231,8 +233,9 @@ pub unsafe extern "C" fn ncclCommDeregister(
     ncclResult_t::ncclSuccess
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ncclAllReduce(
+// Commented out to avoid duplicate symbol with nccl_fault_tolerant.rs
+// Use nccl_fault_tolerant.rs version instead
+pub unsafe extern "C" fn ncclAllReduce_hooks(
     sendbuff: *const c_void,
     recvbuff: *mut c_void,
     count: usize,
@@ -285,8 +288,9 @@ pub unsafe extern "C" fn ncclAllReduce(
     result
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ncclBroadcast(
+// Commented out to avoid duplicate symbol with nccl_fault_tolerant.rs
+// Use nccl_fault_tolerant.rs version instead
+pub unsafe extern "C" fn ncclBroadcast_hooks(
     sendbuff: *const c_void,
     recvbuff: *mut c_void,
     count: usize,
@@ -359,8 +363,9 @@ pub unsafe extern "C" fn ncclReduce(
     result
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn ncclGetErrorString(result: ncclResult_t) -> *const c_char {
+// Commented out to avoid duplicate symbol with nccl_fault_tolerant.rs
+// Use nccl_fault_tolerant.rs version instead
+pub unsafe extern "C" fn ncclGetErrorString_hooks(result: ncclResult_t) -> *const c_char {
     if let Some(ref funcs) = ORIGINAL_FUNCTIONS {
         if let Some(orig_fn) = funcs.ncclGetErrorString {
             return orig_fn(result);

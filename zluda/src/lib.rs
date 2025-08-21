@@ -250,3 +250,171 @@ pub unsafe extern "C" fn cudaMemcpy(dst: *mut std::ffi::c_void, src: *const std:
 pub unsafe extern "C" fn cudaMemset(devPtr: *mut std::ffi::c_void, value: std::ffi::c_int, count: usize) -> cuda_types::cuda::CUresult {
     crate::r#impl::nvidia_backend::cudaMemset(devPtr, value, count)
 }
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaGetDevice(device: *mut std::ffi::c_int) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaGetDevice(device)
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaSetDevice(device: std::ffi::c_int) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaSetDevice(device)
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaGetDeviceCount(count: *mut std::ffi::c_int) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaGetDeviceCount(count)
+}
+
+// CUDA Stream 管理函数
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaStreamCreate(pStream: *mut *mut std::ffi::c_void) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaStreamCreate(pStream)
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaStreamDestroy(stream: *mut std::ffi::c_void) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaStreamDestroy(stream)
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaStreamSynchronize(stream: *mut std::ffi::c_void) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaStreamSynchronize(stream)
+}
+
+// CUDA 内存信息函数
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaMemGetInfo(free: *mut usize, total: *mut usize) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaMemGetInfo(free, total)
+}
+
+// CUDA 设备属性函数
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaGetDeviceProperties(prop: *mut std::ffi::c_void, device: std::ffi::c_int) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaGetDeviceProperties(prop, device)
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaGetDeviceProperties_v2(prop: *mut std::ffi::c_void, device: std::ffi::c_int) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaGetDeviceProperties(prop, device)
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaDeviceGetAttribute(value: *mut std::ffi::c_int, attr: std::ffi::c_int, device: std::ffi::c_int) -> cuda_types::cuda::CUresult {
+    crate::r#impl::nvidia_backend::cudaDeviceGetAttribute(value, attr, device)
+}
+
+// CUDA Error handling functions
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaGetErrorString(error: std::ffi::c_int) -> *const std::ffi::c_char {
+    crate::r#impl::nvidia_backend::cudaGetErrorString(error)
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn cudaGetErrorName(error: std::ffi::c_int) -> *const std::ffi::c_char {
+    crate::r#impl::nvidia_backend::cudaGetErrorName(error)
+}
+
+// NCCL Live Migration Functions
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn ncclCommInitRank(
+    comm: *mut *mut std::ffi::c_void,
+    nranks: std::ffi::c_int,
+    comm_id: *const u8,  // 修正为指针，匹配C调用约定
+    rank: std::ffi::c_int
+) -> std::ffi::c_int {
+    eprintln!("[NCCL-LibEntry] ncclCommInitRank called: rank={}, nranks={}", rank, nranks);
+    
+    // 将指针转换为128字节数组
+    let mut comm_id_array = [0u8; 128];
+    if !comm_id.is_null() {
+        std::ptr::copy_nonoverlapping(comm_id, comm_id_array.as_mut_ptr(), 128);
+        eprintln!("[NCCL-LibEntry] comm_id first 8 bytes: {:?}", &comm_id_array[0..8]);
+    }
+    
+    // 调用实时迁移系统
+    crate::r#impl::nccl_live_migration::ncclCommInitRank_with_fault_tolerance(
+        comm,
+        nranks,
+        comm_id_array,
+        rank
+    ) as std::ffi::c_int
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn ncclAllReduce(
+    sendbuff: *const std::ffi::c_void,
+    recvbuff: *mut std::ffi::c_void,
+    count: usize,
+    datatype: std::ffi::c_int,
+    op: std::ffi::c_int,
+    comm: *mut std::ffi::c_void,
+    stream: *mut std::ffi::c_void
+) -> std::ffi::c_int {
+    eprintln!("[NCCL-LibEntry] ncclAllReduce called with count={}", count);
+    
+    // 转换参数类型并调用实时迁移系统
+    let nccl_datatype = match datatype {
+        0 => crate::r#impl::nccl_live_migration::NcclDataType::Int8,
+        1 => crate::r#impl::nccl_live_migration::NcclDataType::Uint8,
+        2 => crate::r#impl::nccl_live_migration::NcclDataType::Int32,
+        3 => crate::r#impl::nccl_live_migration::NcclDataType::Uint32,
+        4 => crate::r#impl::nccl_live_migration::NcclDataType::Int64,
+        5 => crate::r#impl::nccl_live_migration::NcclDataType::Uint64,
+        6 => crate::r#impl::nccl_live_migration::NcclDataType::Float16,
+        7 => crate::r#impl::nccl_live_migration::NcclDataType::Float32,
+        8 => crate::r#impl::nccl_live_migration::NcclDataType::Float64,
+        _ => crate::r#impl::nccl_live_migration::NcclDataType::Float32,
+    };
+    
+    let nccl_op = match op {
+        0 => crate::r#impl::nccl_live_migration::NcclRedOp::Sum,
+        1 => crate::r#impl::nccl_live_migration::NcclRedOp::Prod,
+        2 => crate::r#impl::nccl_live_migration::NcclRedOp::Max,
+        3 => crate::r#impl::nccl_live_migration::NcclRedOp::Min,
+        4 => crate::r#impl::nccl_live_migration::NcclRedOp::Avg,
+        _ => crate::r#impl::nccl_live_migration::NcclRedOp::Sum,
+    };
+    
+    crate::r#impl::nccl_live_migration::ncclAllReduce_with_fault_tolerance(
+        sendbuff,
+        recvbuff,
+        count,
+        nccl_datatype,
+        nccl_op,
+        comm,
+        stream,
+    ) as std::ffi::c_int
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn ncclBroadcast(
+    sendbuff: *const std::ffi::c_void,
+    recvbuff: *mut std::ffi::c_void,
+    count: usize,
+    datatype: std::ffi::c_int,
+    root: std::ffi::c_int,
+    comm: *mut std::ffi::c_void,
+    stream: *mut std::ffi::c_void
+) -> std::ffi::c_int {
+    use crate::r#impl::nccl_fault_tolerant::NcclDataType;
+    
+    let datatype = std::mem::transmute::<std::ffi::c_int, NcclDataType>(datatype);
+    
+    crate::r#impl::nccl_fault_tolerant::ncclBroadcast(
+        sendbuff, recvbuff, count, datatype, root, comm as usize, stream
+    ) as std::ffi::c_int
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn ncclCommDestroy(comm: *mut std::ffi::c_void) -> std::ffi::c_int {
+    crate::r#impl::nccl_fault_tolerant::ncclCommDestroy(comm as usize) as std::ffi::c_int
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn ncclGetErrorString(result: std::ffi::c_int) -> *const std::ffi::c_char {
+    use crate::r#impl::nccl_fault_tolerant::NcclResult;
+    
+    let result = std::mem::transmute::<std::ffi::c_int, NcclResult>(result);
+    crate::r#impl::nccl_fault_tolerant::ncclGetErrorString(result)
+}

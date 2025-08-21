@@ -22,6 +22,7 @@ ptx = { path = "../ptx" }
 cuda_types = { path = "../cuda_types" }
 cuda_base = { path = "../cuda_base" }
 lazy_static = "1.4"
+libloading = "0.8"
 num_enum = "0.4"
 lz4-sys = "1.9"
 tempfile = "3"
@@ -33,6 +34,7 @@ tt_runtime_sys = { path = "../ext/tt_runtime-sys" }
 tt_comgr_sys = { path = "../ext/tt_comgr-sys" }
 libc = "0.2"
 rand = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["heapapi", "std"] }

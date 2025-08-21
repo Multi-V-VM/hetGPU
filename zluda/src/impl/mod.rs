@@ -18,6 +18,9 @@ pub(super) mod nvidia_backend;
 pub(super) mod simple_memory_tracer;
 pub(super) mod nccl_fault_tolerance;
 pub(super) mod nccl_hooks;
+pub(super) mod nccl_live_migration;
+pub(super) mod nccl_fault_tolerant;
+pub(super) mod process_fault_tolerance;
 
 #[cfg(feature = "intel")]
 pub mod ze_device;
@@ -171,8 +174,6 @@ impl<'a> FromCuda<'a, CUfunction_attribute> for ze_kernel_desc_t {
             // This is a placeholder - actual implementation will depend on attributes
             _ => return Err(CUerror::NOT_SUPPORTED),
         }
-
-        Ok(desc)
     }
 }
 
