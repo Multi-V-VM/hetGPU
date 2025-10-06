@@ -11,8 +11,8 @@ use super::*;
 //   pass, so we do nothing there
 pub(super) fn run<'a, 'input>(
     resolver: &mut GlobalStringIdentResolver2<'input>,
-    directives: Vec<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>>,
-) -> Result<Vec<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>>, TranslateError> {
+    directives: Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>,
+) -> Result<Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>, TranslateError> {
     directives
         .into_iter()
         .map(|directive| run_directive(resolver, directive))
@@ -21,8 +21,8 @@ pub(super) fn run<'a, 'input>(
 
 fn run_directive<'a, 'input>(
     resolver: &mut GlobalStringIdentResolver2<'input>,
-    directive: Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>,
-) -> Result<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
+    directive: Directive2<ast::Instruction<SpirvWord>, SpirvWord>,
+) -> Result<Directive2<ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
     Ok(match directive {
         var @ Directive2::Variable(..) => var,
         Directive2::Method(method) => {
@@ -34,27 +34,26 @@ fn run_directive<'a, 'input>(
 
 fn run_method<'a, 'input>(
     mut visitor: InsertMemSSAVisitor<'a, 'input>,
-    method: Function2<'input, ast::Instruction<SpirvWord>, SpirvWord>,
-) -> Result<Function2<'input, ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
-    let mut func_decl = method.func_decl;
-    let is_kernel = func_decl.name.is_kernel();
+    mut method: Function2<ast::Instruction<SpirvWord>, SpirvWord>,
+) -> Result<Function2<ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
+    let is_kernel = method.is_kernel;
     if is_kernel {
-        for arg in func_decl.input_arguments.iter_mut() {
+        for arg in method.input_arguments.iter_mut() {
             let old_name = arg.name;
-            let old_space = arg.state_space;
+            let old_space = arg.info.state_space;
             let new_space = ast::StateSpace::ParamEntry;
             let new_name = visitor
                 .resolver
-                .register_unnamed(Some((arg.v_type.clone(), new_space)));
+                .register_unnamed(Some((arg.info.v_type.clone(), new_space)));
             visitor.input_argument(old_name, new_name, old_space)?;
             arg.name = new_name;
-            arg.state_space = new_space;
+            arg.info.state_space = new_space;
         }
     };
-    for arg in func_decl.return_arguments.iter_mut() {
+    for arg in method.return_arguments.iter_mut() {
         visitor.visit_variable(arg)?;
     }
-    let return_arguments = &func_decl.return_arguments[..];
+    let return_arguments = &method.return_arguments[..];
     let body = method
         .body
         .map(move |statements| {
@@ -65,14 +64,7 @@ fn run_method<'a, 'input>(
             Ok::<_, TranslateError>(result)
         })
         .transpose()?;
-    Ok(Function2 {
-        func_decl: func_decl,
-        globals: method.globals,
-        body,
-        import_as: method.import_as,
-        tuning: method.tuning,
-        linkage: method.linkage,
-    })
+    Ok(Function2 { body, ..method })
 }
 
 fn run_statement<'a, 'input>(
@@ -91,10 +83,10 @@ fn run_statement<'a, 'input>(
                     return_arguments
                         .iter()
                         .map(|arg| {
-                            if arg.state_space != ast::StateSpace::Local {
+                            if arg.info.state_space != ast::StateSpace::Local {
                                 return Err(error_unreachable());
                             }
-                            Ok((arg.name, arg.v_type.clone()))
+                            Ok((arg.name, arg.info.v_type.clone()))
                         })
                         .collect::<Result<Vec<_>, _>>()?,
                 )
@@ -117,6 +109,13 @@ fn run_statement<'a, 'input>(
         }
         Statement::Instruction(ast::Instruction::St { data, arguments }) => {
             let instruction = visitor.visit_st(data, arguments)?;
+            let instruction = ast::visit_map(instruction, visitor)?;
+            result.extend(visitor.pre.drain(..).map(Statement::Instruction));
+            result.push(Statement::Instruction(instruction));
+            result.extend(visitor.post.drain(..).map(Statement::Instruction));
+        }
+        Statement::Instruction(ast::Instruction::Mov { data, arguments }) => {
+            let instruction = visitor.visit_mov(data, arguments);
             let instruction = ast::visit_map(instruction, visitor)?;
             result.extend(visitor.pre.drain(..).map(Statement::Instruction));
             result.push(Statement::Instruction(instruction));
@@ -301,8 +300,39 @@ impl<'a, 'input> InsertMemSSAVisitor<'a, 'input> {
         })
     }
 
+    fn visit_mov(
+        &mut self,
+        data: ptx_parser::MovDetails,
+        mut arguments: ptx_parser::MovArgs<SpirvWord>,
+    ) -> ast::Instruction<SpirvWord> {
+        if let Some(remap) = self.variables.get(&arguments.src) {
+            match remap {
+                RemapAction::PreLdPostSt { .. } => {}
+                RemapAction::LDStSpaceChange {
+                    name, new_space, ..
+                } => {
+                    let generic_var = self
+                        .resolver
+                        .register_unnamed(Some((data.typ.clone(), ast::StateSpace::Reg)));
+                    self.pre.push(ast::Instruction::Cvta {
+                        data: ast::CvtaDetails {
+                            state_space: *new_space,
+                            direction: ast::CvtaDirection::ExplicitToGeneric,
+                        },
+                        arguments: ast::CvtaArgs {
+                            dst: generic_var,
+                            src: *name,
+                        },
+                    });
+                    arguments.src = generic_var;
+                }
+            }
+        }
+        ast::Instruction::Mov { data, arguments }
+    }
+
     fn visit_variable(&mut self, var: &mut ast::Variable<SpirvWord>) -> Result<(), TranslateError> {
-        let old_space = match var.state_space {
+        let old_space = match var.info.state_space {
             space @ (ptx_parser::StateSpace::Reg | ptx_parser::StateSpace::Param) => space,
             // Do nothing
             ptx_parser::StateSpace::Local => return Ok(()),
@@ -318,25 +348,12 @@ impl<'a, 'input> InsertMemSSAVisitor<'a, 'input> {
         };
         let old_name = var.name;
         let new_space = ast::StateSpace::Local;
-
-        // Preserve the original PTX variable name when converting from reg to local
-        let new_name = if let Some(old_entry) = self.resolver.ident_map.get(&old_name) {
-            if let Some(ref original_name) = old_entry.name {
-                // Register the new variable with the same name as the original PTX variable
-                self.resolver
-                    .register_named(original_name.clone(), Some((var.v_type.clone(), new_space)))
-            } else {
-                self.resolver
-                    .register_unnamed(Some((var.v_type.clone(), new_space)))
-            }
-        } else {
-            self.resolver
-                .register_unnamed(Some((var.v_type.clone(), new_space)))
-        };
-
-        self.variable(&var.v_type, old_name, new_name, old_space)?;
+        let new_name = self
+            .resolver
+            .register_unnamed(Some((var.info.v_type.clone(), new_space)));
+        self.variable(&var.info.v_type, old_name, new_name, old_space)?;
         var.name = new_name;
-        var.state_space = new_space;
+        var.info.state_space = new_space;
         Ok(())
     }
 }

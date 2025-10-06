@@ -1,0 +1,595 @@
+use super::*;
+use smallvec::*;
+
+pub(super) fn run<'input>(
+    resolver: &mut GlobalStringIdentResolver2<'input>,
+    directives: Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>,
+) -> Result<Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>, TranslateError> {
+    let mut fn_declarations = FxHashMap::default();
+    let remapped_directives = directives
+        .into_iter()
+        .map(|directive| run_directive(resolver, &mut fn_declarations, directive))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut result = fn_declarations
+        .into_iter()
+        .map(|(_, (return_arguments, name, input_arguments))| {
+            Directive2::Method(Function2 {
+                return_arguments,
+                name: name,
+                input_arguments,
+                body: None,
+                import_as: None,
+                tuning: Vec::new(),
+                linkage: ast::LinkingDirective::EXTERN,
+                is_kernel: false,
+                flush_to_zero_f32: false,
+                flush_to_zero_f16f64: false,
+                rounding_mode_f32: ptx_parser::RoundingMode::NearestEven,
+                rounding_mode_f16f64: ptx_parser::RoundingMode::NearestEven,
+            })
+        })
+        .collect::<Vec<_>>();
+    result.extend(remapped_directives);
+    Ok(result)
+}
+
+fn run_directive<'input>(
+    resolver: &mut GlobalStringIdentResolver2<'input>,
+    fn_declarations: &mut FxHashMap<
+        Cow<'input, str>,
+        (
+            Vec<ast::Variable<SpirvWord>>,
+            SpirvWord,
+            Vec<ast::Variable<SpirvWord>>,
+        ),
+    >,
+    directive: Directive2<ast::Instruction<SpirvWord>, SpirvWord>,
+) -> Result<Directive2<ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
+    Ok(match directive {
+        var @ Directive2::Variable(..) => var,
+        Directive2::Method(mut method) => {
+            method.body = method
+                .body
+                .map(|statements| run_statements(resolver, fn_declarations, statements))
+                .transpose()?;
+            Directive2::Method(method)
+        }
+    })
+}
+
+fn get_or_declare_function<'input, S: Into<Cow<'input, str>>>(
+    resolver: &mut GlobalStringIdentResolver2<'input>,
+    fn_declarations: &mut HashMap<
+        Cow<'input, str>,
+        (
+            Vec<ptx_parser::Variable<SpirvWord>>,
+            SpirvWord,
+            Vec<ptx_parser::Variable<SpirvWord>>,
+        ),
+        rustc_hash::FxBuildHasher,
+    >,
+    name: S,
+    return_arguments: &Vec<(ptx_parser::Type, ptx_parser::StateSpace)>,
+    input_arguments: &Vec<(ptx_parser::Type, ptx_parser::StateSpace)>,
+) -> SpirvWord {
+    let func = match fn_declarations.entry(name.into()) {
+        hash_map::Entry::Occupied(occupied_entry) => occupied_entry.get().1,
+        hash_map::Entry::Vacant(vacant_entry) => {
+            let name = vacant_entry.key().clone();
+            let full_name = [ZLUDA_PTX_PREFIX, &*name].concat();
+            let name = resolver.register_named(Cow::Owned(full_name.clone()), None);
+            vacant_entry.insert((
+                to_variables(resolver, return_arguments),
+                name,
+                to_variables(resolver, input_arguments),
+            ));
+            name
+        }
+    };
+    func
+}
+
+fn run_statements<'input>(
+    resolver: &mut GlobalStringIdentResolver2<'input>,
+    fn_declarations: &mut FxHashMap<
+        Cow<'input, str>,
+        (
+            Vec<ast::Variable<SpirvWord>>,
+            SpirvWord,
+            Vec<ast::Variable<SpirvWord>>,
+        ),
+    >,
+    statements: Vec<Statement<ast::Instruction<SpirvWord>, SpirvWord>>,
+) -> Result<Vec<Statement<ast::Instruction<SpirvWord>, SpirvWord>>, TranslateError> {
+    statements
+        .into_iter()
+        .map(|statement| {
+            Ok::<SmallVec<[_; 3]>, _>(match statement {
+                Statement::Instruction(ast::Instruction::ShflSync {
+                    data,
+                    arguments:
+                        ast::ShflSyncArgs {
+                            dst_pred: Some(dst_pred),
+                            dst,
+                            src,
+                            src_lane,
+                            src_opts,
+                            src_membermask,
+                        },
+                }) => {
+                    let mode = match data.mode {
+                        ptx_parser::ShuffleMode::Up => "up",
+                        ptx_parser::ShuffleMode::Down => "down",
+                        ptx_parser::ShuffleMode::BFly => "bfly",
+                        ptx_parser::ShuffleMode::Idx => "idx",
+                    };
+                    let packed_var = resolver.register_unnamed(Some((
+                        ast::Type::Vector(2, ast::ScalarType::U32),
+                        ptx_parser::StateSpace::Reg,
+                    )));
+                    let dst_pred_wide = resolver.register_unnamed(Some((
+                        ast::Type::Scalar(ast::ScalarType::U32),
+                        ptx_parser::StateSpace::Reg,
+                    )));
+                    let name = ["shfl_sync_", mode, "_b32_pred"].concat();
+                    let return_arguments = vec![(
+                        ast::Type::Vector(2, ast::ScalarType::U32),
+                        ptx_parser::StateSpace::Reg,
+                    )];
+                    let input_arguments = vec![
+                        (
+                            ast::Type::Scalar(ast::ScalarType::U32),
+                            ptx_parser::StateSpace::Reg,
+                        ),
+                        (
+                            ast::Type::Scalar(ast::ScalarType::U32),
+                            ptx_parser::StateSpace::Reg,
+                        ),
+                        (
+                            ast::Type::Scalar(ast::ScalarType::U32),
+                            ptx_parser::StateSpace::Reg,
+                        ),
+                        (
+                            ast::Type::Scalar(ast::ScalarType::U32),
+                            ptx_parser::StateSpace::Reg,
+                        ),
+                    ];
+                    let func = get_or_declare_function(
+                        resolver,
+                        fn_declarations,
+                        name,
+                        &return_arguments,
+                        &input_arguments,
+                    );
+                    smallvec![
+                        Statement::Instruction::<_, SpirvWord>(ast::Instruction::Call {
+                            data: ptx_parser::CallDetails {
+                                uniform: false,
+                                return_arguments,
+                                input_arguments
+                            },
+                            arguments: ptx_parser::CallArgs {
+                                return_arguments: vec![packed_var],
+                                func,
+                                input_arguments: vec![src, src_lane, src_opts, src_membermask],
+                            },
+                        }),
+                        Statement::RepackVector(RepackVectorDetails {
+                            is_extract: true,
+                            typ: ast::ScalarType::U32,
+                            packed: packed_var,
+                            unpacked: vec![dst, dst_pred_wide],
+                            relaxed_type_check: false,
+                        }),
+                        Statement::Instruction(ast::Instruction::Cvt {
+                            data: ast::CvtDetails {
+                                from: ast::ScalarType::U32,
+                                to: ast::ScalarType::Pred,
+                                mode: ast::CvtMode::Truncate
+                            },
+                            arguments: ast::CvtArgs {
+                                dst: dst_pred,
+                                src: dst_pred_wide,
+                                src2: None,
+                            },
+                        })
+                    ]
+                }
+                Statement::Instruction(ast::Instruction::Cvt {
+                    data:
+                        ast::CvtDetails {
+                            from: from @ (ast::ScalarType::E4m3x2 | ast::ScalarType::E5m2x2),
+                            to: ast::ScalarType::F16x2,
+                            mode: _,
+                        },
+                    arguments:
+                        ast::CvtArgs {
+                            dst,
+                            src,
+                            src2: None,
+                        },
+                }) => {
+                    let from_str = match from {
+                        ast::ScalarType::E4m3x2 => "e4m3x2",
+                        ast::ScalarType::E5m2x2 => "e5m2x2",
+                        _ => unreachable!(),
+                    };
+                    let packed_output = resolver.register_unnamed(Some((
+                        ast::Type::Scalar(ast::ScalarType::B32),
+                        ast::StateSpace::Reg,
+                    )));
+                    let name = format!("cvt_rn_f16x2_{}", from_str);
+                    let return_arguments = vec![(
+                        ast::Type::Scalar(ast::ScalarType::B32),
+                        ast::StateSpace::Reg,
+                    )];
+                    let input_arguments = vec![(
+                        ast::Type::Scalar(ast::ScalarType::B16),
+                        ast::StateSpace::Reg,
+                    )];
+                    let func = get_or_declare_function(
+                        resolver,
+                        fn_declarations,
+                        name,
+                        &return_arguments,
+                        &input_arguments,
+                    );
+                    smallvec![
+                        Statement::Instruction::<_, SpirvWord>(ast::Instruction::Call {
+                            data: ptx_parser::CallDetails {
+                                uniform: false,
+                                return_arguments,
+                                input_arguments,
+                            },
+                            arguments: ptx_parser::CallArgs {
+                                return_arguments: vec![packed_output],
+                                func,
+                                input_arguments: vec![src],
+                            },
+                        }),
+                        Statement::Instruction(ast::Instruction::Cvt {
+                            data: ast::CvtDetails {
+                                from: ast::ScalarType::B32,
+                                to: ast::ScalarType::F16x2,
+                                mode: ast::CvtMode::Bitcast
+                            },
+                            arguments: ast::CvtArgs {
+                                dst,
+                                src: packed_output,
+                                src2: None,
+                            },
+                        })
+                    ]
+                }
+                Statement::<ast::Instruction<SpirvWord>, SpirvWord>::Instruction(instruction) => {
+                    smallvec![
+                        Statement::<ast::Instruction<SpirvWord>, SpirvWord>::Instruction(
+                            run_instruction(resolver, fn_declarations, instruction)?
+                        )
+                    ]
+                }
+                s => smallvec![s],
+            })
+        })
+        .flat_map(|result| match result {
+            Ok(vec) => vec.into_iter().map(|item| Ok(item)).collect(),
+            Err(er) => vec![Err(er)],
+        })
+        .collect::<Result<Vec<_>, _>>()
+}
+
+fn run_instruction<'input>(
+    resolver: &mut GlobalStringIdentResolver2<'input>,
+    fn_declarations: &mut FxHashMap<
+        Cow<'input, str>,
+        (
+            Vec<ast::Variable<SpirvWord>>,
+            SpirvWord,
+            Vec<ast::Variable<SpirvWord>>,
+        ),
+    >,
+    instruction: ptx_parser::Instruction<SpirvWord>,
+) -> Result<ptx_parser::Instruction<SpirvWord>, TranslateError> {
+    Ok(match instruction {
+        i @ ptx_parser::Instruction::Sqrt {
+            data:
+                ast::RcpData {
+                    kind: ast::RcpKind::Approx,
+                    type_: ast::ScalarType::F32,
+                    flush_to_zero: None | Some(false),
+                },
+            ..
+        } => to_call(resolver, fn_declarations, "sqrt_approx_f32".into(), i)?,
+        i @ ptx_parser::Instruction::Rsqrt {
+            data:
+                ast::TypeFtz {
+                    type_: ast::ScalarType::F32,
+                    flush_to_zero: None | Some(false),
+                },
+            ..
+        } => to_call(resolver, fn_declarations, "rsqrt_approx_f32".into(), i)?,
+        i @ ptx_parser::Instruction::Rcp {
+            data:
+                ast::RcpData {
+                    kind: ast::RcpKind::Approx,
+                    type_: ast::ScalarType::F32,
+                    flush_to_zero: None | Some(false),
+                },
+            ..
+        } => to_call(resolver, fn_declarations, "rcp_approx_f32".into(), i)?,
+        i @ ptx_parser::Instruction::Ex2 {
+            data:
+                ast::TypeFtz {
+                    type_: ast::ScalarType::F32,
+                    flush_to_zero: None | Some(false),
+                },
+            ..
+        } => to_call(resolver, fn_declarations, "ex2_approx_f32".into(), i)?,
+        i @ ptx_parser::Instruction::Lg2 {
+            data: ast::FlushToZero {
+                flush_to_zero: false,
+            },
+            ..
+        } => to_call(resolver, fn_declarations, "lg2_approx_f32".into(), i)?,
+        i @ ptx_parser::Instruction::Activemask { .. } => {
+            to_call(resolver, fn_declarations, "activemask".into(), i)?
+        }
+        i @ ptx_parser::Instruction::Bfe { data, .. } => {
+            let name = ["bfe_", scalar_to_ptx_name(data)].concat();
+            to_call(resolver, fn_declarations, name.into(), i)?
+        }
+        i @ ptx_parser::Instruction::Sqrt {
+            data:
+                ast::RcpData {
+                    kind: ast::RcpKind::Compliant(ast::RoundingMode::NearestEven),
+                    type_: ast::ScalarType::F32,
+                    flush_to_zero: Some(true),
+                    ..
+                },
+            ..
+        } => {
+            let name = "sqrt_rn_ftz_f32";
+            to_call(resolver, fn_declarations, name.into(), i)?
+        }
+        i @ ptx_parser::Instruction::Mma {
+            data:
+                ast::MmaDetails {
+                    alayout,
+                    blayout,
+                    dtype_scalar,
+                    atype_scalar,
+                    btype_scalar,
+                    ctype_scalar,
+                },
+            ..
+        } => {
+            let name = format!(
+                "mma_sync_aligned_m16n8k16_{}_{}_{}_{}_{}_{}",
+                match alayout {
+                    ast::MatrixLayout::Row => "row",
+                    ast::MatrixLayout::Col => "col",
+                },
+                match blayout {
+                    ast::MatrixLayout::Row => "row",
+                    ast::MatrixLayout::Col => "col",
+                },
+                scalar_to_ptx_name(dtype_scalar),
+                scalar_to_ptx_name(atype_scalar),
+                scalar_to_ptx_name(btype_scalar),
+                scalar_to_ptx_name(ctype_scalar),
+            );
+            to_call(resolver, fn_declarations, name.into(), i)?
+        }
+        i @ ptx_parser::Instruction::Sqrt {
+            data:
+                ast::RcpData {
+                    kind: ast::RcpKind::Compliant(ast::RoundingMode::NearestEven),
+                    type_: ast::ScalarType::F32,
+                    ..
+                },
+            ..
+        } => {
+            let name = "sqrt_rn_f32";
+            to_call(resolver, fn_declarations, name.into(), i)?
+        }
+        i @ ptx_parser::Instruction::Bfi { data, .. } => {
+            let name = ["bfi_", scalar_to_ptx_name(data)].concat();
+            to_call(resolver, fn_declarations, name.into(), i)?
+        }
+        i @ ptx_parser::Instruction::Bar { .. } => {
+            to_call(resolver, fn_declarations, "bar_sync".into(), i)?
+        }
+        ptx_parser::Instruction::BarRed { data, arguments } => {
+            if arguments.src_threadcount.is_some() {
+                return Err(error_todo());
+            }
+            let name = match data.pred_reduction {
+                ptx_parser::Reduction::And => "bar_red_and_pred",
+                ptx_parser::Reduction::Or => "bar_red_or_pred",
+                _ => return Err(error_unreachable()),
+            };
+            to_call(
+                resolver,
+                fn_declarations,
+                name.into(),
+                ptx_parser::Instruction::BarRed { data, arguments },
+            )?
+        }
+        ptx_parser::Instruction::Vote { data, arguments } => {
+            let mode = match data.mode {
+                ptx_parser::VoteMode::Any => "any_pred",
+                ptx_parser::VoteMode::All => "all_pred",
+                ptx_parser::VoteMode::Ballot => "ballot_b32",
+            };
+            let negate = if data.negate { "_negate" } else { "" };
+            let name = format!("vote_sync_{mode}{negate}");
+            to_call(
+                resolver,
+                fn_declarations,
+                name.into(),
+                ptx_parser::Instruction::Vote { data, arguments },
+            )?
+        }
+        ptx_parser::Instruction::ReduxSync { data, arguments } => {
+            let op = match data.reduction {
+                ptx_parser::Reduction::Add => "add",
+                ptx_parser::Reduction::Min => "min",
+                ptx_parser::Reduction::Max => "max",
+                _ => return Err(error_unreachable()),
+            };
+            let name = format!(
+                "redux_sync_{}_{}",
+                op,
+                data.type_.to_string().replace(".", "")
+            );
+            to_call(
+                resolver,
+                fn_declarations,
+                name.into(),
+                ptx_parser::Instruction::ReduxSync { data, arguments },
+            )?
+        }
+        ptx_parser::Instruction::ShflSync {
+            data,
+            arguments: orig_arguments @ ast::ShflSyncArgs { dst_pred: None, .. },
+        } => {
+            let mode = match data.mode {
+                ptx_parser::ShuffleMode::Up => "up",
+                ptx_parser::ShuffleMode::Down => "down",
+                ptx_parser::ShuffleMode::BFly => "bfly",
+                ptx_parser::ShuffleMode::Idx => "idx",
+            };
+            to_call(
+                resolver,
+                fn_declarations,
+                format!("shfl_sync_{}_b32", mode).into(),
+                ptx_parser::Instruction::ShflSync {
+                    data,
+                    arguments: orig_arguments,
+                },
+            )?
+        }
+        i @ ptx_parser::Instruction::Nanosleep { .. } => {
+            to_call(resolver, fn_declarations, "nanosleep_u32".into(), i)?
+        }
+        i @ ptx_parser::Instruction::Cvt {
+            data:
+                ptx_parser::CvtDetails {
+                    from: ast::ScalarType::F32,
+                    to: to @ (ast::ScalarType::E4m3x2 | ast::ScalarType::E5m2x2),
+                    mode: _,
+                },
+            arguments: _,
+        } => {
+            let to = match to {
+                ptx_parser::ScalarType::E4m3x2 => "e4m3x2",
+                ptx_parser::ScalarType::E5m2x2 => "e5m2x2",
+                _ => unreachable!(),
+            };
+            // Conversions from f32 to f8 must have two source arguments.
+            // satfinite is mandatory for conversions to e4m3x2.
+            to_call(
+                resolver,
+                fn_declarations,
+                format!("cvt_rn_satfinite_{}_f32", to).into(),
+                i,
+            )?
+        }
+        i @ ptx_parser::Instruction::LdMatrix { data, .. } => {
+            let shape = match data.shape {
+                ptx_parser::MatrixShape::M8n8 => "m8n8",
+                ptx_parser::MatrixShape::M16n16 => return Err(error_todo()),
+            };
+            let number = match data.number {
+                ptx_parser::MatrixNumber::X2 => "x2",
+                ptx_parser::MatrixNumber::X4 => "x4",
+                ptx_parser::MatrixNumber::X1 => return Err(error_todo()),
+            };
+            let trans = if data.transpose { "_trans" } else { "" };
+            let type_str = match data.type_ {
+                ptx_parser::ScalarType::B16 => "b16",
+                ptx_parser::ScalarType::B8 => return Err(error_todo()),
+                _ => return Err(error_unreachable()),
+            };
+
+            to_call(
+                resolver,
+                fn_declarations,
+                format!("ldmatrix_{}_{}{}_{}", shape, number, trans, type_str).into(),
+                i,
+            )?
+        }
+        i @ ptx_parser::Instruction::Prmt { .. } => {
+            to_call(resolver, fn_declarations, "prmt_b32".into(), i)?
+        }
+        i => i,
+    })
+}
+
+fn to_call<'input>(
+    resolver: &mut GlobalStringIdentResolver2<'input>,
+    fn_declarations: &mut FxHashMap<
+        Cow<'input, str>,
+        (
+            Vec<ast::Variable<SpirvWord>>,
+            SpirvWord,
+            Vec<ast::Variable<SpirvWord>>,
+        ),
+    >,
+    name: Cow<'input, str>,
+    i: ast::Instruction<SpirvWord>,
+) -> Result<ptx_parser::Instruction<SpirvWord>, TranslateError> {
+    let mut data_return = Vec::new();
+    let mut data_input = Vec::new();
+    let mut arguments_return = Vec::new();
+    let mut arguments_input = Vec::new();
+    ast::visit(&i, &mut |name: &SpirvWord,
+                         type_space: Option<(
+        &ptx_parser::Type,
+        ptx_parser::StateSpace,
+    )>,
+                         is_dst: bool,
+                         _: bool| {
+        let (type_, space) = type_space.ok_or_else(error_mismatched_type)?;
+        if is_dst {
+            data_return.push((type_.clone(), space));
+            arguments_return.push(*name);
+        } else {
+            data_input.push((type_.clone(), space));
+            arguments_input.push(*name);
+        };
+        Ok::<_, TranslateError>(())
+    })?;
+    let fn_name =
+        get_or_declare_function(resolver, fn_declarations, name, &data_return, &data_input);
+    Ok(ast::Instruction::Call {
+        data: ptx_parser::CallDetails {
+            uniform: false,
+            return_arguments: data_return,
+            input_arguments: data_input,
+        },
+        arguments: ptx_parser::CallArgs {
+            return_arguments: arguments_return,
+            func: fn_name,
+            input_arguments: arguments_input,
+        },
+    })
+}
+
+fn to_variables<'input>(
+    resolver: &mut GlobalStringIdentResolver2<'input>,
+    arguments: &Vec<(ptx_parser::Type, ptx_parser::StateSpace)>,
+) -> Vec<ptx_parser::Variable<SpirvWord>> {
+    arguments
+        .iter()
+        .map(|(type_, space)| ast::Variable {
+            info: ast::VariableInfo {
+                align: None,
+                v_type: type_.clone(),
+                state_space: *space,
+                array_init: Vec::new(),
+            },
+            name: resolver.register_unnamed(Some((type_.clone(), *space))),
+        })
+        .collect::<Vec<_>>()
+}

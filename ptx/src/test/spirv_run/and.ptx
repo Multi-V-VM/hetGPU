@@ -9,15 +9,15 @@
 {
 	.reg .u64 	    in_addr;
     .reg .u64 	    out_addr;
-    .reg .b32 	    temp1;
-    .reg .b32 	    temp2;
+    .reg .u32 	    temp1;
+    .reg .u32 	    temp2;
 
 	ld.param.u64 	in_addr, [input];
     ld.param.u64 	out_addr, [output];
 
-    ld.b32          temp1, [in_addr];
-    ld.b32          temp2, [in_addr+4];
+    ld.u32          temp1, [in_addr];
+    ld.u32          temp2, [in_addr+4];
 	and.b32		    temp1, temp1, temp2;
-    st.b32          [out_addr], temp1;
+    st.u32          [out_addr], temp1;
 	ret;
 }

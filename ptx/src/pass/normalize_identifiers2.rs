@@ -4,7 +4,7 @@ use ptx_parser as ast;
 pub(crate) fn run<'input, 'b>(
     resolver: &mut ScopedResolver<'input, 'b>,
     directives: Vec<ast::Directive<'input, ast::ParsedOperand<&'input str>>>,
-) -> Result<Vec<NormalizedDirective2<'input>>, TranslateError> {
+) -> Result<Vec<NormalizedDirective2>, TranslateError> {
     resolver.start_scope();
     let result = directives
         .into_iter()
@@ -17,7 +17,7 @@ pub(crate) fn run<'input, 'b>(
 fn run_directive<'input, 'b>(
     resolver: &mut ScopedResolver<'input, 'b>,
     directive: ast::Directive<'input, ast::ParsedOperand<&'input str>>,
-) -> Result<NormalizedDirective2<'input>, TranslateError> {
+) -> Result<NormalizedDirective2, TranslateError> {
     Ok(match directive {
         ast::Directive::Variable(linking, var) => {
             NormalizedDirective2::Variable(linking, run_variable(resolver, var)?)
@@ -32,7 +32,7 @@ fn run_method<'input, 'b>(
     resolver: &mut ScopedResolver<'input, 'b>,
     linkage: ast::LinkingDirective,
     method: ast::Function<'input, &'input str, ast::Statement<ast::ParsedOperand<&'input str>>>,
-) -> Result<NormalizedFunction2<'input>, TranslateError> {
+) -> Result<NormalizedFunction2, TranslateError> {
     let name = match method.func_directive.name {
         ast::MethodName::Kernel(name) => ast::MethodName::Kernel(name),
         ast::MethodName::Func(text) => {
@@ -50,13 +50,24 @@ fn run_method<'input, 'b>(
         })
         .transpose()?;
     resolver.end_scope();
+    let is_kernel = matches!(func_decl.name, ast::MethodName::Kernel(_));
+    let name = match func_decl.name {
+        ast::MethodName::Kernel(n) => resolver.add_or_get_in_current_scope_untyped(n)?,
+        ast::MethodName::Func(n) => n,
+    };
     Ok(Function2 {
-        func_decl,
-        globals: Vec::new(),
+        return_arguments: func_decl.return_arguments,
+        name,
+        input_arguments: func_decl.input_arguments,
         body,
+        is_kernel,
         import_as: None,
         tuning: method.tuning,
         linkage,
+        flush_to_zero_f32: false,
+        flush_to_zero_f16f64: false,
+        rounding_mode_f32: ast::RoundingMode::NearestEven,
+        rounding_mode_f16f64: ast::RoundingMode::NearestEven,
     })
 }
 
@@ -91,12 +102,23 @@ fn run_variable<'input, 'b>(
     Ok(ast::Variable {
         name: resolver.add(
             Cow::Borrowed(variable.name),
-            Some((variable.v_type.clone(), variable.state_space)),
+            Some((variable.info.v_type.clone(), variable.info.state_space)),
         )?,
-        align: variable.align,
-        v_type: variable.v_type,
-        state_space: variable.state_space,
-        array_init: variable.array_init,
+        info: ast::VariableInfo {
+            align: variable.info.align,
+            v_type: variable.info.v_type,
+            state_space: variable.info.state_space,
+            array_init: variable.info.array_init
+                .into_iter()
+                .map(|reg_or_imm| match reg_or_imm {
+                    ast::RegOrImmediate::Reg(name) => {
+                        resolver.add_or_get_in_current_scope_untyped(name)
+                            .map(ast::RegOrImmediate::Reg)
+                    }
+                    ast::RegOrImmediate::Imm(imm) => Ok(ast::RegOrImmediate::Imm(imm)),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        },
     })
 }
 
@@ -157,41 +179,65 @@ fn run_instruction<'input, 'b>(
     })
 }
 
+fn convert_array_init<'input, 'b>(
+    resolver: &mut ScopedResolver<'input, 'b>,
+    array_init: &[ast::RegOrImmediate<&'input str>],
+) -> Result<Vec<ast::RegOrImmediate<SpirvWord>>, TranslateError> {
+    array_init
+        .iter()
+        .map(|reg_or_imm| match reg_or_imm {
+            ast::RegOrImmediate::Reg(name) => {
+                resolver.add_or_get_in_current_scope_untyped(name)
+                    .map(ast::RegOrImmediate::Reg)
+            }
+            ast::RegOrImmediate::Imm(imm) => Ok(ast::RegOrImmediate::Imm(*imm)),
+        })
+        .collect::<Result<Vec<_>, _>>()
+}
+
 fn run_multivariable<'input, 'b>(
     resolver: &mut ScopedResolver<'input, 'b>,
     result: &mut Vec<NormalizedStatement>,
     variable: ast::MultiVariable<&'input str>,
 ) -> Result<(), TranslateError> {
-    match variable.count {
-        Some(count) => {
+    match variable {
+        ast::MultiVariable::Parameterized { info, name, count } => {
+            let converted_array_init = convert_array_init(resolver, &info.array_init)?;
             for i in 0..count {
-                let name = Cow::Owned(format!("{}{}", variable.var.name, i));
+                let var_name = Cow::Owned(format!("{}{}", name, i));
                 let ident = resolver.add(
-                    name,
-                    Some((variable.var.v_type.clone(), variable.var.state_space)),
+                    var_name,
+                    Some((info.v_type.clone(), info.state_space)),
                 )?;
                 result.push(Statement::Variable(ast::Variable {
-                    align: variable.var.align,
-                    v_type: variable.var.v_type.clone(),
-                    state_space: variable.var.state_space,
                     name: ident,
-                    array_init: variable.var.array_init.clone(),
+                    info: ast::VariableInfo {
+                        align: info.align,
+                        v_type: info.v_type.clone(),
+                        state_space: info.state_space,
+                        array_init: converted_array_init.clone(),
+                    },
                 }));
             }
         }
-        None => {
-            let name = Cow::Borrowed(variable.var.name);
-            let ident = resolver.add(
-                name,
-                Some((variable.var.v_type.clone(), variable.var.state_space)),
-            )?;
-            result.push(Statement::Variable(ast::Variable {
-                align: variable.var.align,
-                v_type: variable.var.v_type.clone(),
-                state_space: variable.var.state_space,
-                name: ident,
-                array_init: variable.var.array_init.clone(),
-            }));
+        ast::MultiVariable::Names { info, names } => {
+            let converted_array_init = convert_array_init(resolver, &info.array_init)?;
+            for name in names {
+                let var_name = Cow::Borrowed(name);
+                let ident = resolver.add(
+                    var_name,
+                    Some((info.v_type.clone(), info.state_space)),
+                )?;
+                result.push(Statement::Variable(ast::Variable {
+                    name: ident,
+                    info: ast::VariableInfo {
+                        align: info.align,
+                        v_type: info.v_type.clone(),
+                        state_space: info.state_space,
+                        array_init: converted_array_init.clone(),
+                    },
+                }));
+            }
         }
     }
     Ok(())

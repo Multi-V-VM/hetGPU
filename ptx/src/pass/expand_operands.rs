@@ -2,8 +2,8 @@ use super::*;
 
 pub(super) fn run<'a, 'input>(
     resolver: &mut GlobalStringIdentResolver2<'input>,
-    directives: Vec<UnconditionalDirective<'input>>,
-) -> Result<Vec<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>>, TranslateError> {
+    directives: Vec<UnconditionalDirective>,
+) -> Result<Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>, TranslateError> {
     directives
         .into_iter()
         .map(|directive| run_directive(resolver, directive))
@@ -13,11 +13,10 @@ pub(super) fn run<'a, 'input>(
 fn run_directive<'input>(
     resolver: &mut GlobalStringIdentResolver2<'input>,
     directive: Directive2<
-        'input,
         ast::Instruction<ast::ParsedOperand<SpirvWord>>,
         ast::ParsedOperand<SpirvWord>,
     >,
-) -> Result<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
+) -> Result<Directive2<ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
     Ok(match directive {
         Directive2::Variable(linking, var) => Directive2::Variable(linking, var),
         Directive2::Method(method) => Directive2::Method(run_method(resolver, method)?),
@@ -27,11 +26,10 @@ fn run_directive<'input>(
 fn run_method<'input>(
     resolver: &mut GlobalStringIdentResolver2<'input>,
     method: Function2<
-        'input,
         ast::Instruction<ast::ParsedOperand<SpirvWord>>,
         ast::ParsedOperand<SpirvWord>,
     >,
-) -> Result<Function2<'input, ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
+) -> Result<Function2<ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
     let body = method
         .body
         .map(|statements| {
@@ -43,12 +41,18 @@ fn run_method<'input>(
         })
         .transpose()?;
     Ok(Function2 {
-        func_decl: method.func_decl,
-        globals: method.globals,
         body,
+        return_arguments: method.return_arguments,
+        name: method.name,
+        input_arguments: method.input_arguments,
         import_as: method.import_as,
         tuning: method.tuning,
         linkage: method.linkage,
+        is_kernel: method.is_kernel,
+        flush_to_zero_f32: method.flush_to_zero_f32,
+        flush_to_zero_f16f64: method.flush_to_zero_f16f64,
+        rounding_mode_f32: method.rounding_mode_f32,
+        rounding_mode_f16f64: method.rounding_mode_f16f64,
     })
 }
 
@@ -226,15 +230,33 @@ impl<'a, 'input> FlattenArguments<'a, 'input> {
 
     fn vec_pack(
         &mut self,
-        vector_elements: Vec<SpirvWord>,
+        vector_elements: Vec<ast::RegOrImmediate<SpirvWord>>,
         type_space: Option<(&ast::Type, ast::StateSpace)>,
         is_dst: bool,
         relaxed_type_check: bool,
     ) -> Result<SpirvWord, TranslateError> {
         let (width, scalar_t, state_space) = match type_space {
             Some((ast::Type::Vector(width, scalar_t), space)) => (*width, *scalar_t, space),
+            Some((ast::Type::Scalar(scalar_t), space))
+                if scalar_t.kind() == ast::ScalarKind::Bit =>
+            {
+                let type_ =
+                    ast::ScalarType::from_size(scalar_t.size_of() / (vector_elements.len() as u8))
+                        .ok_or_else(|| error_mismatched_type())?;
+                (vector_elements.len() as u8, type_, space)
+            }
             _ => return Err(error_mismatched_type()),
         };
+        let vector_elements = vector_elements
+            .into_iter()
+            .map(|element| match element {
+                ast::RegOrImmediate::Reg(name) => self.reg(name),
+                ast::RegOrImmediate::Imm(immediate_value) => self.immediate(
+                    immediate_value,
+                    Some((&ast::Type::Scalar(scalar_t), state_space)),
+                ),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let temporary_vector = self
             .resolver
             .register_unnamed(Some((ast::Type::Vector(width, scalar_t), state_space)));

@@ -2,53 +2,19 @@ use super::{
     AtomSemantics, MemScope, RawRoundingMode, RawSetpCompareOp, ScalarType, SetpBoolPostOp,
     StateSpace, VectorPrefix,
 };
-use crate::{PtxError, PtxParserState};
+use crate::{
+    FunnelShiftMode, MatrixLayout, MatrixNumber, MatrixShape, Mul24Control, PtxError,
+    PtxParserState, Reduction, ShiftDirection, ShuffleMode, VoteMode,
+};
 use bitflags::bitflags;
-use std::{alloc::Layout, cmp::Ordering, num::NonZeroU8, fmt};
-use std::fmt::Debug;  
-#[derive(Debug)]
+use derive_more::Display;
+use std::{alloc::Layout, cmp::Ordering, fmt::Write, num::NonZeroU8};
+
 pub enum Statement<P: Operand> {
     Label(P::Ident),
     Variable(MultiVariable<P::Ident>),
     Instruction(Option<PredAt<P::Ident>>, Instruction<P>),
     Block(Vec<Statement<P>>),
-}
-
-impl<P: Operand + Clone> Clone for Statement<P>
-where
-    P::Ident: Clone,
-    MultiVariable<P::Ident>: Clone,
-    PredAt<P::Ident>: Clone,
-    Instruction<P>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            Statement::Label(ident) => Statement::Label(ident.clone()),
-            Statement::Variable(var) => Statement::Variable(var.clone()),
-            Statement::Instruction(pred, instr) => {
-                Statement::Instruction(pred.clone(), instr.clone())
-            }
-            Statement::Block(stmts) => Statement::Block(stmts.clone()),
-        }
-    }
-}
-
-impl<ID: Clone> Clone for MultiVariable<ID> {
-    fn clone(&self) -> Self {
-        MultiVariable {
-            var: self.var.clone(),
-            count: self.count,
-        }
-    }
-}
-
-impl<ID: Clone> Clone for PredAt<ID> {
-    fn clone(&self) -> Self {
-        PredAt {
-            not: self.not,
-            label: self.label.clone(),
-        }
-    }
 }
 
 // We define the instruction enum through the macro instead of normally, because we have some of how
@@ -68,12 +34,268 @@ impl<ID: Clone> Clone for PredAt<ID> {
 // This information is then available to a visitor.
 ptx_parser_macros::generate_instruction_type!(
     pub enum Instruction<T: Operand> {
-        Mov {
-            type: { &data.typ },
-            data: MovDetails,
+        Abs {
+            data: TypeFtz,
+            type: { Type::Scalar(data.type_) },
+            arguments<T>: {
+                dst: T,
+                src: T,
+            }
+        },
+        Activemask {
+            type: Type::Scalar(ScalarType::B32),
+            arguments<T>: {
+                dst: T
+            }
+        },
+        Add {
+            type: { Type::from(data.type_()) },
+            data: ArithDetails,
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: T,
+            }
+        },
+        And {
+            data: ScalarType,
+            type: { Type::Scalar(data.clone()) },
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: T,
+            }
+        },
+        Atom {
+            type: &data.type_,
+            data: AtomDetails,
+            arguments<T>: {
+                dst: T,
+                src1: {
+                    repr: T,
+                    space: { data.space },
+                },
+                src2: T,
+            }
+        },
+        AtomCas {
+            type: Type::Scalar(data.type_),
+            data: AtomCasDetails,
+            arguments<T>: {
+                dst: T,
+                src1: {
+                    repr: T,
+                    space: { data.space },
+                },
+                src2: T,
+                src3: T,
+            }
+        },
+        BarWarp {
+            type: Type::Scalar(ScalarType::U32),
+            data: (),
+            arguments<T>: {
+                src: T,
+            }
+        },
+        Bar {
+            type: Type::Scalar(ScalarType::U32),
+            data: BarData,
+            arguments<T>: {
+                src1: T,
+                src2: Option<T>,
+            }
+        },
+        BarRed {
+            type: Type::Scalar(ScalarType::U32),
+            data: BarRedData,
+            arguments<T>: {
+                dst1: {
+                    repr: T,
+                    type: Type::from(ScalarType::Pred)
+                },
+                src_barrier: T,
+                src_threadcount: Option<T>,
+                src_predicate: {
+                    repr: T,
+                    type: Type::from(ScalarType::Pred)
+                },
+                src_negate_predicate: {
+                    repr: T,
+                    type: Type::from(ScalarType::Pred)
+                },
+            }
+        },
+        Bfe {
+            type: Type::Scalar(data.clone()),
+            data: ScalarType,
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: {
+                    repr: T,
+                    type: Type::Scalar(ScalarType::U32)
+                },
+                src3: {
+                    repr: T,
+                    type: Type::Scalar(ScalarType::U32)
+                },
+            }
+        },
+        Bfi {
+            type: Type::Scalar(data.clone()),
+            data: ScalarType,
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: T,
+                src3: {
+                    repr: T,
+                    type: Type::Scalar(ScalarType::U32)
+                },
+                src4: {
+                    repr: T,
+                    type: Type::Scalar(ScalarType::U32)
+                },
+            }
+        },
+        Bra {
+            type: !,
+            arguments<T::Ident>: {
+                src: T
+            }
+        },
+        Brev {
+            type: Type::Scalar(data.clone()),
+            data: ScalarType,
             arguments<T>: {
                 dst: T,
                 src: T
+            }
+        },
+        Call {
+            data: CallDetails,
+            arguments: CallArgs<T>,
+            visit: arguments.visit(data, visitor)?,
+            visit_mut: arguments.visit_mut(data, visitor)?,
+            map: Instruction::Call{ arguments: arguments.map(&data, visitor)?, data }
+        },
+        Clz {
+            type: Type::Scalar(data.clone()),
+            data: ScalarType,
+            arguments<T>: {
+                dst: {
+                    repr: T,
+                    type: Type::Scalar(ScalarType::U32)
+                },
+                src: T
+            }
+        },
+        Cos {
+            type: Type::Scalar(ScalarType::F32),
+            data: FlushToZero,
+            arguments<T>: {
+                dst: T,
+                src: T
+            }
+        },
+        CpAsync {
+            type: Type::Scalar(ScalarType::U32),
+            data: CpAsyncDetails,
+            arguments<T>: {
+                src_to: {
+                    repr: T,
+                    space: StateSpace::Shared
+                },
+                src_from: {
+                    repr: T,
+                    space: StateSpace::Global
+                }
+            }
+        },
+        CpAsyncCommitGroup { },
+        CpAsyncWaitGroup {
+            type: Type::Scalar(ScalarType::U64),
+            arguments<T>: {
+                src_group: T
+            }
+        },
+        CpAsyncWaitAll { },
+        Cvt {
+            data: CvtDetails,
+            arguments<T>: {
+                dst: {
+                    repr: T,
+                    type: { Type::Scalar(data.to) },
+                    // TODO: double check
+                    relaxed_type_check: true,
+                },
+                src: {
+                    repr: T,
+                    type: { Type::Scalar(data.from) },
+                    relaxed_type_check: true,
+                },
+                src2: {
+                    repr: Option<T>,
+                    type: { Type::Scalar(data.from) },
+                    relaxed_type_check: true,
+                },
+            }
+        },
+        Cvta {
+            data: CvtaDetails,
+            type: { Type::Scalar(ScalarType::B64) },
+            arguments<T>: {
+                dst: T,
+                src: T,
+            }
+        },
+        Div {
+            type: Type::Scalar(data.type_()),
+            data: DivDetails,
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: T,
+            }
+        },
+        Dp4a {
+            data: Dp4aDetails,
+            arguments<T>: {
+                dst: {
+                    repr: T,
+                    type: { Type::Scalar(ScalarType::B32) },
+                },
+                src1: {
+                    repr: T,
+                    type: { Type::Scalar(data.atype) },
+                },
+                src2: {
+                    repr: T,
+                    type: { Type::Scalar(data.btype) },
+                },
+                src3: {
+                    repr: T,
+                    type: { Type::Scalar(data.ctype()) },
+                },
+            }
+        },
+        Ex2 {
+            type: Type::Scalar(ScalarType::F32),
+            data: TypeFtz,
+            arguments<T>: {
+                dst: T,
+                src: T
+            }
+        },
+        Fma {
+            type: { Type::from(data.type_) },
+            data: ArithFloat,
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: T,
+                src3: T,
             }
         },
         Ld {
@@ -88,30 +310,62 @@ ptx_parser_macros::generate_instruction_type!(
                     repr: T,
                     space: { data.state_space },
                 }
+            },
+            display: write!(f, "<TODO:finish ld>")?
+        },
+        Lg2 {
+            type: Type::Scalar(ScalarType::F32),
+            data: FlushToZero,
+            arguments<T>: {
+                dst: T,
+                src: T
             }
         },
-        Add {
+        Mad {
             type: { Type::from(data.type_()) },
-            data: ArithDetails,
+            data: MadDetails,
+            arguments<T>: {
+                dst: {
+                    repr: T,
+                    type: { Type::from(data.dst_type()) },
+                },
+                src1: T,
+                src2: T,
+                src3: {
+                    repr: T,
+                    type: { Type::from(data.dst_type()) },
+                }
+            }
+        },
+        Max {
+            type: { Type::from(data.type_()) },
+            data: MinMaxDetails,
             arguments<T>: {
                 dst: T,
                 src1: T,
                 src2: T,
             }
         },
-        St {
-            type: { &data.typ },
-            data: StData,
+        Membar {
+            data: MemScope
+        },
+        Min {
+            type: { Type::from(data.type_()) },
+            data: MinMaxDetails,
             arguments<T>: {
-                src1: {
-                    repr: T,
-                    space: { data.state_space },
-                },
-                src2: {
-                    repr: T,
-                    relaxed_type_check: true,
-                }
+                dst: T,
+                src1: T,
+                src2: T,
             }
+        },
+        Mov {
+            type: { &data.typ },
+            data: MovDetails,
+            arguments<T>: {
+                dst: T,
+                src: T
+            },
+            display: write!(f, "mov{}", data.typ)?
         },
         Mul {
             type: { Type::from(data.type_()) },
@@ -123,6 +377,146 @@ ptx_parser_macros::generate_instruction_type!(
                 },
                 src1: T,
                 src2: T,
+            }
+        },
+        Mul24 {
+            type: { Type::from(data.type_) },
+            data: Mul24Details,
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: T,
+            }
+        },
+        Nanosleep {
+            type: Type::Scalar(ScalarType::U32),
+            arguments<T>: {
+                src: T
+            }
+         },
+        Neg {
+            type: Type::Scalar(data.type_),
+            data: TypeFtz,
+            arguments<T>: {
+                dst: T,
+                src: T
+            }
+        },
+        Not {
+            data: ScalarType,
+            type: { Type::Scalar(data.clone()) },
+            arguments<T>: {
+                dst: T,
+                src: T,
+            }
+        },
+        Or {
+            data: ScalarType,
+            type: { Type::Scalar(data.clone()) },
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: T,
+            }
+        },
+        Popc {
+            type: Type::Scalar(data.clone()),
+            data: ScalarType,
+            arguments<T>: {
+                dst: {
+                    repr: T,
+                    type: Type::Scalar(ScalarType::U32)
+                },
+                src: T
+            }
+        },
+        Prmt {
+            type: Type::Scalar(ScalarType::B32),
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: T,
+                src3: T
+            }
+        },
+        Rcp {
+            type: { Type::from(data.type_) },
+            data: RcpData,
+            arguments<T>: {
+                dst: T,
+                src: T,
+            }
+        },
+        Rem {
+            type: Type::Scalar(data.clone()),
+            data: ScalarType,
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: T
+            }
+        },
+        Ret {
+            data: RetData,
+            display: write!(f, "ret")?
+        },
+        Rsqrt {
+            type: { Type::from(data.type_) },
+            data: TypeFtz,
+            arguments<T>: {
+                dst: T,
+                src: T,
+            }
+        },
+        Selp {
+            type: { Type::Scalar(data.clone()) },
+            data: ScalarType,
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: T,
+                src3: {
+                    repr: T,
+                    type: Type::Scalar(ScalarType::Pred)
+                },
+            }
+        },
+        Set {
+            data: SetData,
+            arguments<T>: {
+                dst: {
+                    repr: T,
+                    type: Type::from(data.dtype)
+                },
+                src1: {
+                    repr: T,
+                    type: Type::from(data.base.type_),
+                },
+                src2: {
+                    repr: T,
+                    type: Type::from(data.base.type_),
+                }
+            }
+        },
+        SetBool {
+            data: SetBoolData,
+            arguments<T>: {
+                dst: {
+                    repr: T,
+                    type: Type::from(data.dtype)
+                },
+                src1: {
+                    repr: T,
+                    type: Type::from(data.base.base.type_),
+                },
+                src2: {
+                    repr: T,
+                    type: Type::from(data.base.base.type_),
+                },
+                src3: {
+                    repr: T,
+                    type: Type::from(ScalarType::Pred)
+                }
             }
         },
         Setp {
@@ -171,58 +565,40 @@ ptx_parser_macros::generate_instruction_type!(
                 }
             }
         },
-        Not {
-            data: ScalarType,
-            type: { Type::Scalar(data.clone()) },
+        ShflSync {
+            data: ShflSyncDetails,
+            type: Type::Scalar(ScalarType::B32),
             arguments<T>: {
                 dst: T,
-                src: T,
-            }
-        },
-        Or {
-            data: ScalarType,
-            type: { Type::Scalar(data.clone()) },
-            arguments<T>: {
-                dst: T,
-                src1: T,
-                src2: T,
-            }
-        },
-        And {
-            data: ScalarType,
-            type: { Type::Scalar(data.clone()) },
-            arguments<T>: {
-                dst: T,
-                src1: T,
-                src2: T,
-            }
-        },
-        Bra {
-            type: !,
-            arguments<T::Ident>: {
-                src: T
-            }
-        },
-        Call {
-            data: CallDetails,
-            arguments: CallArgs<T>,
-            visit: arguments.visit(data, visitor)?,
-            visit_mut: arguments.visit_mut(data, visitor)?,
-            map: Instruction::Call{ arguments: arguments.map(&data, visitor)?, data }
-        },
-        Cvt {
-            data: CvtDetails,
-            arguments<T>: {
-                dst: {
-                    repr: T,
-                    type: { Type::Scalar(data.to) },
-                    // TODO: double check
-                    relaxed_type_check: true,
+                dst_pred: {
+                    repr: Option<T>,
+                    type: Type::from(ScalarType::Pred)
                 },
-                src: {
+                src: T,
+                src_lane: T,
+                src_opts: T,
+                src_membermask: T
+            }
+        },
+        Shf {
+            data: ShfDetails,
+            type: Type::Scalar(ScalarType::B32),
+            arguments<T>: {
+                dst: T,
+                src_a: T,
+                src_b: T,
+                src_c: T
+            }
+        },
+        Shl {
+            data: ScalarType,
+            type: { Type::Scalar(data.clone()) },
+            arguments<T>: {
+                dst: T,
+                src1: T,
+                src2: {
                     repr: T,
-                    type: { Type::Scalar(data.from) },
-                    relaxed_type_check: true,
+                    type: { Type::Scalar(ScalarType::U32) },
                 },
             }
         },
@@ -238,58 +614,34 @@ ptx_parser_macros::generate_instruction_type!(
                 },
             }
         },
-        Shl {
-            data: ScalarType,
-            type: { Type::Scalar(data.clone()) },
+        Sin {
+            type: Type::Scalar(ScalarType::F32),
+            data: FlushToZero,
             arguments<T>: {
                 dst: T,
-                src1: T,
+                src: T
+            }
+        },
+        Sqrt {
+            type: { Type::from(data.type_) },
+            data: RcpData,
+            arguments<T>: {
+                dst: T,
+                src: T,
+            }
+        },
+        St {
+            type: { &data.typ },
+            data: StData,
+            arguments<T>: {
+                src1: {
+                    repr: T,
+                    space: { data.state_space },
+                },
                 src2: {
                     repr: T,
-                    type: { Type::Scalar(ScalarType::U32) },
-                },
-            }
-        },
-        Ret {
-            data: RetData
-        },
-        Cvta {
-            data: CvtaDetails,
-            type: { Type::Scalar(ScalarType::B64) },
-            arguments<T>: {
-                dst: T,
-                src: T,
-            }
-        },
-        Abs {
-            data: TypeFtz,
-            type: { Type::Scalar(data.type_) },
-            arguments<T>: {
-                dst: T,
-                src: T,
-            }
-        },
-        Mad {
-            type: { Type::from(data.type_()) },
-            data: MadDetails,
-            arguments<T>: {
-                dst: {
-                    repr: T,
-                    type: { Type::from(data.dst_type()) },
-                },
-                src1: T,
-                src2: T,
-                src3: T,
-            }
-        },
-        Fma {
-            type: { Type::from(data.type_) },
-            data: ArithFloat,
-            arguments<T>: {
-                dst: T,
-                src1: T,
-                src2: T,
-                src3: T,
+                    relaxed_type_check: true,
+                }
             }
         },
         Sub {
@@ -301,173 +653,7 @@ ptx_parser_macros::generate_instruction_type!(
                 src2: T,
             }
         },
-        Min {
-            type: { Type::from(data.type_()) },
-            data: MinMaxDetails,
-            arguments<T>: {
-                dst: T,
-                src1: T,
-                src2: T,
-            }
-        },
-        Max {
-            type: { Type::from(data.type_()) },
-            data: MinMaxDetails,
-            arguments<T>: {
-                dst: T,
-                src1: T,
-                src2: T,
-            }
-        },
-        Rcp {
-            type: { Type::from(data.type_) },
-            data: RcpData,
-            arguments<T>: {
-                dst: T,
-                src: T,
-            }
-        },
-        Sqrt {
-            type: { Type::from(data.type_) },
-            data: RcpData,
-            arguments<T>: {
-                dst: T,
-                src: T,
-            }
-        },
-        Rsqrt {
-            type: { Type::from(data.type_) },
-            data: TypeFtz,
-            arguments<T>: {
-                dst: T,
-                src: T,
-            }
-        },
-        Selp {
-            type: { Type::Scalar(data.clone()) },
-            data: ScalarType,
-            arguments<T>: {
-                dst: T,
-                src1: T,
-                src2: T,
-                src3: {
-                    repr: T,
-                    type: Type::Scalar(ScalarType::Pred)
-                },
-            }
-        },
-        Bar {
-            type: Type::Scalar(ScalarType::U32),
-            data: BarData,
-            arguments<T>: {
-                src1: T,
-                src2: Option<T>,
-            }
-        },
-        Atom {
-            type: &data.type_,
-            data: AtomDetails,
-            arguments<T>: {
-                dst: T,
-                src1: {
-                    repr: T,
-                    space: { data.space },
-                },
-                src2: T,
-            }
-        },
-        AtomCas {
-            type: Type::Scalar(data.type_),
-            data: AtomCasDetails,
-            arguments<T>: {
-                dst: T,
-                src1: {
-                    repr: T,
-                    space: { data.space },
-                },
-                src2: T,
-                src3: T,
-            }
-        },
-        Div {
-            type: Type::Scalar(data.type_()),
-            data: DivDetails,
-            arguments<T>: {
-                dst: T,
-                src1: T,
-                src2: T,
-            }
-        },
-        Neg {
-            type: Type::Scalar(data.type_),
-            data: TypeFtz,
-            arguments<T>: {
-                dst: T,
-                src: T
-            }
-        },
-        Sin {
-            type: Type::Scalar(ScalarType::F32),
-            data: FlushToZero,
-            arguments<T>: {
-                dst: T,
-                src: T
-            }
-        },
-        Cos {
-            type: Type::Scalar(ScalarType::F32),
-            data: FlushToZero,
-            arguments<T>: {
-                dst: T,
-                src: T
-            }
-        },
-        Lg2 {
-            type: Type::Scalar(ScalarType::F32),
-            data: FlushToZero,
-            arguments<T>: {
-                dst: T,
-                src: T
-            }
-        },
-        Ex2 {
-            type: Type::Scalar(ScalarType::F32),
-            data: TypeFtz,
-            arguments<T>: {
-                dst: T,
-                src: T
-            }
-        },
-        Clz {
-            type: Type::Scalar(data.clone()),
-            data: ScalarType,
-            arguments<T>: {
-                dst: {
-                    repr: T,
-                    type: Type::Scalar(ScalarType::U32)
-                },
-                src: T
-            }
-        },
-        Brev {
-            type: Type::Scalar(data.clone()),
-            data: ScalarType,
-            arguments<T>: {
-                dst: T,
-                src: T
-            }
-        },
-        Popc {
-            type: Type::Scalar(data.clone()),
-            data: ScalarType,
-            arguments<T>: {
-                dst: {
-                    repr: T,
-                    type: Type::Scalar(ScalarType::U32)
-                },
-                src: T
-            }
-        },
+        Trap { },
         Xor {
             type: Type::Scalar(data.clone()),
             data: ScalarType,
@@ -477,134 +663,82 @@ ptx_parser_macros::generate_instruction_type!(
                 src2: T
             }
         },
-        Rem {
+        Tanh {
             type: Type::Scalar(data.clone()),
             data: ScalarType,
             arguments<T>: {
                 dst: T,
-                src1: T,
-                src2: T
+                src: T
             }
         },
-        Bfe {
-            type: Type::Scalar(data.clone()),
-            data: ScalarType,
+        Vote {
+            type: Type::Scalar(data.mode.type_()),
+            data: VoteDetails,
             arguments<T>: {
                 dst: T,
-                src1: T,
+                src1: {
+                    repr: T,
+                    type: { Type::Scalar(ScalarType::Pred) },
+                },
                 src2: {
                     repr: T,
-                    type: Type::Scalar(ScalarType::U32)
+                    type: { Type::Scalar(ScalarType::U32) },
+                }
+            }
+
+        },
+        ReduxSync {
+            type: Type::Scalar(data.type_),
+            data: ReduxSyncData,
+            arguments<T>: {
+                dst: T,
+                src: T,
+                src_membermask: {
+                    repr: T,
+                    type: { Type::Scalar(ScalarType::U32) },
+                }
+            }
+        },
+        LdMatrix {
+            type: data.get_loaded_type(),
+            data: LdMatrixDetails,
+            arguments<T>: {
+                dst: {
+                    repr: T,
+                    relaxed_type_check: true,
+                },
+                src: {
+                    repr: T,
+                    space: { data.state_space },
+                }
+            }
+        },
+        GridDepControl {
+            data: crate::GridDepControlAction,
+        },
+        Mma {
+            data: MmaDetails,
+            arguments<T>: {
+                dst: {
+                    repr: T,
+                    type: { data.dtype() },
+                },
+                src1: {
+                    repr: T,
+                    type: { data.atype() },
+                },
+                src2: {
+                    repr: T,
+                    type: { data.btype() },
                 },
                 src3: {
                     repr: T,
-                    type: Type::Scalar(ScalarType::U32)
-                },
+                    type: { data.ctype() },
+                }
             }
-        },
-        Bfi {
-            type: Type::Scalar(data.clone()),
-            data: ScalarType,
-            arguments<T>: {
-                dst: T,
-                src1: T,
-                src2: T,
-                src3: {
-                    repr: T,
-                    type: Type::Scalar(ScalarType::U32)
-                },
-                src4: {
-                    repr: T,
-                    type: Type::Scalar(ScalarType::U32)
-                },
-            }
-        },
-        PrmtSlow {
-            type: Type::Scalar(ScalarType::U32),
-            arguments<T>: {
-                dst: T,
-                src1: T,
-                src2: T,
-                src3: T
-            }
-        },
-        Prmt {
-            type: Type::Scalar(ScalarType::B32),
-            data: u16,
-            arguments<T>: {
-                dst: T,
-                src1: T,
-                src2: T
-            }
-        },
-        Activemask {
-            type: Type::Scalar(ScalarType::B32),
-            arguments<T>: {
-                dst: T
-            }
-        },
-        Membar {
-            data: MemScope
-        },
-        Trap { }
+        }
     }
 );
-
-impl<T: Operand> fmt::Display for Instruction<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let instruction_name = match self {
-            Instruction::Mov { .. } => "mov",
-            Instruction::Ld { .. } => "ld",
-            Instruction::Add { .. } => "add",
-            Instruction::St { .. } => "st",
-            Instruction::Mul { .. } => "mul",
-            Instruction::Setp { .. } => "setp",
-            Instruction::SetpBool { .. } => "setp",
-            Instruction::Not { .. } => "not",
-            Instruction::Or { .. } => "or",
-            Instruction::And { .. } => "and",
-            Instruction::Bra { .. } => "bra",
-            Instruction::Call { .. } => "call",
-            Instruction::Cvt { .. } => "cvt",
-            Instruction::Shr { .. } => "shr",
-            Instruction::Shl { .. } => "shl",
-            Instruction::Ret { .. } => "ret",
-            Instruction::Cvta { .. } => "cvta",
-            Instruction::Abs { .. } => "abs",
-            Instruction::Mad { .. } => "mad",
-            Instruction::Fma { .. } => "fma",
-            Instruction::Sub { .. } => "sub",
-            Instruction::Min { .. } => "min",
-            Instruction::Max { .. } => "max",
-            Instruction::Rcp { .. } => "rcp",
-            Instruction::Sqrt { .. } => "sqrt",
-            Instruction::Rsqrt { .. } => "rsqrt",
-            Instruction::Selp { .. } => "selp",
-            Instruction::Bar { .. } => "bar",
-            Instruction::Atom { .. } => "atom",
-            Instruction::AtomCas { .. } => "atom",
-            Instruction::Div { .. } => "div",
-            Instruction::Neg { .. } => "neg",
-            Instruction::Sin { .. } => "sin",
-            Instruction::Cos { .. } => "cos",
-            Instruction::Lg2 { .. } => "lg2",
-            Instruction::Ex2 { .. } => "ex2",
-            Instruction::Clz { .. } => "clz",
-            Instruction::Brev { .. } => "brev",
-            Instruction::Popc { .. } => "popc",
-            Instruction::Xor { .. } => "xor",
-            Instruction::Rem { .. } => "rem",
-            Instruction::Bfe { .. } => "bfe",
-            Instruction::Bfi { .. } => "bfi",
-            Instruction::PrmtSlow { .. } => "prmt",
-            Instruction::Prmt { .. } => "prmt",
-            Instruction::Activemask { .. } => "activemask",
-            Instruction::Membar { .. } => "membar",
-            Instruction::Trap { .. } => "trap",
-        };
-        write!(f, "{}", instruction_name)
-    }
-}
 
 pub trait Visitor<T: Operand, Err> {
     fn visit(
@@ -622,12 +756,6 @@ pub trait Visitor<T: Operand, Err> {
         relaxed_type_check: bool,
     ) -> Result<(), Err>;
 }
-
-// impl<'input> Clone for Instruction<ParsedOperand<&'input str>> {
-//     fn clone(&self) -> Self {
-//         unimplemented!("Clone not implemented for Instruction")
-//     }
-// }
 
 impl<
         T: Operand,
@@ -695,7 +823,7 @@ pub trait VisitorMap<From: Operand, To: Operand, Err> {
     ) -> Result<To::Ident, Err>;
 }
 
-impl<T: Copy + std::fmt::Debug, U: Copy + std::fmt::Debug, Err, Fn> VisitorMap<ParsedOperand<T>, ParsedOperand<U>, Err> for Fn
+impl<T: Copy, U: Copy, Err, Fn> VisitorMap<ParsedOperand<T>, ParsedOperand<U>, Err> for Fn
 where
     Fn: FnMut(T, Option<(&Type, StateSpace)>, bool, bool) -> Result<U, Err>,
 {
@@ -721,7 +849,17 @@ where
             ),
             ParsedOperand::VecPack(vec) => ParsedOperand::VecPack(
                 vec.into_iter()
-                    .map(|ident| (self)(ident, type_space, is_dst, relaxed_type_check))
+                    .map(|reg_or_immediate| {
+                        Ok(match reg_or_immediate {
+                            RegOrImmediate::Reg(ident) => RegOrImmediate::Reg((self)(
+                                ident,
+                                type_space,
+                                is_dst,
+                                relaxed_type_check,
+                            )?),
+                            RegOrImmediate::Imm(imm) => RegOrImmediate::Imm(imm),
+                        })
+                    })
                     .collect::<Result<Vec<_>, _>>()?,
             ),
         })
@@ -851,22 +989,67 @@ impl<T: Operand, Err> MapOperand<Err> for Option<T> {
     }
 }
 
-#[derive(Debug)]
-pub struct MultiVariable<ID> {
-    pub var: Variable<ID>,
-    pub count: Option<u32>,
+pub enum MultiVariable<ID> {
+    Parameterized {
+        info: VariableInfo<ID>,
+        name: ID,
+        count: u32,
+    },
+    Names {
+        info: VariableInfo<ID>,
+        names: Vec<ID>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct VariableInfo<ID> {
+    pub align: Option<u32>,
+    pub v_type: Type,
+    pub state_space: StateSpace,
+    pub array_init: Vec<RegOrImmediate<ID>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Variable<ID> {
-    pub align: Option<u32>,
-    pub v_type: Type,
-    pub state_space: StateSpace,
+    pub info: VariableInfo<ID>,
     pub name: ID,
-    pub array_init: Vec<u8>,
 }
 
-#[derive(Debug)]
+impl<ID: std::fmt::Display> std::fmt::Display for Variable<ID> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.info.state_space)?;
+
+        if let Some(align) = self.info.align {
+            write!(f, " .align {}", align)?;
+        }
+
+        let (vector_size, scalar_type, array_dims) = match &self.info.v_type {
+            Type::Scalar(scalar_type) => (None, *scalar_type, &vec![]),
+            Type::Vector(size, scalar_type) => (Some(*size), *scalar_type, &vec![]),
+            Type::Array(vector_size, scalar_type, array_dims) => {
+                (vector_size.map(|s| s.get()), *scalar_type, array_dims)
+            }
+            Type::Pointer(scalar_type, _) => (None, *scalar_type, &vec![]),
+        };
+
+        if let Some(size) = vector_size {
+            write!(f, " .v{}", size)?;
+        }
+
+        write!(f, " {} {}", scalar_type, self.name)?;
+
+        for dim in array_dims {
+            write!(f, "[{}]", dim)?;
+        }
+
+        if self.info.array_init.len() > 0 {
+            todo!("Need to interpret the array initializer data as the appropriate type");
+        }
+
+        Ok(())
+    }
+}
+
 pub struct PredAt<ID> {
     pub not: bool,
     pub label: ID,
@@ -881,6 +1064,16 @@ pub enum Type {
     // .param.b32 foo[4];
     Array(Option<NonZeroU8>, ScalarType, Vec<u32>),
     Pointer(ScalarType, StateSpace),
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Scalar(scalar_type) => write!(f, "{}", scalar_type),
+            Type::Vector(count, scalar_type) => write!(f, ".v{}{}", count, scalar_type),
+            _ => todo!(),
+        }
+    }
 }
 
 impl Type {
@@ -931,21 +1124,24 @@ impl Type {
                     )
                 }
             }
-            Type::Pointer(..) => Layout::new::<usize>(),
-        }
-    }
-
-    pub fn scalar_type(&self) -> ScalarType {
-        match self {
-            Type::Scalar(scalar_type) => *scalar_type,
-            Type::Vector(_, scalar_type) => *scalar_type,
-            Type::Array(_, scalar_type, _) => *scalar_type,
-            Type::Pointer(scalar_type, _) => *scalar_type,
+            Type::Pointer(_, _) => {
+                // Pointers are 64-bit
+                unsafe { Layout::from_size_align_unchecked(8, 8) }
+            }
         }
     }
 }
 
 impl ScalarType {
+    pub fn from_size(size: u8) -> Option<Self> {
+        Some(match size {
+            1 => ScalarType::B8,
+            2 => ScalarType::B16,
+            4 => ScalarType::B32,
+            16 => ScalarType::B128,
+            _ => return None,
+        })
+    }
     pub fn size_of(self) -> u8 {
         match self {
             ScalarType::U8 | ScalarType::S8 | ScalarType::B8 => 1,
@@ -953,7 +1149,9 @@ impl ScalarType {
             | ScalarType::S16
             | ScalarType::B16
             | ScalarType::F16
-            | ScalarType::BF16 => 2,
+            | ScalarType::BF16
+            | ScalarType::E4m3x2
+            | ScalarType::E5m2x2 => 2,
             ScalarType::U32
             | ScalarType::S32
             | ScalarType::B32
@@ -975,7 +1173,9 @@ impl ScalarType {
             | ScalarType::S16
             | ScalarType::B16
             | ScalarType::F16
-            | ScalarType::BF16 => Layout::new::<u16>(),
+            | ScalarType::BF16
+            | ScalarType::E4m3x2
+            | ScalarType::E5m2x2 => Layout::new::<u16>(),
             ScalarType::U32
             | ScalarType::S32
             | ScalarType::B32
@@ -1016,12 +1216,43 @@ impl ScalarType {
             ScalarType::F64 => ScalarKind::Float,
             ScalarType::BF16 => ScalarKind::Float,
             ScalarType::BF16x2 => ScalarKind::Float,
+            ScalarType::E4m3x2 => ScalarKind::Float,
+            ScalarType::E5m2x2 => ScalarKind::Float,
             ScalarType::Pred => ScalarKind::Pred,
+        }
+    }
+
+    pub fn packed_type(&self) -> Option<ScalarType> {
+        match self {
+            ScalarType::E4m3x2 => Some(ScalarType::B8),
+            ScalarType::E5m2x2 => Some(ScalarType::B8),
+            ScalarType::F16x2 => Some(ScalarType::F16),
+            ScalarType::BF16x2 => Some(ScalarType::BF16),
+            ScalarType::U16x2 => Some(ScalarType::U16),
+            ScalarType::S16x2 => Some(ScalarType::S16),
+            ScalarType::S16
+            | ScalarType::BF16
+            | ScalarType::U32
+            | ScalarType::S8
+            | ScalarType::S32
+            | ScalarType::Pred
+            | ScalarType::B8
+            | ScalarType::U64
+            | ScalarType::B16
+            | ScalarType::S64
+            | ScalarType::B32
+            | ScalarType::U8
+            | ScalarType::F32
+            | ScalarType::B64
+            | ScalarType::B128
+            | ScalarType::U16
+            | ScalarType::F64
+            | ScalarType::F16 => None,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ScalarKind {
     Bit,
     Unsigned,
@@ -1038,36 +1269,120 @@ impl From<ScalarType> for Type {
 #[derive(Debug, Clone)]
 pub struct MovDetails {
     pub typ: super::Type,
-    pub src_is_address: bool,
-    // two fields below are in use by member moves
-    pub dst_width: u8,
-    pub src_width: u8,
-    // This is in use by auto-generated movs
-    pub relaxed_src2_conv: bool,
 }
 
 impl MovDetails {
     pub(crate) fn new(vector: Option<VectorPrefix>, scalar: ScalarType) -> Self {
         MovDetails {
             typ: Type::maybe_vector(vector, scalar),
-            src_is_address: false,
-            dst_width: 0,
-            src_width: 0,
-            relaxed_src2_conv: false,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
+pub struct ShflSyncDetails {
+    pub mode: ShuffleMode,
+}
+
+#[derive(Debug)]
+pub enum CpAsyncCpSize {
+    Bytes4,
+    Bytes8,
+    Bytes16,
+}
+
+impl CpAsyncCpSize {
+    pub fn from_u64(n: u64) -> Option<Self> {
+        match n {
+            4 => Some(Self::Bytes4),
+            8 => Some(Self::Bytes8),
+            16 => Some(Self::Bytes16),
+            _ => None,
+        }
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        match self {
+            CpAsyncCpSize::Bytes4 => 4,
+            CpAsyncCpSize::Bytes8 => 8,
+            CpAsyncCpSize::Bytes16 => 16,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct CpAsyncDetails {
+    pub caching: CpAsyncCacheOperator,
+    pub space: StateSpace,
+    pub cp_size: CpAsyncCpSize,
+    pub src_size: Option<u64>,
+}
+
+#[derive(Debug)]
+pub struct ShfDetails {
+    pub direction: ShiftDirection,
+    pub mode: FunnelShiftMode,
+}
+
+#[derive(Debug, Clone, Copy, Display)]
+pub enum RegOrImmediate<Ident> {
+    Reg(Ident),
+    Imm(ImmediateValue),
+}
+
+#[derive(Clone)]
 pub enum ParsedOperand<Ident> {
     Reg(Ident),
     RegOffset(Ident, i32),
     Imm(ImmediateValue),
     VecMember(Ident, u8),
-    VecPack(Vec<Ident>),
+    VecPack(Vec<RegOrImmediate<Ident>>),
 }
 
-impl<Ident: Copy + Debug> Operand for ParsedOperand<Ident> {
+impl<Ident> ParsedOperand<Ident> {
+    pub fn as_immediate(&self) -> Option<ImmediateValue> {
+        match self {
+            ParsedOperand::Imm(imm) => Some(*imm),
+            _ => None,
+        }
+    }
+}
+
+impl<Ident> std::fmt::Display for ParsedOperand<Ident>
+where
+    Ident: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParsedOperand::Reg(id) => write!(f, "{}", id)?,
+            ParsedOperand::RegOffset(id, o) => write!(f, "{}+{}", id, o)?,
+            ParsedOperand::Imm(imm) => write!(f, "{}", imm)?,
+            ParsedOperand::VecMember(id, idx) => {
+                let suffix = match idx {
+                    0 => "x",
+                    1 => "y",
+                    2 => "z",
+                    3 => "w",
+                    _ => "INVALID",
+                };
+                write!(f, "{}.{}", id, suffix)?
+            }
+            ParsedOperand::VecPack(items) => {
+                f.write_char('{')?;
+                for (idx, item) in items.iter().enumerate() {
+                    if idx != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                f.write_char('}')?
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<Ident: Copy> Operand for ParsedOperand<Ident> {
     type Ident = Ident;
 
     fn from_ident(ident: Self::Ident) -> Self {
@@ -1076,12 +1391,12 @@ impl<Ident: Copy + Debug> Operand for ParsedOperand<Ident> {
 }
 
 pub trait Operand: Sized {
-    type Ident: Copy + fmt::Debug;
+    type Ident: Copy;
 
     fn from_ident(ident: Self::Ident) -> Self;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Copy, Clone)]
 pub enum ImmediateValue {
     U64(u64),
     S64(i64),
@@ -1089,7 +1404,30 @@ pub enum ImmediateValue {
     F64(f64),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+impl ImmediateValue {
+    /// If the value is a U64 or S64, returns the value as a u64, ignoring the sign.
+    pub fn as_u64(&self) -> Option<u64> {
+        match *self {
+            ImmediateValue::U64(n) => Some(n),
+            ImmediateValue::S64(n) => Some(n as u64),
+            ImmediateValue::F32(_) | ImmediateValue::F64(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for ImmediateValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImmediateValue::U64(n) => write!(f, "{}", n)?,
+            ImmediateValue::S64(n) => write!(f, "{}", n)?,
+            ImmediateValue::F32(n) => write!(f, "{}", n)?,
+            ImmediateValue::F64(n) => write!(f, "{}", n)?,
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum StCacheOperator {
     Writeback,
     L2Only,
@@ -1097,7 +1435,7 @@ pub enum StCacheOperator {
     Writethrough,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum LdCacheOperator {
     Cached,
     L2Only,
@@ -1106,7 +1444,13 @@ pub enum LdCacheOperator {
     Uncached,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
+pub enum CpAsyncCacheOperator {
+    Cached,
+    L2Only,
+}
+
+#[derive(Debug, Copy, Clone)]
 pub enum ArithDetails {
     Integer(ArithInteger),
     Float(ArithFloat),
@@ -1121,21 +1465,28 @@ impl ArithDetails {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Copy, Clone)]
 pub struct ArithInteger {
     pub type_: ScalarType,
     pub saturate: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Copy, Clone)]
 pub struct ArithFloat {
     pub type_: ScalarType,
-    pub rounding: Option<RoundingMode>,
+    pub rounding: RoundingMode,
     pub flush_to_zero: Option<bool>,
     pub saturate: bool,
+    // From PTX documentation: https://docs.nvidia.com/cuda/parallel-thread-execution/#mixed-precision-floating-point-instructions-add
+    // Note that an add instruction with an explicit rounding modifier is treated conservatively by
+    // the code optimizer. An add instruction with no rounding modifier defaults to
+    // round-to-nearest-even and may be optimized aggressively by the code optimizer. In particular,
+    // mul/add sequences with no rounding modifiers may be optimized to use fused-multiply-add
+    // instructions on the target device.
+    pub is_fusable: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum LdStQualifier {
     Weak,
     Volatile,
@@ -1144,7 +1495,7 @@ pub enum LdStQualifier {
     Release(MemScope),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum RoundingMode {
     NearestEven,
     Zero,
@@ -1152,7 +1503,7 @@ pub enum RoundingMode {
     PositiveInf,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct LdDetails {
     pub qualifier: LdStQualifier,
     pub state_space: StateSpace,
@@ -1161,7 +1512,48 @@ pub struct LdDetails {
     pub non_coherent: bool,
 }
 
-#[derive(Debug, Clone)]
+impl MatrixNumber {
+    fn get(&self) -> u8 {
+        match self {
+            MatrixNumber::X1 => 1,
+            MatrixNumber::X2 => 2,
+            MatrixNumber::X4 => 4,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct LdMatrixDetails {
+    pub shape: MatrixShape,
+    pub number: MatrixNumber,
+    pub transpose: bool,
+    pub state_space: StateSpace,
+    pub type_: ScalarType,
+}
+
+impl LdMatrixDetails {
+    pub fn new(
+        shape: MatrixShape,
+        number: MatrixNumber,
+        transpose: bool,
+        ss: Option<StateSpace>,
+        type_: ScalarType,
+    ) -> Self {
+        Self {
+            shape,
+            number,
+            transpose,
+            state_space: ss.unwrap_or(StateSpace::Shared),
+            type_,
+        }
+    }
+    pub fn get_loaded_type(&self) -> Type {
+        let count = self.number.get();
+        Type::Vector(count, ScalarType::B32)
+    }
+}
+
+#[derive(Debug)]
 pub struct StData {
     pub qualifier: LdStQualifier,
     pub state_space: StateSpace,
@@ -1169,12 +1561,12 @@ pub struct StData {
     pub typ: Type,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Copy, Clone)]
 pub struct RetData {
     pub uniform: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum TuningDirective {
     MaxNReg(u32),
     MaxNtid(u32, u32, u32),
@@ -1182,26 +1574,11 @@ pub enum TuningDirective {
     MinNCtaPerSm(u32),
 }
 
-#[derive(Debug)]
 pub struct MethodDeclaration<'input, ID> {
     pub return_arguments: Vec<Variable<ID>>,
     pub name: MethodName<'input, ID>,
     pub input_arguments: Vec<Variable<ID>>,
     pub shared_mem: Option<ID>,
-}
-
-impl<'input, ID: Clone> Clone for MethodDeclaration<'input, ID>
-where
-    MethodName<'input, ID>: Clone,
-{
-    fn clone(&self) -> Self {
-        MethodDeclaration {
-            return_arguments: self.return_arguments.clone(),
-            name: self.name.clone(),
-            input_arguments: self.input_arguments.clone(),
-            shared_mem: self.shared_mem.clone(),
-        }
-    }
 }
 
 impl<'input> MethodDeclaration<'input, &'input str> {
@@ -1213,7 +1590,7 @@ impl<'input> MethodDeclaration<'input, &'input str> {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
+#[derive(Hash, PartialEq, Eq, Copy, Clone)]
 pub enum MethodName<'input, ID> {
     Kernel(&'input str),
     Func(ID),
@@ -1246,27 +1623,26 @@ bitflags! {
     }
 }
 
-#[derive(Debug)]
+impl std::fmt::Display for LinkingDirective {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut directives = vec![];
+        if self.contains(LinkingDirective::EXTERN) {
+            directives.push(".extern");
+        } else if self.contains(LinkingDirective::VISIBLE) {
+            directives.push(".visible");
+        } else if self.contains(LinkingDirective::WEAK) {
+            directives.push(".weak");
+        }
+        write!(f, "{}", directives.join(" "))
+    }
+}
+
 pub struct Function<'a, ID, S> {
     pub func_directive: MethodDeclaration<'a, ID>,
     pub tuning: Vec<TuningDirective>,
     pub body: Option<Vec<S>>,
 }
 
-impl<'a, ID: Clone, S: Clone> Clone for Function<'a, ID, S>
-where
-    MethodDeclaration<'a, ID>: Clone,
-{
-    fn clone(&self) -> Self {
-        Function {
-            func_directive: self.func_directive.clone(),
-            tuning: self.tuning.clone(),
-            body: self.body.clone(),
-        }
-    }
-}
-
-#[derive(Debug)]
 pub enum Directive<'input, O: Operand> {
     Variable(LinkingDirective, Variable<O::Ident>),
     Method(
@@ -1275,37 +1651,23 @@ pub enum Directive<'input, O: Operand> {
     ),
 }
 
-impl<'input, O: Operand + Clone> Clone for Directive<'input, O>
-where
-    Variable<O::Ident>: Clone,
-    Function<'input, &'input str, Statement<O>>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            Directive::Variable(linking, var) => Directive::Variable(linking.clone(), var.clone()),
-            Directive::Method(linking, func) => Directive::Method(linking.clone(), func.clone()),
-        }
-    }
-}
-
-#[derive(Debug)]
 pub struct Module<'input> {
     pub version: (u8, u8),
     pub directives: Vec<Directive<'input, ParsedOperand<&'input str>>>,
-    /// Added for compatibility with older code that expects a name field
-    pub name: Option<String>,
+    pub invalid_directives: usize,
 }
-impl<'input> Clone for Module<'input> {
-    fn clone(&self) -> Self {
+
+impl Module<'_> {
+    pub fn empty() -> Self {
         Module {
-            version: self.version,
-            directives: self.directives.iter().cloned().collect(),
-            name: self.name.clone(),
+            version: (1, 0),
+            directives: Vec::new(),
+            invalid_directives: usize::MAX,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum MulDetails {
     Integer {
         type_: ScalarType,
@@ -1339,14 +1701,26 @@ impl MulDetails {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum MulIntControl {
     Low,
     High,
     Wide,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
+pub struct Mul24Details {
+    pub type_: ScalarType,
+    pub control: Mul24Control,
+}
+
+#[derive(Debug)]
+pub struct SetData {
+    pub dtype: ScalarType,
+    pub base: SetpData,
+}
+
+#[derive(Debug)]
 pub struct SetpData {
     pub type_: ScalarType,
     pub flush_to_zero: Option<bool>,
@@ -1388,20 +1762,26 @@ impl SetpData {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+pub struct SetBoolData {
+    pub dtype: ScalarType,
+    pub base: SetpBoolData,
+}
+
+#[derive(Debug)]
 pub struct SetpBoolData {
     pub base: SetpData,
     pub bool_op: SetpBoolPostOp,
     pub negate_src3: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum SetpCompareOp {
     Integer(SetpCompareInt),
     Float(SetpCompareFloat),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum SetpCompareInt {
     Eq,
     NotEq,
@@ -1415,7 +1795,7 @@ pub enum SetpCompareInt {
     SignedGreaterOrEq,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum SetpCompareFloat {
     Eq,
     NotEq,
@@ -1497,14 +1877,14 @@ impl From<RawSetpCompareOp> for SetpCompareFloat {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CallDetails {
     pub uniform: bool,
     pub return_arguments: Vec<(Type, StateSpace)>,
     pub input_arguments: Vec<(Type, StateSpace)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CallArgs<T: Operand> {
     pub return_arguments: Vec<T::Ident>,
     pub func: T::Ident,
@@ -1606,34 +1986,38 @@ impl<T: Operand> CallArgs<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct CvtDetails {
     pub from: ScalarType,
     pub to: ScalarType,
     pub mode: CvtMode,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum CvtMode {
     // int from int
     ZeroExtend,
     SignExtend,
     Truncate,
     Bitcast,
-    SaturateUnsignedToSigned,
-    SaturateSignedToUnsigned,
+    IntSaturateToSigned,
+    IntSaturateToUnsigned,
     // float from float
     FPExtend {
         flush_to_zero: Option<bool>,
+        saturate: bool,
     },
     FPTruncate {
         // float rounding
         rounding: RoundingMode,
+        is_integer_rounding: bool,
         flush_to_zero: Option<bool>,
+        saturate: bool,
     },
     FPRound {
         integer_rounding: Option<RoundingMode>,
         flush_to_zero: Option<bool>,
+        saturate: bool,
     },
     // int from float
     SignedFromFP {
@@ -1645,8 +2029,14 @@ pub enum CvtMode {
         flush_to_zero: Option<bool>,
     }, // integer rounding
     // float from int, ftz is allowed in the grammar, but clearly nonsensical
-    FPFromSigned(RoundingMode),   // float rounding
-    FPFromUnsigned(RoundingMode), // float rounding
+    FPFromSigned {
+        rounding: RoundingMode,
+        saturate: bool,
+    }, // float rounding
+    FPFromUnsigned {
+        rounding: RoundingMode,
+        saturate: bool,
+    }, // float rounding
 }
 
 impl CvtDetails {
@@ -1658,9 +2048,6 @@ impl CvtDetails {
         dst: ScalarType,
         src: ScalarType,
     ) -> Self {
-        if saturate && dst.kind() == ScalarKind::Float {
-            errors.push(PtxError::SyntaxError);
-        }
         // Modifier .ftz can only be specified when either .dtype or .atype is .f32 and applies only to single precision (.f32) inputs and results.
         let flush_to_zero = match (dst, src) {
             (ScalarType::F32, _) | (_, ScalarType::F32) => Some(ftz),
@@ -1671,66 +2058,114 @@ impl CvtDetails {
                 None
             }
         };
-        let rounding = rnd.map(Into::into);
+        let rounding = rnd.map(RawRoundingMode::normalize);
         let mut unwrap_rounding = || match rounding {
-            Some(rnd) => rnd,
+            Some((rnd, is_integer)) => (rnd, is_integer),
             None => {
-                errors.push(PtxError::SyntaxError);
-                RoundingMode::NearestEven
+                if let Some(rnd) = rnd {
+                    errors.push(PtxError::SyntaxError(format!(
+                        "invalid rounding mode {} for cvt",
+                        rnd
+                    )));
+                } else {
+                    errors.push(PtxError::SyntaxError(format!(
+                        "missing rounding mode for cvt"
+                    )));
+                }
+                (RoundingMode::NearestEven, false)
             }
         };
+        let dst_size = if dst.packed_type().is_some() {
+            dst.size_of() / 2
+        } else {
+            dst.size_of()
+        };
         let mode = match (dst.kind(), src.kind()) {
-            (ScalarKind::Float, ScalarKind::Float) => match dst.size_of().cmp(&src.size_of()) {
-                Ordering::Less => CvtMode::FPTruncate {
-                    rounding: unwrap_rounding(),
-                    flush_to_zero,
-                },
+            (ScalarKind::Float, ScalarKind::Float) => match dst_size.cmp(&src.size_of()) {
+                Ordering::Less => {
+                    let (rounding, is_integer_rounding) = unwrap_rounding();
+                    CvtMode::FPTruncate {
+                        rounding,
+                        is_integer_rounding,
+                        flush_to_zero,
+                        saturate,
+                    }
+                }
                 Ordering::Equal => CvtMode::FPRound {
-                    integer_rounding: rounding,
+                    integer_rounding: rounding.map(|(rnd, _)| rnd),
                     flush_to_zero,
+                    saturate,
                 },
                 Ordering::Greater => {
-                    if rounding.is_some() {
-                        errors.push(PtxError::SyntaxError);
+                    if rounding.is_some()
+                        && !(src == ScalarType::E4m3x2 || src == ScalarType::E5m2x2)
+                    {
+                        errors.push(PtxError::SyntaxError(
+                            "should not have rounding mode when dst is larger than src in cvt"
+                                .to_string(),
+                        ));
                     }
-                    CvtMode::FPExtend { flush_to_zero }
+                    CvtMode::FPExtend {
+                        flush_to_zero,
+                        saturate,
+                    }
                 }
             },
             (ScalarKind::Unsigned, ScalarKind::Float) => CvtMode::UnsignedFromFP {
-                rounding: unwrap_rounding(),
+                rounding: unwrap_rounding().0,
                 flush_to_zero,
             },
             (ScalarKind::Signed, ScalarKind::Float) => CvtMode::SignedFromFP {
-                rounding: unwrap_rounding(),
+                rounding: unwrap_rounding().0,
                 flush_to_zero,
             },
-            (ScalarKind::Float, ScalarKind::Unsigned) => CvtMode::FPFromUnsigned(unwrap_rounding()),
-            (ScalarKind::Float, ScalarKind::Signed) => CvtMode::FPFromSigned(unwrap_rounding()),
-            (ScalarKind::Signed, ScalarKind::Unsigned) if saturate => {
-                CvtMode::SaturateUnsignedToSigned
-            }
-            (ScalarKind::Unsigned, ScalarKind::Signed) if saturate => {
-                CvtMode::SaturateSignedToUnsigned
+            (ScalarKind::Float, ScalarKind::Unsigned) => CvtMode::FPFromUnsigned {
+                rounding: unwrap_rounding().0,
+                saturate,
+            },
+            (ScalarKind::Float, ScalarKind::Signed) => CvtMode::FPFromSigned {
+                rounding: unwrap_rounding().0,
+                saturate,
+            },
+            (ScalarKind::Signed, ScalarKind::Unsigned)
+            | (ScalarKind::Signed, ScalarKind::Signed)
+                if saturate =>
+            {
+                CvtMode::IntSaturateToSigned
             }
             (ScalarKind::Unsigned, ScalarKind::Signed)
+            | (ScalarKind::Unsigned, ScalarKind::Unsigned)
+                if saturate =>
+            {
+                CvtMode::IntSaturateToUnsigned
+            }
+            (ScalarKind::Unsigned, ScalarKind::Unsigned)
+            | (ScalarKind::Signed, ScalarKind::Signed)
+            | (ScalarKind::Unsigned, ScalarKind::Signed)
             | (ScalarKind::Signed, ScalarKind::Unsigned)
                 if dst.size_of() == src.size_of() =>
             {
                 CvtMode::Bitcast
             }
-            (ScalarKind::Unsigned, ScalarKind::Signed) => CvtMode::SaturateSignedToUnsigned,
-            // Handle same-kind integer conversions with different sizes
-            (ScalarKind::Signed, ScalarKind::Signed) => match dst.size_of().cmp(&src.size_of()) {
-                Ordering::Greater => CvtMode::SignExtend,
-                Ordering::Equal => CvtMode::Bitcast,
+            (ScalarKind::Unsigned, ScalarKind::Unsigned)
+            | (ScalarKind::Signed, ScalarKind::Signed)
+            | (ScalarKind::Unsigned, ScalarKind::Signed)
+            | (ScalarKind::Signed, ScalarKind::Unsigned) => match dst.size_of().cmp(&src.size_of())
+            {
                 Ordering::Less => CvtMode::Truncate,
-            },
-            (ScalarKind::Unsigned, ScalarKind::Unsigned) => match dst.size_of().cmp(&src.size_of()) {
-                Ordering::Greater => CvtMode::ZeroExtend,
                 Ordering::Equal => CvtMode::Bitcast,
-                Ordering::Less => CvtMode::Truncate,
+                Ordering::Greater => {
+                    if src.kind() == ScalarKind::Signed {
+                        CvtMode::SignExtend
+                    } else {
+                        CvtMode::ZeroExtend
+                    }
+                }
             },
             (_, _) => {
+                errors.push(PtxError::SyntaxError(
+                    "unexpected pairing of dst and src types in cvt".to_string(),
+                ));
                 CvtMode::Bitcast
             }
         };
@@ -1742,14 +2177,12 @@ impl CvtDetails {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
 pub struct CvtIntToIntDesc {
     pub dst: ScalarType,
     pub src: ScalarType,
     pub saturate: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
 pub struct CvtDesc {
     pub rounding: Option<RoundingMode>,
     pub flush_to_zero: Option<bool>,
@@ -1758,38 +2191,37 @@ pub struct CvtDesc {
     pub src: ScalarType,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct ShrData {
     pub type_: ScalarType,
     pub kind: RightShiftKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum RightShiftKind {
     Arithmetic,
     Logical,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct CvtaDetails {
     pub state_space: StateSpace,
     pub direction: CvtaDirection,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum CvtaDirection {
     GenericToExplicit,
     ExplicitToGeneric,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug )]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct TypeFtz {
     pub flush_to_zero: Option<bool>,
     pub type_: ScalarType,
 }
 
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Copy, Clone)]
 pub enum MadDetails {
     Integer {
         control: MulIntControl,
@@ -1825,8 +2257,7 @@ impl MadDetails {
     }
 }
 
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Copy, Clone)]
 pub enum MinMaxDetails {
     Signed(ScalarType),
     Unsigned(ScalarType),
@@ -1843,34 +2274,38 @@ impl MinMaxDetails {
     }
 }
 
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Copy, Clone)]
 pub struct MinMaxFloat {
     pub flush_to_zero: Option<bool>,
     pub nan: bool,
     pub type_: ScalarType,
 }
 
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Copy, Clone)]
 pub struct RcpData {
     pub kind: RcpKind,
     pub flush_to_zero: Option<bool>,
     pub type_: ScalarType,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum RcpKind {
     Approx,
     Compliant(RoundingMode),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct BarData {
     pub aligned: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
+pub struct BarRedData {
+    pub aligned: bool,
+    pub pred_reduction: Reduction,
+}
+
+#[derive(Debug)]
 pub struct AtomDetails {
     pub type_: Type,
     pub semantics: AtomSemantics,
@@ -1879,7 +2314,7 @@ pub struct AtomDetails {
     pub op: AtomicOp,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone)]
 pub enum AtomicOp {
     And,
     Or,
@@ -1919,7 +2354,7 @@ impl AtomicOp {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct AtomCasDetails {
     pub type_: ScalarType,
     pub semantics: AtomSemantics,
@@ -1927,11 +2362,26 @@ pub struct AtomCasDetails {
     pub space: StateSpace,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Copy, Clone)]
 pub enum DivDetails {
     Unsigned(ScalarType),
     Signed(ScalarType),
     Float(DivFloatDetails),
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Dp4aDetails {
+    pub atype: ScalarType,
+    pub btype: ScalarType,
+}
+
+impl Dp4aDetails {
+    pub fn ctype(self) -> ScalarType {
+        match (self.atype, self.btype) {
+            (ScalarType::U32, ScalarType::U32) => ScalarType::U32,
+            _ => ScalarType::S32,
+        }
+    }
 }
 
 impl DivDetails {
@@ -1944,14 +2394,14 @@ impl DivDetails {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Copy, Clone)]
 pub struct DivFloatDetails {
     pub type_: ScalarType,
     pub flush_to_zero: Option<bool>,
     pub kind: DivFloatKind,
 }
 
-#[derive(Debug,Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum DivFloatKind {
     Approx,
     ApproxFull,
@@ -1961,4 +2411,50 @@ pub enum DivFloatKind {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct FlushToZero {
     pub flush_to_zero: bool,
+}
+
+#[derive(Debug)]
+pub struct VoteDetails {
+    pub mode: VoteMode,
+    pub negate: bool,
+}
+
+impl VoteMode {
+    fn type_(self) -> ScalarType {
+        match self {
+            VoteMode::All | VoteMode::Any => ScalarType::Pred,
+            VoteMode::Ballot => ScalarType::B32,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ReduxSyncData {
+    pub type_: ScalarType,
+    pub reduction: Reduction,
+}
+
+#[derive(Debug)]
+pub struct MmaDetails {
+    pub alayout: MatrixLayout,
+    pub blayout: MatrixLayout,
+    pub dtype_scalar: ScalarType,
+    pub atype_scalar: ScalarType,
+    pub btype_scalar: ScalarType,
+    pub ctype_scalar: ScalarType,
+}
+
+impl MmaDetails {
+    pub fn dtype(&self) -> Type {
+        Type::Vector(4, ScalarType::F32)
+    }
+    pub fn atype(&self) -> Type {
+        Type::Vector(4, ScalarType::U32)
+    }
+    pub fn btype(&self) -> Type {
+        Type::Vector(2, ScalarType::U32)
+    }
+    pub fn ctype(&self) -> Type {
+        Type::Vector(4, ScalarType::F32)
+    }
 }

@@ -1,6 +1,6 @@
 use cmake::Config;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const COMPONENTS: &[&'static str] = &[
@@ -28,7 +28,8 @@ fn main() {
         .define("LLVM_INCLUDE_EXAMPLES", "OFF")
         .define("LLVM_INCLUDE_TESTS", "OFF")
         .define("LLVM_BUILD_TOOLS", "OFF")
-        .define("LLVM_TARGETS_TO_BUILD", "")
+        // Build at least one target to satisfy LLVMTarget dependency
+        .define("LLVM_TARGETS_TO_BUILD", "X86")
         .define("LLVM_ENABLE_PROJECTS", "");
     
     // For some reason Rust always links to release MSVCRT
@@ -117,7 +118,40 @@ fn compile_cxx_lib(cxxflags: String) {
     // Force use of GCC toolchain on non-Windows platforms
     #[cfg(not(windows))]
     {
-        cc.compiler("g++");
+        let gpp_available = Command::new("g++")
+            .arg("--version")
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        let clang_available = Command::new("clang++")
+            .arg("--version")
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        let gpp_accepts_msvc_flags = if gpp_available {
+            Command::new("g++")
+                .arg("-?")
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let compiler = if gpp_available && !gpp_accepts_msvc_flags {
+            "g++"
+        } else if gpp_accepts_msvc_flags && Path::new("/usr/bin/c++.bak").exists() {
+            "/usr/bin/c++.bak"
+        } else if clang_available {
+            "clang++"
+        } else if gpp_available {
+            "g++"
+        } else {
+            // Fall back to g++ so build failures surface with a clear error
+            "g++"
+        };
+
+        cc.compiler(compiler);
         cc.archiver("ar");
     }
     

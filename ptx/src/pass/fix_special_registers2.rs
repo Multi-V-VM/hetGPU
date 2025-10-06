@@ -3,25 +3,26 @@ use super::*;
 pub(super) fn run<'a, 'input>(
     resolver: &mut GlobalStringIdentResolver2<'input>,
     special_registers: &'a SpecialRegistersMap2,
-    directives: Vec<UnconditionalDirective<'input>>,
-) -> Result<Vec<UnconditionalDirective<'input>>, TranslateError> {
+    directives: Vec<UnconditionalDirective>,
+) -> Result<Vec<UnconditionalDirective>, TranslateError> {
     let declarations = SpecialRegistersMap2::generate_declarations(resolver);
     let mut result = Vec::with_capacity(declarations.len() + directives.len());
     let mut sreg_to_function =
         FxHashMap::with_capacity_and_hasher(declarations.len(), Default::default());
-    for (sreg, declaration) in declarations {
-        let name = if let ast::MethodName::Func(name) = declaration.name {
-            name
-        } else {
-            return Err(error_unreachable());
-        };
+    for (sreg, (return_arguments, name, input_arguments)) in declarations {
         result.push(UnconditionalDirective::Method(UnconditionalFunction {
-            func_decl: declaration,
-            globals: Vec::new(),
+            return_arguments,
+            name,
+            input_arguments,
             body: None,
+            is_kernel: false,
             import_as: None,
             tuning: Vec::new(),
             linkage: ast::LinkingDirective::EXTERN,
+            flush_to_zero_f32: false,
+            flush_to_zero_f16f64: false,
+            rounding_mode_f32: ast::RoundingMode::NearestEven,
+            rounding_mode_f16f64: ast::RoundingMode::NearestEven,
         }));
         sreg_to_function.insert(sreg, name);
     }
@@ -39,8 +40,8 @@ pub(super) fn run<'a, 'input>(
 
 fn run_directive<'a, 'input>(
     visitor: &mut SpecialRegisterResolver<'a, 'input>,
-    directive: UnconditionalDirective<'input>,
-) -> Result<UnconditionalDirective<'input>, TranslateError> {
+    directive: UnconditionalDirective,
+) -> Result<UnconditionalDirective, TranslateError> {
     Ok(match directive {
         var @ Directive2::Variable(..) => var,
         Directive2::Method(method) => Directive2::Method(run_method(visitor, method)?),
@@ -49,8 +50,8 @@ fn run_directive<'a, 'input>(
 
 fn run_method<'a, 'input>(
     visitor: &mut SpecialRegisterResolver<'a, 'input>,
-    method: UnconditionalFunction<'input>,
-) -> Result<UnconditionalFunction<'input>, TranslateError> {
+    method: UnconditionalFunction,
+) -> Result<UnconditionalFunction, TranslateError> {
     let body = method
         .body
         .map(|statements| {
@@ -62,12 +63,18 @@ fn run_method<'a, 'input>(
         })
         .transpose()?;
     Ok(Function2 {
-        func_decl: method.func_decl,
-        globals: method.globals,
+        return_arguments: method.return_arguments,
+        name: method.name,
+        input_arguments: method.input_arguments,
         body,
+        is_kernel: method.is_kernel,
         import_as: method.import_as,
         tuning: method.tuning,
         linkage: method.linkage,
+        flush_to_zero_f32: method.flush_to_zero_f32,
+        flush_to_zero_f16f64: method.flush_to_zero_f16f64,
+        rounding_mode_f32: method.rounding_mode_f32,
+        rounding_mode_f16f64: method.rounding_mode_f16f64,
     })
 }
 
@@ -202,10 +209,17 @@ pub fn map_operand<T: Copy, Err>(
             Some(ident) => ast::ParsedOperand::Reg(ident),
             None => ast::ParsedOperand::VecMember(ident, member),
         },
-        ast::ParsedOperand::VecPack(idents) => ast::ParsedOperand::VecPack(
-            idents
+        ast::ParsedOperand::VecPack(reg_or_imms) => ast::ParsedOperand::VecPack(
+            reg_or_imms
                 .into_iter()
-                .map(|ident| Ok(fn_(ident, None)?.unwrap_or(ident)))
+                .map(|reg_or_imm| {
+                    Ok(match reg_or_imm {
+                        ast::RegOrImmediate::Reg(ident) => {
+                            ast::RegOrImmediate::Reg(fn_(ident, None)?.unwrap_or(ident))
+                        }
+                        ast::RegOrImmediate::Imm(imm) => ast::RegOrImmediate::Imm(imm),
+                    })
+                })
                 .collect::<Result<Vec<_>, _>>()?,
         ),
     })

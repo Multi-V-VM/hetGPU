@@ -105,7 +105,7 @@ enum FunctionCategory {
 
 pub fn run<'input>(
     id_defs: GlobalStringIdentResolver2<'input>,
-    directives: Vec<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>>,
+    directives: Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>,
 ) -> Result<String, TranslateError> {
     let mut converter = PtxToTosaConverter::new(&id_defs);
     converter.convert_module(directives)
@@ -192,6 +192,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ast::ScalarType::BF16x2 => "bf16x2",
             ast::ScalarType::S16x2 => "s16x2",
             ast::ScalarType::U16x2 => "u16x2",
+            ast::ScalarType::E4m3x2 => "e4m3x2",
+            ast::ScalarType::E5m2x2 => "e5m2x2",
         }
     }
     
@@ -440,7 +442,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
     fn convert_module(
         &mut self,
-        directives: Vec<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>>,
+        directives: Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>,
     ) -> Result<String, TranslateError> {
         // Add MLIR module header with debug info
         if self.debug_enabled {
@@ -511,7 +513,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         variable: ast::Variable<SpirvWord>,
     ) -> Result<(), TranslateError> {
         let var_name = self.get_variable_name(variable.name)?;
-        let _tensor_type = self.get_tensor_type(&variable.v_type)?;
+        let _tensor_type = self.get_tensor_type(&variable.info.v_type)?;
 
         // Generate a global tensor constant for global variables
         self.write_line(&format!("// Global variable: {}", var_name));
@@ -520,18 +522,15 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
     fn convert_function(
         &mut self,
-        method: Function2<'input, ast::Instruction<SpirvWord>, SpirvWord>,
+        method: Function2<ast::Instruction<SpirvWord>, SpirvWord>,
     ) -> Result<(), TranslateError> {
-        let func_name = match &method.func_decl.name {
-            ast::MethodName::Kernel(name) => name.to_string(),
-            ast::MethodName::Func(id) => self
-                .id_defs
-                .ident_map
-                .get(id)
-                .and_then(|entry| entry.name.as_ref())
-                .map(|name| name.to_string())
-                .unwrap_or_else(|| format!("func_{}", id.0)),
-        };
+        let func_name = self
+            .id_defs
+            .ident_map
+            .get(&method.name)
+            .and_then(|entry| entry.name.as_ref())
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| format!("func_{}", method.name.0));
 
         // Check if this is a helper function that should be declaration only
         let is_helper_function = func_name.starts_with("__zluda_ptx_impl_");
@@ -571,7 +570,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let mut param_index = 0;
         
         eprintln!("ZLUDA DEBUG: Processing function {} with {} PTX parameters and {} data loads", 
-                 func_name, method.func_decl.input_arguments.len(), num_data_loads);
+                 func_name, method.input_arguments.len(), num_data_loads);
         
         // Initialize actual_input_params outside the conditional
         let mut actual_input_params = Vec::new();
@@ -593,8 +592,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 
                 // For parameter mapping, use the first PTX input parameter
                 // Multiple loads may come from the same PTX parameter (e.g., array access)
-                if i == 0 && !method.func_decl.input_arguments.is_empty() {
-                    let param = &method.func_decl.input_arguments[0];
+                if i == 0 && !method.input_arguments.is_empty() {
+                    let param = &method.input_arguments[0];
                     actual_input_params.push((param.name, i, param_type));
                 }
                 param_index += 1;
@@ -603,9 +602,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             // Fallback: If no data loads were found, use the original PTX parameter logic
             // This handles special cases like single-parameter functions
             
-            for (i, param) in method.func_decl.input_arguments.iter().enumerate() {
+            for (i, param) in method.input_arguments.iter().enumerate() {
                 // Convert type to string for debug output
-                let type_str = match &param.v_type {
+                let type_str = match &param.info.v_type {
                     ast::Type::Scalar(s) => format!("Scalar({})", self.scalar_type_to_string(*s)),
                     ast::Type::Vector(n, s) => format!("Vector({}, {})", n, self.scalar_type_to_string(*s)),
                     ast::Type::Array(_, s, dims) => format!("Array({} dims)", dims.len()),
@@ -615,7 +614,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                          i, param.name.0, type_str);
                 
                 // Include all input parameters except the last one (which is typically the output parameter)
-                let num_inputs = method.func_decl.input_arguments.len();
+                let num_inputs = method.input_arguments.len();
                 if num_inputs > 1 && i >= num_inputs - 1 {
                     // Skip the last parameter as it's typically the output parameter
                     eprintln!("ZLUDA DEBUG: Skipping parameter {} as output parameter", i);
@@ -627,14 +626,14 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 }
 
                 // For PTX pointer parameters, convert to the data type they point to
-                let param_type = match &param.v_type {
+                let param_type = match &param.info.v_type {
                     ast::Type::Pointer(scalar_type, _) => {
                         // This is a pointer to scalar data - use the scalar type as tensor
                         self.get_scalar_tensor_type(*scalar_type)
                     },
                     _ => {
                         // Regular parameter
-                        self.convert_type_to_tosa(&param.v_type)?
+                        self.convert_type_to_tosa(&param.info.v_type)?
                     }
                 };
 
@@ -656,17 +655,17 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         
         // ALSO map the output parameter if it was skipped
         // This is needed for tests like atom_cas where output is loaded as an address
-        if method.func_decl.input_arguments.len() > 1 {
-            let last_idx = method.func_decl.input_arguments.len() - 1;
-            let output_param = &method.func_decl.input_arguments[last_idx];
+        if method.input_arguments.len() > 1 {
+            let last_idx = method.input_arguments.len() - 1;
+            let output_param = &method.input_arguments[last_idx];
             
             // Check if this parameter wasn't already mapped (it was skipped)
             if !self.value_map.contains_key(&output_param.name) {
-                let output_param_type = match &output_param.v_type {
+                let output_param_type = match &output_param.info.v_type {
                     ast::Type::Pointer(scalar_type, _) => {
                         self.get_scalar_tensor_type(*scalar_type)
                     },
-                    _ => self.convert_type_to_tosa(&output_param.v_type)?
+                    _ => self.convert_type_to_tosa(&output_param.info.v_type)?
                 };
                 
                 // Map it to a special identifier that won't be in function signature
@@ -686,7 +685,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         signature.push_str(" -> ");
 
 
-        let output_type_mlir = if !method.func_decl.input_arguments.is_empty() {
+        let output_type_mlir = if !method.input_arguments.is_empty() {
             // Always scan for store instructions to determine the actual return type
             let mut store_types = Vec::new();
             
@@ -713,16 +712,16 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 store_type.clone()
             } else {
                 // Fall back to output parameter type if no stores found
-                let num_inputs = method.func_decl.input_arguments.len();
+                let num_inputs = method.input_arguments.len();
                 let output_param_index = if num_inputs > 1 { num_inputs - 1 } else { 0 };
-                let output_param = &method.func_decl.input_arguments[output_param_index];
+                let output_param = &method.input_arguments[output_param_index];
                 
                 eprintln!("ZLUDA DEBUG: No store instructions found, using output parameter type");
-                match &output_param.v_type {
+                match &output_param.info.v_type {
                     ast::Type::Pointer(scalar_type, _) => {
                         self.get_scalar_tensor_type(*scalar_type)
                     },
-                    _ => self.convert_type_to_tosa(&output_param.v_type)?
+                    _ => self.convert_type_to_tosa(&output_param.info.v_type)?
                 }
             }
         } else {
@@ -751,14 +750,14 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             self.write_line(&format!(
                 "// PTX Function: {} with {} parameters",
                 func_name,
-                method.func_decl.input_arguments.len()
+                method.input_arguments.len()
             ));
-            for (i, param) in method.func_decl.input_arguments.iter().enumerate() {
+            for (i, param) in method.input_arguments.iter().enumerate() {
                 let param_name = self
                     .get_variable_name(param.name)
                     .unwrap_or_else(|_| format!("param_{}", i));
                 let param_type = self
-                    .convert_type_to_tosa(&param.v_type)
+                    .convert_type_to_tosa(&param.info.v_type)
                     .unwrap_or_else(|_| MlirType::Basic(BasicType::I32));
                 let param_type_str = param_type.to_string();
                 self.add_variable_debug_info(param.name, &param_name, &param_type_str, &func_name);
@@ -983,8 +982,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             Statement::Constant(const_def) => {
                 self.convert_constant(const_def)?;
             }
-            Statement::PredicatedInstruction { predicate, negated, instruction } => {
-                self.convert_predicated_instruction(predicate, negated, instruction)?;
+            Statement::Instruction(instruction) => {
+                // Handle instruction without predicate
+                self.write_line(&format!("// Instruction: {instruction:?}"));
             }
             _ => {
                 self.write_line(&format!("// Unsupported statement: {statement:?}"));
@@ -998,7 +998,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         var: ast::Variable<SpirvWord>,
     ) -> Result<(), TranslateError> {
         eprintln!("ZLUDA DEBUG: Declaring local variable with id: {}", var.name.0);
-        let tensor_type = self.get_tensor_type(&var.v_type)?;
+        let tensor_type = self.get_tensor_type(&var.info.v_type)?;
         let var_name = self
             .get_variable_name(var.name)
             .unwrap_or_else(|_| format!("var_{}", var.name.0));
@@ -1881,8 +1881,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let src_val = self.value_map.get(&src)
             .ok_or_else(|| {
                 eprintln!("ZLUDA ERROR: Source {} not in value_map", src.0);
-                panic!();
-                TranslateError::UnknownSymbol
+                TranslateError::UnknownSymbol(format!("Source {} not in value_map", src.0))
             })?
             .clone();
         
@@ -1993,7 +1992,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
     //     panic!();
         
-    //     return Err(TranslateError::UnknownSymbol);
+    //     return Err(TranslateError::UnknownSymbol("unknown symbol".to_string()));
 
     // }
 
@@ -3315,7 +3314,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 ));
             }
             _ => {
-                return Err(TranslateError::UnknownSymbol);
+                return Err(TranslateError::UnknownSymbol("unknown symbol".to_string()));
             }
         }
 
@@ -3757,7 +3756,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             if i > 0 {
                 signature.push_str(", ");
             }
-            let param_type = self.convert_type_to_tosa(&param.v_type)?;
+            let param_type = self.convert_type_to_tosa(&param.info.v_type)?;
             signature.push_str(&format!("{}", param_type));
         }
 
@@ -3770,7 +3769,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 if i > 0 {
                     signature.push_str(", ");
                 }
-                let ret_type = self.convert_type_to_tosa(&ret_arg.v_type)?;
+                let ret_type = self.convert_type_to_tosa(&ret_arg.info.v_type)?;
                 signature.push_str(&ret_type.to_string());
             }
         } else {
@@ -3788,7 +3787,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             .get(&var_id)
             .and_then(|entry| entry.name.as_ref())
             .map(|name| name.to_string())
-            .ok_or(TranslateError::UnknownSymbol)
+            .ok_or(TranslateError::UnknownSymbol("unknown symbol".to_string()))
     }
 
     fn find_actual_data_for_load(&self, src_ssa: &str, dst: SpirvWord) -> Option<String> {
@@ -3812,7 +3811,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         self.debug_print_value_map();
         eprintln!("ZLUDA ERROR: Variable {} (id {}) not found in value_map", var_name, var_id.0);
         panic!();
-        Err(TranslateError::UnknownSymbol)
+        Err(TranslateError::UnknownSymbol("unknown symbol".to_string()))
     }
 
     fn format_immediate_value(&self, value: &ast::ImmediateValue) -> String {
@@ -3889,7 +3888,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 // Alternative public function for direct PTX to TOSA MLIR conversion
 pub fn run_direct<'input>(
     id_defs: GlobalStringIdentResolver2<'input>,
-    directives: Vec<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>>,
+    directives: Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>,
 ) -> Result<String, TranslateError> {
     run(id_defs, directives)
 }
@@ -3933,61 +3932,58 @@ pub fn generate_simple_kernel(
     // Calculate tensor dimensions
     let dim_size = ((input_len as f64).sqrt().ceil() as usize).max(32) as u32;
 
-    // Create function declaration
-    let func_decl = ast::MethodDeclaration {
-        return_arguments: vec![ast::Variable {
-            align: None,
-            v_type: ast::Type::Array(None, ast::ScalarType::F32, vec![dim_size, dim_size]),
-            state_space: ast::StateSpace::Reg,
-            name: result_id,
-            array_init: Vec::new(),
-        }],
-        name: ast::MethodName::Kernel(kernel_name),
-        input_arguments: vec![
-            ast::Variable {
-                align: None,
-                v_type: ast::Type::Array(None, ast::ScalarType::F32, vec![dim_size, dim_size]),
-                state_space: ast::StateSpace::Param,
-                name: arg0_id,
-                array_init: Vec::new(),
-            },
-            ast::Variable {
-                align: None,
-                v_type: ast::Type::Array(None, ast::ScalarType::F32, vec![dim_size, dim_size]),
-                state_space: ast::StateSpace::Param,
-                name: arg1_id,
-                array_init: Vec::new(),
-            },
-        ],
-        shared_mem: None,
-    };
-
-    // Create mov (identity) instruction - just copy input to output
-    let mov_instruction = ast::Instruction::Mov {
-        data: ast::MovDetails {
-            typ: ast::Type::Scalar(ast::ScalarType::F32),
-            relaxed_src2_conv: false,
-            src_is_address: false,
-            dst_width: 0,
-            src_width: 0,
-        },
-        arguments: ast::MovArgs {
-            dst: result_id,
-            src: arg0_id,
-        },
-    };
-
-    // Create function body
-    let body = vec![Statement::Instruction(mov_instruction)];
+    // Register kernel name and get SpirvWord
+    let kernel_name_id = id_resolver.register_named(Cow::Borrowed(kernel_name), None);
 
     // Create function
     let function = Function2 {
-        func_decl,
-        globals: Vec::new(),
-        body: Some(body),
+        return_arguments: vec![ast::Variable {
+            info: ast::VariableInfo {
+                align: None,
+                v_type: ast::Type::Array(None, ast::ScalarType::F32, vec![dim_size, dim_size]),
+                state_space: ast::StateSpace::Reg,
+                array_init: Vec::new(),
+            },
+            name: result_id,
+        }],
+        name: kernel_name_id,
+        input_arguments: vec![
+            ast::Variable {
+                info: ast::VariableInfo {
+                    align: None,
+                    v_type: ast::Type::Array(None, ast::ScalarType::F32, vec![dim_size, dim_size]),
+                    state_space: ast::StateSpace::Param,
+                    array_init: Vec::new(),
+                },
+                name: arg0_id,
+            },
+            ast::Variable {
+                info: ast::VariableInfo {
+                    align: None,
+                    v_type: ast::Type::Array(None, ast::ScalarType::F32, vec![dim_size, dim_size]),
+                    state_space: ast::StateSpace::Param,
+                    array_init: Vec::new(),
+                },
+                name: arg1_id,
+            },
+        ],
+        body: Some(vec![Statement::Instruction(ast::Instruction::Mov {
+            data: ast::MovDetails {
+                typ: ast::Type::Scalar(ast::ScalarType::F32),
+            },
+            arguments: ast::MovArgs {
+                dst: result_id,
+                src: arg0_id,
+            },
+        })]),
+        is_kernel: true,
         import_as: None,
         tuning: Vec::new(),
         linkage: ast::LinkingDirective::NONE,
+        flush_to_zero_f32: false,
+        flush_to_zero_f16f64: false,
+        rounding_mode_f32: ast::RoundingMode::NearestEven,
+        rounding_mode_f16f64: ast::RoundingMode::NearestEven,
     };
 
     // Create directive
@@ -4032,61 +4028,63 @@ mod tests {
             Some((scalar_type.clone(), ast::StateSpace::Reg)),
         );
 
-        // Create function declaration
-        let func_decl = ast::MethodDeclaration {
-            return_arguments: vec![ast::Variable {
-                align: None,
-                v_type: scalar_type.clone(),
-                state_space: ast::StateSpace::Reg,
-                name: result_id,
-                array_init: Vec::new(),
-            }],
-            name: ast::MethodName::Kernel("test_kernel"),
-            input_arguments: vec![
-                ast::Variable {
-                    align: None,
-                    v_type: scalar_type.clone(),
-                    state_space: ast::StateSpace::Param,
-                    name: arg0_id,
-                    array_init: Vec::new(),
-                },
-                ast::Variable {
-                    align: None,
-                    v_type: scalar_type.clone(),
-                    state_space: ast::StateSpace::Param,
-                    name: arg1_id,
-                    array_init: Vec::new(),
-                },
-            ],
-            shared_mem: None,
-        };
-
-        // Create add instruction - add arg0 and arg1
-        let add_instruction = ast::Instruction::Add {
-            data: ast::ArithDetails::Float(ast::ArithFloat {
-                type_: ast::ScalarType::F32,
-                rounding: None,
-                flush_to_zero: None,
-                saturate: false,
-            }),
-            arguments: ast::AddArgs {
-                dst: result_id,
-                src1: arg0_id,
-                src2: arg1_id,
-            },
-        };
-
-        // Create function body
-        let body = vec![Statement::Instruction(add_instruction)];
+        // Register kernel name and get SpirvWord
+        let kernel_name_id = id_resolver.register_named(Cow::Borrowed("test_kernel"), None);
 
         // Create function
         let function = Function2 {
-            func_decl,
-            globals: Vec::new(),
-            body: Some(body),
+            return_arguments: vec![ast::Variable {
+                info: ast::VariableInfo {
+                    align: None,
+                    v_type: scalar_type.clone(),
+                    state_space: ast::StateSpace::Reg,
+                    array_init: Vec::new(),
+                },
+                name: result_id,
+            }],
+            name: kernel_name_id,
+            input_arguments: vec![
+                ast::Variable {
+                    info: ast::VariableInfo {
+                        align: None,
+                        v_type: scalar_type.clone(),
+                        state_space: ast::StateSpace::Param,
+                        array_init: Vec::new(),
+                    },
+                    name: arg0_id,
+                },
+                ast::Variable {
+                    info: ast::VariableInfo {
+                        align: None,
+                        v_type: scalar_type.clone(),
+                        state_space: ast::StateSpace::Param,
+                        array_init: Vec::new(),
+                    },
+                    name: arg1_id,
+                },
+            ],
+            body: Some(vec![Statement::Instruction(ast::Instruction::Add {
+                data: ast::ArithDetails::Float(ast::ArithFloat {
+                    type_: ast::ScalarType::F32,
+                    rounding: ast::RoundingMode::NearestEven,
+                    flush_to_zero: None,
+                    saturate: false,
+                    is_fusable: true,
+                }),
+                arguments: ast::AddArgs {
+                    dst: result_id,
+                    src1: arg0_id,
+                    src2: arg1_id,
+                },
+            })]),
+            is_kernel: true,
             import_as: None,
             tuning: Vec::new(),
             linkage: ast::LinkingDirective::NONE,
+            flush_to_zero_f32: false,
+            flush_to_zero_f16f64: false,
+            rounding_mode_f32: ast::RoundingMode::NearestEven,
+            rounding_mode_f16f64: ast::RoundingMode::NearestEven,
         };
 
         // Create directive

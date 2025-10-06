@@ -1016,6 +1016,7 @@ pub fn ptx_type_to_dwarf_encoding(ptx_type: &ast::ScalarType) -> u32 {
         ast::ScalarType::F16 => 4,                       // DW_ATE_float
         ast::ScalarType::U16x2 | ast::ScalarType::S16x2 => 7, // DW_ATE_unsigned (vectors)
         ast::ScalarType::F16x2 | ast::ScalarType::BF16 | ast::ScalarType::BF16x2 => 4, // DW_ATE_float
+        ast::ScalarType::E4m3x2 | ast::ScalarType::E5m2x2 => 4, // DW_ATE_float (FP8 types)
     }
 }
 

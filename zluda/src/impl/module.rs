@@ -231,20 +231,24 @@ pub(crate) fn load_data_impl(
 
 #[cfg(feature = "intel")]
 fn ptx_to_spirv(spirv_module: &ze_module::SpirvModule) -> Result<Vec<u8>, CUerror> {
-    // Convert PTX AST to LLVM IR
+    // Parse PTX
+    let ast = ptx_parser::parse_module_checked(&spirv_module.ptx_text)
+        .map_err(|_| CUerror::INVALID_VALUE)?;
+
+    // Convert PTX AST to LLVM IR with default attributes
+    let attributes = ptx::Attributes {
+        clock_rate: 2124000, // Default clock rate in kHz
+    };
     let llvm_module =
-        ptx::to_llvm_module(spirv_module.ast.clone()).map_err(|_| CUerror::UNKNOWN)?;
+        ptx::to_llvm_module(ast, attributes, |_| {})
+            .map_err(|_| CUerror::UNKNOWN)?;
 
-    // For Intel, we need to use the LLVM SPIR-V target
-    // This is a placeholder implementation that assumes
-    // the ptx::LlvmModule has infrastructure for SPIR-V conversion
+    // Get LLVM IR string from module
+    let llvm_ir = llvm_module.llvm_ir.print_module_to_string();
 
-    // In a real implementation, you would use LLVM's SPIR-V backend
-    // Here we're using the robust conversion from the llvm_module
-    let spirv_binary = ptx::llvm_to_spirv_robust(
-        std::str::from_utf8(&llvm_module.llvm_ir).map_err(|_| CUerror::INVALID_VALUE)?,
-    )
-    .map_err(|_| CUerror::UNKNOWN)?;
+    // Use the robust SPIRV conversion (stub implementation)
+    let spirv_binary = ptx::llvm_to_spirv_robust(llvm_ir.to_str())
+        .map_err(|_| CUerror::UNKNOWN)?;
 
     Ok(spirv_binary)
 }

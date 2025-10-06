@@ -17,14 +17,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Use the PTX library to compile with debug info
     match ptx::to_llvm_module_with_debug_round_trip(ast) {
-        Ok(module) => {
-            match module.0.print_to_string() {
-                Ok(llvm_ir) => println!("{}", llvm_ir),
-                Err(e) => {
-                    eprintln!("Error generating LLVM IR: {}", e);
-                    std::process::exit(1);
-                }
-            }
+        Ok((module, _bitcode, _mappings)) => {
+            // Print LLVM IR
+            let llvm_ir = module.llvm_ir.print_module_to_string();
+            println!("{}", llvm_ir.to_str());
         }
         Err(e) => {
             eprintln!("Error: {:?}", e);

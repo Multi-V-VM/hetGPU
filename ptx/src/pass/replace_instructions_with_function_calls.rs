@@ -2,8 +2,8 @@ use super::*;
 
 pub(super) fn run<'input>(
     resolver: &mut GlobalStringIdentResolver2<'input>,
-    directives: Vec<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>>,
-) -> Result<Vec<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>>, TranslateError> {
+    directives: Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>,
+) -> Result<Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>, TranslateError> {
     let mut fn_declarations = FxHashMap::default();
     let remapped_directives = directives
         .into_iter()
@@ -13,17 +13,18 @@ pub(super) fn run<'input>(
         .into_iter()
         .map(|(_, (return_arguments, name, input_arguments))| {
             Directive2::Method(Function2 {
-                func_decl: ast::MethodDeclaration {
-                    return_arguments,
-                    name: ast::MethodName::Func(name),
-                    input_arguments,
-                    shared_mem: None,
-                },
-                globals: Vec::new(),
+                return_arguments,
+                name,
+                input_arguments,
                 body: None,
+                is_kernel: false,
                 import_as: None,
                 tuning: Vec::new(),
                 linkage: ast::LinkingDirective::EXTERN,
+                flush_to_zero_f32: false,
+                flush_to_zero_f16f64: false,
+                rounding_mode_f32: ast::RoundingMode::NearestEven,
+                rounding_mode_f16f64: ast::RoundingMode::NearestEven,
             })
         })
         .collect::<Vec<_>>();
@@ -41,8 +42,8 @@ fn run_directive<'input>(
             Vec<ast::Variable<SpirvWord>>,
         ),
     >,
-    directive: Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>,
-) -> Result<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
+    directive: Directive2<ast::Instruction<SpirvWord>, SpirvWord>,
+) -> Result<Directive2<ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
     Ok(match directive {
         var @ Directive2::Variable(..) => var,
         Directive2::Method(mut method) => {
@@ -180,11 +181,13 @@ fn to_variables<'input>(
     arguments
         .iter()
         .map(|(type_, space)| ast::Variable {
-            align: None,
-            v_type: type_.clone(),
-            state_space: *space,
             name: resolver.register_unnamed(Some((type_.clone(), *space))),
-            array_init: Vec::new(),
+            info: ast::VariableInfo {
+                align: None,
+                v_type: type_.clone(),
+                state_space: *space,
+                array_init: Vec::new(),
+            },
         })
         .collect::<Vec<_>>()
 }

@@ -28,9 +28,35 @@ impl GenerateInstructionType {
         let type_parameters = &self.type_parameters;
         let variants = self.variants.iter().map(|v| v.emit_variant());
         quote! {
-            #[derive(Debug, Clone)]
+            #[derive(Debug)]
             #vis enum #type_name<#type_parameters> {
                 #(#variants),*
+            }
+        }
+        .to_tokens(tokens);
+    }
+
+    pub fn emit_instruction_display(&self, tokens: &mut TokenStream) {
+        let type_name = &self.name;
+        let type_parameters = &self.type_parameters;
+        let type_arguments = self.type_parameters.iter().map(|p| p.ident.clone());
+        let variants = self
+            .variants
+            .iter()
+            .map(|v| v.emit_display(&self.name))
+            .filter_map(|v| v);
+        quote! {
+            impl<#type_parameters> std::fmt::Display for #type_name<#(#type_arguments),*>
+            where
+                T: std::fmt::Display,
+                <T as Operand>::Ident: std::fmt::Display
+            {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    match self {
+                        #(#variants),*
+                    }
+                    Ok(())
+                }
             }
         }
         .to_tokens(tokens);
@@ -164,6 +190,7 @@ pub struct InstructionVariant {
     pub arguments: Option<Arguments>,
     pub visit: Option<Expr>,
     pub visit_mut: Option<Expr>,
+    pub display: Option<Expr>,
     pub map: Option<Expr>,
 }
 
@@ -213,6 +240,25 @@ impl InstructionVariant {
         quote! {
             #name { #data #arguments }
         }
+    }
+
+    fn emit_display(&self, enum_: &Ident) -> Option<TokenStream> {
+        let name = &self.name;
+        let enum_ = enum_;
+        let arguments = self.arguments.as_ref().map(|_| quote! { arguments });
+        let data = &self.data.as_ref().map(|_| quote! { data,});
+
+        let display_op = self
+            .display
+            .as_ref()
+            .map(|d| quote! {#d})
+            .unwrap_or(quote! { write!(f, "<{}>", stringify!(#name))? });
+
+        Some(quote! {
+            instr @ #enum_ :: #name { #data #arguments } => {
+                #display_op;
+            }
+        })
     }
 
     fn emit_visit(&self, enum_: &Ident, tokens: &mut TokenStream) {
@@ -313,7 +359,7 @@ impl InstructionVariant {
         };
         let fields = arguments.fields.iter().map(|f| f.emit_field(vis));
         quote! {
-            #[derive(Debug, Clone)]
+            #[derive(Debug)]
             #vis struct #name #type_parameters {
                 #(#fields),*
             }
@@ -334,6 +380,7 @@ impl Parse for InstructionVariant {
         let mut arguments = None;
         let mut visit = None;
         let mut visit_mut = None;
+        let mut display = None;
         let mut map = None;
         for property in properties {
             match property {
@@ -343,6 +390,7 @@ impl Parse for InstructionVariant {
                 VariantProperty::Arguments(a) => arguments = Some(a),
                 VariantProperty::Visit(e) => visit = Some(e),
                 VariantProperty::VisitMut(e) => visit_mut = Some(e),
+                VariantProperty::Display(e) => display = Some(e),
                 VariantProperty::Map(e) => map = Some(e),
             }
         }
@@ -354,6 +402,7 @@ impl Parse for InstructionVariant {
             arguments,
             visit,
             visit_mut,
+            display,
             map,
         })
     }
@@ -366,6 +415,7 @@ enum VariantProperty {
     Arguments(Arguments),
     Visit(Expr),
     VisitMut(Expr),
+    Display(Expr),
     Map(Expr),
 }
 
@@ -420,6 +470,10 @@ impl VariantProperty {
                 "visit_mut" => {
                     input.parse::<Token![:]>()?;
                     VariantProperty::VisitMut(input.parse::<Expr>()?)
+                }
+                "display" => {
+                    input.parse::<Token![:]>()?;
+                    VariantProperty::Display(input.parse::<Expr>()?)
                 }
                 "map" => {
                     input.parse::<Token![:]>()?;
@@ -766,7 +820,7 @@ impl Parse for ArgumentField {
             repr,
             type_,
             space,
-            relaxed_type_check
+            relaxed_type_check,
         })
     }
 }

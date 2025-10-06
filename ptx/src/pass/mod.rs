@@ -4,12 +4,10 @@ use rustc_hash::FxHashMap;
 use std::hash::Hash;
 use std::{
     borrow::Cow,
-    cell::RefCell,
-    collections::{hash_map, HashMap, HashSet},
+    collections::{hash_map, HashMap},
     ffi::CString,
-    fmt::{self, Display, Formatter, Write},
+    fmt::Write,
     iter,
-    path::Path,
 };
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -19,20 +17,29 @@ mod deparamize_functions;
 pub(crate) mod emit_llvm;
 pub(crate) mod emit_tosa_mlir;
 mod expand_operands;
+mod fix_special_registers;
 mod fix_special_registers2;
 mod hoist_globals;
 mod insert_explicit_load_store;
 mod insert_implicit_conversions2;
 pub(crate) mod mlir_debug_framework;
 pub(crate) mod mlir_debugger_integration;
+mod insert_post_saturation;
+mod instruction_mode_to_global_mode;
+pub mod llvm;
+mod normalize_basic_blocks;
+mod normalize_identifiers;
 mod normalize_identifiers2;
 mod normalize_predicates2;
+mod remove_unreachable_basic_blocks;
 mod replace_instructions_with_function_calls;
+mod replace_instructions_with_functions;
+mod replace_instructions_with_functions_fp_required;
 mod replace_known_functions;
 mod resolve_function_pointers;
 
-// Re-export necessary types for emit_llvm.rs
-pub use debug_integration::DebugAwarePtxContext;
+#[cfg(test)]
+mod test;
 
 #[cfg(feature = "amd")]
 static ZLUDA_PTX_IMPL: &'static [u8] = include_bytes!("../../lib/zluda_ptx_impl.bc");
@@ -43,154 +50,88 @@ static ZLUDA_PTX_IMPL: &'static [u8] = include_bytes!("../../lib/zluda_ptx_impl.
 const ZLUDA_PTX_PREFIX: &'static str = "__zluda_ptx_impl_";
 
 quick_error! {
-    #[derive(Debug)]
+    #[derive(Debug, strum_macros::AsRefStr)]
     pub enum TranslateError {
-        UnknownSymbol {}
-        UnreachableCodeError {}
-        Todo
-        InvalidSymbolFormat {}
-        OutOfRangeCall {}
+        UnknownSymbol(symbol: String) {
+            display("Unknown symbol: \"{}\"", symbol)
+        }
         UntypedSymbol {}
         MismatchedType {}
         Unreachable {}
-        UnexpectedError(message: String) {}
-        LLVMValidationError(message: String) {}
-        MissingId {}
+        Todo(msg: String) {
+            display("TODO: {}", msg)
+        }
+        UnexpectedError(msg: String) {
+            display("Unexpected error: {}", msg)
+        }
     }
 }
 
-pub fn to_mlir_module<'input>(ast: ast::Module<'input>) -> Result<String, TranslateError> {
-    // Direct PTX to Linalg MLIR conversion
-    let mut flat_resolver = GlobalStringIdentResolver2::<'input>::new(SpirvWord(1));
-    let mut scoped_resolver = ScopedResolver::new(&mut flat_resolver);
-    eprintln!("ZLUDA DEBUG: Created scoped_resolver");
-    let sreg_map = SpecialRegistersMap2::new(&mut scoped_resolver)?;
-    eprintln!("ZLUDA DEBUG: Created sreg_map");
-    // eprintln!("=== AST before normalize_identifiers2 ===");
-    // eprintln!("{:#?}", ast.directives);
-    let directives = normalize_identifiers2::run(&mut scoped_resolver, ast.directives)?;
-    // eprintln!("=== AST after normalize_identifiers2 ===");
-    // eprintln!("{:#?}", directives);
-    eprintln!("ZLUDA DEBUG: Completed normalize_identifiers2");
-    // eprintln!("=== AST before replace_known_functions ===");
-    // eprintln!("{:#?}", directives);
-    let directives = replace_known_functions::run(&flat_resolver, directives);
-    // eprintln!("=== AST after replace_known_functions ===");
-    // eprintln!("{:#?}", directives);
-    eprintln!("ZLUDA DEBUG: Completed replace_known_functions");
-    // eprintln!("=== AST before normalize_predicates2 ===");
-    // eprintln!("{:#?}", directives);
-    let directives = normalize_predicates2::run(&mut flat_resolver, directives)?;
-    // eprintln!("=== AST after normalize_predicates2 ===");
-    // eprintln!("{:#?}", directives);
-    eprintln!("ZLUDA DEBUG: Completed normalize_predicates2");
-    // eprintln!("=== AST before resolve_function_pointers ===");
-    // eprintln!("{:#?}", directives);
-    let directives = resolve_function_pointers::run(directives)?;
-    // eprintln!("=== AST after resolve_function_pointers ===");
-    // eprintln!("{:#?}", directives);
-    eprintln!("ZLUDA DEBUG: Completed resolve_function_pointers");
-    // eprintln!("=== AST before fix_special_registers2 ===");
-    // eprintln!("{:#?}", directives);
-    let directives: Vec<
-        Directive2<
-            '_,
-            ptx_parser::Instruction<ptx_parser::ParsedOperand<SpirvWord>>,
-            ptx_parser::ParsedOperand<SpirvWord>,
-        >,
-    > = fix_special_registers2::run(&mut flat_resolver, &sreg_map, directives)?;
-    // eprintln!("=== AST after fix_special_registers2 ===");
-    // eprintln!("{:#?}", directives);
-    eprintln!("ZLUDA DEBUG: Completed fix_special_registers2");
-    // eprintln!("=== AST before expand_operands ===");
-    // eprintln!("{:#?}", directives);
-    let directives = expand_operands::run(&mut flat_resolver, directives)?;
-    // eprintln!("=== AST after expand_operands ===");
-    // eprintln!("{:#?}", directives);
-    eprintln!("ZLUDA DEBUG: Completed expand_operands");
-    // eprintln!("=== AST before deparamize_functions ===");
-    // eprintln!("{:#?}", directives);
-    let directives = deparamize_functions::run(&mut flat_resolver, directives)?;
-    // eprintln!("=== AST after deparamize_functions ===");
-    // eprintln!("{:#?}", directives);
-    eprintln!("ZLUDA DEBUG: Completed deparamize_functions");
-    // Skip insert_explicit_load_store for TOSA MLIR - it adds unnecessary complexity
-    // let directives = insert_explicit_load_store::run(&mut flat_resolver, directives)?;
-    eprintln!("ZLUDA DEBUG: Skipped insert_explicit_load_store for TOSA MLIR");
-    // eprintln!("=== AST before insert_implicit_conversions2 ===");
-    // eprintln!("{:#?}", directives);
-    let directives = insert_implicit_conversions2::run(&mut flat_resolver, directives)?;
-    // eprintln!("=== AST after insert_implicit_conversions2 ===");
-    // eprintln!("{:#?}", directives);
-    eprintln!("ZLUDA DEBUG: Completed insert_implicit_conversions2");
-    // eprintln!("=== AST before replace_instructions_with_function_calls ===");
-    // eprintln!("{:#?}", directives);
-    let directives = replace_instructions_with_function_calls::run(&mut flat_resolver, directives)?;
-    // eprintln!("=== AST after replace_instructions_with_function_calls ===");
-    // eprintln!("{:#?}", directives);
-    eprintln!("ZLUDA DEBUG: Completed replace_instructions_with_function_calls");
-    // eprintln!("=== AST before hoist_globals ===");
-    // eprintln!("{:#?}", directives);
-    let directives = hoist_globals::run(directives)?;
-    // eprintln!("=== AST after hoist_globals ===");
-    // eprintln!("{:#?}", directives);
-    eprintln!("ZLUDA DEBUG: Completed hoist_globals");
-
-
-    eprintln!("=== AST before mlir codegen ===");
-    eprintln!("{:#?}", directives);
-    // Convert directly to Linalg MLIR
-    let mlir_code = emit_tosa_mlir::run(flat_resolver, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed emit_linalg_mlir");
-
-    Ok(mlir_code)
+/// GPU attributes needed at compile time.
+#[derive(Copy, Clone)]
+pub struct Attributes {
+    /// Clock frequency in kHz.
+    pub clock_rate: u32,
 }
 
-pub fn to_llvm_module<'input>(ast: ast::Module<'input>) -> Result<Module, TranslateError> {
+pub fn to_llvm_module<'input>(
+    ast: ast::Module<'input>,
+    attributes: Attributes,
+    mut on_pass_end: impl FnMut(&str),
+) -> Result<Module, TranslateError> {
     let mut flat_resolver = GlobalStringIdentResolver2::<'input>::new(SpirvWord(1));
     let mut scoped_resolver = ScopedResolver::new(&mut flat_resolver);
-    eprintln!("ZLUDA DEBUG: Created scoped_resolver");
-    let sreg_map = SpecialRegistersMap2::new(&mut scoped_resolver)?;
-    eprintln!("ZLUDA DEBUG: Created sreg_map");
-    let directives = normalize_identifiers2::run(&mut scoped_resolver, ast.directives)?;
-    eprintln!("ZLUDA DEBUG: Completed normalize_identifiers2");
-    let directives = replace_known_functions::run(&flat_resolver, directives);
-    eprintln!("ZLUDA DEBUG: Completed replace_known_functions");
+    let sreg_map = SpecialRegistersMap::new(&mut scoped_resolver)?;
+    let directives = normalize_identifiers::run(&mut scoped_resolver, ast.directives)?;
+    on_pass_end("normalize_identifiers");
+    let directives = replace_known_functions::run(&mut flat_resolver, directives);
+    on_pass_end("replace_known_functions");
     let directives = normalize_predicates2::run(&mut flat_resolver, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed normalize_predicates2");
+    on_pass_end("normalize_predicates2");
     let directives = resolve_function_pointers::run(directives)?;
-    eprintln!("ZLUDA DEBUG: Completed resolve_function_pointers");
-    let directives: Vec<
-        Directive2<
-            '_,
-            ptx_parser::Instruction<ptx_parser::ParsedOperand<SpirvWord>>,
-            ptx_parser::ParsedOperand<SpirvWord>,
-        >,
-    > = fix_special_registers2::run(&mut flat_resolver, &sreg_map, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed fix_special_registers2");
+    on_pass_end("resolve_function_pointers");
+    let directives = fix_special_registers::run(&mut flat_resolver, &sreg_map, directives)?;
+    on_pass_end("fix_special_registers");
     let directives = expand_operands::run(&mut flat_resolver, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed expand_operands");
+    on_pass_end("expand_operands");
+    let directives = insert_post_saturation::run(&mut flat_resolver, directives)?;
+    on_pass_end("insert_post_saturation");
     let directives = deparamize_functions::run(&mut flat_resolver, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed deparamize_functions");
+    on_pass_end("deparamize_functions");
+    let directives =
+        replace_instructions_with_functions_fp_required::run(&mut flat_resolver, directives)?;
+    on_pass_end("replace_instructions_with_functions_fp_required");
+    let directives = normalize_basic_blocks::run(&mut flat_resolver, directives)?;
+    on_pass_end("normalize_basic_blocks");
+    let directives = remove_unreachable_basic_blocks::run(directives)?;
+    on_pass_end("remove_unreachable_basic_blocks");
+    let directives = instruction_mode_to_global_mode::run(&mut flat_resolver, directives)?;
+    on_pass_end("instruction_mode_to_global_mode");
     let directives = insert_explicit_load_store::run(&mut flat_resolver, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed insert_explicit_load_store");
+    on_pass_end("insert_explicit_load_store");
     let directives = insert_implicit_conversions2::run(&mut flat_resolver, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed insert_implicit_conversions2");
-    let directives = replace_instructions_with_function_calls::run(&mut flat_resolver, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed replace_instructions_with_function_calls");
+    on_pass_end("insert_implicit_conversions2");
+    let directives = replace_instructions_with_functions::run(&mut flat_resolver, directives)?;
+    on_pass_end("replace_instructions_with_functions");
     let directives = hoist_globals::run(directives)?;
-    eprintln!("ZLUDA DEBUG: Completed hoist_globals");
-    let llvm_ir = emit_llvm::run(flat_resolver, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed emit_llvm");
+    on_pass_end("hoist_globals");
+    let context = llvm::Context::new();
+    let llvm_ir = llvm::emit::run(&context, flat_resolver, directives)?;
+    let attributes_ir = llvm::attributes::run(&context, attributes)?;
+    on_pass_end("emit_llvm");
     Ok(Module {
         llvm_ir,
+        attributes_ir,
         kernel_info: HashMap::new(),
+        _context: context,
     })
 }
 
 pub struct Module {
-    pub llvm_ir: emit_llvm::MemoryBuffer,
+    pub llvm_ir: llvm::Module,
+    pub attributes_ir: llvm::Module,
     pub kernel_info: HashMap<String, KernelInfo>,
+    _context: llvm::Context,
 }
 
 impl Module {
@@ -208,7 +149,8 @@ impl Module {
         let temp_ll_path = "/tmp/zluda_temp.ll";
 
         // Write the LLVM IR to a temp file
-        fs::write(temp_bc_path, &*self.llvm_ir)
+        let bitcode = self.llvm_ir.write_bitcode_to_memory();
+        fs::write(temp_bc_path, &*bitcode)
             .map_err(|e| format!("Failed to write temporary bitcode file: {}", e))?;
 
         // Use llvm-dis to convert the bitcode to text
@@ -250,7 +192,7 @@ pub fn to_llvm_module_with_debug_round_trip<'input>(
     TranslateError,
 > {
     // First compile PTX to LLVM with debug info preserved
-    let llvm_module = to_llvm_module(ast)?;
+    let llvm_module = to_llvm_module(ast, Attributes { clock_rate: 2124000 }, |_| {})?;
 
     // Get the LLVM IR as text for debugging
     let llvm_ir_text = llvm_module.print_to_string().map_err(|e| {
@@ -276,7 +218,8 @@ pub fn to_llvm_module_with_debug_round_trip<'input>(
 
     // Save bitcode to /tmp
     let bitcode_path = format!("/tmp/ptx_debug_{}_llvm.bc", timestamp);
-    std::fs::write(&bitcode_path, &*llvm_module.llvm_ir).map_err(|e| {
+    let bitcode_buf = llvm_module.llvm_ir.write_bitcode_to_memory();
+    std::fs::write(&bitcode_path, &*bitcode_buf).map_err(|e| {
         TranslateError::UnexpectedError(format!(
             "Failed to write bitcode to {}: {}",
             bitcode_path, e
@@ -295,7 +238,7 @@ pub fn to_llvm_module_with_debug_round_trip<'input>(
         let context = LLVMContextCreate();
 
         // Create memory buffer from the module's bitcode
-        let bitcode_data = &llvm_module.llvm_ir;
+        let bitcode_data = &*bitcode_buf;
         let mem_buf = LLVMCreateMemoryBufferWithMemoryRangeCopy(
             bitcode_data.as_ptr() as *const i8,
             bitcode_data.len(),
@@ -406,7 +349,8 @@ pub fn to_llvm_module_with_debug_round_trip_and_filename<'input>(
 
     // Save bitcode to /tmp
     let bitcode_path = format!("/tmp/ptx_debug_{}_llvm.bc", timestamp);
-    std::fs::write(&bitcode_path, &*llvm_module.llvm_ir).map_err(|e| {
+    let bitcode_buf = llvm_module.llvm_ir.write_bitcode_to_memory();
+    std::fs::write(&bitcode_path, &*bitcode_buf).map_err(|e| {
         TranslateError::UnexpectedError(format!(
             "Failed to write bitcode to {}: {}",
             bitcode_path, e
@@ -425,7 +369,7 @@ pub fn to_llvm_module_with_debug_round_trip_and_filename<'input>(
         let context = LLVMContextCreate();
 
         // Create memory buffer from the module's bitcode
-        let bitcode_data = &llvm_module.llvm_ir;
+        let bitcode_data = &*bitcode_buf;
         let mem_buf = LLVMCreateMemoryBufferWithMemoryRangeCopy(
             bitcode_data.as_ptr() as *const i8,
             bitcode_data.len(),
@@ -498,43 +442,14 @@ pub fn to_llvm_module_with_debug_round_trip_and_filename<'input>(
 }
 
 /// PTX to LLVM compilation with custom filename for debug info
+/// This is now just a wrapper around to_llvm_module with default attributes
 pub fn to_llvm_module_with_filename<'input>(
     ast: ast::Module<'input>,
-    source_filename: &str,
+    _source_filename: &str,
 ) -> Result<Module, TranslateError> {
-    let mut id_defs = GlobalStringIdentResolver2::new(SpirvWord(1));
-    eprintln!("ZLUDA DEBUG: Created scoped_resolver");
-    let mut scoped_resolver = ScopedResolver::new(&mut id_defs);
-    eprintln!("ZLUDA DEBUG: Created sreg_map");
-    let sreg_map = SpecialRegistersMap2::new(&mut scoped_resolver)?;
-    eprintln!("ZLUDA DEBUG: Completed normalize_identifiers2");
-    let directives = normalize_identifiers2::run(&mut scoped_resolver, ast.directives)?;
-    eprintln!("ZLUDA DEBUG: Completed replace_known_functions");
-    let directives = replace_known_functions::run(&mut id_defs, directives);
-    eprintln!("ZLUDA DEBUG: Completed normalize_predicates2");
-    let directives = normalize_predicates2::run(&mut id_defs, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed resolve_function_pointers");
-    let directives = resolve_function_pointers::run(directives);
-    eprintln!("ZLUDA DEBUG: Completed fix_special_registers2");
-    let directives = fix_special_registers2::run(&mut id_defs, &sreg_map, directives.unwrap())?;
-    eprintln!("ZLUDA DEBUG: Completed expand_operands");
-    let directives = expand_operands::run(&mut id_defs, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed deparamize_functions");
-    let directives = deparamize_functions::run(&mut id_defs, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed insert_explicit_load_store");
-    let directives = insert_explicit_load_store::run(&mut id_defs, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed insert_implicit_conversions2");
-    let directives = insert_implicit_conversions2::run(&mut id_defs, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed replace_instructions_with_function_calls");
-    let directives = replace_instructions_with_function_calls::run(&mut id_defs, directives)?;
-    eprintln!("ZLUDA DEBUG: Completed hoist_globals");
-    let directives = hoist_globals::run(directives);
-    eprintln!("ZLUDA DEBUG: Completed emit_llvm");
-    let llvm_ir = emit_llvm::run_with_filename(id_defs, directives.unwrap(), source_filename)?;
-    Ok(Module {
-        llvm_ir,
-        kernel_info: HashMap::new(),
-    })
+    // For now, just use the regular compilation path with default attributes
+    // TODO: Pass source_filename to the debug info generation
+    to_llvm_module(ast, Attributes { clock_rate: 2124000 }, |_| {})
 }
 
 #[derive(Debug, Clone)]
@@ -543,7 +458,14 @@ pub struct KernelInfo {
     pub uses_shared_mem: bool,
 }
 
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone, EnumIter)]
+/// Convert PTX to MLIR (TOSA dialect)
+pub fn to_mlir_module<'input>(_ast: ast::Module<'input>) -> Result<String, TranslateError> {
+    Err(TranslateError::Todo(
+        "to_mlir_module - MLIR backend requires additional passes that are not yet integrated".to_string(),
+    ))
+}
+
+#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone, EnumIter)]
 enum PtxSpecialRegister {
     Tid,
     Ntid,
@@ -551,6 +473,8 @@ enum PtxSpecialRegister {
     Nctaid,
     Clock,
     LanemaskLt,
+    LanemaskGe,
+    Laneid,
 }
 
 impl PtxSpecialRegister {
@@ -562,6 +486,8 @@ impl PtxSpecialRegister {
             Self::Nctaid => "%nctaid",
             Self::Clock => "%clock",
             Self::LanemaskLt => "%lanemask_lt",
+            Self::LanemaskGe => "%lanemask_ge",
+            Self::Laneid => "%laneid",
         }
     }
 
@@ -583,6 +509,8 @@ impl PtxSpecialRegister {
             PtxSpecialRegister::Nctaid => ast::ScalarType::U32,
             PtxSpecialRegister::Clock => ast::ScalarType::U32,
             PtxSpecialRegister::LanemaskLt => ast::ScalarType::U32,
+            PtxSpecialRegister::LanemaskGe => ast::ScalarType::U32,
+            PtxSpecialRegister::Laneid => ast::ScalarType::U32,
         }
     }
 
@@ -592,7 +520,10 @@ impl PtxSpecialRegister {
             | PtxSpecialRegister::Ntid
             | PtxSpecialRegister::Ctaid
             | PtxSpecialRegister::Nctaid => Some(ast::ScalarType::U8),
-            PtxSpecialRegister::Clock | PtxSpecialRegister::LanemaskLt => None,
+            PtxSpecialRegister::Clock
+            | PtxSpecialRegister::LanemaskLt
+            | PtxSpecialRegister::LanemaskGe
+            | PtxSpecialRegister::Laneid => None,
         }
     }
 
@@ -604,6 +535,8 @@ impl PtxSpecialRegister {
             PtxSpecialRegister::Nctaid => "sreg_nctaid",
             PtxSpecialRegister::Clock => "sreg_clock",
             PtxSpecialRegister::LanemaskLt => "sreg_lanemask_lt",
+            PtxSpecialRegister::LanemaskGe => "sreg_lanemask_ge",
+            PtxSpecialRegister::Laneid => "sreg_laneid",
         }
     }
 }
@@ -615,7 +548,17 @@ fn error_unreachable() -> TranslateError {
 
 #[cfg(not(debug_assertions))]
 fn error_unreachable() -> TranslateError {
-    TranslateError::UnreachableCodeError
+    TranslateError::Unreachable
+}
+
+#[cfg(debug_assertions)]
+fn error_todo_msg<T: Into<String>>(msg: T) -> TranslateError {
+    unreachable!("{}", msg.into())
+}
+
+#[cfg(not(debug_assertions))]
+fn error_todo_msg<T: Into<String>>(msg: T) -> TranslateError {
+    TranslateError::Todo(msg.into())
 }
 
 #[cfg(debug_assertions)]
@@ -625,40 +568,36 @@ fn error_todo() -> TranslateError {
 
 #[cfg(not(debug_assertions))]
 fn error_todo() -> TranslateError {
-    TranslateError::Todo
+    TranslateError::Todo("".to_string())
 }
 
 #[cfg(debug_assertions)]
-fn error_unknown_symbol() -> TranslateError {
-    panic!()
+fn error_unknown_symbol<T: Into<String>>(symbol: T) -> TranslateError {
+    panic!("Unknown symbol: \"{}\"", symbol.into())
 }
 
 #[cfg(not(debug_assertions))]
-fn error_unknown_symbol() -> TranslateError {
-    TranslateError::UnknownSymbol
+fn error_unknown_symbol<T: Into<String>>(symbol: T) -> TranslateError {
+    TranslateError::UnknownSymbol(symbol.into())
 }
 
 #[cfg(debug_assertions)]
 fn error_mismatched_type() -> TranslateError {
-    panic!()
+    panic!("Mismatched type")
 }
 
 #[cfg(not(debug_assertions))]
 fn error_mismatched_type() -> TranslateError {
-    TranslateError::InvalidSymbolFormat
+    TranslateError::MismatchedType
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum Statement<I, P: ast::Operand> {
     Label(SpirvWord),
     Variable(ast::Variable<P::Ident>),
     Instruction(I),
-    // New: Predicated instruction execution
-    PredicatedInstruction {
-        predicate: SpirvWord,
-        negated: bool,
-        instruction: I,
-    },
+    // SPIR-V compatible replacement for PTX predicates
+    Conditional(BrachCondition),
     Conversion(ImplicitConversion),
     Constant(ConstantDefinition),
     RetValue(ast::RetData, Vec<(SpirvWord, ast::Type)>),
@@ -667,6 +606,33 @@ enum Statement<I, P: ast::Operand> {
     FunctionPointer(FunctionPointerDetails),
     VectorRead(VectorRead),
     VectorWrite(VectorWrite),
+    SetMode(ModeRegister),
+    // This instruction is a nop, it serves as a marker to indicate that the
+    // next instruction requires certain floating-point modes to be set.
+    // Some transcendentals compile to a sequence of instructions that
+    // require certain modes to be set _mid-function_.
+    // See replace_instructions_with_functions_fp_required pass for details
+    FpModeRequired {
+        ftz_f32: Option<bool>,
+        rnd_f32: Option<ast::RoundingMode>,
+    },
+    FpSaturate {
+        dst: SpirvWord,
+        src: SpirvWord,
+        type_: ast::ScalarType,
+    },
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+enum ModeRegister {
+    Denormal {
+        f32: bool,
+        f16f64: bool,
+    },
+    Rounding {
+        f32: ast::RoundingMode,
+        f16f64: ast::RoundingMode,
+    },
 }
 
 impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
@@ -684,31 +650,34 @@ impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
             Statement::Variable(var) => {
                 let name = visitor.visit_ident(
                     var.name,
-                    Some((&var.v_type, var.state_space)),
+                    Some((&var.info.v_type, var.info.state_space)),
                     true,
                     false,
                 )?;
                 Statement::Variable(ast::Variable {
-                    align: var.align,
-                    v_type: var.v_type,
-                    state_space: var.state_space,
+                    info: ast::VariableInfo {
+                        align: var.info.align,
+                        v_type: var.info.v_type,
+                        state_space: var.info.state_space,
+                        array_init: var.info.array_init,
+                    },
                     name,
-                    array_init: var.array_init,
                 })
             }
-            Statement::PredicatedInstruction { predicate, negated, instruction } => {
+            Statement::Conditional(conditional) => {
                 let predicate = visitor.visit_ident(
-                    predicate,
+                    conditional.predicate,
                     Some((&ast::ScalarType::Pred.into(), ast::StateSpace::Reg)),
                     false,
                     false,
                 )?;
-                let instruction = ast::visit_map(instruction, visitor)?;
-                Statement::PredicatedInstruction {
+                let if_true = visitor.visit_ident(conditional.if_true, None, false, false)?;
+                let if_false = visitor.visit_ident(conditional.if_false, None, false, false)?;
+                Statement::Conditional(BrachCondition {
                     predicate,
-                    negated,
-                    instruction,
-                }
+                    if_true,
+                    if_false,
+                })
             }
             Statement::Conversion(ImplicitConversion {
                 src,
@@ -938,8 +907,34 @@ impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
                 let src = visitor.visit_ident(src, None, false, false)?;
                 Statement::FunctionPointer(FunctionPointerDetails { dst, src })
             }
+            Statement::SetMode(mode_register) => Statement::SetMode(mode_register),
+            Statement::FpSaturate { dst, src, type_ } => {
+                let dst = visitor.visit_ident(
+                    dst,
+                    Some((&type_.into(), ast::StateSpace::Reg)),
+                    true,
+                    false,
+                )?;
+                let src = visitor.visit_ident(
+                    src,
+                    Some((&type_.into(), ast::StateSpace::Reg)),
+                    false,
+                    false,
+                )?;
+                Statement::FpSaturate { dst, src, type_ }
+            }
+            Statement::FpModeRequired { ftz_f32, rnd_f32 } => {
+                Statement::FpModeRequired { ftz_f32, rnd_f32 }
+            }
         })
     }
+}
+
+#[derive(Debug)]
+struct BrachCondition {
+    predicate: SpirvWord,
+    if_true: SpirvWord,
+    if_false: SpirvWord,
 }
 
 #[derive(Debug, Clone)]
@@ -953,7 +948,18 @@ struct ImplicitConversion {
     kind: ConversionKind,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl std::fmt::Display for ImplicitConversion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "zluda.convert_implicit{}{}{}{}{}",
+            self.kind, self.to_space, self.to_type, self.from_space, self.from_type
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, strum_macros::Display)]
+#[strum(serialize_all = "snake_case", prefix = ".")]
 enum ConversionKind {
     Default,
     // zero-extend/chop/bitcast depending on types
@@ -963,23 +969,29 @@ enum ConversionKind {
     AddressOf,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct ConstantDefinition {
     pub dst: SpirvWord,
     pub typ: ast::ScalarType,
     pub value: ast::ImmediateValue,
 }
 
-#[derive(Debug, Clone)]
-pub struct PtrAccess<T> {
-    pub underlying_type: ast::Type,
-    pub state_space: ast::StateSpace,
-    pub dst: SpirvWord,
-    pub ptr_src: SpirvWord,
-    pub offset_src: T,
+impl std::fmt::Display for ConstantDefinition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "zluda.constant{} {}", self.typ, self.value)
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+pub struct PtrAccess<T> {
+    underlying_type: ast::Type,
+    state_space: ast::StateSpace,
+    dst: SpirvWord,
+    ptr_src: SpirvWord,
+    offset_src: T,
+}
+
+#[derive(Debug)]
 struct RepackVectorDetails {
     is_extract: bool,
     typ: ast::ScalarType,
@@ -988,7 +1000,23 @@ struct RepackVectorDetails {
     relaxed_type_check: bool,
 }
 
-#[derive(Debug, Clone)]
+impl std::fmt::Display for RepackVectorDetails {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let extract = if self.is_extract {
+            ".extract"
+        } else {
+            ".composite"
+        };
+        let relaxed = if self.relaxed_type_check {
+            ".relaxed"
+        } else {
+            ""
+        };
+        write!(f, "zluda.repack_vector{}{}{}", extract, relaxed, self.typ)
+    }
+}
+
+#[derive(Debug)]
 struct FunctionPointerDetails {
     dst: SpirvWord,
     src: SpirvWord,
@@ -996,6 +1024,12 @@ struct FunctionPointerDetails {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub struct SpirvWord(u32);
+
+impl std::fmt::Display for SpirvWord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "%{}", self.0)
+    }
+}
 
 impl From<u32> for SpirvWord {
     fn from(value: u32) -> Self {
@@ -1026,24 +1060,27 @@ type NormalizedStatement = Statement<
     ast::ParsedOperand<SpirvWord>,
 >;
 
-#[derive(Debug, Clone)]
-enum Directive2<'input, Instruction, Operand: ast::Operand> {
+enum Directive2<Instruction, Operand: ast::Operand> {
     Variable(ast::LinkingDirective, ast::Variable<SpirvWord>),
-    Method(Function2<'input, Instruction, Operand>),
+    Method(Function2<Instruction, Operand>),
 }
 
-#[derive(Debug, Clone)]
-struct Function2<'input, Instruction, Operand: ast::Operand> {
-    pub func_decl: ast::MethodDeclaration<'input, SpirvWord>,
-    pub globals: Vec<ast::Variable<SpirvWord>>,
+struct Function2<Instruction, Operand: ast::Operand> {
+    pub return_arguments: Vec<ast::Variable<Operand::Ident>>,
+    pub name: Operand::Ident,
+    pub input_arguments: Vec<ast::Variable<Operand::Ident>>,
     pub body: Option<Vec<Statement<Instruction, Operand>>>,
+    is_kernel: bool,
     import_as: Option<String>,
     tuning: Vec<ast::TuningDirective>,
     linkage: ast::LinkingDirective,
+    flush_to_zero_f32: bool,
+    flush_to_zero_f16f64: bool,
+    rounding_mode_f32: ast::RoundingMode,
+    rounding_mode_f16f64: ast::RoundingMode,
 }
 
-type NormalizedDirective2<'input> = Directive2<
-    'input,
+type NormalizedDirective2 = Directive2<
     (
         Option<ast::PredAt<SpirvWord>>,
         ast::Instruction<ast::ParsedOperand<SpirvWord>>,
@@ -1051,8 +1088,7 @@ type NormalizedDirective2<'input> = Directive2<
     ast::ParsedOperand<SpirvWord>,
 >;
 
-type NormalizedFunction2<'input> = Function2<
-    'input,
+type NormalizedFunction2 = Function2<
     (
         Option<ast::PredAt<SpirvWord>>,
         ast::Instruction<ast::ParsedOperand<SpirvWord>>,
@@ -1060,17 +1096,11 @@ type NormalizedFunction2<'input> = Function2<
     ast::ParsedOperand<SpirvWord>,
 >;
 
-type UnconditionalDirective<'input> = Directive2<
-    'input,
-    ast::Instruction<ast::ParsedOperand<SpirvWord>>,
-    ast::ParsedOperand<SpirvWord>,
->;
+type UnconditionalDirective =
+    Directive2<ast::Instruction<ast::ParsedOperand<SpirvWord>>, ast::ParsedOperand<SpirvWord>>;
 
-type UnconditionalFunction<'input> = Function2<
-    'input,
-    ast::Instruction<ast::ParsedOperand<SpirvWord>>,
-    ast::ParsedOperand<SpirvWord>,
->;
+type UnconditionalFunction =
+    Function2<ast::Instruction<ast::ParsedOperand<SpirvWord>>, ast::ParsedOperand<SpirvWord>>;
 
 struct GlobalStringIdentResolver2<'input> {
     pub(crate) current_id: SpirvWord,
@@ -1121,7 +1151,7 @@ impl<'input> GlobalStringIdentResolver2<'input> {
                 type_space: Some(type_space),
                 ..
             }) => Ok(type_space),
-            _ => Err(error_unknown_symbol()),
+            _ => Err(error_unknown_symbol(format!("{:?}", id))),
         }
     }
 }
@@ -1167,7 +1197,7 @@ impl<'input, 'b> ScopedResolver<'input, 'b> {
                         .get(&ident)
                         .ok_or_else(|| error_unreachable())?;
                     if entry.type_space.is_some() {
-                        return Err(error_unknown_symbol());
+                        return Err(error_unknown_symbol(name));
                     }
                     ident
                 }
@@ -1201,7 +1231,7 @@ impl<'input, 'b> ScopedResolver<'input, 'b> {
             .insert(name.clone(), result)
             .is_some()
         {
-            return Err(error_unknown_symbol());
+            return Err(error_unknown_symbol(name));
         }
         current_scope.ident_map.insert(
             result,
@@ -1218,7 +1248,7 @@ impl<'input, 'b> ScopedResolver<'input, 'b> {
             .iter()
             .rev()
             .find_map(|resolver| resolver.name_to_ident.get(name).copied())
-            .ok_or_else(|| error_unreachable())
+            .ok_or_else(|| error_unknown_symbol(name))
     }
 
     fn get_in_current_scope(&self, label: &'input str) -> Result<SpirvWord, TranslateError> {
@@ -1249,14 +1279,14 @@ impl<'input> ScopeMarker<'input> {
     }
 }
 
-struct SpecialRegistersMap2 {
+struct SpecialRegistersMap {
     reg_to_id: FxHashMap<PtxSpecialRegister, SpirvWord>,
     id_to_reg: FxHashMap<SpirvWord, PtxSpecialRegister>,
 }
 
-impl SpecialRegistersMap2 {
+impl SpecialRegistersMap {
     fn new(resolver: &mut ScopedResolver) -> Result<Self, TranslateError> {
-        let mut result = SpecialRegistersMap2 {
+        let mut result = SpecialRegistersMap {
             reg_to_id: FxHashMap::default(),
             id_to_reg: FxHashMap::default(),
         };
@@ -1276,68 +1306,82 @@ impl SpecialRegistersMap2 {
         self.id_to_reg.get(&id).copied()
     }
 
-    fn generate_declarations<'a, 'input>(
+    fn len() -> usize {
+        PtxSpecialRegister::iter().len()
+    }
+
+    fn foreach_declaration<'a, 'input>(
         resolver: &'a mut GlobalStringIdentResolver2<'input>,
-    ) -> impl ExactSizeIterator<
-        Item = (
+        mut fn_: impl FnMut(
             PtxSpecialRegister,
-            ast::MethodDeclaration<'input, SpirvWord>,
+            (
+                Vec<ast::Variable<SpirvWord>>,
+                SpirvWord,
+                Vec<ast::Variable<SpirvWord>>,
+            ),
         ),
-    > + 'a {
-        PtxSpecialRegister::iter().map(|sreg| {
+    ) {
+        for sreg in PtxSpecialRegister::iter() {
             let external_fn_name = [ZLUDA_PTX_PREFIX, sreg.get_unprefixed_function_name()].concat();
-            let name =
-                ast::MethodName::Func(resolver.register_named(Cow::Owned(external_fn_name), None));
+            let name = resolver.register_named(Cow::Owned(external_fn_name), None);
             let return_type = sreg.get_function_return_type();
             let input_type = sreg.get_function_input_type();
-            (
-                sreg,
-                ast::MethodDeclaration {
-                    return_arguments: vec![ast::Variable {
-                        align: None,
-                        v_type: return_type.into(),
-                        state_space: ast::StateSpace::Reg,
-                        name: resolver
-                            .register_unnamed(Some((return_type.into(), ast::StateSpace::Reg))),
-                        array_init: Vec::new(),
-                    }],
-                    name: name,
-                    input_arguments: input_type
-                        .into_iter()
-                        .map(|type_| ast::Variable {
-                            align: None,
-                            v_type: type_.into(),
-                            state_space: ast::StateSpace::Reg,
-                            name: resolver
-                                .register_unnamed(Some((type_.into(), ast::StateSpace::Reg))),
-                            array_init: Vec::new(),
-                        })
-                        .collect::<Vec<_>>(),
-                    shared_mem: None,
+            let return_arguments = vec![ast::Variable {
+                info: ast::VariableInfo {
+                    align: None,
+                    v_type: return_type.into(),
+                    state_space: ast::StateSpace::Reg,
+                    array_init: Vec::new(),
                 },
-            )
-        })
+                name: resolver.register_unnamed(Some((return_type.into(), ast::StateSpace::Reg))),
+            }];
+            let input_arguments = input_type
+                .into_iter()
+                .map(|type_| ast::Variable {
+                    info: ast::VariableInfo {
+                        align: None,
+                        v_type: type_.into(),
+                        state_space: ast::StateSpace::Reg,
+                        array_init: Vec::new(),
+                    },
+                    name: resolver.register_unnamed(Some((type_.into(), ast::StateSpace::Reg))),
+                })
+                .collect::<Vec<_>>();
+            fn_(sreg, (return_arguments, name, input_arguments));
+        }
+    }
+
+    fn generate_declarations<'input>(
+        resolver: &mut GlobalStringIdentResolver2<'input>,
+    ) -> Vec<(PtxSpecialRegister, (Vec<ast::Variable<SpirvWord>>, SpirvWord, Vec<ast::Variable<SpirvWord>>))> {
+        let mut result = Vec::new();
+        Self::foreach_declaration(resolver, |sreg, decl| {
+            result.push((sreg, decl));
+        });
+        result
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct VectorRead {
-    pub scalar_type: ast::ScalarType,
-    pub vector_width: u8,
-    pub scalar_dst: SpirvWord,
-    pub vector_src: SpirvWord,
-    pub member: u8,
+    scalar_type: ast::ScalarType,
+    vector_width: u8,
+    scalar_dst: SpirvWord,
+    vector_src: SpirvWord,
+    member: u8,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct VectorWrite {
-    pub scalar_type: ast::ScalarType,
-    pub vector_width: u8,
-    pub vector_dst: SpirvWord,
-    pub vector_src: SpirvWord,
-    pub scalar_src: SpirvWord,
-    pub member: u8,
+    scalar_type: ast::ScalarType,
+    vector_width: u8,
+    vector_dst: SpirvWord,
+    vector_src: SpirvWord,
+    scalar_src: SpirvWord,
+    member: u8,
 }
+
+type SpecialRegistersMap2 = SpecialRegistersMap;
 
 fn scalar_to_ptx_name(this: ast::ScalarType) -> &'static str {
     match this {
@@ -1363,6 +1407,8 @@ fn scalar_to_ptx_name(this: ast::ScalarType) -> &'static str {
         ast::ScalarType::BF16 => "bf16",
         ast::ScalarType::BF16x2 => "bf16x2",
         ast::ScalarType::Pred => "pred",
+        ast::ScalarType::E4m3x2 => "e4m3x2",
+        ast::ScalarType::E5m2x2 => "e5m2x2",
     }
 }
 
@@ -1372,12 +1418,6 @@ type UnconditionalStatement =
 impl From<SpirvWord> for String {
     fn from(word: SpirvWord) -> Self {
         format!("_{}", word.0)
-    }
-}
-
-impl std::fmt::Display for SpirvWord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 

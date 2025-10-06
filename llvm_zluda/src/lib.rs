@@ -104,4 +104,10 @@ extern "C" {
     ) -> LLVMDbgRecordRef;
 
     pub fn LLVMZludaSizeOfTypeInBits(TD: LLVMContextRef, Ty: LLVMTypeRef) -> u64;
+
+    pub fn LLVMZludaSetAtomic(
+        MemAccessInst: LLVMValueRef,
+        Ordering: LLVMAtomicOrdering,
+        Scope: *const i8,
+    );
 }

@@ -13,6 +13,8 @@ default = ["intel"]
 intel = []
 amd = []
 tenstorrent = []
+gemmini = []
+nvidia = []
 
 [dependencies]
 comgr = { path = "../comgr" }

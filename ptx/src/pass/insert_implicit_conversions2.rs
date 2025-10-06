@@ -19,8 +19,8 @@ use ptx_parser as ast;
 */
 pub(super) fn run<'input>(
     resolver: &mut GlobalStringIdentResolver2<'input>,
-    directives: Vec<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>>,
-) -> Result<Vec<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>>, TranslateError> {
+    directives: Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>,
+) -> Result<Vec<Directive2<ast::Instruction<SpirvWord>, SpirvWord>>, TranslateError> {
     directives
         .into_iter()
         .map(|directive| run_directive(resolver, directive))
@@ -29,8 +29,8 @@ pub(super) fn run<'input>(
 
 fn run_directive<'a, 'input>(
     resolver: &mut GlobalStringIdentResolver2<'input>,
-    directive: Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>,
-) -> Result<Directive2<'input, ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
+    directive: Directive2<ast::Instruction<SpirvWord>, SpirvWord>,
+) -> Result<Directive2<ast::Instruction<SpirvWord>, SpirvWord>, TranslateError> {
     Ok(match directive {
         var @ Directive2::Variable(..) => var,
         Directive2::Method(mut method) => {
@@ -138,10 +138,7 @@ pub(crate) fn default_implicit_conversion(
         }
     }
     if instruction_space != operand_space {
-        default_implicit_conversion_space(
-            (operand_space, operand_type),
-            (instruction_space, instruction_type),
-        )
+        default_implicit_conversion_space((operand_space, operand_type), instruction_space)
     } else if instruction_type != operand_type {
         default_implicit_conversion_type(instruction_space, operand_type, instruction_type)
     } else {
@@ -155,11 +152,11 @@ fn is_addressable(this: ast::StateSpace) -> bool {
         | ast::StateSpace::Generic
         | ast::StateSpace::Global
         | ast::StateSpace::Local
-        | ast::StateSpace::Shared => true,
+        | ast::StateSpace::Shared
+        | ast::StateSpace::ParamEntry => true,
         ast::StateSpace::Param | ast::StateSpace::Reg => false,
         ast::StateSpace::SharedCluster
         | ast::StateSpace::SharedCta
-        | ast::StateSpace::ParamEntry
         | ast::StateSpace::ParamFunc => todo!(),
     }
 }
@@ -167,7 +164,7 @@ fn is_addressable(this: ast::StateSpace) -> bool {
 // Space is different
 fn default_implicit_conversion_space(
     (operand_space, operand_type): (ast::StateSpace, &ast::Type),
-    (instruction_space, instruction_type): (ast::StateSpace, &ast::Type),
+    instruction_space: ast::StateSpace,
 ) -> Result<Option<ConversionKind>, TranslateError> {
     if (instruction_space == ast::StateSpace::Generic && coerces_to_generic(operand_space))
         || (operand_space == ast::StateSpace::Generic && coerces_to_generic(instruction_space))
@@ -175,15 +172,6 @@ fn default_implicit_conversion_space(
         Ok(Some(ConversionKind::PtrToPtr))
     } else if operand_space == ast::StateSpace::Reg {
         match operand_type {
-            ast::Type::Pointer(operand_ptr_type, operand_ptr_space)
-                if *operand_ptr_space == instruction_space =>
-            {
-                if instruction_type != &ast::Type::Scalar(*operand_ptr_type) {
-                    Ok(Some(ConversionKind::PtrToPtr))
-                } else {
-                    Ok(None)
-                }
-            }
             // TODO: 32 bit
             ast::Type::Scalar(ast::ScalarType::B64)
             | ast::Type::Scalar(ast::ScalarType::U64)
@@ -192,30 +180,18 @@ fn default_implicit_conversion_space(
                 | ast::StateSpace::Generic
                 | ast::StateSpace::Const
                 | ast::StateSpace::Local
-                | ast::StateSpace::Shared => Ok(Some(ConversionKind::BitToPtr)),
+                | ast::StateSpace::Shared
+                | ast::StateSpace::Param => Ok(Some(ConversionKind::BitToPtr)),
                 _ => Err(error_mismatched_type()),
             },
             ast::Type::Scalar(ast::ScalarType::B32)
             | ast::Type::Scalar(ast::ScalarType::U32)
             | ast::Type::Scalar(ast::ScalarType::S32) => match instruction_space {
-                ast::StateSpace::Const | ast::StateSpace::Local | ast::StateSpace::Shared => {
+                ast::StateSpace::Local | ast::StateSpace::Shared => {
                     Ok(Some(ConversionKind::BitToPtr))
                 }
                 _ => Err(error_mismatched_type()),
             },
-            _ => Err(error_mismatched_type()),
-        }
-    } else if instruction_space == ast::StateSpace::Reg {
-        match instruction_type {
-            ast::Type::Pointer(instruction_ptr_type, instruction_ptr_space)
-                if operand_space == *instruction_ptr_space =>
-            {
-                if operand_type != &ast::Type::Scalar(*instruction_ptr_type) {
-                    Ok(Some(ConversionKind::PtrToPtr))
-                } else {
-                    Ok(None)
-                }
-            }
             _ => Err(error_mismatched_type()),
         }
     } else {
@@ -233,7 +209,7 @@ fn default_implicit_conversion_type(
         if should_bitcast(instruction_type, operand_type) {
             Ok(Some(ConversionKind::Default))
         } else {
-            Err(TranslateError::MismatchedType)
+            Err(error_mismatched_type())
         }
     } else {
         Ok(Some(ConversionKind::PtrToPtr))
@@ -245,7 +221,7 @@ fn coerces_to_generic(this: ast::StateSpace) -> bool {
         ast::StateSpace::Global
         | ast::StateSpace::Const
         | ast::StateSpace::Local
-        | ptx_parser::StateSpace::SharedCta
+        | ast::StateSpace::SharedCta
         | ast::StateSpace::SharedCluster
         | ast::StateSpace::Shared => true,
         ast::StateSpace::Reg
@@ -289,14 +265,14 @@ pub(crate) fn should_convert_relaxed_dst_wrapper(
     (instruction_space, instruction_type): (ast::StateSpace, &ast::Type),
 ) -> Result<Option<ConversionKind>, TranslateError> {
     if operand_space != instruction_space {
-        return Err(TranslateError::MismatchedType);
+        return Err(error_mismatched_type());
     }
     if operand_type == instruction_type {
         return Ok(None);
     }
     match should_convert_relaxed_dst(operand_type, instruction_type) {
         conv @ Some(_) => Ok(conv),
-        None => Err(TranslateError::MismatchedType),
+        None => Err(error_mismatched_type()),
     }
 }
 

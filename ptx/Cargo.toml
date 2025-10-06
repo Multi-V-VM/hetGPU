@@ -11,7 +11,7 @@ ptx_parser = { path = "../ptx_parser" }
 llvm_zluda = { path = "../llvm_zluda" }
 quick-error = "1.2"
 thiserror = "1.0"
-bit-vec = "0.6"
+bit-vec = "0.8"
 half ="1.6"
 bitflags = "1.2"
 rustc-hash = "2.0.0"
@@ -30,12 +30,22 @@ ouroboros = "0.18"
 regex = "1.0"
 base64 = "0.22"
 rand = "0.8"
+microlp = "0.2"
+petgraph = "0.6"
+unwrap_or = "1.0"
+smallvec = "1.13"
 
 [dev-dependencies]
-comgr = { path = "../comgr", default-features = false }
+hip_runtime_sys = { path = "../ext/hip_runtime-sys" }
+comgr = { path = "../comgr" }
+cuda_types = { path = "../cuda_types" }
+cuda_base = { path = "../cuda_base" }
 tempfile = "3"
 paste = "1.0"
 cuda-driver-sys = "0.3.0"
+libloading = "0.8"
+pretty_assertions = "1.4"
+int-enum = "1.1"
 
 
 [[example]]
@@ -51,3 +61,4 @@ intel = ["comgr/intel"]
 amd = ["comgr/amd"]
 tenstorrent = ["comgr/tenstorrent"]
 gemmini = ["comgr/gemmini"]
+nvidia = []

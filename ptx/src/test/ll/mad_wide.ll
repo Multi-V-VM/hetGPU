@@ -1,0 +1,47 @@
+define amdgpu_kernel void @mad_wide(ptr addrspace(4) byref(i64) %"40", ptr addrspace(4) byref(i64) %"41") #0 {
+  %"42" = alloca i64, align 8, addrspace(5)
+  %"43" = alloca i64, align 8, addrspace(5)
+  %"44" = alloca i64, align 8, addrspace(5)
+  %"45" = alloca i32, align 4, addrspace(5)
+  %"46" = alloca i32, align 4, addrspace(5)
+  %"47" = alloca i64, align 8, addrspace(5)
+  br label %1
+
+1:                                                ; preds = %0
+  br label %"39"
+
+"39":                                             ; preds = %1
+  %"48" = load i64, ptr addrspace(4) %"40", align 8
+  store i64 %"48", ptr addrspace(5) %"42", align 8
+  %"49" = load i64, ptr addrspace(4) %"41", align 8
+  store i64 %"49", ptr addrspace(5) %"43", align 8
+  %"51" = load i64, ptr addrspace(5) %"42", align 8
+  %"62" = inttoptr i64 %"51" to ptr
+  %"50" = load i32, ptr %"62", align 4
+  store i32 %"50", ptr addrspace(5) %"45", align 4
+  %"52" = load i64, ptr addrspace(5) %"42", align 8
+  %"63" = inttoptr i64 %"52" to ptr
+  %"36" = getelementptr inbounds i8, ptr %"63", i64 4
+  %"53" = load i32, ptr %"36", align 4
+  store i32 %"53", ptr addrspace(5) %"46", align 4
+  %"54" = load i64, ptr addrspace(5) %"42", align 8
+  %"64" = inttoptr i64 %"54" to ptr
+  %"38" = getelementptr inbounds i8, ptr %"64", i64 8
+  %"55" = load i64, ptr %"38", align 8
+  store i64 %"55", ptr addrspace(5) %"47", align 8
+  %"57" = load i32, ptr addrspace(5) %"45", align 4
+  %"58" = load i32, ptr addrspace(5) %"46", align 4
+  %"59" = load i64, ptr addrspace(5) %"47", align 8
+  %2 = sext i32 %"57" to i64
+  %3 = sext i32 %"58" to i64
+  %4 = mul i64 %2, %3
+  %"56" = add i64 %4, %"59"
+  store i64 %"56", ptr addrspace(5) %"44", align 8
+  %"60" = load i64, ptr addrspace(5) %"43", align 8
+  %"61" = load i64, ptr addrspace(5) %"44", align 8
+  %"65" = inttoptr i64 %"60" to ptr
+  store i64 %"61", ptr %"65", align 8
+  ret void
+}
+
+attributes #0 = { "amdgpu-ieee"="false" "amdgpu-unsafe-fp-atomics"="true" "denormal-fp-math"="preserve-sign" "denormal-fp-math-f32"="preserve-sign" "no-trapping-math"="true" "uniform-work-group-size"="true" }

@@ -1,5 +1,5 @@
 use crate::checkpoint::{CheckpointError, CheckpointManager, CompilationStage, PerformanceStats};
-use crate::{llvm_to_spirv_robust, ptx_to_llvm, TranslateError};
+use crate::{llvm_to_spirv_robust, to_llvm_module, TranslateError};
 // use ptx_parser::Module; // 暂时注释掉未使用的导入
 use std::time::Instant;
 
@@ -81,7 +81,7 @@ impl CheckpointedCompiler {
 
         // 阶段2: LLVM IR生成
         let llvm_start = Instant::now();
-        let llvm_module = match ptx_to_llvm(ast) {
+        let llvm_module = match to_llvm_module(ast, crate::pass::Attributes { clock_rate: 2124000 }, |_| {}) {
             Ok(module) => {
                 stats.llvm_gen_time_ms = llvm_start.elapsed().as_millis() as u64;
                 println!("✓ LLVM IR生成完成 ({}ms)", stats.llvm_gen_time_ms);
@@ -126,7 +126,7 @@ impl CheckpointedCompiler {
 
         // 阶段3: SPIR-V转换
         let spirv_start = Instant::now();
-        let llvm_ir_string = match llvm_module.print_to_string() {
+        let llvm_ir_string: String = match llvm_module.print_to_string() {
             Ok(s) => s,
             Err(e) => {
                 let error =
@@ -163,7 +163,7 @@ impl CheckpointedCompiler {
                 let error = TranslateError::UnexpectedError(format!("SPIR-V转换失败: {}", e));
                 let _ =
                     self.checkpoint_manager
-                        .add_error(&checkpoint_id, &error, Some(llvm_ir_string));
+                        .add_error(&checkpoint_id, &error, Some(llvm_ir_string.clone()));
                 compilation_result.errors.push(error.to_string());
                 return Err(CompilationError::SpirvError(e.to_string()));
             }

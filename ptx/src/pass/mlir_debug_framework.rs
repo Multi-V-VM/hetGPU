@@ -559,6 +559,7 @@ impl UniversalMlirDebugContext {
                 ast::ScalarType::U16x2 | ast::ScalarType::S16x2 => 32,
                 ast::ScalarType::F16x2 | ast::ScalarType::BF16x2 => 32,
                 ast::ScalarType::B128 => 128,
+                ast::ScalarType::E4m3x2 | ast::ScalarType::E5m2x2 => 16, // Two 8-bit floats
             },
             ast::Type::Vector(count, scalar_type) => {
                 let scalar_size = self.calculate_type_size_bits(&ast::Type::Scalar(*scalar_type));
@@ -597,6 +598,7 @@ impl UniversalMlirDebugContext {
                 ast::ScalarType::U16x2 | ast::ScalarType::S16x2 => 4,
                 ast::ScalarType::F16x2 | ast::ScalarType::BF16x2 => 4,
                 ast::ScalarType::B128 => 16,
+                ast::ScalarType::E4m3x2 | ast::ScalarType::E5m2x2 => 2, // Two 8-bit floats
             },
             ast::Type::Vector(count, scalar_type) => {
                 let scalar_align = self.calculate_type_alignment(&ast::Type::Scalar(*scalar_type));

@@ -260,4 +260,22 @@ unsigned long long LLVMZludaSizeOfTypeInBits(LLVMTargetDataRef TD,
   return LLVMSizeOfTypeInBits(TD, Ty);
 }
 
+void LLVMZludaSetAtomic(LLVMValueRef MemAccessInst, LLVMAtomicOrdering Ordering,
+                        char *Scope) {
+  Value *Inst = unwrap<Value>(MemAccessInst);
+  LLVMContext &Context = Inst->getContext();
+
+  if (auto *LI = dyn_cast<LoadInst>(Inst)) {
+    LI->setAtomic(mapFromLLVMOrdering(Ordering));
+    if (Scope && strlen(Scope) > 0) {
+      LI->setSyncScopeID(Context.getOrInsertSyncScopeID(Scope));
+    }
+  } else if (auto *SI = dyn_cast<StoreInst>(Inst)) {
+    SI->setAtomic(mapFromLLVMOrdering(Ordering));
+    if (Scope && strlen(Scope) > 0) {
+      SI->setSyncScopeID(Context.getOrInsertSyncScopeID(Scope));
+    }
+  }
+}
+
 LLVM_C_EXTERN_C_END
