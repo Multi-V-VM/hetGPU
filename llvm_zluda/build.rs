@@ -27,9 +27,9 @@ fn main() {
         .define("LLVM_INCLUDE_BENCHMARKS", "OFF")
         .define("LLVM_INCLUDE_EXAMPLES", "OFF")
         .define("LLVM_INCLUDE_TESTS", "OFF")
-        .define("LLVM_BUILD_TOOLS", "OFF")
-        // Build at least one target to satisfy LLVMTarget dependency
-        .define("LLVM_TARGETS_TO_BUILD", "X86")
+        .define("LLVM_BUILD_TOOLS", "ON")
+        // Build X86 for linking and NVPTX for PTX generation with debug info
+        .define("LLVM_TARGETS_TO_BUILD", "X86;NVPTX")
         .define("LLVM_ENABLE_PROJECTS", "");
     
     // For some reason Rust always links to release MSVCRT
@@ -42,6 +42,13 @@ fn main() {
     
     cmake.build_target("llvm-config");
     let llvm_dir = cmake.build();
+
+    // Build llc and llvm-dis tools for debug round-trip
+    cmake.build_target("llc");
+    cmake.build();
+    cmake.build_target("llvm-dis");
+    cmake.build();
+
     for c in COMPONENTS {
         cmake.build_target(c);
         cmake.build();
@@ -61,6 +68,26 @@ fn main() {
     }
     link_llvm_components(lib_names);
     compile_cxx_lib(cxxflags);
+
+    // Export LLVM tool paths for debug round-trip testing
+    // Try multiple possible locations for the built tools
+    let tool_paths = [
+        llvm_dir.join("build").join("bin"),
+        llvm_dir.join("build").join(cmake_profile).join("bin"),
+        llvm_dir.join("bin"),
+    ];
+
+    for tool_path in &tool_paths {
+        let llc_path = tool_path.join("llc");
+        let llvm_dis_path = tool_path.join("llvm-dis");
+
+        if llc_path.exists() && llvm_dis_path.exists() {
+            println!("cargo:rustc-env=LLC_PATH={}", llc_path.display());
+            println!("cargo:rustc-env=LLVM_DIS_PATH={}", llvm_dis_path.display());
+            println!("cargo:warning=Found LLVM tools at: {}", tool_path.display());
+            break;
+        }
+    }
 }
 
 fn try_use_ninja(cmake: &mut Config) {

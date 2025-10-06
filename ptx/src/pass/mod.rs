@@ -154,12 +154,16 @@ impl Module {
             .map_err(|e| format!("Failed to write temporary bitcode file: {}", e))?;
 
         // Use llvm-dis to convert the bitcode to text
-        let llvm_dis_output = Command::new("llvm-dis-20")
+        // Try to use the built LLVM tools first, fall back to system
+        let llvm_dis_cmd = option_env!("LLVM_DIS_PATH")
+            .unwrap_or("llvm-dis");
+
+        let llvm_dis_output = Command::new(&llvm_dis_cmd)
             .arg(temp_bc_path)
             .arg("-o")
             .arg(temp_ll_path)
             .output()
-            .map_err(|e| format!("Failed to execute llvm-dis: {}", e))?;
+            .map_err(|e| format!("Failed to execute llvm-dis ({}): {}", llvm_dis_cmd, e))?;
 
         if !llvm_dis_output.status.success() {
             return Err(format!(
@@ -277,8 +281,12 @@ pub fn to_llvm_module_with_debug_round_trip<'input>(
         })?;
 
         // Use llc to convert LLVM IR to PTX with full DWARF debug info
+        // Try to use the built LLVM tools first, fall back to system
+        let llc_cmd = option_env!("LLC_PATH")
+            .unwrap_or("llc");
+
         let ptx_temp_path = format!("/tmp/zluda_ptx_{}.ptx", timestamp);
-        let llc_output = std::process::Command::new("llc-20")
+        let llc_output = std::process::Command::new(&llc_cmd)
             .args(&[
                 "-march=nvptx64",
                 "-mcpu=sm_61", // Use newer compute capability for better debug support
@@ -290,7 +298,7 @@ pub fn to_llvm_module_with_debug_round_trip<'input>(
             ])
             .output()
             .map_err(|e| {
-                TranslateError::UnexpectedError(format!("Failed to execute llc: {}", e))
+                TranslateError::UnexpectedError(format!("Failed to execute llc ({}): {}", llc_cmd, e))
             })?;
 
         if !llc_output.status.success() {
@@ -408,8 +416,12 @@ pub fn to_llvm_module_with_debug_round_trip_and_filename<'input>(
         })?;
 
         // Use llc to convert LLVM IR to PTX with full DWARF debug info
+        // Try to use the built LLVM tools first, fall back to system
+        let llc_cmd = option_env!("LLC_PATH")
+            .unwrap_or("llc");
+
         let ptx_temp_path = format!("/tmp/zluda_ptx_{}.ptx", timestamp);
-        let llc_output = std::process::Command::new("llc-20")
+        let llc_output = std::process::Command::new(&llc_cmd)
             .args(&[
                 "-march=nvptx64",
                 "-mcpu=sm_61", // Use newer compute capability for better debug support
@@ -421,7 +433,7 @@ pub fn to_llvm_module_with_debug_round_trip_and_filename<'input>(
             ])
             .output()
             .map_err(|e| {
-                TranslateError::UnexpectedError(format!("Failed to execute llc: {}", e))
+                TranslateError::UnexpectedError(format!("Failed to execute llc ({}): {}", llc_cmd, e))
             })?;
 
         if !llc_output.status.success() {
