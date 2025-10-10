@@ -2,6 +2,7 @@ use crate::pass::{self, TranslateError};
 use ptx_parser as ast;
 
 mod spirv_run;
+mod sass_debug_mapping;
 
 #[cfg(not(feature = "ci_build"))]
 #[macro_export]
@@ -37,6 +38,7 @@ fn compile_and_assert(ptx_text: &str) -> Result<(), TranslateError> {
     let ast = ast::parse_module_checked(ptx_text).unwrap();
     let attributes = pass::Attributes {
         clock_rate: 2124000,
+        emit_debug_info: false,
     };
     crate::to_llvm_module(ast, attributes, |_| {})?;
     Ok(())
@@ -149,6 +151,13 @@ fn debug_round_trip_with_sass_mapping() -> Result<(), Box<dyn std::error::Error>
         println!("⚠ Warning: No explicit debug markers found (may be in metadata)");
     }
 
+    // Verify we have .loc directives for SASS mapping
+    assert!(
+        regenerated_ptx.contains(".loc") || regenerated_ptx.contains(".file"),
+        "PTX must contain .loc or .file directives for SASS-to-PTX mapping.\nGenerated PTX:\n{}",
+        regenerated_ptx
+    );
+
     Ok(())
 }
 
@@ -162,8 +171,11 @@ fn llvm_ir_contains_debug_metadata() -> Result<(), Box<dyn std::error::Error>> {
 
     let module = crate::to_llvm_module(
         ast,
-        pass::Attributes { clock_rate: 2124000 },
-        |_| {}
+        pass::Attributes {
+            clock_rate: 2124000,
+            emit_debug_info: false,
+        },
+        |_| {},
     )?;
 
     let llvm_ir = module.print_to_string()

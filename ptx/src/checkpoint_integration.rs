@@ -81,7 +81,7 @@ impl CheckpointedCompiler {
 
         // 阶段2: LLVM IR生成
         let llvm_start = Instant::now();
-        let llvm_module = match to_llvm_module(ast, crate::pass::Attributes { clock_rate: 2124000 }, |_| {}) {
+        let llvm_module = match to_llvm_module(ast, crate::pass::Attributes { clock_rate: 2124000, emit_debug_info: false }, |_| {}) {
             Ok(module) => {
                 stats.llvm_gen_time_ms = llvm_start.elapsed().as_millis() as u64;
                 println!("✓ LLVM IR生成完成 ({}ms)", stats.llvm_gen_time_ms);

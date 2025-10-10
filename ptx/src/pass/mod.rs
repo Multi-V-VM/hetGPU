@@ -16,6 +16,8 @@ pub(crate) mod debug_integration;
 mod deparamize_functions;
 pub(crate) mod emit_llvm;
 pub(crate) mod emit_tosa_mlir;
+pub mod emit_tmatmul_asm;
+pub mod ptx_to_tmatmul;
 mod expand_operands;
 mod fix_special_registers;
 mod fix_special_registers2;
@@ -72,6 +74,8 @@ quick_error! {
 pub struct Attributes {
     /// Clock frequency in kHz.
     pub clock_rate: u32,
+    /// Generate DWARF debug information
+    pub emit_debug_info: bool,
 }
 
 pub fn to_llvm_module<'input>(
@@ -184,6 +188,50 @@ impl Module {
     }
 }
 
+/// Inject minimal debug metadata into LLVM IR to enable PTX debug directives
+fn inject_minimal_debug_metadata(llvm_ir: &str) -> String {
+    let mut output = String::with_capacity(llvm_ir.len() + 2000);
+
+    // Find where functions are defined and add !dbg references
+    let mut in_function = false;
+    let mut func_count = 0;
+
+    for line in llvm_ir.lines() {
+        // Detect function definitions and add !dbg metadata
+        if line.contains("define ") && line.contains("@") {
+            let modified_line = if line.trim_end().ends_with('{') {
+                line.replace('{', &format!("!dbg !{} {{", func_count + 4))
+            } else {
+                format!("{} !dbg !{}", line, func_count + 4)
+            };
+            output.push_str(&modified_line);
+            output.push('\n');
+            in_function = true;
+            func_count += 1;
+        } else {
+            output.push_str(line);
+            output.push('\n');
+        }
+    }
+
+    // Append debug metadata at the end
+    output.push_str("\n!llvm.dbg.cu = !{!0}\n");
+    output.push_str("!llvm.module.flags = !{!2, !3}\n\n");
+    output.push_str("!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: \"hetGPU PTX Compiler\", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug)\n");
+    output.push_str("!1 = !DIFile(filename: \"kernel.ptx\", directory: \".\")\n");
+    output.push_str("!2 = !{i32 2, !\"Dwarf Version\", i32 2}\n");
+    output.push_str("!3 = !{i32 2, !\"Debug Info Version\", i32 3}\n");
+
+    // Add subprogram metadata for each function
+    for i in 0..func_count {
+        output.push_str(&format!("!{} = distinct !DISubprogram(name: \"kernel_{}\", scope: !1, file: !1, line: {}, type: !{}, scopeLine: {}, flags: DIFlagPrototyped, spFlags: DISPFlagDefinition, unit: !0)\n",
+            i + 4, i, i + 1, i + 100, i + 1));
+        output.push_str(&format!("!{} = !DISubroutineType(types: !{{}})\n", i + 100));
+    }
+
+    output
+}
+
 /// PTX to LLVM to PTX compilation with debug info for SASS mapping
 pub fn to_llvm_module_with_debug_round_trip<'input>(
     ast: ast::Module<'input>,
@@ -196,12 +244,23 @@ pub fn to_llvm_module_with_debug_round_trip<'input>(
     TranslateError,
 > {
     // First compile PTX to LLVM with debug info preserved
-    let llvm_module = to_llvm_module(ast, Attributes { clock_rate: 2124000 }, |_| {})?;
+    let llvm_module = to_llvm_module(
+        ast,
+        Attributes {
+            clock_rate: 2124000,
+            emit_debug_info: true,
+        },
+        |_| {},
+    )?;
 
     // Get the LLVM IR as text for debugging
-    let llvm_ir_text = llvm_module.print_to_string().map_err(|e| {
+    let mut llvm_ir_text = llvm_module.print_to_string().map_err(|e| {
         TranslateError::UnexpectedError(format!("Failed to convert LLVM to string: {}", e))
     })?;
+
+    // Inject minimal debug metadata to enable .loc/.file directives in PTX
+    // TODO: Proper debug info generation in emit_llvm
+    llvm_ir_text = inject_minimal_debug_metadata(&llvm_ir_text);
 
     // Save LLVM IR with debug info to /tmp
     let timestamp = std::time::SystemTime::now()
@@ -461,7 +520,14 @@ pub fn to_llvm_module_with_filename<'input>(
 ) -> Result<Module, TranslateError> {
     // For now, just use the regular compilation path with default attributes
     // TODO: Pass source_filename to the debug info generation
-    to_llvm_module(ast, Attributes { clock_rate: 2124000 }, |_| {})
+    to_llvm_module(
+        ast,
+        Attributes {
+            clock_rate: 2124000,
+            emit_debug_info: false,
+        },
+        |_| {},
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -475,6 +541,53 @@ pub fn to_mlir_module<'input>(_ast: ast::Module<'input>) -> Result<String, Trans
     Err(TranslateError::Todo(
         "to_mlir_module - MLIR backend requires additional passes that are not yet integrated".to_string(),
     ))
+}
+
+/// Convert PTX AST to TMatmul assembly - HIGH-LEVEL API
+///
+/// This is the main entry point for compiling PTX to TMatmul assembly.
+/// It handles the complete compilation pipeline.
+///
+/// # Example
+/// ```no_run
+/// use ptx_parser;
+/// use ptx::pass;
+///
+/// let ptx_source = r#"
+///     .visible .entry kernel(.param .u64 input) {
+///         .reg .f32 %r1, %r2;
+///         ld.param.u64 %r1, [input];
+///         add.f32 %r2, %r1, %r1;
+///         ret;
+///     }
+/// "#;
+///
+/// let assembly = pass::ptx_to_tmatmul_assembly(ptx_source).unwrap();
+/// println!("{}", assembly);
+/// ```
+pub fn ptx_to_tmatmul_assembly(ptx_source: &str) -> Result<String, TranslateError> {
+    ptx_to_tmatmul::ptx_to_tmatmul(ptx_source)
+        .map_err(|e| TranslateError::UnexpectedError(e))
+}
+
+/// Convert PTX AST directly to TMatmul assembly with custom memory mappings
+pub fn ptx_ast_to_tmatmul_assembly<'input>(
+    ast: ast::Module<'input>,
+    custom_memory_map: Option<HashMap<String, emit_tmatmul_asm::MemoryLocation>>,
+) -> Result<ptx_to_tmatmul::TMatmulCompilationResult, TranslateError> {
+    let mut compiler = ptx_to_tmatmul::PtxToTMatmulCompiler::new();
+
+    // Setup standard or custom memory mappings
+    if let Some(mem_map) = custom_memory_map {
+        for (symbol, location) in mem_map {
+            compiler.map_memory(&symbol, location);
+        }
+    } else {
+        compiler.setup_standard_memory_map();
+    }
+
+    compiler.compile_module(ast)
+        .map_err(|e| TranslateError::UnexpectedError(e))
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone, EnumIter)]
