@@ -30,9 +30,8 @@ impl RegisterAllocator {
             return Ok(reg.clone());
         }
 
-        // Find next free register
-        for i in 0..8 {
-            let reg_idx = (self.next_reg + i) % 8;
+        // Find lowest free register (prefer lower numbers for deterministic behavior)
+        for reg_idx in 0..8 {
             if !self.allocated_regs[reg_idx] {
                 let reg_name = format!("v{}", reg_idx);
                 self.allocated_regs[reg_idx] = true;

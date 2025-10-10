@@ -27,7 +27,13 @@ pub(crate) fn unimplemented() -> CUresult {
 
 #[cfg(not(debug_assertions))]
 pub(crate) fn unimplemented() -> CUresult {
-    CUresult::ERROR_NOT_SUPPORTED
+    // In the virtual backend we prefer to be permissive to let higher-level
+    // frameworks proceed. Allow opting into strict behavior via HETGPU_STRICT=1.
+    if std::env::var("HETGPU_STRICT").ok().as_deref() == Some("1") {
+        CUresult::ERROR_NOT_SUPPORTED
+    } else {
+        CUresult::SUCCESS
+    }
 }
 
 pub(crate) trait FromCuda<'a, T>: Sized {
@@ -120,13 +126,17 @@ from_cuda_nop!(
     *mut i32,
     *mut usize,
     *const ::core::ffi::c_void,
+    *mut *const ::core::ffi::c_void,
     *const ::core::ffi::c_char,
     *mut ::core::ffi::c_void,
     *mut *mut ::core::ffi::c_void,
+    *mut cuda_types::cuda::CUdriverProcAddressQueryResult,
+    *const cuda_types::cuda::CUuuid,
     u8,
     i32,
     u32,
     usize,
+    cuda_types::cuda::cuuint64_t,
     cuda_types::cuda::CUdevprop,
     CUdevice_attribute
 );

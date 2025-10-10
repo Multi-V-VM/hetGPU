@@ -204,21 +204,225 @@ impl PtxToTMatmulCompiler {
         self.codegen.add_section("COMPILED FROM PTX");
         self.codegen.add_comment(&format!("PTX version: {}.{}", module.version.0, module.version.1));
 
-        // Process directives - simplified to avoid AST complexity
         let directive_count = module.directives.len();
         self.codegen.add_comment(&format!("Processing {} PTX directives", directive_count));
 
-        // For now, generate a template assembly
-        // Full instruction-by-instruction compilation requires deeper PTX AST integration
-        self.codegen.add_section("PTX KERNEL TEMPLATE");
-        self.codegen.add_comment("This is a template showing tmatmul structure");
-        self.codegen.add_comment("Full PTX→TMatmul lowering requires AST walking");
+        // Process each directive
+        for directive in module.directives {
+            match directive {
+                ast::Directive::Variable(_linking, var) => {
+                    // Track variables for memory mapping
+                    self.codegen.add_comment(&format!("Variable: {}", var.name));
+                }
+                ast::Directive::Method(_linking, function) => {
+                    self.compile_function(function)?;
+                }
+            }
+        }
 
         Ok(TMatmulCompilationResult {
             assembly: self.codegen.get_assembly(),
             function_map: self.function_map.clone(),
             register_stats: self.stats.clone(),
         })
+    }
+
+    /// Compile a PTX function/kernel
+    fn compile_function<'input>(
+        &mut self,
+        function: ast::Function<'input, &'input str, ast::Statement<ast::ParsedOperand<&'input str>>>,
+    ) -> Result<(), String> {
+        let func_name = function.func_directive.name();
+        self.current_function = Some(func_name.to_string());
+
+        self.codegen.add_section(&format!("FUNCTION: {}", func_name));
+
+        // Process function body if it exists
+        if let Some(body) = function.body {
+            for statement in body {
+                self.compile_statement(&statement)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compile a PTX statement
+    fn compile_statement(&mut self, statement: &ast::Statement<ast::ParsedOperand<&str>>) -> Result<(), String> {
+        match statement {
+            ast::Statement::Label(label) => {
+                self.codegen.add_comment(&format!("Label: {}", label));
+            }
+            ast::Statement::Variable(_var) => {
+                // Variable declarations
+                self.codegen.add_comment("Variable declaration");
+            }
+            ast::Statement::Instruction(_pred, inst) => {
+                self.compile_instruction(inst)?;
+            }
+            ast::Statement::Block(statements) => {
+                for stmt in statements {
+                    self.compile_statement(stmt)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Compile a PTX instruction to TMatmul operations
+    fn compile_instruction(&mut self, inst: &ast::Instruction<ast::ParsedOperand<&str>>) -> Result<(), String> {
+        self.stats.total_operations += 1;
+
+        match inst {
+            // Arithmetic instructions - pattern match on data and arguments
+            ast::Instruction::Add { arguments, .. } => {
+                let dst_name = Self::operand_to_string(&arguments.dst);
+                let src1_name = Self::operand_to_string(&arguments.src1);
+                let src2_name = Self::operand_to_string(&arguments.src2);
+
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                let src1_ssa = self.map_ptx_to_ssa(&src1_name);
+                let src2_ssa = self.map_ptx_to_ssa(&src2_name);
+
+                self.codegen.emit_operation("tmatmul.add", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+            }
+            ast::Instruction::Sub { arguments, .. } => {
+                let dst_name = Self::operand_to_string(&arguments.dst);
+                let src1_name = Self::operand_to_string(&arguments.src1);
+                let src2_name = Self::operand_to_string(&arguments.src2);
+
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                let src1_ssa = self.map_ptx_to_ssa(&src1_name);
+                let src2_ssa = self.map_ptx_to_ssa(&src2_name);
+
+                self.codegen.emit_operation("tmatmul.sub", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+            }
+            ast::Instruction::Mul { arguments, .. } => {
+                let dst_name = Self::operand_to_string(&arguments.dst);
+                let src1_name = Self::operand_to_string(&arguments.src1);
+                let src2_name = Self::operand_to_string(&arguments.src2);
+
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                let src1_ssa = self.map_ptx_to_ssa(&src1_name);
+                let src2_ssa = self.map_ptx_to_ssa(&src2_name);
+
+                self.codegen.emit_operation("tmatmul.mul", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+            }
+            ast::Instruction::Div { arguments, .. } => {
+                let dst_name = Self::operand_to_string(&arguments.dst);
+                let src1_name = Self::operand_to_string(&arguments.src1);
+                let src2_name = Self::operand_to_string(&arguments.src2);
+
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                let src1_ssa = self.map_ptx_to_ssa(&src1_name);
+                let src2_ssa = self.map_ptx_to_ssa(&src2_name);
+
+                self.codegen.emit_operation("tmatmul.div", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+            }
+
+            // Fused multiply-add
+            ast::Instruction::Mad { arguments, .. } => {
+                let dst_name = Self::operand_to_string(&arguments.dst);
+                let src1_name = Self::operand_to_string(&arguments.src1);
+                let src2_name = Self::operand_to_string(&arguments.src2);
+                let src3_name = Self::operand_to_string(&arguments.src3);
+
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                let src1_ssa = self.map_ptx_to_ssa(&src1_name);
+                let src2_ssa = self.map_ptx_to_ssa(&src2_name);
+                let src3_ssa = self.map_ptx_to_ssa(&src3_name);
+
+                // Emit as mul + add
+                let temp_ssa = self.new_ssa();
+                self.codegen.emit_operation("tmatmul.mul", &[&src1_ssa, &src2_ssa], &[&temp_ssa])?;
+                self.codegen.emit_operation("tmatmul.add", &[&temp_ssa, &src3_ssa], &[&dst_ssa])?;
+            }
+            ast::Instruction::Fma { arguments, .. } => {
+                let dst_name = Self::operand_to_string(&arguments.dst);
+                let src1_name = Self::operand_to_string(&arguments.src1);
+                let src2_name = Self::operand_to_string(&arguments.src2);
+                let src3_name = Self::operand_to_string(&arguments.src3);
+
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                let src1_ssa = self.map_ptx_to_ssa(&src1_name);
+                let src2_ssa = self.map_ptx_to_ssa(&src2_name);
+                let src3_ssa = self.map_ptx_to_ssa(&src3_name);
+
+                // Emit as mul + add
+                let temp_ssa = self.new_ssa();
+                self.codegen.emit_operation("tmatmul.mul", &[&src1_ssa, &src2_ssa], &[&temp_ssa])?;
+                self.codegen.emit_operation("tmatmul.add", &[&temp_ssa, &src3_ssa], &[&dst_ssa])?;
+            }
+
+            // Memory operations
+            ast::Instruction::Ld { arguments, .. } => {
+                let dst_name = Self::operand_to_string(&arguments.dst);
+                let src_name = Self::operand_to_string(&arguments.src);
+
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                self.codegen.emit_operation("tmatmul.ldv", &[&src_name], &[&dst_ssa])?;
+            }
+            ast::Instruction::St { arguments, .. } => {
+                let addr_name = Self::operand_to_string(&arguments.src1);
+                let val_name = Self::operand_to_string(&arguments.src2);
+
+                let val_ssa = self.map_ptx_to_ssa(&val_name);
+                self.codegen.emit_operation("tmatmul.sv", &[&val_ssa, &addr_name], &[])?;
+            }
+
+            // Move operations
+            ast::Instruction::Mov { arguments, .. } => {
+                let dst_name = Self::operand_to_string(&arguments.dst);
+                let src_name = Self::operand_to_string(&arguments.src);
+
+                let src_ssa = self.map_ptx_to_ssa(&src_name);
+                // Update mapping - move is implicit in SSA
+                self.ptx_to_ssa.insert(dst_name, src_ssa);
+            }
+
+            // Control flow
+            ast::Instruction::Ret { .. } => {
+                self.codegen.add_comment("PTX: ret");
+            }
+
+            // Other instructions - add as comments for now
+            _ => {
+                self.codegen.add_comment(&format!("PTX: {} (not yet mapped)", Self::inst_name(inst)));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Convert operand to string representation
+    fn operand_to_string(op: &ast::ParsedOperand<&str>) -> String {
+        match op {
+            ast::ParsedOperand::Reg(name) => name.to_string(),
+            ast::ParsedOperand::RegOffset(name, offset) => format!("{}+{}", name, offset),
+            ast::ParsedOperand::Imm(imm) => format!("{}", imm),
+            ast::ParsedOperand::VecMember(name, idx) => format!("{}.{}", name, idx),
+            ast::ParsedOperand::VecPack(_) => "<vec>".to_string(),
+        }
+    }
+
+    /// Get instruction name for debugging
+    fn inst_name(inst: &ast::Instruction<ast::ParsedOperand<&str>>) -> &'static str {
+        match inst {
+            ast::Instruction::Add { .. } => "add",
+            ast::Instruction::Sub { .. } => "sub",
+            ast::Instruction::Mul { .. } => "mul",
+            ast::Instruction::Div { .. } => "div",
+            ast::Instruction::Mad { .. } => "mad",
+            ast::Instruction::Fma { .. } => "fma",
+            ast::Instruction::Ld { .. } => "ld",
+            ast::Instruction::St { .. } => "st",
+            ast::Instruction::Mov { .. } => "mov",
+            ast::Instruction::Ret { .. } => "ret",
+            ast::Instruction::Cvt { .. } => "cvt",
+            ast::Instruction::Setp { .. } => "setp",
+            ast::Instruction::Bra { .. } => "bra",
+            _ => "unknown",
+        }
     }
 
     /// Generate assembly output

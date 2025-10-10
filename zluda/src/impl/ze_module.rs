@@ -38,6 +38,7 @@ impl SpirvModule {
         // Convert PTX to LLVM IR with default attributes
         let attributes = ptx::Attributes {
             clock_rate: 2124000, // Default clock rate in kHz
+            emit_debug_info: false,
         };
         let llvm_module = ptx::to_llvm_module(ast, attributes, |_| {})?;
 
@@ -63,13 +64,13 @@ impl SpirvModule {
         let mut build_log = ptr::null_mut();
 
         // Create module using the ZE API
-        let ze_module: *mut ze_module_handle_t = ptr::null_mut();
+        let mut ze_module = ze_module_handle_t(ptr::null_mut());
         let result = unsafe {
             zeModuleCreate(
                 ctx.context,
                 ctx.device,
                 &module_desc,
-                ze_module,
+                &mut ze_module,
                 &mut build_log,
             )
         };
@@ -88,7 +89,7 @@ impl SpirvModule {
         }
 
         // Create module wrapper
-        let module = unsafe { *ze_module };
+        let module = ze_module;
 
         // Load module functions
         let functions = Vec::new();
@@ -122,9 +123,10 @@ impl SpirvModule {
         }
 
         // Allocate space for function names
-        let function_names = Vec::<*mut i8>::with_capacity(count as usize);
+        let mut function_names: Vec<*const ::core::ffi::c_char> =
+            vec![ptr::null(); count as usize];
         let result = unsafe {
-            zeModuleGetKernelNames(self.module, &mut count, function_names.as_ptr() as *mut _)
+            zeModuleGetKernelNames(self.module, &mut count, function_names.as_mut_ptr())
         };
 
         if result != ze_result_t::ZE_RESULT_SUCCESS {
@@ -148,8 +150,8 @@ impl SpirvModule {
             };
 
             // Create the kernel
-            let kernel = ptr::null_mut();
-            let result = unsafe { zeKernelCreate(self.module, &kernel_desc, unsafe { *kernel }) };
+            let mut kernel = ze_kernel_handle_t(ptr::null_mut());
+            let result = unsafe { zeKernelCreate(self.module, &kernel_desc, &mut kernel) };
 
             if result != ze_result_t::ZE_RESULT_SUCCESS {
                 return Err(Box::new(std::io::Error::new(
@@ -159,8 +161,7 @@ impl SpirvModule {
             }
 
             // Store the kernel handle
-            self.functions
-                .push((name_str.to_string(), unsafe { **kernel }));
+            self.functions.push((name_str.to_string(), kernel));
         }
 
         Ok(())
@@ -179,13 +180,17 @@ impl Drop for SpirvModule {
         // Clean up functions
         for (_, kernel) in &self.functions {
             unsafe {
-                zeKernelDestroy(*kernel);
+                if !kernel.0.is_null() {
+                    zeKernelDestroy(*kernel);
+                }
             }
         }
 
         // Clean up module
         unsafe {
-            zeModuleDestroy(self.module);
+            if !self.module.0.is_null() {
+                zeModuleDestroy(self.module);
+            }
         }
     }
 }
@@ -257,11 +262,12 @@ pub(crate) fn load_data_impl(
     };
 
     // Create module
-    let ze_module = ptr::null_mut();
+    let mut ze_module = ze_module_handle_t(ptr::null_mut());
     let mut build_log = ptr::null_mut();
 
-    let result =
-        unsafe { zeModuleCreate(context, device, &module_desc, ze_module, &mut build_log) };
+    let result = unsafe {
+        zeModuleCreate(context, device, &module_desc, &mut ze_module, &mut build_log)
+    };
 
     // Check if build log exists and handle it
     if !build_log.is_null() {
@@ -279,7 +285,7 @@ pub(crate) fn load_data_impl(
     *module = Module {
         context,
         device,
-        module: unsafe { *ze_module },
+        module: ze_module,
         functions,
     }
     .wrap();
@@ -295,6 +301,7 @@ fn ptx_to_spirv(spirv_module: &SpirvModule) -> Result<Vec<u8>, CUerror> {
     // Convert PTX AST to LLVM IR with default attributes
     let attributes = ptx::Attributes {
         clock_rate: 2124000, // Default clock rate in kHz
+        emit_debug_info: false,
     };
     let llvm_module = ptx::to_llvm_module(ast, attributes, |_| {})
         .map_err(|_| CUerror::INVALID_VALUE)?;
@@ -342,7 +349,7 @@ pub(crate) fn get_function(
     }
 
     // Create new kernel
-    let kernel: *mut ze_kernel_handle_t = ptr::null_mut();
+    let mut kernel = ze_kernel_handle_t(ptr::null_mut());
     let kernel_desc = ze_kernel_desc_t {
         stype: ze_structure_type_t::ZE_STRUCTURE_TYPE_KERNEL_DESC,
         pNext: ptr::null(),
@@ -350,7 +357,7 @@ pub(crate) fn get_function(
         pKernelName: name,
     };
 
-    let result = unsafe { zeKernelCreate(hmod.module, &kernel_desc, kernel) };
+    let result = unsafe { zeKernelCreate(hmod.module, &kernel_desc, &mut kernel) };
 
     match result {
         ze_result_t::ZE_RESULT_SUCCESS => {
@@ -358,16 +365,12 @@ pub(crate) fn get_function(
                 context: hmod.context,
                 device: hmod.device,
                 module: hmod.module,
-                kernel: unsafe { *kernel },
+                kernel,
             };
 
             // Store the kernel in the module's function list
             let module_mut = hmod as *const Module as *mut Module;
-            unsafe {
-                (*module_mut)
-                    .functions
-                    .push((name_str.to_string(), unsafe { *kernel }));
-            }
+            unsafe { (*module_mut).functions.push((name_str.to_string(), kernel)); }
 
             *hfunc = kernel_wrapper.wrap();
             CUresult::SUCCESS

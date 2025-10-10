@@ -128,8 +128,10 @@ mod tests {
 
         let assembly = codegen.get_assembly();
 
-        // Check for double normalization
-        let norm_count = assembly.matches("norm").count();
+        // Check for double normalization (count lines starting with "    norm")
+        let norm_count = assembly.lines()
+            .filter(|line| line.trim_start().starts_with("norm"))
+            .count();
         assert_eq!(norm_count, 2);
     }
 

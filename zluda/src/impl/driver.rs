@@ -8,12 +8,71 @@ use tt_runtime_sys::*;
 use ze_runtime_sys::*;
 
 use std::ffi::CStr;
+use std::os::raw::{c_char, c_int, c_void};
 
 use std::{cell::RefCell, collections::HashMap, ptr::NonNull};
 
 use crate::r#impl::context;
 
 use super::LiveCheck;
+
+#[cfg(unix)]
+use libc::{dlsym, RTLD_DEFAULT};
+
+// CUDA driver entry point lookups
+pub(crate) fn get_proc_address(
+    symbol: *const c_char,
+    pfn: *mut *mut c_void,
+    _cuda_version: c_int,
+    _flags: cuda_types::cuda::cuuint64_t,
+) -> Result<(), CUerror> {
+    if symbol.is_null() || pfn.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+
+    #[cfg(unix)]
+    unsafe {
+        let addr = dlsym(RTLD_DEFAULT, symbol);
+        *pfn = addr as *mut c_void;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn get_proc_address_v2(
+    symbol: *const c_char,
+    pfn: *mut *mut c_void,
+    _cuda_version: c_int,
+    _flags: cuda_types::cuda::cuuint64_t,
+    symbol_status: *mut cuda_types::cuda::CUdriverProcAddressQueryResult,
+) -> Result<(), CUerror> {
+    if symbol.is_null() || pfn.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+
+    #[cfg(unix)]
+    unsafe {
+        let addr = dlsym(RTLD_DEFAULT, symbol);
+        *pfn = addr as *mut c_void;
+        if !symbol_status.is_null() {
+            (*symbol_status).0 = if addr.is_null() { 1 } else { 0 };
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn get_export_table(
+    pp_export_table: *mut *const c_void,
+    _p_export_table_id: *const CUuuid,
+) -> Result<(), CUerror> {
+    unsafe {
+        if !pp_export_table.is_null() {
+            *pp_export_table = std::ptr::null();
+        }
+    }
+    Ok(())
+}
 
 // Define trait for converting ze_result_t to CUresult
 #[cfg(feature = "intel")]
@@ -123,28 +182,62 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
 
     GLOBAL_STATE
         .get_or_init(|| {
+            // Helper function to create virtual device
+            fn create_virtual_device(reason: &str) -> Result<GlobalState, CUerror> {
+                eprintln!("[Intel Backend] {} - creating virtual device for TMatmul", reason);
+                let comgr_isa = CString::new("virtual-gpu").map_err(|_| CUerror::UNKNOWN)?;
+                let virtual_device = ze_device_handle_t(std::ptr::null_mut());
+                let ctx = context::Context::new(virtual_device);
+
+                let device = Device {
+                    _comgr_isa: comgr_isa,
+                    primary_context: LiveCheck::new(ctx),
+                };
+
+                let device_box = Box::new(device.clone());
+                let device_box_clone = Box::new(*device_box.clone());
+
+                DEVICES_ZE.with(|map| {
+                    let mut map = map.borrow_mut();
+                    let device_ptr = unsafe { NonNull::new_unchecked(Box::into_raw(device_box_clone)) };
+                    map.insert(virtual_device, device_ptr);
+                });
+
+                Ok(GlobalState {
+                    devices: vec![*device_box],
+                })
+            }
+
             // Initialize Level Zero
-            unsafe { zeInit(0) }.to_cuda_result(())?;
+            let ze_init_result = unsafe { zeInit(0) };
+            if ze_init_result != ze_result_t::ZE_RESULT_SUCCESS {
+                return create_virtual_device("Level Zero init failed");
+            }
 
             // Get driver count
             let mut driver_count = 0;
-            unsafe { zeDriverGet(&mut driver_count, std::ptr::null_mut()).to_cuda_result(())? };
-
-            if driver_count == 0 {
-                return Err(CUerror::NO_DEVICE);
+            let driver_result = unsafe { zeDriverGet(&mut driver_count, std::ptr::null_mut()) };
+            if driver_result != ze_result_t::ZE_RESULT_SUCCESS || driver_count == 0 {
+                return create_virtual_device("No Intel drivers found");
             }
 
             // Get drivers
             let mut drivers = vec![std::ptr::null_mut(); driver_count as usize];
-            unsafe { zeDriverGet(&mut driver_count, *drivers.as_mut_ptr()).to_cuda_result(())? };
+            let driver_get_result = unsafe { zeDriverGet(&mut driver_count, *drivers.as_mut_ptr()) };
+            if driver_get_result != ze_result_t::ZE_RESULT_SUCCESS {
+                return create_virtual_device("Failed to get drivers");
+            }
 
             // Get device count for the first driver
             let mut device_count = 0;
-            unsafe {
+            let device_result = unsafe {
                 zeDeviceGet(*drivers[0], &mut device_count, std::ptr::null_mut())
-                    .to_cuda_result(())?
             };
+            if device_result != ze_result_t::ZE_RESULT_SUCCESS || device_count == 0 {
+                return create_virtual_device("No Intel devices on driver");
+            }
 
+            // Real devices found - enumerate them
             let mut devices_vec = Vec::new();
 
             for i in 0..device_count as i32 {
@@ -288,8 +381,16 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
 #[cfg(feature = "intel")]
 pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     unsafe {
-        // Initialize Level Zero
-        zeInit(0).to_cuda_result(())?;
+        // Initialize Level Zero when available; fall back to virtual device otherwise
+        match zeInit(0) {
+            ze_result_t::ZE_RESULT_SUCCESS => {}
+            err => {
+                eprintln!(
+                    "[hetGPU] Level Zero init failed with {:?} - continuing with virtual backend",
+                    err
+                );
+            }
+        }
 
         // Ignore CUDA flags as they don't apply to Level Zero
         let _ = flags;
@@ -310,23 +411,68 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     Ok(())
 }
 
+#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
+    static GLOBAL_STATE: OnceLock<Result<GlobalState, CUerror>> = OnceLock::new();
+
+    GLOBAL_STATE
+        .get_or_init(|| {
+            // TMatmul is a compiler backend with one virtual device
+            let comgr_isa = CString::new("tmatmul-v1").map_err(|_| CUerror::UNKNOWN)?;
+            let ctx = context::Context::new(0);
+
+            let device = Device {
+                _comgr_isa: comgr_isa,
+                primary_context: LiveCheck::new(ctx),
+            };
+
+            let device_box = Box::new(device.clone());
+            let device_box_clone = Box::new(*device_box.clone());
+
+            TMATMUL_DEVICES.with(|map| {
+                let mut map = map.borrow_mut();
+                let device_ptr = unsafe { NonNull::new_unchecked(Box::into_raw(device_box_clone)) };
+                map.insert(0, device_ptr);
+            });
+
+            Ok(GlobalState {
+                devices: vec![*device_box],
+            })
+        })
+        .as_ref()
+        .map_err(|e| *e)
+}
+
+#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
+    let _ = flags;
+    global_state()?;
+    Ok(())
+}
+
 #[cfg(feature = "amd")]
 pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
-    *version = cuda_types::cuda::CUDA_VERSION as i32;
+    *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
     Ok(())
 }
 
 #[cfg(feature = "intel")]
 pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
     // Return the CUDA version same as AMD implementation
-    *version = cuda_types::cuda::CUDA_VERSION as i32;
+    *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
     Ok(())
 }
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
     // Return the CUDA version same as other implementations
-    *version = cuda_types::cuda::CUDA_VERSION as i32;
+    *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
+    Ok(())
+}
+
+#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
+    *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
     Ok(())
 }
 
@@ -360,4 +506,20 @@ thread_local! {
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 thread_local! {
     static TT_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
+}
+
+#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn device_tmatmul(dev_id: i32) -> Result<&'static Device, CUerror> {
+    TMATMUL_DEVICES.with(|map| {
+        let map_ref = map.borrow();
+        map_ref
+            .get(&dev_id)
+            .ok_or(CUerror::INVALID_DEVICE)
+            .map(|dev_ptr| unsafe { dev_ptr.as_ref() })
+    })
+}
+
+#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+thread_local! {
+    static TMATMUL_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
 }

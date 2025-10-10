@@ -10,6 +10,41 @@ use ze_runtime_sys::ze_device_handle_t;
 use cuda_types::cuda::CUerror;
 // Define Result type to match FromCuda error return type
 type Result<T> = std::result::Result<T, CUerror>;
+use std::ffi::CStr;
+use std::os::raw::{c_char, c_int, c_void};
+
+#[cfg(unix)]
+use libc::{dlsym, RTLD_DEFAULT};
+
+#[no_mangle]
+pub unsafe extern "C" fn cudaDriverGetVersion(driver_version: *mut i32) -> i32 {
+    if driver_version.is_null() {
+        return 1; // cudaErrorInvalidValue
+    }
+
+    *driver_version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
+    0
+}
+
+// Note: cuGetProcAddress/cuGetProcAddress_v2/cuGetExportTable are provided
+// via cuda_function_declarations! and implemented in r#impl::driver.
+
+#[no_mangle]
+pub unsafe extern "C" fn cudaGetDeviceCount(count: *mut i32) -> i32 {
+    if count.is_null() {
+        return 1; // cudaErrorInvalidValue
+    }
+
+    if crate::r#impl::driver::init(0).is_err() {
+        *count = 0;
+        return 0;
+    }
+
+    *count = crate::r#impl::driver::global_state()
+        .map(|state| state.devices.len() as i32)
+        .unwrap_or(0);
+    0
+}
 
 // Add this function to get device handle by index
 #[cfg(feature = "intel")]
@@ -35,6 +70,9 @@ macro_rules! unimplemented {
             #[allow(improper_ctypes)]
             #[allow(improper_ctypes_definitions)]
             pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
+                if std::env::var("HETGPU_DEBUG_UNIMPL").ok().as_deref() == Some("1") {
+                    eprintln!("[hetGPU] Unimplemented CUDA call: {}", stringify!($fn_name));
+                }
                 crate::r#impl::unimplemented()
             }
         )*
@@ -154,6 +192,36 @@ macro_rules! implemented_in_function {
     };
 }
 
+#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+macro_rules! implemented {
+    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* ) -> $ret_type:ty;)*) => {
+        $(
+            #[cfg_attr(not(test), no_mangle)]
+            #[allow(improper_ctypes)]
+            #[allow(improper_ctypes_definitions)]
+            pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
+                cuda_base::cuda_normalize_fn!( crate::r#impl::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
+                Ok(())
+            }
+        )*
+    };
+}
+
+#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+macro_rules! implemented_in_function {
+    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* ) -> $ret_type:ty;)*) => {
+        $(
+            #[cfg_attr(not(test), no_mangle)]
+            #[allow(improper_ctypes)]
+            #[allow(improper_ctypes_definitions)]
+            pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
+                cuda_base::cuda_normalize_fn!( crate::r#impl::function::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
+                Ok(())
+            }
+        )*
+    };
+}
+
 cuda_base::cuda_function_declarations!(
     unimplemented,
     implemented
@@ -162,6 +230,7 @@ cuda_base::cuda_function_declarations!(
             cuCtxSetCurrent,
             cuCtxSetLimit,
             cuCtxSynchronize,
+            cuCtxGetDevice,
             cuDeviceComputeCapability,
             cuDeviceGet,
             cuDeviceGetAttribute,
@@ -187,7 +256,11 @@ cuda_base::cuda_function_declarations!(
             cuPointerGetAttribute,
             cuMemGetAddressRange_v2,
             cuMemsetD32_v2,
-            cuMemsetD8_v2
+            cuMemsetD8_v2,
+            // Provide custom implementations in r#impl::driver
+            cuGetProcAddress,
+            cuGetProcAddress_v2,
+            cuGetExportTable
         ],
     implemented_in_function <= [cuLaunchKernel,]
 );
