@@ -45,6 +45,21 @@ impl ZludaObject for Module {
     }
 }
 
+// CUDA: cuModuleGetLoadingMode
+// Report a safe default loading mode so callers don't crash.
+#[cfg(any(feature = "amd", feature = "intel", feature = "tenstorrent", feature = "tmatmul"))]
+pub(crate) fn get_loading_mode(
+    mode: *mut cuda_types::cuda::CUmoduleLoadingMode,
+) -> CUresult {
+    if mode.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    unsafe {
+        *mode = cuda_types::cuda::CUmoduleLoadingMode::CU_MODULE_EAGER_LOADING;
+    }
+    Ok(())
+}
+
 #[cfg(feature = "intel")]
 impl ZludaObject for Module {
     const COOKIE: usize = 0xe9138bd040487d4a;

@@ -496,7 +496,7 @@ pub(crate) fn set_current(raw_ctx: CUcontext) -> CUresult {
 }
 
 #[cfg(feature = "amd")]
-pub(crate) fn get_current() -> Option<CUcontext> {
+pub(crate) fn pop_current() -> Option<CUcontext> {
     CONTEXT_STACK.with(|stack| {
         let mut stack = stack.borrow_mut();
         stack.pop().map(|(ctx, _)| ctx)
@@ -531,7 +531,7 @@ pub(crate) fn set_limit(_limit: c_uint, _value: usize) -> ze_result_t {
 
 #[cfg(all(feature = "intel", not(feature = "amd")))]
 pub(crate) fn synchronize() -> ze_result_t {
-    let ctx = match get_current() {
+    let ctx = match peek_current() {
         Some(ctx) => ctx,
         None => return ze_result_t::ZE_RESULT_ERROR_INVALID_ARGUMENT,
     };
@@ -608,6 +608,17 @@ pub(crate) fn get_current_ze() -> Result<&'static Context, CUerror> {
     Ok(unsafe { std::mem::transmute(context) })
 }
 
+// CUDA API: cuCtxGetCurrent
+// Writes the current CUcontext to pctx (or NULL if none) and returns CUDA_SUCCESS.
+pub(crate) fn get_current(pctx: *mut CUcontext) -> CUresult {
+    if pctx.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let ctx = peek_current().unwrap_or(CUcontext(std::ptr::null_mut()));
+    unsafe { *pctx = ctx };
+    Ok(())
+}
+
 // CUDA API: cuCtxGetDevice -> returns CUdevice ordinal for current context
 #[cfg(all(feature = "intel", not(feature = "amd")))]
 pub(crate) fn get_device(device_out: *mut CUdevice) -> CUresult {
@@ -615,7 +626,7 @@ pub(crate) fn get_device(device_out: *mut CUdevice) -> CUresult {
         return Err(CUerror::INVALID_VALUE);
     }
 
-    let current = match get_current() {
+    let current = match peek_current() {
         Some(ctx) => ctx,
         None => return Err(CUerror::INVALID_CONTEXT),
     };
@@ -721,7 +732,7 @@ pub(crate) fn get_device_properties(device_id: i32) -> Result<String, CUerror> {
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 pub(crate) fn get_current_tt() -> Result<&'static Context, CUerror> {
-    let current = get_current().ok_or(CUerror::INVALID_CONTEXT)?;
+    let current = peek_current().ok_or(CUerror::INVALID_CONTEXT)?;
     let context: &Context = FromCuda::from_cuda(&current)?;
     Ok(unsafe { std::mem::transmute(context) })
 }
@@ -733,7 +744,7 @@ pub(crate) fn get_primary_tt(device_id: i32) -> Result<(&'static Context, CUcont
 }
 
 // Common functions that work across all backends
-pub(crate) fn get_current() -> Option<CUcontext> {
+pub(crate) fn peek_current() -> Option<CUcontext> {
     #[cfg(feature = "amd")]
     {
         CONTEXT_STACK.with(|stack| {

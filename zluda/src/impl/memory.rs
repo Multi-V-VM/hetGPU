@@ -23,7 +23,34 @@ pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
         Err(e) => return Err(e),
     };
 
-    // Allocate device memory using ZE API
+    // Check if this is a virtual device (null handle)
+    if ze_context.device.0.is_null() {
+        // Virtual device: use host memory allocation for compilation/testing
+        use std::alloc::{alloc_zeroed, Layout};
+
+        if bytesize == 0 {
+            unsafe {
+                *dptr = cuda_types::cuda::CUdeviceptr_v2(0x1 as *mut _);
+            }
+            return Ok(());
+        }
+
+        let layout = Layout::from_size_align(bytesize, 64)
+            .map_err(|_| CUerror::OUT_OF_MEMORY)?;
+
+        let host_ptr = unsafe { alloc_zeroed(layout) };
+        if host_ptr.is_null() {
+            return Err(CUerror::OUT_OF_MEMORY);
+        }
+
+        unsafe {
+            *dptr = cuda_types::cuda::CUdeviceptr_v2(host_ptr as *mut _);
+        }
+
+        return Ok(());
+    }
+
+    // Real Level Zero device: use ZE API
     let device_desc = ze_device_mem_alloc_desc_t {
         stype: ze_structure_type_t::ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC,
         pNext: std::ptr::null_mut(),
@@ -57,7 +84,7 @@ pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
         set_d8_v2(*dptr, 0, bytesize)?;
     }
 
-    CUresult::SUCCESS
+    Ok(())
 }
 
 #[cfg(feature = "amd")]
@@ -67,18 +94,35 @@ pub(crate) fn free_v2(dptr: hipDeviceptr_t) -> hipError_t {
 
 #[cfg(feature = "intel")]
 pub(crate) fn free_v2(dptr: CUdeviceptr) -> CUresult {
+    // Validate the pointer
+    if dptr == CUdeviceptr_v2(ptr::null_mut()) {
+        return Ok(());
+    }
+
+    // Special case for zero-size allocations
+    if dptr.0 == 0x1 as *mut _ {
+        return Ok(());
+    }
+
     // Get the current ZE context
     let ze_context = match context::get_current_ze() {
         Ok(ctx) => ctx,
         Err(e) => return Err(e),
     };
 
-    // Validate the pointer
-    if dptr == CUdeviceptr_v2(ptr::null_mut()) {
-        return CUresult::ERROR_INVALID_VALUE;
+    // Check if this is a virtual device (null handle)
+    if ze_context.device.0.is_null() {
+        // Virtual device: free host memory
+        use std::alloc::{dealloc, Layout};
+
+        // We don't know the original size, so we can't properly deallocate
+        // For now, just leak the memory (this is for testing only)
+        // In a real implementation, we'd track allocations
+        // TODO: Track allocations to properly deallocate
+        return Ok(());
     }
 
-    // Free the memory using ZE API
+    // Real Level Zero device: use ZE API
     let result = unsafe { zeMemFree(ze_context.context, dptr.0 as *mut std::ffi::c_void) };
     ze_to_cuda_result(result)
 }
@@ -104,6 +148,27 @@ pub(crate) fn copy_dto_h_v2(
         Err(e) => return Err(e),
     };
 
+    // Check if this is a virtual device (null handle)
+    if ctx.device.0.is_null() {
+        // Virtual device: simple memcpy from device (host) memory to host memory
+        if src_device.0.is_null() || src_device.0 == 0x1 as *mut _ {
+            return Err(CUerror::INVALID_VALUE);
+        }
+        if dst_host.is_null() {
+            return Err(CUerror::INVALID_VALUE);
+        }
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                src_device.0 as *const u8,
+                dst_host as *mut u8,
+                byte_count,
+            );
+        }
+        return Ok(());
+    }
+
+    // Real Level Zero device: use ZE API
     // Get a command list
     let command_list = match get_immediate_command_list(&ctx) {
         Ok(cl) => cl,
@@ -152,6 +217,27 @@ pub(crate) fn copy_hto_d_v2(
         Err(e) => return Err(e),
     };
 
+    // Check if this is a virtual device (null handle)
+    if ctx.device.0.is_null() {
+        // Virtual device: simple memcpy from host memory to device (host) memory
+        if dst_device.0.is_null() || dst_device.0 == 0x1 as *mut _ {
+            return Err(CUerror::INVALID_VALUE);
+        }
+        if src_host.is_null() {
+            return Err(CUerror::INVALID_VALUE);
+        }
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                src_host as *const u8,
+                dst_device.0 as *mut u8,
+                byte_count,
+            );
+        }
+        return Ok(());
+    }
+
+    // Real Level Zero device: use ZE API
     // Get a command list
     let command_list = match get_immediate_command_list(&ctx) {
         Ok(cl) => cl,
@@ -268,6 +354,20 @@ pub(crate) fn set_d8_v2(dst: CUdeviceptr, value: ::core::ffi::c_uchar, n: usize)
         Err(e) => return Err(e),
     };
 
+    // Check if this is a virtual device (null handle)
+    if ctx.device.0.is_null() {
+        // Virtual device: use memset on host memory
+        if dst.0.is_null() || dst.0 == 0x1 as *mut _ {
+            return Ok(());
+        }
+
+        unsafe {
+            std::ptr::write_bytes(dst.0 as *mut u8, value, n);
+        }
+        return Ok(());
+    }
+
+    // Real Level Zero device: use ZE API
     // Get a command list
     let command_list = match get_immediate_command_list(&ctx) {
         Ok(cl) => cl,

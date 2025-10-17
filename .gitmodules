@@ -1,5 +1,3 @@
 [submodule "ext/llvm-project"]
 	path = ext/llvm-project
-	url = https://github.com/llvm/llvm-project
-	branch = release/17.x
-	shallow = true
+	url = https://github.com/Multi-V-VM/llvm-project

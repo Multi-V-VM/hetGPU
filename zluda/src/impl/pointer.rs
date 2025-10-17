@@ -336,7 +336,7 @@ pub(crate) unsafe fn get_attribute(
         CUpointer_attribute::CU_POINTER_ATTRIBUTE_CONTEXT => {
             // For Tenstorrent, return the current context handle
             // In a real implementation, this would query the context associated with the pointer
-            *(data.cast::<CUcontext>()) = super::context::get_current().unwrap_or(CUcontext(ptr::null_mut()));
+            *(data.cast::<CUcontext>()) = super::context::peek_current().unwrap_or(CUcontext(ptr::null_mut()));
             Ok(())
         }
 

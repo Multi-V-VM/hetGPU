@@ -8,7 +8,7 @@ use ze_runtime_sys::*;
 
 const PROJECT_SUFFIX: &[u8] = b" [ZLUDA]\0";
 pub const COMPUTE_CAPABILITY_MAJOR: i32 = 8;
-pub const COMPUTE_CAPABILITY_MINOR: i32 = 8;
+pub const COMPUTE_CAPABILITY_MINOR: i32 = 0;
 
 #[cfg(feature = "amd")]
 pub(crate) fn compute_capability(major: &mut i32, minor: &mut i32, _dev: hipDevice_t) -> CUresult {
@@ -1659,6 +1659,52 @@ pub(crate) fn primary_context_release(dev: i32) -> CUresult {
         }
         mutable_ctx.ref_count -= 1;
     }
+
+    Ok(())
+}
+
+#[cfg(feature = "intel")]
+pub(crate) fn primary_context_get_state(
+    dev: i32,
+    flags: &mut u32,
+    active: &mut i32,
+) -> CUresult {
+    // For virtual device, report that context exists and is active
+    if dev < 0 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+
+    let devices = super::driver::global_state()?;
+    if dev >= devices.devices.len() as i32 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+
+    // Report default flags (0) and active (1)
+    *flags = 0;
+    *active = 1;
+
+    Ok(())
+}
+
+#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn primary_context_get_state(
+    dev: i32,
+    flags: &mut u32,
+    active: &mut i32,
+) -> CUresult {
+    // For TMatmul virtual device, report that context exists and is active
+    if dev < 0 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+
+    let devices = super::driver::global_state()?;
+    if dev >= devices.devices.len() as i32 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+
+    // Report default flags (0) and active (1)
+    *flags = 0;
+    *active = 1;
 
     Ok(())
 }

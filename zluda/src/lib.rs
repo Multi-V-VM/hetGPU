@@ -16,6 +16,9 @@ use std::os::raw::{c_char, c_int, c_void};
 #[cfg(unix)]
 use libc::{dlsym, RTLD_DEFAULT};
 
+// Note: The cudart shim symbols are force-linked via --whole-archive in build.rs,
+// so we don't need an explicit anchor function here.
+
 #[no_mangle]
 pub unsafe extern "C" fn cudaDriverGetVersion(driver_version: *mut i32) -> i32 {
     if driver_version.is_null() {
@@ -230,6 +233,7 @@ cuda_base::cuda_function_declarations!(
             cuCtxSetCurrent,
             cuCtxSetLimit,
             cuCtxSynchronize,
+            cuCtxGetCurrent,
             cuCtxGetDevice,
             cuDeviceComputeCapability,
             cuDeviceGet,
@@ -239,6 +243,7 @@ cuda_base::cuda_function_declarations!(
             cuDeviceGetName,
             cuDevicePrimaryCtxRelease,
             cuDevicePrimaryCtxRetain,
+            cuDevicePrimaryCtxGetState,
             cuDeviceGetProperties,
             cuDeviceGetUuid,
             cuDeviceGetUuid_v2,
@@ -251,6 +256,7 @@ cuda_base::cuda_function_declarations!(
             cuMemcpyDtoH_v2,
             cuMemcpyHtoD_v2,
             cuModuleGetFunction,
+            cuModuleGetLoadingMode,
             cuModuleLoadData,
             cuModuleUnload,
             cuPointerGetAttribute,

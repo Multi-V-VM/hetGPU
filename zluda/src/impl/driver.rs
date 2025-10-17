@@ -34,6 +34,9 @@ pub(crate) fn get_proc_address(
     unsafe {
         let addr = dlsym(RTLD_DEFAULT, symbol);
         *pfn = addr as *mut c_void;
+        if addr.is_null() {
+            return Err(CUerror::NOT_FOUND);
+        }
     }
 
     Ok(())
@@ -56,6 +59,9 @@ pub(crate) fn get_proc_address_v2(
         *pfn = addr as *mut c_void;
         if !symbol_status.is_null() {
             (*symbol_status).0 = if addr.is_null() { 1 } else { 0 };
+        }
+        if addr.is_null() {
+            return Err(CUerror::NOT_FOUND);
         }
     }
 
