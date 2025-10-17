@@ -34,6 +34,7 @@ microlp = "0.2"
 petgraph = "0.6"
 unwrap_or = "1.0"
 smallvec = "1.13"
+clap = { version = "4.5", features = ["derive"] }
 
 [dev-dependencies]
 hip_runtime_sys = { path = "../ext/hip_runtime-sys" }
@@ -55,6 +56,10 @@ path = "examples/emit_mlir_example.rs"
 [[example]]
 name = "checkpoint_demo"
 path = "examples/checkpoint_demo.rs"
+
+[[bin]]
+name = "ptx_to_tmatmul_hw"
+path = "src/bin/ptx_to_tmatmul_hw.rs"
 
 [features]
 intel = ["comgr/intel"]

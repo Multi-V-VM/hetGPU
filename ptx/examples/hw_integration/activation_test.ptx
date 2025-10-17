@@ -1,0 +1,28 @@
+.version 7.0
+.target sm_75
+.address_size 64
+
+// Activation function test kernel
+.visible .entry activation_test(
+    .param .u64 input_ptr,
+    .param .u64 output_ptr
+)
+{
+    .reg .f32 %r<8>;
+    .reg .u64 %rd<3>;
+
+    ld.param.u64 %rd1, [input_ptr];
+    ld.param.u64 %rd2, [output_ptr];
+
+    // Load input
+    ld.global.f32 %r1, [%rd1];
+
+    // Perform operations that can be optimized
+    add.f32 %r2, %r1, %r1;      // Double the input
+    mul.f32 %r3, %r2, %r1;      // Multiply
+
+    // Store results
+    st.global.f32 [%rd2], %r3;
+
+    ret;
+}

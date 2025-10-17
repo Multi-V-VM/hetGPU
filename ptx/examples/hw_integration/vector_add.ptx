@@ -1,0 +1,27 @@
+.version 7.0
+.target sm_75
+.address_size 64
+
+// Simple vector addition kernel
+.visible .entry vector_add(
+    .param .u64 a_ptr,
+    .param .u64 b_ptr,
+    .param .u64 c_ptr
+)
+{
+    .reg .f32 %r<4>;
+    .reg .u64 %rd<4>;
+
+    ld.param.u64 %rd1, [a_ptr];
+    ld.param.u64 %rd2, [b_ptr];
+    ld.param.u64 %rd3, [c_ptr];
+
+    ld.global.f32 %r1, [%rd1];
+    ld.global.f32 %r2, [%rd2];
+
+    add.f32 %r3, %r1, %r2;
+
+    st.global.f32 [%rd3], %r3;
+
+    ret;
+}

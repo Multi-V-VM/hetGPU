@@ -1,0 +1,31 @@
+.version 7.0
+.target sm_75
+.address_size 64
+
+// Fused multiply-add kernel
+.visible .entry fused_ops(
+    .param .u64 a_ptr,
+    .param .u64 b_ptr,
+    .param .u64 c_ptr,
+    .param .u64 out_ptr
+)
+{
+    .reg .f32 %r<6>;
+    .reg .u64 %rd<5>;
+
+    ld.param.u64 %rd1, [a_ptr];
+    ld.param.u64 %rd2, [b_ptr];
+    ld.param.u64 %rd3, [c_ptr];
+    ld.param.u64 %rd4, [out_ptr];
+
+    ld.global.f32 %r1, [%rd1];
+    ld.global.f32 %r2, [%rd2];
+    ld.global.f32 %r3, [%rd3];
+
+    // Fused multiply-add: r4 = r1 * r2 + r3
+    mad.f32 %r4, %r1, %r2, %r3;
+
+    st.global.f32 [%rd4], %r4;
+
+    ret;
+}

@@ -17,14 +17,20 @@ pub(crate) fn alloc_v2(dptr: *mut hipDeviceptr_t, bytesize: usize) -> hipError_t
 
 #[cfg(feature = "intel")]
 pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
+    eprintln!("[DEBUG memory::alloc_v2] Called with bytesize={}, dptr={:p}", bytesize, dptr);
+
     // Get the current ZE context
     let ze_context = match context::get_current_ze() {
         Ok(ctx) => ctx,
-        Err(e) => return Err(e),
+        Err(e) => {
+            eprintln!("[DEBUG memory::alloc_v2] Failed to get context: {:?}", e);
+            return Err(e);
+        }
     };
 
     // Check if this is a virtual device (null handle)
     if ze_context.device.0.is_null() {
+        eprintln!("[DEBUG memory::alloc_v2] Using virtual device path");
         // Virtual device: use host memory allocation for compilation/testing
         use std::alloc::{alloc_zeroed, Layout};
 
@@ -32,6 +38,7 @@ pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
             unsafe {
                 *dptr = cuda_types::cuda::CUdeviceptr_v2(0x1 as *mut _);
             }
+            eprintln!("[DEBUG memory::alloc_v2] Zero-size allocation, returning 0x1");
             return Ok(());
         }
 
@@ -40,6 +47,7 @@ pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
 
         let host_ptr = unsafe { alloc_zeroed(layout) };
         if host_ptr.is_null() {
+            eprintln!("[DEBUG memory::alloc_v2] alloc_zeroed returned null!");
             return Err(CUerror::OUT_OF_MEMORY);
         }
 
@@ -47,6 +55,7 @@ pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
             *dptr = cuda_types::cuda::CUdeviceptr_v2(host_ptr as *mut _);
         }
 
+        eprintln!("[DEBUG memory::alloc_v2] Successfully allocated {} bytes at {:p}", bytesize, host_ptr);
         return Ok(());
     }
 
