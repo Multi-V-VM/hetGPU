@@ -169,7 +169,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
 
 #[cfg(feature = "intel")]
 pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -> CUresult {
-    eprintln!("[Intel Backend] cuModuleLoadData called");
+    eprintln!("[Intel Backend] cuModuleLoadData called from PyTorch/application");
 
     if image.is_null() {
         return Err(CUerror::INVALID_VALUE);

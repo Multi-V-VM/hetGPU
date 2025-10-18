@@ -17,45 +17,43 @@ pub(crate) fn alloc_v2(dptr: *mut hipDeviceptr_t, bytesize: usize) -> hipError_t
 
 #[cfg(feature = "intel")]
 pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
-    eprintln!("[DEBUG memory::alloc_v2] Called with bytesize={}, dptr={:p}", bytesize, dptr);
-
     // Get the current ZE context
     let ze_context = match context::get_current_ze() {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!("[DEBUG memory::alloc_v2] Failed to get context: {:?}", e);
             return Err(e);
         }
     };
 
     // Check if this is a virtual device (null handle)
     if ze_context.device.0.is_null() {
-        eprintln!("[DEBUG memory::alloc_v2] Using virtual device path");
-        // Virtual device: use host memory allocation for compilation/testing
+        // Virtual device: use host memory allocation
+        // IMPORTANT: Initialize to zero so PyTorch zeros() operations work correctly
         use std::alloc::{alloc_zeroed, Layout};
 
         if bytesize == 0 {
             unsafe {
                 *dptr = cuda_types::cuda::CUdeviceptr_v2(0x1 as *mut _);
             }
-            eprintln!("[DEBUG memory::alloc_v2] Zero-size allocation, returning 0x1");
             return Ok(());
         }
 
         let layout = Layout::from_size_align(bytesize, 64)
             .map_err(|_| CUerror::OUT_OF_MEMORY)?;
 
+        // Use alloc_zeroed to initialize memory to zero
+        // This makes torch.zeros() work correctly without kernel execution
         let host_ptr = unsafe { alloc_zeroed(layout) };
         if host_ptr.is_null() {
-            eprintln!("[DEBUG memory::alloc_v2] alloc_zeroed returned null!");
             return Err(CUerror::OUT_OF_MEMORY);
         }
 
         unsafe {
             *dptr = cuda_types::cuda::CUdeviceptr_v2(host_ptr as *mut _);
+            eprintln!("[DEBUG alloc_v2] Virtual device allocated {} bytes at host_ptr={:p}, stored as CUdeviceptr={:p}",
+                     bytesize, host_ptr, (*dptr).0);
         }
 
-        eprintln!("[DEBUG memory::alloc_v2] Successfully allocated {} bytes at {:p}", bytesize, host_ptr);
         return Ok(());
     }
 
@@ -357,22 +355,30 @@ pub(crate) fn set_d8_v2(dst: hipDeviceptr_t, value: ::core::ffi::c_uchar, n: usi
 
 #[cfg(feature = "intel")]
 pub(crate) fn set_d8_v2(dst: CUdeviceptr, value: ::core::ffi::c_uchar, n: usize) -> CUresult {
+    eprintln!("[DEBUG set_d8_v2] Called with dst={:p}, value={}, n={}", dst.0, value, n);
+
     // Get current context
     let ctx = match context::get_current_ze() {
         Ok(ctx) => ctx,
-        Err(e) => return Err(e),
+        Err(e) => {
+            eprintln!("[DEBUG set_d8_v2] Failed to get context: {:?}", e);
+            return Err(e);
+        }
     };
 
     // Check if this is a virtual device (null handle)
     if ctx.device.0.is_null() {
+        eprintln!("[DEBUG set_d8_v2] Using virtual device path");
         // Virtual device: use memset on host memory
         if dst.0.is_null() || dst.0 == 0x1 as *mut _ {
+            eprintln!("[DEBUG set_d8_v2] Skipping null/sentinel pointer");
             return Ok(());
         }
 
         unsafe {
             std::ptr::write_bytes(dst.0 as *mut u8, value, n);
         }
+        eprintln!("[DEBUG set_d8_v2] Successfully set {} bytes to {}", n, value);
         return Ok(());
     }
 

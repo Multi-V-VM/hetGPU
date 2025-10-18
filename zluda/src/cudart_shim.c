@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 // Minimal shim for missing CUDA Runtime API symbols expected by
 // PyTorch CUDA libraries when running with hetGPU. We export only
@@ -346,8 +347,46 @@ cudaError_t __cudaPopCallConfiguration(dim3* gridDim, dim3* blockDim, size_t* sh
     return 0;
 }
 
+// Forward declaration for cuLaunchKernel from driver API
+typedef void* CUfunction;
+typedef void* CUstream;
+extern CUresult cuLaunchKernel(
+    CUfunction f,
+    unsigned int gridDimX,
+    unsigned int gridDimY,
+    unsigned int gridDimZ,
+    unsigned int blockDimX,
+    unsigned int blockDimY,
+    unsigned int blockDimZ,
+    unsigned int sharedMemBytes,
+    CUstream hStream,
+    void** kernelParams,
+    void** extra
+);
+
 cudaError_t __cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void** args, size_t sharedMem, cudaStream_t stream) {
-    (void)func; (void)gridDim; (void)blockDim; (void)args; (void)sharedMem; (void)stream; return 0;
+    fprintf(stderr, "[cudart_shim] __cudaLaunchKernel intercepted!\n");
+    fprintf(stderr, "  func=%p, grid=(%u,%u,%u), block=(%u,%u,%u), sharedMem=%zu\n",
+            func, gridDim.x, gridDim.y, gridDim.z,
+            blockDim.x, blockDim.y, blockDim.z, sharedMem);
+    fflush(stderr);
+
+    // Forward to driver API cuLaunchKernel
+    // This routes through our Rust implementation in function.rs
+    CUresult result = cuLaunchKernel(
+        (CUfunction)func,
+        gridDim.x, gridDim.y, gridDim.z,
+        blockDim.x, blockDim.y, blockDim.z,
+        (unsigned int)sharedMem,
+        (CUstream)stream,
+        args,
+        NULL  // extra parameters
+    );
+
+    fprintf(stderr, "[cudart_shim] cuLaunchKernel returned: %d\n", result);
+    fflush(stderr);
+
+    return (cudaError_t)result;
 }
 
 void** __cudaRegisterFatBinary(void* fatCubin) { (void)fatCubin; static void* handle; return &handle; }
