@@ -200,6 +200,9 @@ pub(crate) struct Module {
     device: ze_device_handle_t,
     module: ze_module_handle_t,
     functions: Vec<(String, ze_kernel_handle_t)>,
+    // Store PTX source and TMatmul assembly for cocotb execution
+    pub ptx_source: Option<String>,
+    pub tmatmul_assembly: Option<String>,
 }
 unsafe impl Send for Module {}
 unsafe impl Sync for Module {}
@@ -282,11 +285,14 @@ pub(crate) fn load_data_impl(
     let functions = Vec::new();
 
     // Create and return the Module object
+    // Store PTX source for potential cocotb execution later
     *module = Module {
         context,
         device,
         module: ze_module,
         functions,
+        ptx_source: Some(spirv_module.ptx_text.clone()),
+        tmatmul_assembly: None,
     }
     .wrap();
 

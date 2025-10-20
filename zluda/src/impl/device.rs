@@ -462,6 +462,8 @@ pub(crate) fn get_attribute(
     if is_virtual {
         // Virtual device - return GPU-like values without querying hardware
         match attrib {
+            CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR => *pi = COMPUTE_CAPABILITY_MAJOR,
+            CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR => *pi = COMPUTE_CAPABILITY_MINOR,
             CUdevice_attribute::CU_DEVICE_ATTRIBUTE_WARP_SIZE => *pi = 32,
             CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK => *pi = 1024,
             CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X => *pi = 1024,
@@ -540,6 +542,14 @@ pub(crate) fn get_attribute(
     }
 
     match attrib {
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR => {
+            *pi = COMPUTE_CAPABILITY_MAJOR;
+            ze_result_t::ZE_RESULT_SUCCESS
+        }
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR => {
+            *pi = COMPUTE_CAPABILITY_MINOR;
+            ze_result_t::ZE_RESULT_SUCCESS
+        }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_WARP_SIZE => {
             *pi = 32;
             ze_result_t::ZE_RESULT_SUCCESS

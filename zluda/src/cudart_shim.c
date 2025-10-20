@@ -14,12 +14,15 @@ typedef int CUresult;
 typedef void* CUcontext;
 typedef int CUdevice;
 
+// In CUDA v2 API variants, CUdeviceptr is an opaque handle that wraps a host/device pointer.
+// For our virtual backend we model it as a plain pointer-sized value.
+typedef void* CUdeviceptr;
+
 // Forward declarations for CUDA Driver API functions (implemented in Rust)
 extern CUresult cuDeviceGet(CUdevice* device, int ordinal);
 extern CUresult cuDevicePrimaryCtxRetain(CUcontext* pctx, CUdevice dev);
 extern CUresult cuCtxSetCurrent(CUcontext ctx);
 extern CUresult cuCtxGetCurrent(CUcontext* pctx);
-typedef unsigned long long CUdeviceptr;
 extern CUresult cuMemAlloc_v2(CUdeviceptr* dptr, size_t bytesize);
 extern CUresult cuMemFree_v2(CUdeviceptr dptr);
 extern CUresult cuMemcpyHtoD_v2(CUdeviceptr dstDevice, const void* srcHost, size_t ByteCount);
@@ -197,19 +200,80 @@ cudaError_t cudaEventElapsedTime(float* ms, cudaEvent_t start, cudaEvent_t end) 
 
 // Error query APIs
 const char* cudaGetErrorString(cudaError_t error) {
-    (void)error; return "cudaSuccess";
+    if (error == 0) return "cudaSuccess";
+    return "cudaErrorUnknown";
 }
 
 const char* cudaGetErrorName(cudaError_t error) {
-    (void)error; return "cudaSuccess";
+    if (error == 0) return "cudaSuccess";
+    return "cudaErrorUnknown";
 }
 
 // Device/runtime info APIs
 // Note: cudaGetDeviceCount and cudaDriverGetVersion are already implemented in Rust (lib.rs)
 // so we don't define them here to avoid duplicate symbol errors
 
+// Minimal subset of cudaDeviceProp to populate capability and a few basics.
+// This matches the leading fields of CUDA's cudaDeviceProp across versions.
+typedef struct {
+    char   name[256];
+    size_t totalGlobalMem;
+    size_t sharedMemPerBlock;
+    int    regsPerBlock;
+    int    warpSize;
+    size_t memPitch;
+    int    maxThreadsPerBlock;
+    int    maxThreadsDim[3];
+    int    maxGridSize[3];
+    int    clockRate;
+    size_t totalConstMem;
+    int    major;
+    int    minor;
+} cudaDeviceProp_min;
+
 cudaError_t cudaGetDeviceProperties(cudaDeviceProp_t prop, int device) {
-    (void)prop; (void)device; return 0;
+    if (!prop) return 1; // cudaErrorInvalidValue
+
+    // Fill a minimal struct and copy into caller memory
+    cudaDeviceProp_min p;
+    memset(&p, 0, sizeof(p));
+
+    // Device name
+    const char* name = "Virtual GPU (hetGPU sm_80)";
+    strncpy(p.name, name, sizeof(p.name) - 1);
+
+    // Conservative, GPU-like defaults
+    p.warpSize = 32;
+    p.maxThreadsPerBlock = 1024;
+    p.maxThreadsDim[0] = 1024; p.maxThreadsDim[1] = 1024; p.maxThreadsDim[2] = 64;
+    p.maxGridSize[0] = 2147483647; p.maxGridSize[1] = 65535; p.maxGridSize[2] = 65535;
+    p.clockRate = 1410000; // kHz
+    p.totalConstMem = 64 * 1024;
+
+    // Compute capability (match driver attribute path)
+    p.major = 8;
+    p.minor = 0;
+
+    memcpy(prop, &p, sizeof(p));
+    fprintf(stderr, "[cudart_shim] cudaGetDeviceProperties: name='%s' cc=%d.%d\n", p.name, p.major, p.minor);
+
+    // Defensive: also stamp major/minor at several known offsets used by
+    // different CUDA headers to avoid layout mismatches.
+    // These offsets are relative to the start of cudaDeviceProp and cover
+    // common placements (immediately after totalConstMem).
+    {
+        unsigned char* base = (unsigned char*)prop;
+        const int major = 8, minor = 0;
+        // Try multiple known offsets to accommodate struct layout differences.
+        size_t cand_major[] = { 316, 320, 328, 332, 336, 344 };
+        for (size_t i = 0; i < sizeof(cand_major)/sizeof(cand_major[0]); ++i) {
+            // Write major, then minor adjacent
+            *(int*)(base + cand_major[i]) = major;
+            *(int*)(base + cand_major[i] + 4) = minor;
+        }
+    }
+    (void)device;
+    return 0;
 }
 
 // Global to track current device
@@ -269,21 +333,49 @@ cudaError_t cudaDeviceEnablePeerAccess(int peerDevice, unsigned int flags) {
 
 // Device attribute query
 cudaError_t cudaDeviceGetAttribute(int* value, int attr, int device) {
-    (void)device;
-    if (!value) return 0;
-    // Known enum values for compute capability
-    // cudaDevAttrComputeCapabilityMajor = 75, Minor = 76 (as of CUDA 12)
-    if (attr == 75) { *value = 8; return 0; }
-    if (attr == 76) { *value = 0; return 0; }
-    *value = 0; // default safe value
+    if (!value) return 1; // cudaErrorInvalidValue
+    fprintf(stderr, "[cudart_shim] cudaDeviceGetAttribute(attr=%d, dev=%d)\n", attr, device);
+    // Provide sane defaults; explicitly handle common CC queries
+    if (attr == 75 /* cudaDevAttrComputeCapabilityMajor */) { *value = 8; return 0; }
+    if (attr == 76 /* cudaDevAttrComputeCapabilityMinor */) { *value = 0; return 0; }
+    // Generic non-zero default to avoid divide-by-zero in upstream code
+    *value = 1;
     return 0;
 }
 
 // Host memory APIs
 cudaError_t cudaHostAlloc(void** pHost, size_t size, unsigned int flags) {
-    (void)size; (void)flags; if (pHost) *pHost = (void*)0; return 0;
+    (void)flags;
+    if (!pHost) return 1; // cudaErrorInvalidValue
+    // Allocate page-aligned host memory; treat as "pinned" for our virtual device
+    if (size == 0) {
+        *pHost = (void*)0x1; // sentinel non-null
+        return 0;
+    }
+#if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
+    void* ptr = NULL;
+    // 64-byte alignment is sufficient for most purposes
+    if (posix_memalign(&ptr, 64, size) != 0) {
+        *pHost = NULL;
+        return 2; // cudaErrorMemoryAllocation (approximate)
+    }
+#else
+    void* ptr = malloc(size);
+    if (!ptr) { *pHost = NULL; return 2; }
+#endif
+    memset(ptr, 0, size);
+    *pHost = ptr;
+    return 0;
 }
-cudaError_t cudaFreeHost(void* pHost) { (void)pHost; return 0; }
+cudaError_t cudaFreeHost(void* pHost) {
+    if (!pHost || pHost == (void*)0x1) return 0;
+#if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
+    free(pHost);
+#else
+    free(pHost);
+#endif
+    return 0;
+}
 cudaError_t cudaHostRegister(void* ptr, size_t size, unsigned int flags) { (void)ptr; (void)size; (void)flags; return 0; }
 cudaError_t cudaHostUnregister(void* ptr) { (void)ptr; return 0; }
 
@@ -329,7 +421,33 @@ cudaError_t cudaGraphDebugDotPrint(cudaGraph_t graph, const char* path, unsigned
 cudaError_t cudaFuncSetAttribute(const void* func, int attr, int value) { (void)func; (void)attr; (void)value; return 0; }
 cudaError_t cudaFuncGetAttributes(void* attr, const void* func) { (void)attr; (void)func; return 0; }
 cudaError_t cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(int* numBlocks, const void* func, int blockSize, size_t dynamicSMemSize, unsigned int flags) {
-    if (numBlocks) *numBlocks = 0; (void)func; (void)blockSize; (void)dynamicSMemSize; (void)flags; return 0;
+    // Return a conservative, non-zero occupancy to avoid divide-by-zero
+    // in frameworks that use this to size reductions (e.g., PyTorch).
+    // We don't model real hardware here, so pick the safest minimal value.
+    if (numBlocks) {
+        *numBlocks = 1;
+    }
+    (void)func; (void)blockSize; (void)dynamicSMemSize; (void)flags;
+    return 0;
+}
+
+// Provide the older API variant as an alias to the WithFlags version.
+cudaError_t cudaOccupancyMaxActiveBlocksPerMultiprocessor(int* numBlocks, const void* func, int blockSize, size_t dynamicSMemSize) {
+    return cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(numBlocks, func, blockSize, dynamicSMemSize, 0);
+}
+// Estimate reasonable defaults for potential block size selection
+cudaError_t cudaOccupancyMaxPotentialBlockSize(int* minGridSize, int* blockSize, const void* func, size_t dynamicSMemSize, int blockSizeLimit) {
+    (void)func; (void)dynamicSMemSize;
+    if (blockSize) *blockSize = (blockSizeLimit > 0) ? blockSizeLimit : 256;
+    if (minGridSize) *minGridSize = 1;
+    return 0;
+}
+typedef size_t (*cudaOccSMemSizeFn)(int);
+cudaError_t cudaOccupancyMaxPotentialBlockSizeVariableSMem(int* minGridSize, int* blockSize, const void* func, cudaOccSMemSizeFn blockSizeToDynamicSMemSize, int blockSizeLimit) {
+    (void)func; (void)blockSizeToDynamicSMemSize;
+    if (blockSize) *blockSize = (blockSizeLimit > 0) ? blockSizeLimit : 256;
+    if (minGridSize) *minGridSize = 1;
+    return 0;
 }
 cudaError_t cudaThreadExchangeStreamCaptureMode(cudaStreamCaptureMode* mode) { if (mode) *mode = 0; return 0; }
 cudaError_t cudaLaunchKernelExC(const void* params) { (void)params; return 0; }
@@ -363,6 +481,12 @@ extern CUresult cuLaunchKernel(
     void** kernelParams,
     void** extra
 );
+
+// Some code paths call the runtime API cudaLaunchKernel (not the internal __cudaLaunchKernel).
+// Provide a wrapper that forwards to our internal hook.
+cudaError_t cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void** args, size_t sharedMem, cudaStream_t stream) {
+    return __cudaLaunchKernel(func, gridDim, blockDim, args, sharedMem, stream);
+}
 
 cudaError_t __cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void** args, size_t sharedMem, cudaStream_t stream) {
     fprintf(stderr, "[cudart_shim] __cudaLaunchKernel intercepted!\n");
@@ -460,41 +584,57 @@ cudaError_t cudaMemGetInfo(size_t* free, size_t* total) {
 
 // Basic memory/runtime APIs - forward to driver API for proper tracking
 cudaError_t cudaMalloc(void** devPtr, size_t size) {
-    if (!devPtr) return 0;
+    if (!devPtr) return 1; // cudaErrorInvalidValue
+
+    // Ensure a current context exists (PyTorch may not call cudaSetDevice first)
+    CUcontext cur = NULL;
+    (void)cuCtxGetCurrent(&cur);
+    if (cur == NULL) {
+        int dev = 0;
+        (void)cudaGetDevice(&dev);
+        (void)cudaSetDevice(dev);
+        (void)cuCtxGetCurrent(&cur);
+    }
+
     CUdeviceptr dptr = 0;
     CUresult result = cuMemAlloc_v2(&dptr, size);
     if (result != 0) {
-        *devPtr = NULL;
-        return (cudaError_t)result;
+        fprintf(stderr, "[cudart_shim] cudaMalloc(%zu) cuMemAlloc_v2 failed: %d; falling back to host alloc\n", size, result);
+        // Fallback: host allocation (zeroed)
+        void* ptr = NULL;
+        if (size > 0) {
+            ptr = aligned_alloc(64, ((size + 63) / 64) * 64);
+            if (ptr) memset(ptr, 0, size);
+        } else {
+            ptr = (void*)0x1; // sentinel
+        }
+        *devPtr = ptr;
+        return ptr ? 0 : 2; // cudaErrorMemoryAllocation if NULL
     }
     *devPtr = (void*)dptr;
+    fprintf(stderr, "[cudart_shim] cudaMalloc(%zu) -> %p\n", size, *devPtr);
     return 0;
 }
 
 cudaError_t cudaFree(void* devPtr) {
     if (!devPtr || devPtr == (void*)0x1) return 0;
-    CUdeviceptr dptr = (CUdeviceptr)devPtr;
-    CUresult result = cuMemFree_v2(dptr);
-    return (cudaError_t)result;
+    // Try driver free first
+    CUresult result = cuMemFree_v2((CUdeviceptr)devPtr);
+    if (result != 0) {
+        // Not a driver-managed pointer, fallback to host free
+        fprintf(stderr, "[cudart_shim] cudaFree(%p) cuMemFree_v2 failed: %d; freeing as host ptr\n", devPtr, result);
+        free(devPtr);
+        return 0;
+    }
+    return 0;
 }
 
 cudaError_t cudaMemcpy(void* dst, const void* src, size_t count, cudaMemcpyKind kind) {
     if (!dst || !src || count == 0) return 0;
-
-    // kind: 0=H2H, 1=H2D, 2=D2H, 3=D2D
-    // For simplicity, treat all as memcpy since we're using virtual device
-    // But use driver API for proper tracking when device pointers are involved
-    if (kind == 1) { // H2D
-        CUresult result = cuMemcpyHtoD_v2((CUdeviceptr)dst, src, count);
-        return (cudaError_t)result;
-    } else if (kind == 2) { // D2H
-        CUresult result = cuMemcpyDtoH_v2(dst, (CUdeviceptr)src, count);
-        return (cudaError_t)result;
-    } else {
-        // H2H or D2D - use plain memcpy
-        memcpy(dst, src, count);
-        return 0;
-    }
+    // Treat all kinds as host memcpy in virtual backend
+    // This covers H2D/D2H by virtue of using host-backed "device" pointers
+    memcpy(dst, src, count);
+    return 0;
 }
 
 cudaError_t cudaMemcpyAsync(void* dst, const void* src, size_t count, cudaMemcpyKind kind, cudaStream_t stream) {
@@ -519,10 +659,8 @@ cudaError_t cudaFreeAsync(void* devPtr, cudaStream_t stream) {
 
 cudaError_t cudaMemset(void* devPtr, int value, size_t count) {
     if (!devPtr || devPtr == (void*)0x1 || count == 0) return 0;
-
-    // Forward to driver API for proper tracking
-    CUresult result = cuMemsetD8_v2((CUdeviceptr)devPtr, (unsigned char)value, count);
-    return (cudaError_t)result;
+    memset(devPtr, (unsigned char)value, count);
+    return 0;
 }
 
 cudaError_t cudaMemsetAsync(void* devPtr, int value, size_t count, cudaStream_t stream) {

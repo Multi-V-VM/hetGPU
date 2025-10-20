@@ -517,6 +517,29 @@ pub fn ze_result_to_result(result: ze_result_t) -> Result<(), CUerror> {
     ZeResult(result).into()
 }
 
+// Allow adapting either ze_result_t or CUresult to CUresult uniformly
+#[cfg(feature = "intel")]
+pub trait IntoCuResult {
+    fn into_cu_result(self) -> Result<(), CUerror>;
+}
+
+#[cfg(feature = "intel")]
+impl IntoCuResult for ze_result_t {
+    fn into_cu_result(self) -> Result<(), CUerror> {
+        ze_result_to_result(self)
+    }
+}
+
+#[cfg(feature = "intel")]
+impl IntoCuResult for Result<(), CUerror> {
+    fn into_cu_result(self) -> Result<(), CUerror> { self }
+}
+
+#[cfg(feature = "intel")]
+pub fn into_cu_result<T: IntoCuResult>(v: T) -> Result<(), CUerror> {
+    v.into_cu_result()
+}
+
 // Tenstorrent-specific FromCuda implementations for types not covered by existing macros
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 impl<'a> FromCuda<'a, *mut CUuuid_st> for *mut [u8; 16] {

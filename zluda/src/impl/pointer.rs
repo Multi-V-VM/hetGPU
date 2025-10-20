@@ -59,6 +59,10 @@ pub(crate) unsafe fn get_attribute(
         Err(e) => return Err(e),
     };
 
+    // Check if we're in virtual device mode (device handle is null)
+    // In virtual mode, pointers are from alloc_zeroed (host memory), not Level Zero
+    let is_virtual_device = ze_context.device.0.is_null();
+
     match attribute {
         // TODO: implement context attribute for Intel devices
         CUpointer_attribute::CU_POINTER_ATTRIBUTE_CONTEXT => {
@@ -90,7 +94,13 @@ pub(crate) unsafe fn get_attribute(
         }
 
         CUpointer_attribute::CU_POINTER_ATTRIBUTE_MEMORY_TYPE => {
-            // Query memory attributes using Level Zero memory APIs
+            // Virtual device: memory is host-allocated via alloc_zeroed
+            if is_virtual_device {
+                *(data.cast()) = CUmemorytype::CU_MEMORYTYPE_HOST;
+                return CUresult::SUCCESS;
+            }
+
+            // Real device: Query memory attributes using Level Zero memory APIs
             let mut alloc_props = ze_memory_allocation_properties_t {
                 stype: ze_structure_type_t::ZE_STRUCTURE_TYPE_MEMORY_ALLOCATION_PROPERTIES,
                 pNext: ptr::null_mut(),
@@ -125,7 +135,9 @@ pub(crate) unsafe fn get_attribute(
         }
 
         CUpointer_attribute::CU_POINTER_ATTRIBUTE_DEVICE_POINTER => {
-            // In Level Zero, device pointers are represented the same way
+            // Virtual device or real device: just return the pointer as-is
+            // For virtual device, this is a host pointer from alloc_zeroed
+            // For real device, this is a Level Zero device pointer
             *(data.cast::<CUdeviceptr>()) = ptr;
             CUresult::SUCCESS
         }

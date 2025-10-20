@@ -20,6 +20,9 @@ pub(crate) struct Module {
     device: ze_device_handle_t,
     module: ze_module_handle_t,
     functions: Vec<(String, ze_kernel_handle_t)>,
+    // Store PTX source and TMatmul assembly for cocotb execution
+    ptx_source: Option<String>,
+    tmatmul_assembly: Option<String>,
 }
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
@@ -255,6 +258,8 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
             device,
             module: ze_module,
             functions: Vec::new(),
+            ptx_source: None,
+            tmatmul_assembly: None,
         };
         *module = new_module.wrap();
         return Ok(());
@@ -304,6 +309,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                 }
 
                 // Create a placeholder module with null ze handles so later calls succeed gracefully
+                // Store PTX and TMatmul assembly for execution during kernel launch
                 let (context, device) = get_current_context_and_device().unwrap_or((
                     ze_context_handle_t(std::ptr::null_mut()),
                     ze_device_handle_t(std::ptr::null_mut()),
@@ -313,6 +319,8 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                     device,
                     module: ze_module_handle_t(std::ptr::null_mut()),
                     functions: Vec::new(),
+                    ptx_source: Some(text.to_string()),
+                    tmatmul_assembly: Some(tmatmul_asm),
                 };
                 *module = new_module.wrap();
 

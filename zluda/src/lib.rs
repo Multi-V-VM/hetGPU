@@ -104,8 +104,8 @@ macro_rules! implemented {
             #[allow(improper_ctypes)]
             #[allow(improper_ctypes_definitions)]
             pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
-                cuda_base::cuda_normalize_fn!( crate::r#impl::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
-                Ok(())
+                let backend_ret = cuda_base::cuda_normalize_fn!( crate::r#impl::$fn_name )($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
+                crate::r#impl::into_cu_result(backend_ret)
             }
         )*
     };
@@ -158,8 +158,8 @@ macro_rules! implemented_in_function {
             #[allow(improper_ctypes)]
             #[allow(improper_ctypes_definitions)]
             pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
-                cuda_base::cuda_normalize_fn!( crate::r#impl::function::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
-                Ok(())
+                let backend_ret = cuda_base::cuda_normalize_fn!( crate::r#impl::function::$fn_name )($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
+                crate::r#impl::into_cu_result(backend_ret)
             }
         )*
     };
