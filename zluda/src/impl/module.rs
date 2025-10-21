@@ -260,6 +260,8 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                 tmatmul_assembly: None,
             };
             *module = new_module.wrap();
+            // Ensure a virtual context exists for subsequent cuCtxSynchronize calls
+            ensure_virtual_context(context, device);
             return Ok(());
         }
 
@@ -273,6 +275,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
             tmatmul_assembly: None,
         };
         *module = new_module.wrap();
+        ensure_virtual_context(context, device);
         return Ok(());
     }
 
@@ -336,6 +339,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                     tmatmul_assembly: Some(tmatmul_asm),
                 };
                 *module = new_module.wrap();
+                ensure_virtual_context(ctx_handle, dev_handle);
 
                 // Optionally auto-run cocotb if requested
                 let autorun = std::env::var("HETGPU_TMATMUL_COCOTB_AUTORUN")
@@ -394,6 +398,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                             tmatmul_assembly: Some(tmatmul_asm),
                         };
                         *module = new_module.wrap();
+                        ensure_virtual_context(ctx_handle, dev_handle);
                         return Ok(());
                     }
                     Err(_) => {
@@ -408,6 +413,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                             tmatmul_assembly: None,
                         };
                         *module = new_module.wrap();
+                        ensure_virtual_context(ctx_handle, dev_handle);
                         return Ok(());
                     }
                 }
@@ -444,6 +450,24 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
             }
         }
     }
+}
+
+#[cfg(feature = "intel")]
+fn ensure_virtual_context(ctx: ze_context_handle_t, dev: ze_device_handle_t) {
+    // If we already have a non-null context/device, nothing to do
+    if !ctx.0.is_null() && !dev.0.is_null() {
+        return;
+    }
+    // Check whether there is any current context; if not, create a placeholder and push
+    let has_ctx = super::context::peek_current().is_some();
+    if has_ctx {
+        return;
+    }
+    eprintln!("[Intel Backend] Installing virtual context for synchronization");
+    // Create a minimal Level Zero context (handles may still be null in virtual)
+    let placeholder = super::context::Context::new(ze_device_handle_t(std::ptr::null_mut()));
+    let cu_ctx = placeholder.wrap();
+    super::context::push(cu_ctx, dev);
 }
 
 // Best-effort sanitizer to make Triton-generated PTX palatable to our parser in virtual mode.
@@ -616,6 +640,7 @@ pub(crate) fn get_function(
             device: hmod.device,
             module: hmod.module,
             kernel: ze_kernel_handle_t(std::ptr::null_mut()),
+            name: name_str.to_string(),
         };
         *hfunc = kernel_wrapper.wrap();
         return CUresult::SUCCESS;
@@ -628,6 +653,7 @@ pub(crate) fn get_function(
             device: hmod.device,
             module: hmod.module,
             kernel: *kernel,
+            name: name_str.to_string(),
         }
         .wrap();
         return CUresult::SUCCESS;
@@ -651,6 +677,7 @@ pub(crate) fn get_function(
                 device: hmod.device,
                 module: hmod.module,
                 kernel,
+                name: name_str.to_string(),
             };
 
             // Store the kernel in the module's function list
@@ -675,6 +702,7 @@ pub(crate) struct ZeKernel {
     pub device: ze_device_handle_t,
     pub module: ze_module_handle_t,
     pub kernel: ze_kernel_handle_t,
+    pub name: String,
 }
 #[cfg(feature = "intel")]
 unsafe impl Send for ZeKernel {}

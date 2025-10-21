@@ -72,7 +72,7 @@ pub(crate) fn launch_kernel(
 
 #[cfg(feature = "intel")]
 pub(crate) unsafe fn launch_kernel(
-    f: ze_kernel_handle_t,
+    f: &super::module::ZeKernel,
     grid_dim_x: ::core::ffi::c_uint,
     grid_dim_y: ::core::ffi::c_uint,
     grid_dim_z: ::core::ffi::c_uint,
@@ -98,8 +98,8 @@ pub(crate) unsafe fn launch_kernel(
     let use_cocotb = std::env::var("HETGPU_TMATMUL_COCOTB")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
         .unwrap_or(false);
-    if use_cocotb || f.0.is_null() || virtual_backend {
-        eprintln!("[TMatmul Backend] Using cocotb fallback for kernel launch");
+    if use_cocotb || f.kernel.0.is_null() || virtual_backend {
+        eprintln!("[TMatmul Backend] Using cocotb fallback for kernel launch: {}", f.name);
         eprintln!("[TMatmul Backend] Grid: ({},{},{}), Block: ({},{},{})",
                   grid_dim_x, grid_dim_y, grid_dim_z,
                   block_dim_x, block_dim_y, block_dim_z);
@@ -108,6 +108,7 @@ pub(crate) unsafe fn launch_kernel(
         // Note: kernel_params is *mut *mut void where each element points to
         // a location in memory that holds the actual parameter value
         let mut output_ptr: *mut ::core::ffi::c_void = ptr::null_mut();
+        let mut ptr_candidates: Vec<*mut ::core::ffi::c_void> = Vec::new();
         let mut num_params = 0;
 
         if !kernel_params.is_null() {
@@ -167,6 +168,7 @@ pub(crate) unsafe fn launch_kernel(
 
                 if looks_like_heap_ptr {
                     eprintln!("[TMatmul Backend]   -> Looks like a HEAP pointer (real allocation)!");
+                    ptr_candidates.push(potential_ptr);
                     if output_ptr.is_null() {
                         output_ptr = potential_ptr;
                         eprintln!("[TMatmul Backend]   -> Selected as output buffer");
@@ -184,17 +186,101 @@ pub(crate) unsafe fn launch_kernel(
             eprintln!("[TMatmul Backend] Selected output_ptr: {:p}", output_ptr);
         }
 
-        // For now, SKIP cocotb execution and just stub the result
-        // TODO: Properly integrate cocotb execution with parameter passing
-        if use_cocotb {
-            eprintln!("[TMatmul Backend] COCOTB mode enabled but using stub for now");
+        // Minimal Phase 1–3: detect matmul, decode args heuristically, and either run cocotb or CPU fallback
+        let full_mode = std::env::var("HETGPU_TMATMUL_FULL").map(|v| matches!(v.as_str(),"1"|"true"|"TRUE")).unwrap_or(false);
+        let is_matmul_name = {
+            let n = f.name.to_lowercase();
+            n.contains("gemm") || n.contains("matmul") || n.contains("mm_") || n.contains("dot")
+        };
+        if full_mode && is_matmul_name && ptr_candidates.len() >= 3 {
+            // Heuristic: [C, A, B]
+            let mut c_ptr = ptr_candidates[0];
+            let a_ptr = ptr_candidates[1];
+            let b_ptr = ptr_candidates[2];
+            if !output_ptr.is_null() { c_ptr = output_ptr; }
+
+            // Optional dims from env: HETGPU_TMATMUL_DIMS="M,N,K"
+            if let Ok(dims) = std::env::var("HETGPU_TMATMUL_DIMS") {
+                let parts: Vec<usize> = dims.split(',').filter_map(|s| s.trim().parse::<usize>().ok()).collect();
+                if parts.len() == 3 {
+                    let (m, n, k) = (parts[0], parts[1], parts[2]);
+                    eprintln!("[TMatmul Backend] FULL CPU matmul fallback M={},N={},K={}", m, n, k);
+                    let a_len = m * k;
+                    let b_len = k * n;
+                    let c_len = m * n;
+                    let a_slice = std::slice::from_raw_parts(a_ptr as *const f32, a_len);
+                    let b_slice = std::slice::from_raw_parts(b_ptr as *const f32, b_len);
+                    let c_slice = std::slice::from_raw_parts_mut(c_ptr as *mut f32, c_len);
+                    for i in 0..m {
+                        for j in 0..n {
+                            let mut acc: f32 = 0.0;
+                            for p in 0..k {
+                                acc += a_slice[i * k + p] * b_slice[p * n + j];
+                            }
+                            c_slice[i * n + j] = acc;
+                        }
+                    }
+                    eprintln!("[TMatmul Backend] CPU matmul complete, wrote {:p}", c_ptr);
+                    return ze_result_t::ZE_RESULT_SUCCESS;
+                }
+            }
+
+            // If dims not provided, write metadata and try cocotb; then copy outputs/out.bin back if present
             let cocotb_dir = std::env::var("HETGPU_TMATMUL_COCOTB_DIR")
                 .unwrap_or_else(|_| "/root/matmulfreellm/hardware/ternary_matmul/cocotb".to_string());
-            let _make_status = std::process::Command::new("make")
-                .arg("SIM=verilator")
-                .arg("MODULE=tb_asm")
-                .current_dir(&cocotb_dir)
-                .status();
+            let _ = std::fs::create_dir_all(format!("{}/run", cocotb_dir));
+            let meta_path = std::path::Path::new(&cocotb_dir).join("run/meta.json");
+            let _ = std::fs::write(&meta_path, format!(
+                "{{\n  \"kernel\": \"{}\",\n  \"grid\": [{},{},{}],\n  \"block\": [{},{},{}]\n}}\n",
+                f.name, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z));
+            eprintln!("[TMatmul Backend] Cocotb matmul: wrote {}", meta_path.display());
+            let autorun = std::env::var("HETGPU_TMATMUL_AUTORUN")
+                .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
+                .unwrap_or(false)
+                || std::env::var("HETGPU_TMATMUL_COCOTB_AUTORUN")
+                    .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
+                    .unwrap_or(false);
+            if autorun {
+                let _ = std::process::Command::new("make")
+                    .arg("SIM=verilator")
+                    .arg("MODULE=tb_asm")
+                    .current_dir(&cocotb_dir)
+                    .status();
+            } else {
+                eprintln!("[TMatmul Backend] Cocotb autorun disabled; skipping simulator run");
+            }
+            let out_bin = std::path::Path::new(&cocotb_dir).join("outputs/out.bin");
+            if out_bin.exists() {
+                if let Ok(bytes) = std::fs::read(&out_bin) {
+                    std::ptr::copy_nonoverlapping(bytes.as_ptr(), c_ptr as *mut u8, bytes.len());
+                    eprintln!("[TMatmul Backend] Copied {} bytes from {} to {:p}", bytes.len(), out_bin.display(), c_ptr);
+                    return ze_result_t::ZE_RESULT_SUCCESS;
+                }
+            }
+            eprintln!("[TMatmul Backend] Cocotb output missing; virtual success");
+            return ze_result_t::ZE_RESULT_SUCCESS;
+        }
+
+        // Optional non-blocking cocotb autorun (disabled by default)
+        if use_cocotb {
+            let autorun = std::env::var("HETGPU_TMATMUL_AUTORUN")
+                .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
+                .unwrap_or(false)
+                || std::env::var("HETGPU_TMATMUL_COCOTB_AUTORUN")
+                    .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
+                    .unwrap_or(false);
+            if autorun {
+                let cocotb_dir = std::env::var("HETGPU_TMATMUL_COCOTB_DIR")
+                    .unwrap_or_else(|_| "/root/matmulfreellm/hardware/ternary_matmul/cocotb".to_string());
+                eprintln!("[TMatmul Backend] Launching cocotb: make SIM=verilator MODULE=tb_asm");
+                let _ = std::process::Command::new("make")
+                    .arg("SIM=verilator")
+                    .arg("MODULE=tb_asm")
+                    .current_dir(&cocotb_dir)
+                    .status();
+            } else {
+                eprintln!("[TMatmul Backend] Cocotb autorun disabled; skipping simulator run");
+            }
         }
 
         // Virtual device: For PyTorch operations, DO NOT write to memory here
@@ -270,12 +356,12 @@ pub(crate) unsafe fn launch_kernel(
             eprintln!("[TMatmul Backend] Cocotb disabled; treating as no-op launch (virtual success)");
             return ze_result_t::ZE_RESULT_SUCCESS;
         }
+        // In cocotb/virtual path, do not proceed to Level Zero calls. Treat as success.
+        return ze_result_t::ZE_RESULT_SUCCESS;
     }
 
     // Set the group size (equivalent to CUDA block dimensions)
-    let result = unsafe {
-        zeKernelSetGroupSize(f, block_dim_x, block_dim_y, block_dim_z)
-    };
+    let result = unsafe { zeKernelSetGroupSize(f.kernel, block_dim_x, block_dim_y, block_dim_z) };
     
     if result != ze_result_t::ZE_RESULT_SUCCESS {
         return result;
@@ -290,7 +376,7 @@ pub(crate) unsafe fn launch_kernel(
             unsafe {
                 let param_value = *current_param;
                 let result = zeKernelSetArgumentValue(
-                    f,
+                    f.kernel,
                     param_index,
                     std::mem::size_of::<*mut ::core::ffi::c_void>(),
                     param_value as *const ::core::ffi::c_void
@@ -352,7 +438,7 @@ pub(crate) unsafe fn launch_kernel(
     let result = unsafe {
         zeCommandListAppendLaunchKernel(
             command_list,
-            f,
+            f.kernel,
             &dispatch_args,
             *ptr::null_mut(), // No event to wait on
             0,               // No events to wait on
@@ -401,6 +487,41 @@ pub(crate) unsafe fn launch_kernel(
     }
     
     ze_result_t::ZE_RESULT_SUCCESS
+}
+
+// Implement cuLaunchKernelEx by unwrapping the CUlaunchConfig and delegating to launch_kernel
+#[cfg(feature = "intel")]
+pub(crate) fn cuLaunchKernelEx(
+    config: *const cuda_types::cuda::CUlaunchConfig,
+    f: &super::module::ZeKernel,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    extra: *mut *mut ::core::ffi::c_void,
+) -> ze_result_t {
+    if config.is_null() {
+        return ze_result_t::ZE_RESULT_ERROR_INVALID_NULL_POINTER;
+    }
+    let cfg = unsafe { &*config };
+    let grid_x = cfg.gridDimX;
+    let grid_y = cfg.gridDimY;
+    let grid_z = cfg.gridDimZ;
+    let block_x = cfg.blockDimX;
+    let block_y = cfg.blockDimY;
+    let block_z = cfg.blockDimZ;
+    let shmem = cfg.sharedMemBytes;
+    // In virtual backend, stream is usually null; pass a placeholder
+    let stream = ze_command_queue_handle_t(::core::ptr::null_mut());
+    unsafe { launch_kernel(f, grid_x, grid_y, grid_z, block_x, block_y, block_z, shmem, stream, kernel_params, extra) }
+}
+
+// Normalized name expected by cuda_normalize_fn!(function::launch_kernel_ex)
+#[cfg(feature = "intel")]
+pub(crate) fn launch_kernel_ex(
+    config: *const cuda_types::cuda::CUlaunchConfig,
+    f: &super::module::ZeKernel,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    extra: *mut *mut ::core::ffi::c_void,
+) -> ze_result_t {
+    cuLaunchKernelEx(config, f, kernel_params, extra)
 }
 
 // Helper function to get or create a command list for a stream

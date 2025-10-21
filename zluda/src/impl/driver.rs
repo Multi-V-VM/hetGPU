@@ -82,32 +82,29 @@ pub(crate) fn get_export_table(
 
 // Provide safe implementations for cuGetErrorString/cuGetErrorName to avoid NULL deref in callers
 pub(crate) fn get_error_string(
-    _error: CUresult,
+    error: CUresult,
     pStr: &mut *const c_char,
 ) -> Result<(), CUerror> {
     // Stable static messages
     static OK_STR: &[u8] = b"CUDA_SUCCESS\0";
-    static ERR_STR: &[u8] = b"CUDA_ERROR\0";
-    // Keep simple; if strict, prefer ERR string, else SUCCESS
-    let msg_ptr = if std::env::var("HETGPU_STRICT").ok().as_deref() == Some("1") {
-        ERR_STR.as_ptr() as *const c_char
-    } else {
-        OK_STR.as_ptr() as *const c_char
+    static ERR_STR: &[u8] = b"CUDA_ERROR_UNKNOWN\0";
+    let msg_ptr = match error {
+        Ok(()) => OK_STR.as_ptr() as *const c_char,
+        Err(_e) => ERR_STR.as_ptr() as *const c_char,
     };
     *pStr = msg_ptr;
     Ok(())
 }
 
 pub(crate) fn get_error_name(
-    _error: CUresult,
+    error: CUresult,
     pStr: &mut *const c_char,
 ) -> Result<(), CUerror> {
     static OK_NAME: &[u8] = b"CUDA_SUCCESS\0";
     static ERR_NAME: &[u8] = b"CUDA_ERROR_UNKNOWN\0";
-    let name_ptr = if std::env::var("HETGPU_STRICT").ok().as_deref() == Some("1") {
-        ERR_NAME.as_ptr() as *const c_char
-    } else {
-        OK_NAME.as_ptr() as *const c_char
+    let name_ptr = match error {
+        Ok(()) => OK_NAME.as_ptr() as *const c_char,
+        Err(_e) => ERR_NAME.as_ptr() as *const c_char,
     };
     *pStr = name_ptr;
     Ok(())

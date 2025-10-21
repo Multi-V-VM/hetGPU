@@ -270,6 +270,6 @@ cuda_base::cuda_function_declarations!(
             cuGetErrorString,
             cuGetErrorName
         ],
-    implemented_in_function <= [cuLaunchKernel,]
+    implemented_in_function <= [cuLaunchKernel, cuLaunchKernelEx,]
 );
 // cuGetErrorString/cuGetErrorName are implemented via r#impl::driver
