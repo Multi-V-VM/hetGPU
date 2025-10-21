@@ -6,6 +6,7 @@ use std::mem::{self, ManuallyDrop, MaybeUninit};
 use ze_device::ze_device_limit_t;
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
+use std::os::raw::c_char;
 
 pub(super) mod context;
 pub(super) mod device;
@@ -140,8 +141,24 @@ from_cuda_nop!(
     usize,
     cuda_types::cuda::cuuint64_t,
     cuda_types::cuda::CUdevprop,
+    cuda_types::cuda::CUresult,
     CUdevice_attribute
 );
+
+// Wrapper entry points expected by cuda_function_declarations! for error string helpers
+pub(crate) fn get_error_string(
+    error: CUresult,
+    pStr: &mut *const c_char,
+) -> Result<(), CUerror> {
+    driver::get_error_string(error, pStr)
+}
+
+pub(crate) fn get_error_name(
+    error: CUresult,
+    pStr: &mut *const c_char,
+) -> Result<(), CUerror> {
+    driver::get_error_name(error, pStr)
+}
 
 // AMD-specific type conversions
 #[cfg(feature = "amd")]

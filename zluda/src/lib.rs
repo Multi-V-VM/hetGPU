@@ -266,7 +266,10 @@ cuda_base::cuda_function_declarations!(
             // Provide custom implementations in r#impl::driver
             cuGetProcAddress,
             cuGetProcAddress_v2,
-            cuGetExportTable
+            cuGetExportTable,
+            cuGetErrorString,
+            cuGetErrorName
         ],
     implemented_in_function <= [cuLaunchKernel,]
 );
+// cuGetErrorString/cuGetErrorName are implemented via r#impl::driver
