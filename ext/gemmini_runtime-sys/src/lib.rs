@@ -6,7 +6,7 @@
 
 use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
 use std::fs::{self, File};
-use std::io::{Write, Read, BufWriter};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::ptr;
@@ -115,9 +115,11 @@ struct KernelData {
 
 // FFI functions implementation
 
-pub unsafe extern "C" fn gemmini_CreateDevice(device_id: ::core::ffi::c_int) -> *mut gemmini_Device {
+pub unsafe extern "C" fn gemmini_CreateDevice(
+    device_id: ::core::ffi::c_int,
+) -> *mut gemmini_Device {
     let mut state = SPIKE_STATE.lock().unwrap();
-    
+
     if state.is_none() {
         // Initialize Spike state
         match TempDir::new() {
@@ -137,7 +139,7 @@ pub unsafe extern "C" fn gemmini_CreateDevice(device_id: ::core::ffi::c_int) -> 
             }
         }
     }
-    
+
     // Return a dummy pointer (we only support one device in Spike)
     1 as *mut gemmini_Device
 }
@@ -146,19 +148,19 @@ pub unsafe extern "C" fn gemmini_CloseDevice(device: *mut gemmini_Device) -> ::c
     if device.is_null() {
         return gemmini_Result_Error as c_int;
     }
-    
+
     let mut state = SPIKE_STATE.lock().unwrap();
     if state.is_some() {
         *state = None;
         eprintln!("Gemmini/Spike: Closed device");
     }
-    
+
     gemmini_Result_Success as c_int
 }
 
 pub unsafe extern "C" fn gemmini_CreateProgram() -> *mut gemmini_Program {
     let mut state = SPIKE_STATE.lock().unwrap();
-    
+
     if let Some(ref mut spike_state) = *state {
         let program_id = spike_state.programs.len();
         spike_state.programs.push(ProgramData {
@@ -166,24 +168,24 @@ pub unsafe extern "C" fn gemmini_CreateProgram() -> *mut gemmini_Program {
             llvm_ir: None,
             elf_path: None,
         });
-        
+
         eprintln!("Gemmini/Spike: Created program {}", program_id);
         return (program_id + 1) as *mut gemmini_Program;
     }
-    
+
     ptr::null_mut()
 }
 
 pub unsafe extern "C" fn gemmini_CreateBuffer(
-    config: *const gemmini_BufferConfig
+    config: *const gemmini_BufferConfig,
 ) -> *mut gemmini_Buffer {
     if config.is_null() {
         return ptr::null_mut();
     }
-    
+
     let config = &*config;
     let mut state = SPIKE_STATE.lock().unwrap();
-    
+
     if let Some(ref mut spike_state) = *state {
         let buffer_id = spike_state.buffers.len();
         spike_state.buffers.push(BufferData {
@@ -192,12 +194,14 @@ pub unsafe extern "C" fn gemmini_CreateBuffer(
             buffer_type: config.buffer_type,
             data: vec![0u8; config.size as usize],
         });
-        
-        eprintln!("Gemmini/Spike: Created buffer {} (size: {} bytes, type: {})", 
-                  buffer_id, config.size, config.buffer_type);
+
+        eprintln!(
+            "Gemmini/Spike: Created buffer {} (size: {} bytes, type: {})",
+            buffer_id, config.size, config.buffer_type
+        );
         return (buffer_id + 1) as *mut gemmini_Buffer;
     }
-    
+
     ptr::null_mut()
 }
 
@@ -210,30 +214,32 @@ pub unsafe extern "C" fn gemmini_CreateKernel(
     if program.is_null() || kernel_file.is_null() {
         return ptr::null_mut();
     }
-    
+
     let kernel_name = CStr::from_ptr(kernel_file).to_string_lossy().to_string();
     let program_id = (program as usize) - 1;
-    
+
     let mut state = SPIKE_STATE.lock().unwrap();
-    
+
     if let Some(ref mut spike_state) = *state {
         if program_id >= spike_state.programs.len() {
             eprintln!("Gemmini/Spike: Invalid program ID");
             return ptr::null_mut();
         }
-        
+
         let kernel_id = spike_state.kernels.len();
         spike_state.kernels.push(KernelData {
             id: kernel_id,
             name: kernel_name.clone(),
             program_id,
         });
-        
-        eprintln!("Gemmini/Spike: Created kernel '{}' (id: {}, core: ({},{}))", 
-                  kernel_name, kernel_id, core.x, core.y);
+
+        eprintln!(
+            "Gemmini/Spike: Created kernel '{}' (id: {}, core: ({},{}))",
+            kernel_name, kernel_id, core.x, core.y
+        );
         return (kernel_id + 1) as *mut gemmini_Kernel;
     }
-    
+
     ptr::null_mut()
 }
 
@@ -246,10 +252,13 @@ pub unsafe extern "C" fn gemmini_SetRuntimeArgs(
     if program.is_null() || kernel_name.is_null() || args.is_null() {
         return gemmini_Result_Error;
     }
-    
-    eprintln!("Gemmini/Spike: Set runtime args for kernel '{}' ({} args)", 
-              CStr::from_ptr(kernel_name).to_string_lossy(), num_args);
-    
+
+    eprintln!(
+        "Gemmini/Spike: Set runtime args for kernel '{}' ({} args)",
+        CStr::from_ptr(kernel_name).to_string_lossy(),
+        num_args
+    );
+
     gemmini_Result_Success
 }
 
@@ -260,26 +269,26 @@ pub unsafe extern "C" fn gemmini_LaunchProgram(
     if device.is_null() || program.is_null() {
         return gemmini_Result_Error as c_int;
     }
-    
+
     let program_id = (program as usize) - 1;
     let mut state = SPIKE_STATE.lock().unwrap();
-    
+
     if let Some(ref mut spike_state) = *state {
         if program_id >= spike_state.programs.len() {
             eprintln!("Gemmini/Spike: Invalid program ID");
             return gemmini_Result_Error as c_int;
         }
-        
+
         // Generate and run Gemmini code on Spike
         if let Err(e) = run_on_spike(spike_state, program_id) {
             eprintln!("Gemmini/Spike: Failed to run on Spike: {}", e);
             return gemmini_Result_Error as c_int;
         }
-        
+
         eprintln!("Gemmini/Spike: Program launched successfully");
         return gemmini_Result_Success as c_int;
     }
-    
+
     gemmini_Result_Error as c_int
 }
 
@@ -291,26 +300,29 @@ pub unsafe extern "C" fn gemmini_WriteToBuffer(
     if buffer.is_null() || data.is_null() {
         return gemmini_Result_Error;
     }
-    
+
     let buffer_id = (buffer as usize) - 1;
     let mut state = SPIKE_STATE.lock().unwrap();
-    
+
     if let Some(ref mut spike_state) = *state {
         if buffer_id >= spike_state.buffers.len() {
             eprintln!("Gemmini/Spike: Invalid buffer ID");
             return gemmini_Result_Error;
         }
-        
+
         let buffer_data = &mut spike_state.buffers[buffer_id];
         let copy_size = std::cmp::min(size as usize, buffer_data.data.len());
-        
+
         let src = std::slice::from_raw_parts(data as *const u8, copy_size);
         buffer_data.data[..copy_size].copy_from_slice(src);
-        
-        eprintln!("Gemmini/Spike: Wrote {} bytes to buffer {}", copy_size, buffer_id);
+
+        eprintln!(
+            "Gemmini/Spike: Wrote {} bytes to buffer {}",
+            copy_size, buffer_id
+        );
         return gemmini_Result_Success;
     }
-    
+
     gemmini_Result_Error
 }
 
@@ -322,26 +334,29 @@ pub unsafe extern "C" fn gemmini_ReadFromBuffer(
     if buffer.is_null() || data.is_null() {
         return gemmini_Result_Error;
     }
-    
+
     let buffer_id = (buffer as usize) - 1;
     let mut state = SPIKE_STATE.lock().unwrap();
-    
+
     if let Some(ref mut spike_state) = *state {
         if buffer_id >= spike_state.buffers.len() {
             eprintln!("Gemmini/Spike: Invalid buffer ID");
             return gemmini_Result_Error;
         }
-        
+
         let buffer_data = &spike_state.buffers[buffer_id];
         let copy_size = std::cmp::min(size as usize, buffer_data.data.len());
-        
+
         let dst = std::slice::from_raw_parts_mut(data as *mut u8, copy_size);
         dst.copy_from_slice(&buffer_data.data[..copy_size]);
-        
-        eprintln!("Gemmini/Spike: Read {} bytes from buffer {}", copy_size, buffer_id);
+
+        eprintln!(
+            "Gemmini/Spike: Read {} bytes from buffer {}",
+            copy_size, buffer_id
+        );
         return gemmini_Result_Success;
     }
-    
+
     gemmini_Result_Error
 }
 
@@ -352,23 +367,23 @@ pub unsafe extern "C" fn gemmini_LoadFromLLVM(
     if program.is_null() || llvm_ir.is_null() {
         return gemmini_Result_Error;
     }
-    
+
     let program_id = (program as usize) - 1;
     let llvm_ir_str = CStr::from_ptr(llvm_ir).to_string_lossy().to_string();
-    
+
     let mut state = SPIKE_STATE.lock().unwrap();
-    
+
     if let Some(ref mut spike_state) = *state {
         if program_id >= spike_state.programs.len() {
             eprintln!("Gemmini/Spike: Invalid program ID");
             return gemmini_Result_Error;
         }
-        
+
         spike_state.programs[program_id].llvm_ir = Some(llvm_ir_str);
         eprintln!("Gemmini/Spike: Loaded LLVM IR for program {}", program_id);
         return gemmini_Result_Success;
     }
-    
+
     gemmini_Result_Error
 }
 
@@ -379,10 +394,10 @@ pub unsafe extern "C" fn gemmini_LoadFromMLIR(
     if program.is_null() || mlir.is_null() {
         return gemmini_Result_Error;
     }
-    
+
     let program_id = (program as usize) - 1;
     let mlir_str = CStr::from_ptr(mlir).to_string_lossy().to_string();
-    
+
     // Write MLIR to file
     let mlir_file = format!("/tmp/gemmini_mlir_{}.mlir", program_id);
     if let Err(e) = fs::write(&mlir_file, &mlir_str) {
@@ -390,20 +405,23 @@ pub unsafe extern "C" fn gemmini_LoadFromMLIR(
         return gemmini_Result_Error;
     }
     eprintln!("Gemmini/Spike: Wrote MLIR to {}", mlir_file);
-    
+
     let mut state = SPIKE_STATE.lock().unwrap();
-    
+
     if let Some(ref mut spike_state) = *state {
         if program_id >= spike_state.programs.len() {
             eprintln!("Gemmini/Spike: Invalid program ID");
             return gemmini_Result_Error;
         }
-        
+
         // Convert MLIR to executable using Buddy compiler toolchain
         match convert_mlir_to_executable(&mlir_file, program_id) {
             Ok(elf_path) => {
                 spike_state.programs[program_id].elf_path = Some(elf_path);
-                eprintln!("Gemmini/Spike: Successfully compiled MLIR for program {}", program_id);
+                eprintln!(
+                    "Gemmini/Spike: Successfully compiled MLIR for program {}",
+                    program_id
+                );
                 return gemmini_Result_Success;
             }
             Err(e) => {
@@ -412,17 +430,17 @@ pub unsafe extern "C" fn gemmini_LoadFromMLIR(
             }
         }
     }
-    
+
     gemmini_Result_Error
 }
 
 pub unsafe extern "C" fn gemmini_WaitForCompletion(
-    program: *mut gemmini_Program
+    program: *mut gemmini_Program,
 ) -> gemmini_Result {
     if program.is_null() {
         return gemmini_Result_Error;
     }
-    
+
     eprintln!("Gemmini/Spike: Waiting for completion (immediate return for simulator)");
     gemmini_Result_Success
 }
@@ -431,7 +449,7 @@ pub unsafe extern "C" fn gemmini_DestroyProgram(program: *mut gemmini_Program) {
     if program.is_null() {
         return;
     }
-    
+
     let program_id = (program as usize) - 1;
     eprintln!("Gemmini/Spike: Destroyed program {}", program_id);
 }
@@ -440,7 +458,7 @@ pub unsafe extern "C" fn gemmini_DestroyBuffer(buffer: *mut gemmini_Buffer) {
     if buffer.is_null() {
         return;
     }
-    
+
     let buffer_id = (buffer as usize) - 1;
     eprintln!("Gemmini/Spike: Destroyed buffer {}", buffer_id);
 }
@@ -545,9 +563,8 @@ impl Program {
 
     pub fn create_kernel(&self, kernel_name: &str, core: CoreCoord) -> Result<Kernel, String> {
         let kernel_name = CString::new(kernel_name).map_err(|e| e.to_string())?;
-        let handle = unsafe { 
-            gemmini_CreateKernel(self.handle, kernel_name.as_ptr(), core, ptr::null())
-        };
+        let handle =
+            unsafe { gemmini_CreateKernel(self.handle, kernel_name.as_ptr(), core, ptr::null()) };
         if handle.is_null() {
             Err("Failed to create kernel".to_string())
         } else {
@@ -555,18 +572,15 @@ impl Program {
         }
     }
 
-    pub fn set_runtime_args(
-        &self,
-        kernel_name: &str,
-        buffers: &[&Buffer],
-    ) -> Result<(), String> {
-        let kernel_name_cstr = CString::new(kernel_name)
-            .map_err(|e| format!("Invalid kernel name: {}", e))?;
-        
-        let buffer_ptrs: Vec<*const gemmini_Buffer> = buffers.iter()
+    pub fn set_runtime_args(&self, kernel_name: &str, buffers: &[&Buffer]) -> Result<(), String> {
+        let kernel_name_cstr =
+            CString::new(kernel_name).map_err(|e| format!("Invalid kernel name: {}", e))?;
+
+        let buffer_ptrs: Vec<*const gemmini_Buffer> = buffers
+            .iter()
             .map(|b| b.handle as *const gemmini_Buffer)
             .collect();
-        
+
         let result = unsafe {
             gemmini_SetRuntimeArgs(
                 self.handle,
@@ -575,11 +589,14 @@ impl Program {
                 buffer_ptrs.len() as i32,
             )
         };
-        
+
         if result == gemmini_Result_Success {
             Ok(())
         } else {
-            Err(format!("Failed to set runtime args: error code {:?}", result))
+            Err(format!(
+                "Failed to set runtime args: error code {:?}",
+                result
+            ))
         }
     }
 
@@ -597,7 +614,10 @@ impl Program {
         if result == gemmini_Result_Success {
             Ok(())
         } else {
-            Err(format!("Failed to wait for completion: error code {:?}", result))
+            Err(format!(
+                "Failed to wait for completion: error code {:?}",
+                result
+            ))
         }
     }
 }
@@ -612,34 +632,40 @@ impl Drop for Program {
 
 impl Buffer {
     pub fn write(&self, data: &[u8]) -> Result<(), String> {
-        let result = unsafe { 
-            gemmini_WriteToBuffer(
-                self.handle, 
-                data.as_ptr() as *const core::ffi::c_void, 
-                data.len() as u64
-            ) 
-        };
-
-        if result == gemmini_Result_Success {
-            Ok(())
-        } else {
-            Err(format!("Failed to write to buffer: error code {:?}", result))
-        }
-    }
-
-    pub fn read(&self, data: &mut [u8]) -> Result<(), String> {
         let result = unsafe {
-            gemmini_ReadFromBuffer(
-                self.handle, 
-                data.as_mut_ptr() as *mut core::ffi::c_void, 
-                data.len() as u64
+            gemmini_WriteToBuffer(
+                self.handle,
+                data.as_ptr() as *const core::ffi::c_void,
+                data.len() as u64,
             )
         };
 
         if result == gemmini_Result_Success {
             Ok(())
         } else {
-            Err(format!("Failed to read from buffer: error code {:?}", result))
+            Err(format!(
+                "Failed to write to buffer: error code {:?}",
+                result
+            ))
+        }
+    }
+
+    pub fn read(&self, data: &mut [u8]) -> Result<(), String> {
+        let result = unsafe {
+            gemmini_ReadFromBuffer(
+                self.handle,
+                data.as_mut_ptr() as *mut core::ffi::c_void,
+                data.len() as u64,
+            )
+        };
+
+        if result == gemmini_Result_Success {
+            Ok(())
+        } else {
+            Err(format!(
+                "Failed to read from buffer: error code {:?}",
+                result
+            ))
         }
     }
 }
@@ -666,54 +692,54 @@ pub fn get_device_count() -> Result<i32, String> {
 fn run_on_spike(spike_state: &mut SpikeState, program_id: usize) -> Result<(), String> {
     // Direct execution using compiled object file instead of recursing into gemmini_main
     eprintln!("Gemmini/Spike: Running direct execution with compiled object");
-    
+
     // Look for the compiled object file
     let obj_file = format!("/tmp/gemmini_program_{}.o", program_id);
-    
+
     if std::path::Path::new(&obj_file).exists() {
         eprintln!("Gemmini/Spike: Found compiled object: {}", obj_file);
-        
+
         // For now, simulate successful execution by processing the object file
         // In a real implementation, this would load and execute the object file directly
         eprintln!("Gemmini/Spike: Simulating execution of compiled Gemmini kernel");
-        
+
         // Perform matrix multiplication simulation based on the compiled code
         simulate_gemmini_matmul(spike_state)?;
-        
+
         eprintln!("Gemmini/Spike: Direct execution completed successfully");
     } else {
         eprintln!("Gemmini/Spike: Object file not found, using mock execution");
         mock_gemmini_execution(spike_state)?;
     }
-    
+
     Ok(())
 }
 
 fn generate_gemmini_elf(
-    spike_state: &mut SpikeState, 
-    program_id: usize, 
-    llvm_ir: &str
+    spike_state: &mut SpikeState,
+    program_id: usize,
+    llvm_ir: &str,
 ) -> Result<PathBuf, String> {
     let temp_dir = spike_state.temp_dir.path();
     let ll_file = temp_dir.join(format!("program_{}.ll", program_id));
     let s_file = temp_dir.join(format!("program_{}.s", program_id));
     let elf_file = temp_dir.join(format!("program_{}.elf", program_id));
-    
+
     // Write LLVM IR to file
-    fs::write(&ll_file, llvm_ir)
-        .map_err(|e| format!("Failed to write LLVM IR: {}", e))?;
-    
+    fs::write(&ll_file, llvm_ir).map_err(|e| format!("Failed to write LLVM IR: {}", e))?;
+
     // Try to compile LLVM IR to RISC-V assembly
     let llc_result = Command::new("llc")
         .args(&[
             "-march=riscv64",
             "-mattr=+gemmini",
             "-filetype=asm",
-            "-o", s_file.to_str().unwrap(),
+            "-o",
+            s_file.to_str().unwrap(),
             ll_file.to_str().unwrap(),
         ])
         .output();
-    
+
     match llc_result {
         Ok(output) => {
             if !output.status.success() {
@@ -727,16 +753,17 @@ fn generate_gemmini_elf(
             create_gemmini_test_assembly(&s_file)?;
         }
     }
-    
+
     // Assemble to ELF
     let as_result = Command::new("riscv64-unknown-elf-as")
         .args(&[
             "-march=rv64gc",
-            "-o", elf_file.to_str().unwrap(),
+            "-o",
+            elf_file.to_str().unwrap(),
             s_file.to_str().unwrap(),
         ])
         .output();
-    
+
     match as_result {
         Ok(output) => {
             if !output.status.success() {
@@ -750,7 +777,7 @@ fn generate_gemmini_elf(
             create_dummy_elf(&elf_file)?;
         }
     }
-    
+
     Ok(elf_file)
 }
 
@@ -794,9 +821,8 @@ compute:
     li a7, 93           # exit syscall
     ecall
 "#;
-    
-    fs::write(path, assembly)
-        .map_err(|e| format!("Failed to write assembly: {}", e))
+
+    fs::write(path, assembly).map_err(|e| format!("Failed to write assembly: {}", e))
 }
 
 fn create_dummy_elf(path: &Path) -> Result<(), String> {
@@ -805,8 +831,7 @@ fn create_dummy_elf(path: &Path) -> Result<(), String> {
         // ELF header
         0x7f, 0x45, 0x4c, 0x46, // Magic
         0x02, 0x01, 0x01, 0x00, // 64-bit, little-endian, version 1
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x02, 0x00, // Executable
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, // Executable
         0xf3, 0x00, // RISC-V
         0x01, 0x00, 0x00, 0x00, // Version 1
         0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Entry point
@@ -819,7 +844,6 @@ fn create_dummy_elf(path: &Path) -> Result<(), String> {
         0x00, 0x00, // Section header entry size
         0x00, 0x00, // Section header count
         0x00, 0x00, // Section name string table index
-        
         // Program header
         0x01, 0x00, 0x00, 0x00, // PT_LOAD
         0x05, 0x00, 0x00, 0x00, // Flags: R+X
@@ -829,33 +853,31 @@ fn create_dummy_elf(path: &Path) -> Result<(), String> {
         0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // File size
         0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Memory size
         0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Alignment
-        
         // Code: just exit
         0x01, 0x00, // li a0, 0
         0x5d, 0x00, // li a7, 93
         0x73, 0x00, 0x00, 0x00, // ecall
     ];
-    
-    fs::write(path, elf_bytes)
-        .map_err(|e| format!("Failed to write ELF: {}", e))
+
+    fs::write(path, elf_bytes).map_err(|e| format!("Failed to write ELF: {}", e))
 }
 
 fn run_spike_simulation(elf_path: &Path, spike_state: &mut SpikeState) -> Result<(), String> {
-    eprintln!("Gemmini/Spike: Running simulation with {}", elf_path.display());
-    
+    eprintln!(
+        "Gemmini/Spike: Running simulation with {}",
+        elf_path.display()
+    );
+
     // Prepare memory dump for input/output buffers
     let mem_file = spike_state.temp_dir.path().join("memory.bin");
     prepare_memory_file(&mem_file, spike_state)?;
-    
+
     // Run Spike with Gemmini extension
     let mut spike_cmd = Command::new("spike");
-    spike_cmd.args(&[
-        "--extension=gemmini","pk",
-        elf_path.to_str().unwrap(),
-    ]);
-    
+    spike_cmd.args(&["--extension=gemmini", "pk", elf_path.to_str().unwrap()]);
+
     let output = spike_cmd.output();
-    
+
     match output {
         Ok(result) => {
             if result.status.success() {
@@ -863,8 +885,10 @@ fn run_spike_simulation(elf_path: &Path, spike_state: &mut SpikeState) -> Result
                 // Read back results from memory
                 read_memory_results(&mem_file, spike_state)?;
             } else {
-                eprintln!("Gemmini/Spike: Simulation failed: {}", 
-                         String::from_utf8_lossy(&result.stderr));
+                eprintln!(
+                    "Gemmini/Spike: Simulation failed: {}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
                 // Fall back to mock execution
                 // mock_gemmini_execution(spike_state)?;
                 return Err(format!("Spike simulation failed"));
@@ -876,7 +900,7 @@ fn run_spike_simulation(elf_path: &Path, spike_state: &mut SpikeState) -> Result
             return Err(format!("Spike command not found"));
         }
     }
-    
+
     Ok(())
 }
 
@@ -887,22 +911,21 @@ fn run_default_gemmini_test(spike_state: &mut SpikeState) -> Result<(), String> 
 
 fn prepare_memory_file(path: &Path, spike_state: &SpikeState) -> Result<(), String> {
     // Write input buffer contents to memory file
-    let mut file = File::create(path)
-        .map_err(|e| format!("Failed to create memory file: {}", e))?;
-    
+    let mut file =
+        File::create(path).map_err(|e| format!("Failed to create memory file: {}", e))?;
+
     for buffer in &spike_state.buffers {
         file.write_all(&buffer.data)
             .map_err(|e| format!("Failed to write buffer data: {}", e))?;
     }
-    
+
     Ok(())
 }
 
 fn read_memory_results(path: &Path, spike_state: &mut SpikeState) -> Result<(), String> {
     // Read output buffer contents from memory file
-    let data = fs::read(path)
-        .map_err(|e| format!("Failed to read memory file: {}", e))?;
-    
+    let data = fs::read(path).map_err(|e| format!("Failed to read memory file: {}", e))?;
+
     let mut offset = 0;
     for buffer in &mut spike_state.buffers {
         let size = std::cmp::min(buffer.data.len(), data.len() - offset);
@@ -911,18 +934,18 @@ fn read_memory_results(path: &Path, spike_state: &mut SpikeState) -> Result<(), 
             offset += size;
         }
     }
-    
+
     Ok(())
 }
 
 fn simulate_gemmini_matmul(spike_state: &mut SpikeState) -> Result<(), String> {
     eprintln!("Gemmini/Spike: Executing compiled Gemmini kernel using Spike simulator");
-    
+
     // Find the most recent compiled object file
     match find_latest_object_file() {
         Ok(obj_file) => {
             eprintln!("Gemmini/Spike: Using compiled object: {}", obj_file);
-            
+
             // Check if the object file is actually valid (non-empty and has ELF magic)
             if let Ok(obj_data) = std::fs::read(&obj_file) {
                 if obj_data.len() > 16 && obj_data.starts_with(&[0x7f, 0x45, 0x4c, 0x46]) {
@@ -936,10 +959,13 @@ fn simulate_gemmini_matmul(spike_state: &mut SpikeState) -> Result<(), String> {
             }
         }
         Err(e) => {
-            eprintln!("Gemmini/Spike: {}, falling back to compilation-based simulation", e);
+            eprintln!(
+                "Gemmini/Spike: {}, falling back to compilation-based simulation",
+                e
+            );
         }
     }
-    
+
     // Fall back to simulation that interprets the compiled code's intent
     simulate_compiled_execution(spike_state)
 }
@@ -948,10 +974,10 @@ fn find_latest_object_file() -> Result<String, String> {
     // Look for compiled object files in /tmp
     let obj_files = vec![
         "/tmp/gemmini_program_0.o",
-        "/tmp/gemmini_program_1.o", 
+        "/tmp/gemmini_program_1.o",
         "/tmp/gemmini_program_2.o",
     ];
-    
+
     for obj_file in obj_files {
         if std::path::Path::new(obj_file).exists() {
             // Check if file has content
@@ -962,7 +988,7 @@ fn find_latest_object_file() -> Result<String, String> {
             }
         }
     }
-    
+
     Err("No valid compiled object file found".to_string())
 }
 
@@ -1014,48 +1040,54 @@ SECTIONS
     _end = .;
 }
 "#;
-    
+
     std::fs::write(&linker_script, script_content)
         .map_err(|e| format!("Failed to create linker script: {}", e))?;
-    
+
     Ok(linker_script.to_string_lossy().to_string())
 }
 
 fn execute_with_spike_directly(spike_state: &mut SpikeState, obj_file: &str) -> Result<(), String> {
     eprintln!("Gemmini/Spike: Executing object file directly with Spike");
-    
+
     // Use spike-dasm to examine the object file
-    let dasm_result = Command::new("spike-dasm")
-        .arg(obj_file)
-        .output();
-    
+    let dasm_result = Command::new("spike-dasm").arg(obj_file).output();
+
     match dasm_result {
         Ok(output) => {
             if output.status.success() {
                 let asm_output = String::from_utf8_lossy(&output.stdout);
-                eprintln!("Gemmini/Spike: Disassembled code preview:\n{}", 
-                         asm_output.lines().take(10).collect::<Vec<_>>().join("\n"));
+                eprintln!(
+                    "Gemmini/Spike: Disassembled code preview:\n{}",
+                    asm_output.lines().take(10).collect::<Vec<_>>().join("\n")
+                );
             }
         }
         Err(e) => {
             eprintln!("Gemmini/Spike: spike-dasm not available: {}", e);
         }
     }
-    
+
     // Create a proper executable from the object file and run it with Spike
     let temp_dir = spike_state.temp_dir.path();
     let executable = create_executable_from_object(spike_state, obj_file)?;
-    
+
     // Execute the compiled program with Spike
     execute_kernel_with_spike(spike_state, &executable)
 }
 
-fn create_executable_from_object(spike_state: &mut SpikeState, obj_file: &str) -> Result<std::path::PathBuf, String> {
+fn create_executable_from_object(
+    spike_state: &mut SpikeState,
+    obj_file: &str,
+) -> Result<std::path::PathBuf, String> {
     let temp_dir = spike_state.temp_dir.path();
     let executable = temp_dir.join("gemmini_kernel");
-    
-    eprintln!("Gemmini/Spike: Creating executable from object file: {}", obj_file);
-    
+
+    eprintln!(
+        "Gemmini/Spike: Creating executable from object file: {}",
+        obj_file
+    );
+
     // Create a simple startup code that calls the kernel function
     let startup_c = temp_dir.join("startup.c");
     let startup_content = r#"
@@ -1236,7 +1268,7 @@ int main() {
 
     std::fs::write(&startup_c, startup_content)
         .map_err(|e| format!("Failed to write startup code: {}", e))?;
-    
+
     // Compile the startup code and link with the object file
     let link_result = Command::new("riscv64-unknown-elf-gcc")
         .args(&[
@@ -1244,7 +1276,7 @@ int main() {
             "-nostartfiles",
             "-nostdlib",
             "-mcmodel=medany",
-            "-T", 
+            "-T",
         ])
         .arg(create_linker_script(temp_dir)?)
         .arg(startup_c.to_str().unwrap())
@@ -1252,14 +1284,20 @@ int main() {
         .arg("-o")
         .arg(&executable)
         .output();
-    
+
     match link_result {
         Ok(output) => {
             if output.status.success() {
-                eprintln!("Gemmini/Spike: Successfully created executable: {}", executable.display());
+                eprintln!(
+                    "Gemmini/Spike: Successfully created executable: {}",
+                    executable.display()
+                );
                 Ok(executable)
             } else {
-                eprintln!("Gemmini/Spike: Linking failed: {}", String::from_utf8_lossy(&output.stderr));
+                eprintln!(
+                    "Gemmini/Spike: Linking failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
                 Err("Failed to create executable from object file".to_string())
             }
         }
@@ -1270,31 +1308,37 @@ int main() {
     }
 }
 
-fn execute_kernel_with_spike(spike_state: &mut SpikeState, executable: &std::path::Path) -> Result<(), String> {
+fn execute_kernel_with_spike(
+    spike_state: &mut SpikeState,
+    executable: &std::path::Path,
+) -> Result<(), String> {
     eprintln!("Gemmini/Spike: Launching Spike simulator with Gemmini extension");
-    
+
     // Prepare input data files for Spike
     let temp_dir = spike_state.temp_dir.path();
     let input_file = temp_dir.join("input.bin");
     let output_file = temp_dir.join("output.bin");
-    
+
     // Write input buffer data to file for the executable to read
     if !spike_state.buffers.is_empty() {
         std::fs::write(&input_file, &spike_state.buffers[0].data)
             .map_err(|e| format!("Failed to write input data: {}", e))?;
-        eprintln!("Gemmini/Spike: Wrote {} bytes to input file", spike_state.buffers[0].data.len());
+        eprintln!(
+            "Gemmini/Spike: Wrote {} bytes to input file",
+            spike_state.buffers[0].data.len()
+        );
     }
-    
+
     // Check if Spike with Gemmini extension is available
-    let spike_version = Command::new("spike")
-        .args(&["--help"])
-        .output();
-        
+    let spike_version = Command::new("spike").args(&["--help"]).output();
+
     match spike_version {
         Ok(help_output) => {
             let help_text = String::from_utf8_lossy(&help_output.stdout);
             if !help_text.contains("gemmini") {
-                eprintln!("Gemmini/Spike: Spike does not have Gemmini extension, trying pk instead");
+                eprintln!(
+                    "Gemmini/Spike: Spike does not have Gemmini extension, trying pk instead"
+                );
                 return execute_with_pk(spike_state, executable);
             }
         }
@@ -1303,38 +1347,56 @@ fn execute_kernel_with_spike(spike_state: &mut SpikeState, executable: &std::pat
             return execute_with_pk(spike_state, executable);
         }
     }
-    
+
     // Execute with Spike (first try with Gemmini extension)
     let spike_result = Command::new("spike")
         .args(&[
             "--isa=rv64gc",
-            "--extension=gemmini", 
+            "--extension=gemmini",
             "-m0x80000000:0x10000000", // Memory region
         ])
         .arg(executable)
         .current_dir(temp_dir)
         .output();
-    
+
     match spike_result {
         Ok(output) => {
             if output.status.success() {
                 eprintln!("Gemmini/Spike: Spike execution completed successfully");
-                eprintln!("Gemmini/Spike: Exit code: {}", output.status.code().unwrap_or(-1));
-                
+                eprintln!(
+                    "Gemmini/Spike: Exit code: {}",
+                    output.status.code().unwrap_or(-1)
+                );
+
                 if !output.stdout.is_empty() {
-                    eprintln!("Gemmini/Spike: Stdout: {}", String::from_utf8_lossy(&output.stdout));
+                    eprintln!(
+                        "Gemmini/Spike: Stdout: {}",
+                        String::from_utf8_lossy(&output.stdout)
+                    );
                 }
                 if !output.stderr.is_empty() {
-                    eprintln!("Gemmini/Spike: Stderr: {}", String::from_utf8_lossy(&output.stderr));
+                    eprintln!(
+                        "Gemmini/Spike: Stderr: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
                 }
-                
+
                 // Try to read the output data that was written by the program
                 return read_spike_output_from_memory(spike_state, &output);
             } else {
-                eprintln!("Gemmini/Spike: Spike execution failed with code: {}", output.status.code().unwrap_or(-1));
-                eprintln!("Gemmini/Spike: Stderr: {}", String::from_utf8_lossy(&output.stderr));
-                eprintln!("Gemmini/Spike: Stdout: {}", String::from_utf8_lossy(&output.stdout));
-                
+                eprintln!(
+                    "Gemmini/Spike: Spike execution failed with code: {}",
+                    output.status.code().unwrap_or(-1)
+                );
+                eprintln!(
+                    "Gemmini/Spike: Stderr: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                eprintln!(
+                    "Gemmini/Spike: Stdout: {}",
+                    String::from_utf8_lossy(&output.stdout)
+                );
+
                 // Try pk as fallback
                 return execute_with_pk(spike_state, executable);
             }
@@ -1347,29 +1409,41 @@ fn execute_kernel_with_spike(spike_state: &mut SpikeState, executable: &std::pat
     }
 }
 
-fn execute_with_pk(spike_state: &mut SpikeState, executable: &std::path::Path) -> Result<(), String> {
+fn execute_with_pk(
+    spike_state: &mut SpikeState,
+    executable: &std::path::Path,
+) -> Result<(), String> {
     eprintln!("Gemmini/Spike: Trying execution with pk (RISC-V proxy kernel)");
-    
+
     let temp_dir = spike_state.temp_dir.path();
-    
+
     // Execute with pk
     let pk_result = Command::new("spike")
         .args(&["pk"])
         .arg(executable)
         .current_dir(temp_dir)
         .output();
-    
+
     match pk_result {
         Ok(output) => {
-            eprintln!("Gemmini/Spike: pk execution completed with code: {}", output.status.code().unwrap_or(-1));
-            
+            eprintln!(
+                "Gemmini/Spike: pk execution completed with code: {}",
+                output.status.code().unwrap_or(-1)
+            );
+
             if !output.stdout.is_empty() {
-                eprintln!("Gemmini/Spike: pk stdout: {}", String::from_utf8_lossy(&output.stdout));
+                eprintln!(
+                    "Gemmini/Spike: pk stdout: {}",
+                    String::from_utf8_lossy(&output.stdout)
+                );
             }
             if !output.stderr.is_empty() {
-                eprintln!("Gemmini/Spike: pk stderr: {}", String::from_utf8_lossy(&output.stderr));
+                eprintln!(
+                    "Gemmini/Spike: pk stderr: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
-            
+
             // Extract computation results from the program output or memory dump
             return read_spike_output_from_memory(spike_state, &output);
         }
@@ -1377,28 +1451,31 @@ fn execute_with_pk(spike_state: &mut SpikeState, executable: &std::path::Path) -
             eprintln!("Gemmini/Spike: pk execution failed: {}", e);
         }
     }
-    
+
     // Final fallback to simulation
     eprintln!("Gemmini/Spike: All Spike execution methods failed, falling back to simulation");
     simulate_compiled_execution(spike_state)
 }
 
-fn read_spike_output_from_memory(spike_state: &mut SpikeState, spike_output: &std::process::Output) -> Result<(), String> {
+fn read_spike_output_from_memory(
+    spike_state: &mut SpikeState,
+    spike_output: &std::process::Output,
+) -> Result<(), String> {
     eprintln!("Gemmini/Spike: Reading output from Spike execution");
-    
+
     // Try to extract output values from stdout/stderr
     let stdout_text = String::from_utf8_lossy(&spike_output.stdout);
     let stderr_text = String::from_utf8_lossy(&spike_output.stderr);
     let combined_output = format!("{}\n{}", stdout_text, stderr_text);
-    
+
     eprintln!("Gemmini/Spike: Combined output:\n{}", combined_output);
-    
+
     // Look for our specific GEMMINI_OUTPUT line
     let mut result_values = Vec::new();
     for line in combined_output.lines() {
         if line.contains("GEMMINI_OUTPUT:") {
             eprintln!("Gemmini/Spike: Found output line: {}", line);
-            
+
             // Extract the numbers after "GEMMINI_OUTPUT:"
             if let Some(numbers_part) = line.split("GEMMINI_OUTPUT:").nth(1) {
                 for word in numbers_part.trim().split_whitespace() {
@@ -1413,16 +1490,20 @@ fn read_spike_output_from_memory(spike_state: &mut SpikeState, spike_output: &st
             break;
         }
     }
-    
+
     // If we didn't find the GEMMINI_OUTPUT line, look for any floating point numbers
     if result_values.is_empty() {
         eprintln!("Gemmini/Spike: No GEMMINI_OUTPUT line found, scanning for any numerical values");
         for line in combined_output.lines() {
             // Skip lines that are obviously debug/status messages
-            if line.contains("GEMMINI_") || line.contains("Spike") || line.contains("ERROR") || line.contains("warning") {
+            if line.contains("GEMMINI_")
+                || line.contains("Spike")
+                || line.contains("ERROR")
+                || line.contains("warning")
+            {
                 continue;
             }
-            
+
             for word in line.split_whitespace() {
                 if let Ok(value) = word.parse::<f32>() {
                     if value.is_finite() && value.abs() > 0.001 && value.abs() < 1000000.0 {
@@ -1438,11 +1519,17 @@ fn read_spike_output_from_memory(spike_state: &mut SpikeState, spike_output: &st
             }
         }
     }
-    
+
     if !result_values.is_empty() {
-        eprintln!("Gemmini/Spike: Extracted {} result values from Spike output", result_values.len());
-        eprintln!("Gemmini/Spike: Values: {:?}", &result_values[..result_values.len().min(4)]);
-        
+        eprintln!(
+            "Gemmini/Spike: Extracted {} result values from Spike output",
+            result_values.len()
+        );
+        eprintln!(
+            "Gemmini/Spike: Values: {:?}",
+            &result_values[..result_values.len().min(4)]
+        );
+
         // Store the extracted results in the output buffer
         let output_idx = if spike_state.buffers.len() >= 3 { 2 } else { 1 };
         if output_idx < spike_state.buffers.len() {
@@ -1451,26 +1538,37 @@ fn read_spike_output_from_memory(spike_state: &mut SpikeState, spike_output: &st
             for value in result_values {
                 result_bytes.extend_from_slice(&value.to_le_bytes());
             }
-            
-            let copy_size = std::cmp::min(result_bytes.len(), spike_state.buffers[output_idx].data.len());
+
+            let copy_size = std::cmp::min(
+                result_bytes.len(),
+                spike_state.buffers[output_idx].data.len(),
+            );
             if copy_size > 0 {
-                spike_state.buffers[output_idx].data[..copy_size].copy_from_slice(&result_bytes[..copy_size]);
-                eprintln!("Gemmini/Spike: Stored {} bytes of result data in output buffer", copy_size);
-                
+                spike_state.buffers[output_idx].data[..copy_size]
+                    .copy_from_slice(&result_bytes[..copy_size]);
+                eprintln!(
+                    "Gemmini/Spike: Stored {} bytes of result data in output buffer",
+                    copy_size
+                );
+
                 // Print sample values for verification
                 if spike_state.buffers[output_idx].data.len() >= 16 {
-                    let values: Vec<f32> = spike_state.buffers[output_idx].data.chunks_exact(4)
+                    let values: Vec<f32> = spike_state.buffers[output_idx]
+                        .data
+                        .chunks_exact(4)
                         .take(4)
                         .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                         .collect();
-                    eprintln!("Gemmini/Spike: Stored sample values: [{:.2}, {:.2}, {:.2}, {:.2}]", 
-                             values[0], values[1], values[2], values[3]);
+                    eprintln!(
+                        "Gemmini/Spike: Stored sample values: [{:.2}, {:.2}, {:.2}, {:.2}]",
+                        values[0], values[1], values[2], values[3]
+                    );
                 }
                 return Ok(());
             }
         }
     }
-    
+
     // If no valid output was found, check if the program actually ran
     if combined_output.contains("GEMMINI_START") {
         eprintln!("Gemmini/Spike: Program started but no output found, using compilation-aware simulation");
@@ -1481,25 +1579,38 @@ fn read_spike_output_from_memory(spike_state: &mut SpikeState, spike_output: &st
     }
 }
 
-fn read_spike_output(spike_state: &mut SpikeState, output_file: &std::path::Path) -> Result<(), String> {
+fn read_spike_output(
+    spike_state: &mut SpikeState,
+    output_file: &std::path::Path,
+) -> Result<(), String> {
     match std::fs::read(output_file) {
         Ok(output_data) => {
-            eprintln!("Gemmini/Spike: Read {} bytes from Spike output", output_data.len());
-            
+            eprintln!(
+                "Gemmini/Spike: Read {} bytes from Spike output",
+                output_data.len()
+            );
+
             // Store the output in the output buffer
             let output_idx = if spike_state.buffers.len() >= 3 { 2 } else { 1 };
             if output_idx < spike_state.buffers.len() {
-                let copy_size = std::cmp::min(output_data.len(), spike_state.buffers[output_idx].data.len());
-                spike_state.buffers[output_idx].data[..copy_size].copy_from_slice(&output_data[..copy_size]);
-                
+                let copy_size = std::cmp::min(
+                    output_data.len(),
+                    spike_state.buffers[output_idx].data.len(),
+                );
+                spike_state.buffers[output_idx].data[..copy_size]
+                    .copy_from_slice(&output_data[..copy_size]);
+
                 // Print sample values
                 if output_data.len() >= 16 {
-                    let values: Vec<f32> = output_data.chunks_exact(4)
+                    let values: Vec<f32> = output_data
+                        .chunks_exact(4)
                         .take(4)
                         .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                         .collect();
-                    eprintln!("Gemmini/Spike: Sample result values: [{:.2}, {:.2}, {:.2}, {:.2}]", 
-                             values[0], values[1], values[2], values[3]);
+                    eprintln!(
+                        "Gemmini/Spike: Sample result values: [{:.2}, {:.2}, {:.2}, {:.2}]",
+                        values[0], values[1], values[2], values[3]
+                    );
                 }
             }
             Ok(())
@@ -1513,7 +1624,7 @@ fn read_spike_output(spike_state: &mut SpikeState, output_file: &std::path::Path
 
 fn simulate_compiled_execution(spike_state: &mut SpikeState) -> Result<(), String> {
     eprintln!("Gemmini/Spike: Simulating compiled kernel execution");
-    
+
     // This is a more sophisticated simulation that attempts to interpret
     // the compiled MLIR code behavior based on the available buffers
     if spike_state.buffers.len() >= 2 {
@@ -1523,21 +1634,23 @@ fn simulate_compiled_execution(spike_state: &mut SpikeState) -> Result<(), Strin
         } else {
             &spike_state.buffers[0].data
         };
-        
+
         // Convert byte data to f32 for matrix operations
-        let matrix_a: Vec<f32> = input_a.chunks_exact(4)
+        let matrix_a: Vec<f32> = input_a
+            .chunks_exact(4)
             .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect();
-            
-        let matrix_b: Vec<f32> = input_b.chunks_exact(4)
+
+        let matrix_b: Vec<f32> = input_b
+            .chunks_exact(4)
             .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect();
-        
+
         // Assume 32x32 matrices based on compiled MLIR
         let dim = 32;
         if matrix_a.len() >= dim * dim && matrix_b.len() >= dim * dim {
             let mut result = vec![0.0f32; dim * dim];
-            
+
             // Perform matrix multiplication as the compiled code would
             for i in 0..dim {
                 for j in 0..dim {
@@ -1548,22 +1661,28 @@ fn simulate_compiled_execution(spike_state: &mut SpikeState) -> Result<(), Strin
                     result[i * dim + j] = sum;
                 }
             }
-            
-            eprintln!("Gemmini/Spike: Matrix multiplication completed ({}x{} matrices)", dim, dim);
-            eprintln!("Gemmini/Spike: Sample result values: [{:.2}, {:.2}, {:.2}, {:.2}]", 
-                     result[0], result[1], result[2], result[3]);
-            
+
+            eprintln!(
+                "Gemmini/Spike: Matrix multiplication completed ({}x{} matrices)",
+                dim, dim
+            );
+            eprintln!(
+                "Gemmini/Spike: Sample result values: [{:.2}, {:.2}, {:.2}, {:.2}]",
+                result[0], result[1], result[2], result[3]
+            );
+
             // Convert result back to bytes and store in output buffer
             let mut result_bytes = Vec::new();
             for value in result {
                 result_bytes.extend_from_slice(&value.to_le_bytes());
             }
-            
+
             let output_idx = if spike_state.buffers.len() >= 3 { 2 } else { 1 };
             if output_idx < spike_state.buffers.len() {
                 let output_size = spike_state.buffers[output_idx].data.len();
                 let copy_size = std::cmp::min(result_bytes.len(), output_size);
-                spike_state.buffers[output_idx].data[..copy_size].copy_from_slice(&result_bytes[..copy_size]);
+                spike_state.buffers[output_idx].data[..copy_size]
+                    .copy_from_slice(&result_bytes[..copy_size]);
             }
         } else {
             eprintln!("Gemmini/Spike: Matrix dimensions insufficient, using simple copy");
@@ -1573,13 +1692,13 @@ fn simulate_compiled_execution(spike_state: &mut SpikeState) -> Result<(), Strin
         eprintln!("Gemmini/Spike: Insufficient buffers, using mock execution");
         mock_gemmini_execution(spike_state)?;
     }
-    
+
     Ok(())
 }
 
 fn mock_gemmini_execution(spike_state: &mut SpikeState) -> Result<(), String> {
     eprintln!("Gemmini/Spike: Performing mock execution");
-    
+
     // Simple mock: copy input to output for buffers
     if spike_state.buffers.len() >= 2 {
         let input_data = spike_state.buffers[0].data.clone();
@@ -1587,7 +1706,7 @@ fn mock_gemmini_execution(spike_state: &mut SpikeState) -> Result<(), String> {
             spike_state.buffers[1].data = input_data;
         }
     }
-    
+
     Ok(())
 }
 
@@ -1595,18 +1714,18 @@ fn find_gemmini_main_binary() -> Result<String, String> {
     // Look for gemmini_main in common locations
     let possible_paths = vec![
         "./target/debug/gemmini_main",
-        "../target/debug/gemmini_main", 
+        "../target/debug/gemmini_main",
         "../../target/debug/gemmini_main",
         "../../../target/debug/gemmini_main",
         "/home/victoryang00/hetgpu/target/debug/gemmini_main",
     ];
-    
+
     for path in possible_paths {
         if std::path::Path::new(path).exists() {
             return Ok(path.to_string());
         }
     }
-    
+
     // Try to find using which command
     if let Ok(output) = Command::new("which").arg("gemmini_main").output() {
         if output.status.success() {
@@ -1615,38 +1734,38 @@ fn find_gemmini_main_binary() -> Result<String, String> {
             }
         }
     }
-    
+
     Err("Could not find gemmini_main binary. Please ensure it's built with 'cargo build --bin gemmini_main'".to_string())
 }
 
 // Convert tensor-based MLIR to memref-based MLIR for buddy-opt compatibility
 fn convert_tensor_to_memref_mlir(content: &str) -> String {
     let mut result = content.to_string();
-    
+
     // Simple string replacements to convert tensor MLIR to memref MLIR
     // Based on the pattern we saw in the linalg file
-    
+
     // Replace function signature - specific pattern for XOR function
     result = result.replace(
         "func.func @xor(%arg0: tensor<1xi32>, %arg1: tensor<1xi32>) -> tensor<1xi32> {",
-        "func.func @xor(%arg0: memref<1xi32>, %arg1: memref<1xi32>, %arg2: memref<1xi32>) {"
+        "func.func @xor(%arg0: memref<1xi32>, %arg1: memref<1xi32>, %arg2: memref<1xi32>) {",
     );
-    
+
     // Remove tensor.empty() line
     result = result.replace("    %0 = tensor.empty() : tensor<1xi32>\n", "");
-    
+
     // Replace linalg.generic operation - remove the assignment
     result = result.replace(
         "    %1 = linalg.generic {indexing_maps = [#map, #map, #map1], iterator_types = [\"parallel\"]} ins(%arg0, %arg1 : tensor<1xi32>, tensor<1xi32>) outs(%0 : tensor<1xi32>) {",
         "    linalg.generic {indexing_maps = [#map, #map, #map1], iterator_types = [\"parallel\"]} ins(%arg0, %arg1 : memref<1xi32>, memref<1xi32>) outs(%arg2 : memref<1xi32>) {"
     );
-    
+
     // Remove the -> tensor<1xi32> return type from linalg.generic
     result = result.replace("    } -> tensor<1xi32>", "    }");
-    
+
     // Replace return statement
     result = result.replace("    return %1 : tensor<1xi32>", "    return");
-    
+
     result
 }
 
@@ -1657,42 +1776,44 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
     let mut llvm_ir = format!("{}.ll", base_name);
     let obj_file = format!("{}.o", base_name);
     let executable = format!("{}.out", base_name);
-    
+
     eprintln!("Gemmini/Spike: Starting MLIR compilation pipeline");
-    
-    
+
     // Step 1: Convert TOSA to Linalg using mlir-opt
     eprintln!("Gemmini/Spike: Step 1 - Converting TOSA to Linalg");
-    
+
     // First try the pipeline pass
     let mlir_opt_result = Command::new("mlir-opt")
-        .args(&[
-            mlir_file,
-            "--tosa-to-linalg-pipeline",
-            "-o", &linalg_mlir,
-        ])
+        .args(&[mlir_file, "--tosa-to-linalg-pipeline", "-o", &linalg_mlir])
         .output();
-    
+
     match mlir_opt_result {
         Ok(output) => {
             if !output.status.success() {
-                eprintln!("mlir-opt (TOSA to Linalg pipeline) failed: {}", String::from_utf8_lossy(&output.stderr));
-                
+                eprintln!(
+                    "mlir-opt (TOSA to Linalg pipeline) failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+
                 // Try individual passes as fallback
                 eprintln!("Gemmini/Spike: Trying individual TOSA passes");
                 let individual_pass_result = Command::new("mlir-opt")
                     .args(&[
                         mlir_file,
                         "--pass-pipeline=builtin.module(func.func(tosa-to-linalg,tosa-to-arith))",
-                        "-o", &linalg_mlir,
+                        "-o",
+                        &linalg_mlir,
                     ])
                     .output();
-                
+
                 match individual_pass_result {
                     Ok(output2) => {
                         if !output2.status.success() {
-                            eprintln!("mlir-opt (individual passes) failed: {}", String::from_utf8_lossy(&output2.stderr));
-                            
+                            eprintln!(
+                                "mlir-opt (individual passes) failed: {}",
+                                String::from_utf8_lossy(&output2.stderr)
+                            );
+
                             // Try just copying the file as-is and skip TOSA conversion
                             eprintln!("Gemmini/Spike: TOSA conversion failed, using MLIR directly");
                             if let Err(e) = fs::copy(mlir_file, &linalg_mlir) {
@@ -1716,11 +1837,11 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
             return Err(format!("TOSA conversion failed"));
         }
     }
-    
+
     // Step 1.5: Convert tensor operations to memref for buddy-opt compatibility
     eprintln!("Gemmini/Spike: Step 1.5 - Converting tensor operations to memref");
     let memref_mlir = format!("{}_memref.mlir", base_name);
-    
+
     // Read the linalg MLIR file
     let linalg_content = match fs::read_to_string(&linalg_mlir) {
         Ok(content) => content,
@@ -1729,10 +1850,10 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
             return Err(format!("Failed to read linalg MLIR file"));
         }
     };
-    
+
     // Convert tensor operations to memref for buddy-opt compatibility
     let memref_content = convert_tensor_to_memref_mlir(&linalg_content);
-    
+
     // Write the converted MLIR
     match fs::write(&memref_mlir, memref_content) {
         Ok(_) => {
@@ -1743,13 +1864,15 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
             return Err(format!("Failed to write memref MLIR file"));
         }
     }
-    
+
     // Update linalg_mlir to point to the memref version
     let linalg_mlir = memref_mlir;
-    
+
     // Step 2: Use pipeline approach: buddy-opt | buddy-translate | buddy-llc
-    eprintln!("Gemmini/Spike: Step 2 - Pipeline compilation: buddy-opt | buddy-translate | buddy-llc");
-    
+    eprintln!(
+        "Gemmini/Spike: Step 2 - Pipeline compilation: buddy-opt | buddy-translate | buddy-llc"
+    );
+
     // Create the pipeline command using shell
     let pipeline_cmd = format!(
         "buddy-opt {} \
@@ -1766,18 +1889,22 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
         -o {}",
         linalg_mlir, obj_file
     );
-    
+
     eprintln!("Gemmini/Spike: Running pipeline: {}", pipeline_cmd);
-    
-    let pipeline_result = Command::new("sh")
-        .args(&["-c", &pipeline_cmd])
-        .output();
-    
+
+    let pipeline_result = Command::new("sh").args(&["-c", &pipeline_cmd]).output();
+
     match pipeline_result {
         Ok(output) => {
             if !output.status.success() {
-                eprintln!("Pipeline compilation failed: {}", String::from_utf8_lossy(&output.stderr));
-                eprintln!("Pipeline stdout: {}", String::from_utf8_lossy(&output.stdout));
+                eprintln!(
+                    "Pipeline compilation failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                eprintln!(
+                    "Pipeline stdout: {}",
+                    String::from_utf8_lossy(&output.stdout)
+                );
                 return Err(format!("Pipeline compilation failed"));
             } else {
                 eprintln!("Gemmini/Spike: Pipeline compilation succeeded");
@@ -1789,31 +1916,37 @@ fn convert_mlir_to_executable(mlir_file: &str, program_id: usize) -> Result<Path
             return Err(format!("Pipeline compilation failed"));
         }
     }
-    
+
     // Step 3.5: Use gemmini_main binary instead of generating C stub
     eprintln!("Gemmini/Spike: Step 3.5 - Using gemmini_main binary for execution");
-    
+
     // Find the gemmini_main binary
     let gemmini_main_path: String = find_gemmini_main_binary()?;
-    eprintln!("Gemmini/Spike: Found gemmini_main at: {}", gemmini_main_path);
-    
+    eprintln!(
+        "Gemmini/Spike: Found gemmini_main at: {}",
+        gemmini_main_path
+    );
+
     // Store the object file path for the gemmini_main binary to use
     let obj_info_file = format!("{}_obj_info.txt", base_name);
     std::fs::write(&obj_info_file, format!("{}\n{}", obj_file, linalg_mlir))
         .map_err(|e| format!("Failed to write object info: {}", e))?;
-    
+
     // Instead of linking, we'll let the gemmini_main binary handle execution
     eprintln!("Gemmini/Spike: Step 4 - Prepared for gemmini_main execution");
     eprintln!("Gemmini/Spike: Object file: {}", obj_file);
     eprintln!("Gemmini/Spike: MLIR file: {}", linalg_mlir);
-    
+
     // Copy the object file to a known location for gemmini_main to find
     let target_obj = format!("{}.o", base_name);
     if std::fs::copy(&obj_file, &target_obj).is_ok() {
         eprintln!("Gemmini/Spike: Copied object file to: {}", target_obj);
     }
-    
-    eprintln!("Gemmini/Spike: Successfully compiled MLIR to executable: {}", executable);
+
+    eprintln!(
+        "Gemmini/Spike: Successfully compiled MLIR to executable: {}",
+        executable
+    );
     Ok(PathBuf::from(executable))
 }
 
@@ -1823,8 +1956,7 @@ fn create_fallback_executable(executable_path: &str) -> Result<PathBuf, String> 
         // ELF header for RISC-V 64-bit
         0x7f, 0x45, 0x4c, 0x46, // Magic
         0x02, 0x01, 0x01, 0x00, // 64-bit, little-endian, version 1
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x02, 0x00, // Executable
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, // Executable
         0xf3, 0x00, // RISC-V
         0x01, 0x00, 0x00, 0x00, // Version 1
         0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Entry point
@@ -1837,7 +1969,6 @@ fn create_fallback_executable(executable_path: &str) -> Result<PathBuf, String> 
         0x00, 0x00, // Section header entry size
         0x00, 0x00, // Section header count
         0x00, 0x00, // Section name string table index
-        
         // Program header
         0x01, 0x00, 0x00, 0x00, // PT_LOAD
         0x05, 0x00, 0x00, 0x00, // Flags: R+X
@@ -1847,17 +1978,19 @@ fn create_fallback_executable(executable_path: &str) -> Result<PathBuf, String> 
         0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // File size
         0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Memory size
         0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Alignment
-        
         // Code: just exit
         0x01, 0x00, // li a0, 0
         0x5d, 0x00, // li a7, 93
         0x73, 0x00, 0x00, 0x00, // ecall
     ];
-    
+
     fs::write(executable_path, elf_bytes)
         .map_err(|e| format!("Failed to write fallback executable: {}", e))?;
-    
-    eprintln!("Gemmini/Spike: Created fallback executable: {}", executable_path);
+
+    eprintln!(
+        "Gemmini/Spike: Created fallback executable: {}",
+        executable_path
+    );
     Ok(PathBuf::from(executable_path))
 }
 
@@ -1867,10 +2000,9 @@ fn convert_mlir_to_llvm(mlir: &str) -> Result<String, String> {
     let temp_dir = TempDir::new().map_err(|e| format!("Failed to create temp dir: {}", e))?;
     let mlir_file = temp_dir.path().join("input.mlir");
     let llvm_file = temp_dir.path().join("output.ll");
-    
-    fs::write(&mlir_file, mlir)
-        .map_err(|e| format!("Failed to write MLIR file: {}", e))?;
-    
+
+    fs::write(&mlir_file, mlir).map_err(|e| format!("Failed to write MLIR file: {}", e))?;
+
     // Try to use buddy-opt pipeline
     let buddy_opt_result = Command::new("buddy-opt")
         .args(&[
@@ -1887,7 +2019,7 @@ fn convert_mlir_to_llvm(mlir: &str) -> Result<String, String> {
             "-reconcile-unrealized-casts",
         ])
         .output();
-    
+
     match buddy_opt_result {
         Ok(output) => {
             if output.status.success() {
@@ -1898,14 +2030,14 @@ fn convert_mlir_to_llvm(mlir: &str) -> Result<String, String> {
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .spawn();
-                
+
                 match buddy_translate_result {
                     Ok(mut child) => {
                         if let Some(stdin) = child.stdin.take() {
                             let mut writer = BufWriter::new(stdin);
                             writer.write_all(&output.stdout).ok();
                         }
-                        
+
                         let output = child.wait_with_output().unwrap();
                         if output.status.success() {
                             return Ok(String::from_utf8_lossy(&output.stdout).to_string());
@@ -1917,7 +2049,7 @@ fn convert_mlir_to_llvm(mlir: &str) -> Result<String, String> {
         }
         Err(_) => {}
     }
-    
+
     // Fall back to generating simple LLVM IR
     Ok(generate_fallback_llvm_ir())
 }
@@ -1948,5 +2080,6 @@ entry:
 }
 
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)
-"#.to_string()
+"#
+    .to_string()
 }

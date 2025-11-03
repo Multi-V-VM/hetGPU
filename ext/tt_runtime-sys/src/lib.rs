@@ -618,22 +618,28 @@ impl Program {
     }
 
     pub fn create_kernel(&self, kernel_name: &str, core: CoreCoord) -> Result<Kernel, String> {
-        eprintln!("ZLUDA DEBUG: Program::create_kernel called with kernel_name={}, core=({},{})", kernel_name, core.x, core.y);
-        
+        eprintln!(
+            "ZLUDA DEBUG: Program::create_kernel called with kernel_name={}, core=({},{})",
+            kernel_name, core.x, core.y
+        );
+
         let kernel_name = CString::new(kernel_name).map_err(|e| e.to_string())?;
         let config = tt_DataMovementConfig {
             processor: 0, // tt_DataMovementProcessor_tt_DataMovementProcessor_RISCV_0
             noc: 0,       // tt_NOC_tt_NOC_RISCV_0_default
         };
-        
+
         eprintln!("ZLUDA DEBUG: About to call tt_metal_CreateKernel with program={:p}, kernel_name={:?}, core=({},{}), config=({},{})", 
                   self.handle, kernel_name, core.x, core.y, config.processor, config.noc);
-        
+
         let handle =
             unsafe { tt_metal_CreateKernel(self.handle, kernel_name.as_ptr(), core, &config) };
-            
-        eprintln!("ZLUDA DEBUG: tt_metal_CreateKernel returned handle={:p}", handle);
-        
+
+        eprintln!(
+            "ZLUDA DEBUG: tt_metal_CreateKernel returned handle={:p}",
+            handle
+        );
+
         if handle.is_null() {
             Err("Failed to create kernel".to_string())
         } else {
@@ -641,17 +647,16 @@ impl Program {
         }
     }
 
-    pub fn set_runtime_args(
-        &self,
-        kernel_name: &str,
-        buffers: &[&Buffer],
-    ) -> Result<(), String> {
+    pub fn set_runtime_args(&self, kernel_name: &str, buffers: &[&Buffer]) -> Result<(), String> {
         let kernel_name_cstr = std::ffi::CString::new(kernel_name)
             .map_err(|e| format!("Invalid kernel name: {}", e))?;
-        
+
         // Convert buffer references to buffer pointers
-        let buffer_ptrs: Vec<*const tt_Buffer> = buffers.iter().map(|b| b.handle as *const tt_Buffer).collect();
-        
+        let buffer_ptrs: Vec<*const tt_Buffer> = buffers
+            .iter()
+            .map(|b| b.handle as *const tt_Buffer)
+            .collect();
+
         let result = unsafe {
             tt_metal_SetRuntimeArgs(
                 self.handle,
@@ -660,11 +665,14 @@ impl Program {
                 buffer_ptrs.len() as i32,
             )
         };
-        
+
         if result == tt_Result_tt_Result_Success {
             Ok(())
         } else {
-            Err(format!("Failed to set runtime args: error code {:?}", result))
+            Err(format!(
+                "Failed to set runtime args: error code {:?}",
+                result
+            ))
         }
     }
 
@@ -700,8 +708,13 @@ impl Drop for Program {
 
 impl Buffer {
     pub fn write(&self, data: &[u8]) -> Result<(), String> {
-        let result =
-            unsafe { tt_metal_WriteToBuffer(self.handle, data.as_ptr() as *const core::ffi::c_void, data.len() as u64) };
+        let result = unsafe {
+            tt_metal_WriteToBuffer(
+                self.handle,
+                data.as_ptr() as *const core::ffi::c_void,
+                data.len() as u64,
+            )
+        };
 
         if result == tt_Result_tt_Result_Success {
             Ok(())
@@ -715,7 +728,11 @@ impl Buffer {
 
     pub fn read(&self, data: &mut [u8]) -> Result<(), String> {
         let result = unsafe {
-            tt_metal_ReadFromBuffer(self.handle, data.as_mut_ptr() as *mut core::ffi::c_void, data.len() as u64)
+            tt_metal_ReadFromBuffer(
+                self.handle,
+                data.as_mut_ptr() as *mut core::ffi::c_void,
+                data.len() as u64,
+            )
         };
 
         if result == tt_Result_tt_Result_Success {

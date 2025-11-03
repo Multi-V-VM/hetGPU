@@ -17,9 +17,10 @@ use crate::{
     gemmini_comgr_create_action_info, gemmini_comgr_create_data, gemmini_comgr_create_data_set,
     gemmini_comgr_data_get_bytes, gemmini_comgr_data_kind_s, gemmini_comgr_data_set_add,
     gemmini_comgr_data_set_bytes, gemmini_comgr_data_set_name, gemmini_comgr_data_set_t,
-    gemmini_comgr_data_t, gemmini_comgr_do_action, gemmini_comgr_get_data, gemmini_comgr_get_data_count,
-    gemmini_comgr_language_s, gemmini_comgr_release_action_info, gemmini_comgr_release_data,
-    gemmini_comgr_release_data_set, gemmini_comgr_status_s, gemmini_comgr_status_t,
+    gemmini_comgr_data_t, gemmini_comgr_do_action, gemmini_comgr_get_data,
+    gemmini_comgr_get_data_count, gemmini_comgr_language_s, gemmini_comgr_release_action_info,
+    gemmini_comgr_release_data, gemmini_comgr_release_data_set, gemmini_comgr_status_s,
+    gemmini_comgr_status_t,
 };
 
 // Actual internal representation of data
@@ -451,7 +452,7 @@ fn add_file_to_set(
 fn preprocess_source(ctx: &ActionContext) -> gemmini_comgr_status_t {
     // For Gemmini, preprocessing is minimal
     // Just copy source files with preprocessing markers
-    
+
     let source_files: Vec<_> = ctx
         .input_files
         .iter()
@@ -473,8 +474,11 @@ fn preprocess_source(ctx: &ActionContext) -> gemmini_comgr_status_t {
 
         match fs::copy(&input_file, &output_file) {
             Ok(_) => {
-                eprintln!("Preprocessed file for Gemmini: {} -> {}", 
-                    input_file.display(), output_file.display());
+                eprintln!(
+                    "Preprocessed file for Gemmini: {} -> {}",
+                    input_file.display(),
+                    output_file.display()
+                );
             }
             Err(e) => {
                 eprintln!("Error preprocessing file: {}", e);
@@ -526,10 +530,13 @@ fn compile_source_to_bc(ctx: &ActionContext) -> gemmini_comgr_status_t {
 
         // Create LLVM IR compatible with Gemmini
         let llvm_ir_content = create_gemmini_llvm_ir(&input_file)?;
-        
+
         match fs::write(&output_file, llvm_ir_content) {
             Ok(_) => {
-                eprintln!("Created Gemmini-compatible LLVM bitcode: {}", output_file.display());
+                eprintln!(
+                    "Created Gemmini-compatible LLVM bitcode: {}",
+                    output_file.display()
+                );
             }
             Err(e) => {
                 eprintln!("Error writing LLVM bitcode: {}", e);
@@ -544,7 +551,7 @@ fn compile_source_to_bc(ctx: &ActionContext) -> gemmini_comgr_status_t {
 fn add_device_libraries(ctx: &ActionContext) -> gemmini_comgr_status_t {
     // Gemmini uses its own runtime libraries
     eprintln!("Note: Using Gemmini runtime libraries");
-    
+
     // Just pass through the bitcode files
     let bc_files: Vec<_> = ctx
         .input_files
@@ -559,7 +566,7 @@ fn add_device_libraries(ctx: &ActionContext) -> gemmini_comgr_status_t {
             .and_then(|s| s.to_str())
             .unwrap_or("input");
         let output_file = ctx.temp_dir.join(format!("{}_with_libs.bc", file_stem));
-        
+
         match fs::copy(&input_file, &output_file) {
             Ok(_) => {
                 eprintln!("Prepared bitcode for Gemmini: {}", output_file.display());
@@ -599,7 +606,7 @@ fn link_bc_to_bc(ctx: &ActionContext) -> gemmini_comgr_status_t {
     }
 
     let output_file = ctx.temp_dir.join("linked.bc");
-    
+
     // Try to use llvm-link
     let mut cmd = Command::new("llvm-link");
     for bc_file in &bc_files {
@@ -613,7 +620,10 @@ fn link_bc_to_bc(ctx: &ActionContext) -> gemmini_comgr_status_t {
                 eprintln!("Successfully linked bitcode files for Gemmini");
                 Ok(())
             } else {
-                eprintln!("llvm-link failed: {}", String::from_utf8_lossy(&output.stderr));
+                eprintln!(
+                    "llvm-link failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
                 // Fallback: just copy first file
                 match fs::copy(&bc_files[0], &output_file) {
                     Ok(_) => Ok(()),
@@ -655,24 +665,30 @@ fn optimize_bc_with_buddy(ctx: &ActionContext) -> gemmini_comgr_status_t {
         // Try to use buddy-opt for optimization
         let mut cmd = Command::new("buddy-opt");
         cmd.arg(&input_file)
-           .arg("-o")
-           .arg(&output_file)
-           .arg("--lower-affine")
-           .arg("--convert-scf-to-cf")
-           .arg("--convert-math-to-llvm")
-           .arg("--convert-arith-to-llvm")
-           .arg("--convert-func-to-llvm")
-           .arg("--reconcile-unrealized-casts");
+            .arg("-o")
+            .arg(&output_file)
+            .arg("--lower-affine")
+            .arg("--convert-scf-to-cf")
+            .arg("--convert-math-to-llvm")
+            .arg("--convert-arith-to-llvm")
+            .arg("--convert-func-to-llvm")
+            .arg("--reconcile-unrealized-casts");
 
         match cmd.output() {
             Ok(output) => {
                 if output.status.success() {
-                    eprintln!("Successfully optimized with Buddy Compiler: {}", output_file.display());
+                    eprintln!(
+                        "Successfully optimized with Buddy Compiler: {}",
+                        output_file.display()
+                    );
                 } else {
-                    eprintln!("buddy-opt failed: {}", String::from_utf8_lossy(&output.stderr));
+                    eprintln!(
+                        "buddy-opt failed: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
                     // Fallback: just copy the file
                     match fs::copy(&input_file, &output_file) {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(e) => return Err(gemmini_comgr_status_s::GEMMINI_COMGR_STATUS_ERROR),
                     }
                 }
@@ -680,26 +696,27 @@ fn optimize_bc_with_buddy(ctx: &ActionContext) -> gemmini_comgr_status_t {
             Err(_) => {
                 // buddy-opt not available, try standard opt
                 let mut cmd = Command::new("opt");
-                cmd.arg(&input_file)
-                   .arg("-o")
-                   .arg(&output_file)
-                   .arg("-O3");
+                cmd.arg(&input_file).arg("-o").arg(&output_file).arg("-O3");
 
                 match cmd.output() {
                     Ok(output) => {
                         if !output.status.success() {
                             // Fallback: just copy
                             match fs::copy(&input_file, &output_file) {
-                                Ok(_) => {},
-                                Err(e) => return Err(gemmini_comgr_status_s::GEMMINI_COMGR_STATUS_ERROR),
+                                Ok(_) => {}
+                                Err(e) => {
+                                    return Err(gemmini_comgr_status_s::GEMMINI_COMGR_STATUS_ERROR);
+                                }
                             }
                         }
                     }
                     Err(_) => {
                         // No optimization available, just copy
                         match fs::copy(&input_file, &output_file) {
-                            Ok(_) => {},
-                            Err(e) => return Err(gemmini_comgr_status_s::GEMMINI_COMGR_STATUS_ERROR),
+                            Ok(_) => {}
+                            Err(e) => {
+                                return Err(gemmini_comgr_status_s::GEMMINI_COMGR_STATUS_ERROR);
+                            }
                         }
                     }
                 }
@@ -733,7 +750,7 @@ fn codegen_to_gemmini(ctx: &ActionContext) -> gemmini_comgr_status_t {
 
         // Generate RISC-V code for Gemmini
         let result = generate_riscv_for_gemmini(&input_file, &output_file);
-        
+
         if result.is_err() {
             // Fallback: create a dummy Gemmini ELF
             create_dummy_gemmini_elf(&output_file)?;
@@ -787,7 +804,10 @@ fn codegen_to_assembly(ctx: &ActionContext) -> gemmini_comgr_status_t {
 
         match fs::write(&output_file, assembly_content) {
             Ok(_) => {
-                eprintln!("Generated Gemmini RISC-V assembly: {}", output_file.display());
+                eprintln!(
+                    "Generated Gemmini RISC-V assembly: {}",
+                    output_file.display()
+                );
             }
             Err(e) => {
                 eprintln!("Error creating assembly file: {}", e);
@@ -822,7 +842,7 @@ fn compile_to_fatbin(ctx: &ActionContext) -> gemmini_comgr_status_t {
 
         // Create a Gemmini fatbin format
         let mut fatbin_content = Vec::new();
-        
+
         // Header
         fatbin_content.extend_from_slice(b"GEMMINI_BIN\0");
         fatbin_content.extend_from_slice(b"VERSION=1.0\0");
@@ -853,50 +873,56 @@ fn compile_to_fatbin(ctx: &ActionContext) -> gemmini_comgr_status_t {
 // Helper functions for Buddy Compiler integration
 
 fn process_mlir_with_buddy(ctx: &ActionContext, input_file: &PathBuf) -> gemmini_comgr_status_t {
-    eprintln!("Processing MLIR file with Buddy Compiler: {}", input_file.display());
-    
+    eprintln!(
+        "Processing MLIR file with Buddy Compiler: {}",
+        input_file.display()
+    );
+
     let file_stem = input_file
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("input");
-    
+
     // Use buddy-opt to lower MLIR to LLVM
     let output_file = ctx.temp_dir.join(format!("{}_lowered.mlir", file_stem));
-    
+
     let mut cmd = Command::new("buddy-opt");
     cmd.arg(input_file)
-       .arg("-o")
-       .arg(&output_file)
-       .arg("--lower-affine")
-       .arg("--convert-scf-to-cf")
-       .arg("--convert-vector-to-llvm")
-       .arg("--convert-math-to-llvm")
-       .arg("--finalize-memref-to-llvm")
-       .arg("--convert-arith-to-llvm")
-       .arg("--convert-func-to-llvm")
-       .arg("--reconcile-unrealized-casts");
+        .arg("-o")
+        .arg(&output_file)
+        .arg("--lower-affine")
+        .arg("--convert-scf-to-cf")
+        .arg("--convert-vector-to-llvm")
+        .arg("--convert-math-to-llvm")
+        .arg("--finalize-memref-to-llvm")
+        .arg("--convert-arith-to-llvm")
+        .arg("--convert-func-to-llvm")
+        .arg("--reconcile-unrealized-casts");
 
     match cmd.output() {
         Ok(output) => {
             if output.status.success() {
                 eprintln!("Successfully processed MLIR with Buddy Compiler");
-                
+
                 // Convert to LLVM bitcode
                 let bc_file = ctx.temp_dir.join(format!("{}.bc", file_stem));
                 let mut translate_cmd = Command::new("buddy-translate");
-                translate_cmd.arg("--mlir-to-llvmir")
-                             .arg(&output_file)
-                             .arg("-o")
-                             .arg(&bc_file);
-                
+                translate_cmd
+                    .arg("--mlir-to-llvmir")
+                    .arg(&output_file)
+                    .arg("-o")
+                    .arg(&bc_file);
+
                 match translate_cmd.output() {
                     Ok(translate_output) => {
                         if translate_output.status.success() {
                             eprintln!("Generated LLVM bitcode: {}", bc_file.display());
                             Ok(())
                         } else {
-                            eprintln!("buddy-translate failed: {}", 
-                                String::from_utf8_lossy(&translate_output.stderr));
+                            eprintln!(
+                                "buddy-translate failed: {}",
+                                String::from_utf8_lossy(&translate_output.stderr)
+                            );
                             create_fallback_bitcode(&bc_file)
                         }
                     }
@@ -906,7 +932,10 @@ fn process_mlir_with_buddy(ctx: &ActionContext, input_file: &PathBuf) -> gemmini
                     }
                 }
             } else {
-                eprintln!("buddy-opt failed: {}", String::from_utf8_lossy(&output.stderr));
+                eprintln!(
+                    "buddy-opt failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
                 let bc_file = ctx.temp_dir.join(format!("{}.bc", file_stem));
                 create_fallback_bitcode(&bc_file)
             }
@@ -946,24 +975,30 @@ fn create_gemmini_llvm_ir(input_file: &PathBuf) -> Result<Vec<u8>, gemmini_comgr
         input_file.display(),
         input_file.display()
     );
-    
+
     Ok(llvm_ir.into_bytes())
 }
 
-fn generate_riscv_for_gemmini(input_file: &PathBuf, output_file: &PathBuf) -> gemmini_comgr_status_t {
+fn generate_riscv_for_gemmini(
+    input_file: &PathBuf,
+    output_file: &PathBuf,
+) -> gemmini_comgr_status_t {
     // Try to use RISC-V LLVM to generate code
     let mut cmd = Command::new("llc");
     cmd.arg(input_file)
-       .arg("-o")
-       .arg(output_file)
-       .arg("-march=riscv64")
-       .arg("-mattr=+gemmini")
-       .arg("-filetype=obj");
+        .arg("-o")
+        .arg(output_file)
+        .arg("-march=riscv64")
+        .arg("-mattr=+gemmini")
+        .arg("-filetype=obj");
 
     match cmd.output() {
         Ok(output) => {
             if output.status.success() {
-                eprintln!("Generated RISC-V code for Gemmini: {}", output_file.display());
+                eprintln!(
+                    "Generated RISC-V code for Gemmini: {}",
+                    output_file.display()
+                );
                 Ok(())
             } else {
                 eprintln!("llc failed: {}", String::from_utf8_lossy(&output.stderr));
@@ -980,7 +1015,7 @@ fn generate_riscv_for_gemmini(input_file: &PathBuf, output_file: &PathBuf) -> ge
 fn create_dummy_gemmini_elf(output_file: &PathBuf) -> gemmini_comgr_status_t {
     // Create a minimal RISC-V ELF for Gemmini
     let mut elf_content = Vec::new();
-    
+
     // ELF header for RISC-V 64-bit
     elf_content.extend_from_slice(&[
         0x7f, 0x45, 0x4c, 0x46, // ELF magic
@@ -991,7 +1026,7 @@ fn create_dummy_gemmini_elf(output_file: &PathBuf) -> gemmini_comgr_status_t {
         0x00, // ABI version
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Padding
     ]);
-    
+
     // e_type: ET_EXEC (executable)
     elf_content.extend_from_slice(&[0x02, 0x00]);
     // e_machine: EM_RISCV
@@ -1018,10 +1053,10 @@ fn create_dummy_gemmini_elf(output_file: &PathBuf) -> gemmini_comgr_status_t {
     elf_content.extend_from_slice(&[0x00, 0x00]);
     // e_shstrndx
     elf_content.extend_from_slice(&[0x00, 0x00]);
-    
+
     // Add Gemmini marker
     elf_content.extend_from_slice(b"GEMMINI_ACCEL\0");
-    
+
     match fs::write(output_file, elf_content) {
         Ok(_) => {
             eprintln!("Created dummy Gemmini ELF: {}", output_file.display());
@@ -1037,7 +1072,7 @@ fn create_dummy_gemmini_elf(output_file: &PathBuf) -> gemmini_comgr_status_t {
 fn create_fallback_bitcode(output_file: &PathBuf) -> gemmini_comgr_status_t {
     // Create a simple LLVM bitcode file
     let bitcode_content = b"BC\xc0\xde"; // Bitcode magic
-    
+
     match fs::write(output_file, bitcode_content) {
         Ok(_) => {
             eprintln!("Created fallback bitcode: {}", output_file.display());

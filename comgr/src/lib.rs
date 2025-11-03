@@ -1,12 +1,15 @@
 #[cfg(feature = "amd")]
 use amd_comgr_sys::*;
-#[cfg(feature = "intel")]
-use intel_comgr_sys::*;
 #[cfg(feature = "gemmini")]
 use gemmini_comgr_sys::*;
+#[cfg(feature = "intel")]
+use intel_comgr_sys::*;
+use std::{
+    ffi::{CStr, CString},
+    mem, ptr,
+};
 #[cfg(feature = "tenstorrent")]
 use tt_comgr_sys::*;
-use std::{ffi::{CStr, CString}, mem, ptr};
 
 #[cfg(feature = "amd")]
 struct Data(amd_comgr_data_t);
@@ -763,14 +766,14 @@ pub fn compile_bitcode(
         eprintln!("ZLUDA DEBUG: Linking bitcode modules");
         let mut linked_set = unsafe { mem::zeroed() };
         gemmini_comgr_create_data_set(&mut linked_set)?;
-        
+
         gemmini_comgr_do_action(
             gemmini_comgr_action_kind_s::GEMMINI_COMGR_ACTION_LINK_BC_TO_BC,
             action_info,
             input_data_set,
             linked_set,
         )?;
-        
+
         linked_set
     } else {
         input_data_set
@@ -780,7 +783,7 @@ pub fn compile_bitcode(
     eprintln!("ZLUDA DEBUG: Optimizing bitcode");
     let mut optimized_set = unsafe { mem::zeroed() };
     gemmini_comgr_create_data_set(&mut optimized_set)?;
-    
+
     gemmini_comgr_do_action(
         gemmini_comgr_action_kind_s::GEMMINI_COMGR_ACTION_OPTIMIZE_BC_TO_BC,
         action_info,
@@ -800,7 +803,7 @@ pub fn compile_bitcode(
     // Get the output data
     let mut count = 0;
     gemmini_comgr_get_data_count(output_data_set, &mut count)?;
-    
+
     if count == 0 {
         eprintln!("ZLUDA ERROR: No output generated");
         return Err(gemmini_comgr_status_s::GEMMINI_COMGR_STATUS_ERROR);
@@ -812,11 +815,7 @@ pub fn compile_bitcode(
 
     // Get size
     let mut size = 0;
-    gemmini_comgr_data_get_bytes(
-        output_data,
-        std::ptr::null_mut(),
-        &mut size,
-    )?;
+    gemmini_comgr_data_get_bytes(output_data, std::ptr::null_mut(), &mut size)?;
 
     // Read content
     let mut result = vec![0u8; size];
@@ -839,6 +838,6 @@ pub fn compile_bitcode(
         "ZLUDA DEBUG: Gemmini compilation complete, output size: {} bytes",
         result.len()
     );
-    
+
     Ok(result)
 }

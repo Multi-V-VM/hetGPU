@@ -51,16 +51,12 @@ impl tt_comgr_data_kind_s {
     pub const TT_COMGR_DATA_KIND_UNDEF: tt_comgr_data_kind_s = tt_comgr_data_kind_s(0);
     pub const TT_COMGR_DATA_KIND_SOURCE: tt_comgr_data_kind_s = tt_comgr_data_kind_s(1);
     pub const TT_COMGR_DATA_KIND_INCLUDE: tt_comgr_data_kind_s = tt_comgr_data_kind_s(2);
-    pub const TT_COMGR_DATA_KIND_PRECOMPILED_HEADER: tt_comgr_data_kind_s =
-        tt_comgr_data_kind_s(3);
-    pub const TT_COMGR_DATA_KIND_DIAGNOSTIC: tt_comgr_data_kind_s =
-        tt_comgr_data_kind_s(4);
+    pub const TT_COMGR_DATA_KIND_PRECOMPILED_HEADER: tt_comgr_data_kind_s = tt_comgr_data_kind_s(3);
+    pub const TT_COMGR_DATA_KIND_DIAGNOSTIC: tt_comgr_data_kind_s = tt_comgr_data_kind_s(4);
     pub const TT_COMGR_DATA_KIND_LOG: tt_comgr_data_kind_s = tt_comgr_data_kind_s(5);
     pub const TT_COMGR_DATA_KIND_BC: tt_comgr_data_kind_s = tt_comgr_data_kind_s(6);
-    pub const TT_COMGR_DATA_KIND_RELOCATABLE: tt_comgr_data_kind_s =
-        tt_comgr_data_kind_s(7);
-    pub const TT_COMGR_DATA_KIND_EXECUTABLE: tt_comgr_data_kind_s =
-        tt_comgr_data_kind_s(8);
+    pub const TT_COMGR_DATA_KIND_RELOCATABLE: tt_comgr_data_kind_s = tt_comgr_data_kind_s(7);
+    pub const TT_COMGR_DATA_KIND_EXECUTABLE: tt_comgr_data_kind_s = tt_comgr_data_kind_s(8);
     pub const TT_COMGR_DATA_KIND_BYTES: tt_comgr_data_kind_s = tt_comgr_data_kind_s(9);
     pub const TT_COMGR_DATA_KIND_FATBIN: tt_comgr_data_kind_s = tt_comgr_data_kind_s(16);
     pub const TT_COMGR_DATA_KIND_LAST: tt_comgr_data_kind_s = tt_comgr_data_kind_s(16);
@@ -99,16 +95,11 @@ pub struct tt_comgr_metadata_kind_s(pub c_uint);
 pub type tt_comgr_metadata_kind_t = tt_comgr_metadata_kind_s;
 
 impl tt_comgr_metadata_kind_s {
-    pub const TT_COMGR_METADATA_KIND_NULL: tt_comgr_metadata_kind_s =
-        tt_comgr_metadata_kind_s(0);
-    pub const TT_COMGR_METADATA_KIND_STRING: tt_comgr_metadata_kind_s =
-        tt_comgr_metadata_kind_s(1);
-    pub const TT_COMGR_METADATA_KIND_MAP: tt_comgr_metadata_kind_s =
-        tt_comgr_metadata_kind_s(2);
-    pub const TT_COMGR_METADATA_KIND_LIST: tt_comgr_metadata_kind_s =
-        tt_comgr_metadata_kind_s(3);
-    pub const TT_COMGR_METADATA_KIND_LAST: tt_comgr_metadata_kind_s =
-        tt_comgr_metadata_kind_s(3);
+    pub const TT_COMGR_METADATA_KIND_NULL: tt_comgr_metadata_kind_s = tt_comgr_metadata_kind_s(0);
+    pub const TT_COMGR_METADATA_KIND_STRING: tt_comgr_metadata_kind_s = tt_comgr_metadata_kind_s(1);
+    pub const TT_COMGR_METADATA_KIND_MAP: tt_comgr_metadata_kind_s = tt_comgr_metadata_kind_s(2);
+    pub const TT_COMGR_METADATA_KIND_LIST: tt_comgr_metadata_kind_s = tt_comgr_metadata_kind_s(3);
+    pub const TT_COMGR_METADATA_KIND_LAST: tt_comgr_metadata_kind_s = tt_comgr_metadata_kind_s(3);
 }
 
 // Action kinds similar to AMD
@@ -125,10 +116,8 @@ impl tt_comgr_action_kind_s {
         tt_comgr_action_kind_s(2);
     pub const TT_COMGR_ACTION_ADD_DEVICE_LIBRARIES: tt_comgr_action_kind_s =
         tt_comgr_action_kind_s(3);
-    pub const TT_COMGR_ACTION_LINK_BC_TO_BC: tt_comgr_action_kind_s =
-        tt_comgr_action_kind_s(4);
-    pub const TT_COMGR_ACTION_OPTIMIZE_BC_TO_BC: tt_comgr_action_kind_s =
-        tt_comgr_action_kind_s(5);
+    pub const TT_COMGR_ACTION_LINK_BC_TO_BC: tt_comgr_action_kind_s = tt_comgr_action_kind_s(4);
+    pub const TT_COMGR_ACTION_OPTIMIZE_BC_TO_BC: tt_comgr_action_kind_s = tt_comgr_action_kind_s(5);
     pub const TT_COMGR_ACTION_CODEGEN_BC_TO_RELOCATABLE: tt_comgr_action_kind_s =
         tt_comgr_action_kind_s(6);
     pub const TT_COMGR_ACTION_CODEGEN_BC_TO_ASSEMBLY: tt_comgr_action_kind_s =
@@ -143,20 +132,13 @@ pub struct tt_comgr_symbol_type_s(pub c_int);
 pub type tt_comgr_symbol_type_t = tt_comgr_symbol_type_s;
 
 impl tt_comgr_symbol_type_s {
-    pub const TT_COMGR_SYMBOL_TYPE_UNKNOWN: tt_comgr_symbol_type_s =
-        tt_comgr_symbol_type_s(-1);
-    pub const TT_COMGR_SYMBOL_TYPE_NOTYPE: tt_comgr_symbol_type_s =
-        tt_comgr_symbol_type_s(0);
-    pub const TT_COMGR_SYMBOL_TYPE_OBJECT: tt_comgr_symbol_type_s =
-        tt_comgr_symbol_type_s(1);
-    pub const TT_COMGR_SYMBOL_TYPE_FUNC: tt_comgr_symbol_type_s =
-        tt_comgr_symbol_type_s(2);
-    pub const TT_COMGR_SYMBOL_TYPE_SECTION: tt_comgr_symbol_type_s =
-        tt_comgr_symbol_type_s(3);
-    pub const TT_COMGR_SYMBOL_TYPE_FILE: tt_comgr_symbol_type_s =
-        tt_comgr_symbol_type_s(4);
-    pub const TT_COMGR_SYMBOL_TYPE_COMMON: tt_comgr_symbol_type_s =
-        tt_comgr_symbol_type_s(5);
+    pub const TT_COMGR_SYMBOL_TYPE_UNKNOWN: tt_comgr_symbol_type_s = tt_comgr_symbol_type_s(-1);
+    pub const TT_COMGR_SYMBOL_TYPE_NOTYPE: tt_comgr_symbol_type_s = tt_comgr_symbol_type_s(0);
+    pub const TT_COMGR_SYMBOL_TYPE_OBJECT: tt_comgr_symbol_type_s = tt_comgr_symbol_type_s(1);
+    pub const TT_COMGR_SYMBOL_TYPE_FUNC: tt_comgr_symbol_type_s = tt_comgr_symbol_type_s(2);
+    pub const TT_COMGR_SYMBOL_TYPE_SECTION: tt_comgr_symbol_type_s = tt_comgr_symbol_type_s(3);
+    pub const TT_COMGR_SYMBOL_TYPE_FILE: tt_comgr_symbol_type_s = tt_comgr_symbol_type_s(4);
+    pub const TT_COMGR_SYMBOL_TYPE_COMMON: tt_comgr_symbol_type_s = tt_comgr_symbol_type_s(5);
     pub const TT_COMGR_SYMBOL_TYPE_TT_SYCL_KERNEL: tt_comgr_symbol_type_s =
         tt_comgr_symbol_type_s(6);
 }
@@ -165,20 +147,13 @@ pub struct tt_comgr_symbol_info_s(pub c_uint);
 pub type tt_comgr_symbol_info_t = tt_comgr_symbol_info_s;
 
 impl tt_comgr_symbol_info_s {
-    pub const TT_COMGR_SYMBOL_INFO_NAME_LENGTH: tt_comgr_symbol_info_s =
-        tt_comgr_symbol_info_s(0);
-    pub const TT_COMGR_SYMBOL_INFO_NAME: tt_comgr_symbol_info_s =
-        tt_comgr_symbol_info_s(1);
-    pub const TT_COMGR_SYMBOL_INFO_TYPE: tt_comgr_symbol_info_s =
-        tt_comgr_symbol_info_s(2);
-    pub const TT_COMGR_SYMBOL_INFO_SIZE: tt_comgr_symbol_info_s =
-        tt_comgr_symbol_info_s(3);
-    pub const TT_COMGR_SYMBOL_INFO_IS_UNDEFINED: tt_comgr_symbol_info_s =
-        tt_comgr_symbol_info_s(4);
-    pub const TT_COMGR_SYMBOL_INFO_VALUE: tt_comgr_symbol_info_s =
-        tt_comgr_symbol_info_s(5);
-    pub const TT_COMGR_SYMBOL_INFO_LAST: tt_comgr_symbol_info_s =
-        tt_comgr_symbol_info_s(5);
+    pub const TT_COMGR_SYMBOL_INFO_NAME_LENGTH: tt_comgr_symbol_info_s = tt_comgr_symbol_info_s(0);
+    pub const TT_COMGR_SYMBOL_INFO_NAME: tt_comgr_symbol_info_s = tt_comgr_symbol_info_s(1);
+    pub const TT_COMGR_SYMBOL_INFO_TYPE: tt_comgr_symbol_info_s = tt_comgr_symbol_info_s(2);
+    pub const TT_COMGR_SYMBOL_INFO_SIZE: tt_comgr_symbol_info_s = tt_comgr_symbol_info_s(3);
+    pub const TT_COMGR_SYMBOL_INFO_IS_UNDEFINED: tt_comgr_symbol_info_s = tt_comgr_symbol_info_s(4);
+    pub const TT_COMGR_SYMBOL_INFO_VALUE: tt_comgr_symbol_info_s = tt_comgr_symbol_info_s(5);
+    pub const TT_COMGR_SYMBOL_INFO_LAST: tt_comgr_symbol_info_s = tt_comgr_symbol_info_s(5);
 }
 
 // Code object info structure
@@ -250,10 +225,7 @@ pub fn tt_comgr_data_set_bytes(
     }
 }
 
-pub fn tt_comgr_data_set_name(
-    data: tt_comgr_data_t,
-    name: *const c_char,
-) -> tt_comgr_status_t {
+pub fn tt_comgr_data_set_name(data: tt_comgr_data_t, name: *const c_char) -> tt_comgr_status_t {
     // Validate params
     if name.is_null() {
         return Err(tt_comgr_status_s::TT_COMGR_STATUS_ERROR_INVALID_ARGUMENT);
@@ -333,9 +305,7 @@ pub fn tt_comgr_data_set_remove(
     }
 }
 
-pub fn tt_comgr_create_action_info(
-    action_info: *mut tt_comgr_action_info_t,
-) -> tt_comgr_status_t {
+pub fn tt_comgr_create_action_info(action_info: *mut tt_comgr_action_info_t) -> tt_comgr_status_t {
     // Validate params
     if action_info.is_null() {
         return Err(tt_comgr_status_s::TT_COMGR_STATUS_ERROR_INVALID_ARGUMENT);
@@ -358,9 +328,7 @@ pub fn tt_comgr_create_action_info(
     Ok(())
 }
 
-pub fn tt_comgr_release_action_info(
-    action_info: tt_comgr_action_info_t,
-) -> tt_comgr_status_t {
+pub fn tt_comgr_release_action_info(action_info: tt_comgr_action_info_t) -> tt_comgr_status_t {
     // Remove the action info from the store
     let mut action_info_store = command_wrapper::ACTION_INFO_STORE.lock().unwrap();
     action_info_store.remove(&action_info.handle);
@@ -540,9 +508,7 @@ pub fn tt_comgr_get_data_count(
 }
 
 // Metadata functions
-pub fn tt_comgr_create_metadata(
-    metadata: *mut tt_comgr_metadata_node_t,
-) -> tt_comgr_status_t {
+pub fn tt_comgr_create_metadata(metadata: *mut tt_comgr_metadata_node_t) -> tt_comgr_status_t {
     if metadata.is_null() {
         return Err(tt_comgr_status_s::TT_COMGR_STATUS_ERROR_INVALID_ARGUMENT);
     }
@@ -720,10 +686,8 @@ mod tests {
     #[test]
     fn create_and_release_data() {
         let mut data = tt_comgr_data_t { handle: 0 };
-        let result = tt_comgr_create_data(
-            tt_comgr_data_kind_s::TT_COMGR_DATA_KIND_SOURCE,
-            &mut data,
-        );
+        let result =
+            tt_comgr_create_data(tt_comgr_data_kind_s::TT_COMGR_DATA_KIND_SOURCE, &mut data);
         assert!(result.is_ok());
 
         let result = tt_comgr_release_data(data);
@@ -739,10 +703,8 @@ mod tests {
 
         // Create some data
         let mut data1 = tt_comgr_data_t { handle: 0 };
-        let result = tt_comgr_create_data(
-            tt_comgr_data_kind_s::TT_COMGR_DATA_KIND_SOURCE,
-            &mut data1,
-        );
+        let result =
+            tt_comgr_create_data(tt_comgr_data_kind_s::TT_COMGR_DATA_KIND_SOURCE, &mut data1);
         assert!(result.is_ok());
 
         // Set content
