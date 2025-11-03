@@ -1,10 +1,10 @@
 // PTX to TMatmul Hardware Integration
 // Compiles PTX code to TMatmul assembly for hardware execution
 
+use clap::Parser;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(name = "ptx_to_tmatmul_hw")]
@@ -19,7 +19,10 @@ struct Args {
     output: Option<PathBuf>,
 
     /// Hardware assembly directory (default: /root/matmulfreellm/hardware/ternary_matmul/asm)
-    #[arg(long, default_value = "/root/matmulfreellm/hardware/ternary_matmul/asm")]
+    #[arg(
+        long,
+        default_value = "/root/matmulfreellm/hardware/ternary_matmul/asm"
+    )]
     hw_asm_dir: PathBuf,
 
     /// Enable verbose output
@@ -53,7 +56,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         out
     } else {
         // Generate default output path based on input filename
-        let input_stem = args.input.file_stem()
+        let input_stem = args
+            .input
+            .file_stem()
             .ok_or("Invalid input filename")?
             .to_string_lossy();
         args.hw_asm_dir.join(format!("{}.S", input_stem))
@@ -73,7 +78,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✓ Successfully compiled to: {}", output_path.display());
     println!("\nTo run on hardware simulator:");
-    println!("  cd {}", args.hw_asm_dir.parent().unwrap().join("cocotb").display());
+    println!(
+        "  cd {}",
+        args.hw_asm_dir.parent().unwrap().join("cocotb").display()
+    );
     println!("  make SIM=verilator MODULE=tb_asm TESTCASE=test_asm_all_programs");
 
     Ok(())

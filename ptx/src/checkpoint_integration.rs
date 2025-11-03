@@ -81,7 +81,14 @@ impl CheckpointedCompiler {
 
         // 阶段2: LLVM IR生成
         let llvm_start = Instant::now();
-        let llvm_module = match to_llvm_module(ast, crate::pass::Attributes { clock_rate: 2124000, emit_debug_info: false }, |_| {}) {
+        let llvm_module = match to_llvm_module(
+            ast,
+            crate::pass::Attributes {
+                clock_rate: 2124000,
+                emit_debug_info: false,
+            },
+            |_| {},
+        ) {
             Ok(module) => {
                 stats.llvm_gen_time_ms = llvm_start.elapsed().as_millis() as u64;
                 println!("✓ LLVM IR生成完成 ({}ms)", stats.llvm_gen_time_ms);
@@ -161,9 +168,11 @@ impl CheckpointedCompiler {
             }
             Err(e) => {
                 let error = TranslateError::UnexpectedError(format!("SPIR-V转换失败: {}", e));
-                let _ =
-                    self.checkpoint_manager
-                        .add_error(&checkpoint_id, &error, Some(llvm_ir_string.clone()));
+                let _ = self.checkpoint_manager.add_error(
+                    &checkpoint_id,
+                    &error,
+                    Some(llvm_ir_string.clone()),
+                );
                 compilation_result.errors.push(error.to_string());
                 return Err(CompilationError::SpirvError(e.to_string()));
             }

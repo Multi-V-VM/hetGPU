@@ -81,10 +81,7 @@ pub(crate) fn get_export_table(
 }
 
 // Provide safe implementations for cuGetErrorString/cuGetErrorName to avoid NULL deref in callers
-pub(crate) fn get_error_string(
-    error: CUresult,
-    pStr: &mut *const c_char,
-) -> Result<(), CUerror> {
+pub(crate) fn get_error_string(error: CUresult, pStr: &mut *const c_char) -> Result<(), CUerror> {
     // Stable static messages
     static OK_STR: &[u8] = b"CUDA_SUCCESS\0";
     static ERR_STR: &[u8] = b"CUDA_ERROR_UNKNOWN\0";
@@ -96,10 +93,7 @@ pub(crate) fn get_error_string(
     Ok(())
 }
 
-pub(crate) fn get_error_name(
-    error: CUresult,
-    pStr: &mut *const c_char,
-) -> Result<(), CUerror> {
+pub(crate) fn get_error_name(error: CUresult, pStr: &mut *const c_char) -> Result<(), CUerror> {
     static OK_NAME: &[u8] = b"CUDA_SUCCESS\0";
     static ERR_NAME: &[u8] = b"CUDA_ERROR_UNKNOWN\0";
     let name_ptr = match error {
@@ -220,7 +214,10 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
         .get_or_init(|| {
             // Helper function to create virtual device
             fn create_virtual_device(reason: &str) -> Result<GlobalState, CUerror> {
-                eprintln!("[Intel Backend] {} - creating virtual device for TMatmul", reason);
+                crate::r#impl::hetgpu_debug!(
+                    "[Intel Backend] {} - creating virtual device for TMatmul",
+                    reason
+                );
                 let comgr_isa = CString::new("virtual-gpu").map_err(|_| CUerror::UNKNOWN)?;
                 let virtual_device = ze_device_handle_t(std::ptr::null_mut());
                 let ctx = context::Context::new(virtual_device);
@@ -235,7 +232,8 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
 
                 DEVICES_ZE.with(|map| {
                     let mut map = map.borrow_mut();
-                    let device_ptr = unsafe { NonNull::new_unchecked(Box::into_raw(device_box_clone)) };
+                    let device_ptr =
+                        unsafe { NonNull::new_unchecked(Box::into_raw(device_box_clone)) };
                     map.insert(virtual_device, device_ptr);
                 });
 
@@ -259,16 +257,16 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
 
             // Get drivers
             let mut drivers = vec![std::ptr::null_mut(); driver_count as usize];
-            let driver_get_result = unsafe { zeDriverGet(&mut driver_count, *drivers.as_mut_ptr()) };
+            let driver_get_result =
+                unsafe { zeDriverGet(&mut driver_count, *drivers.as_mut_ptr()) };
             if driver_get_result != ze_result_t::ZE_RESULT_SUCCESS {
                 return create_virtual_device("Failed to get drivers");
             }
 
             // Get device count for the first driver
             let mut device_count = 0;
-            let device_result = unsafe {
-                zeDeviceGet(*drivers[0], &mut device_count, std::ptr::null_mut())
-            };
+            let device_result =
+                unsafe { zeDeviceGet(*drivers[0], &mut device_count, std::ptr::null_mut()) };
             if device_result != ze_result_t::ZE_RESULT_SUCCESS || device_count == 0 {
                 return create_virtual_device("No Intel devices on driver");
             }
@@ -421,7 +419,7 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
         match zeInit(0) {
             ze_result_t::ZE_RESULT_SUCCESS => {}
             err => {
-                eprintln!(
+                crate::r#impl::hetgpu_debug!(
                     "[hetGPU] Level Zero init failed with {:?} - continuing with virtual backend",
                     err
                 );
@@ -447,7 +445,12 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
     static GLOBAL_STATE: OnceLock<Result<GlobalState, CUerror>> = OnceLock::new();
 
@@ -479,7 +482,12 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
         .map_err(|e| *e)
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     let _ = flags;
     global_state()?;
@@ -506,7 +514,12 @@ pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
     *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
     Ok(())
@@ -544,7 +557,12 @@ thread_local! {
     static TT_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn device_tmatmul(dev_id: i32) -> Result<&'static Device, CUerror> {
     TMATMUL_DEVICES.with(|map| {
         let map_ref = map.borrow();
@@ -555,7 +573,12 @@ pub(crate) fn device_tmatmul(dev_id: i32) -> Result<&'static Device, CUerror> {
     })
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 thread_local! {
     static TMATMUL_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
 }

@@ -1,13 +1,13 @@
+use crate::r#impl::context;
 #[cfg(feature = "intel")]
 use crate::r#impl::ze_to_cuda_result;
 #[cfg(feature = "intel")]
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
+use std::ptr;
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
-use std::ptr;
-use crate::r#impl::context;
 #[cfg(feature = "amd")]
 pub(crate) fn alloc_v2(dptr: *mut hipDeviceptr_t, bytesize: usize) -> hipError_t {
     unsafe { hipMalloc(dptr.cast(), bytesize) }?;
@@ -38,8 +38,7 @@ pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
             return Ok(());
         }
 
-        let layout = Layout::from_size_align(bytesize, 64)
-            .map_err(|_| CUerror::OUT_OF_MEMORY)?;
+        let layout = Layout::from_size_align(bytesize, 64).map_err(|_| CUerror::OUT_OF_MEMORY)?;
 
         // Use alloc_zeroed to initialize memory to zero
         // This makes torch.zeros() work correctly without kernel execution
@@ -50,8 +49,12 @@ pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
 
         unsafe {
             *dptr = cuda_types::cuda::CUdeviceptr_v2(host_ptr as *mut _);
-            eprintln!("[DEBUG alloc_v2] Virtual device allocated {} bytes at host_ptr={:p}, stored as CUdeviceptr={:p}",
-                     bytesize, host_ptr, (*dptr).0);
+            crate::r#impl::hetgpu_debug!(
+                "[DEBUG alloc_v2] Virtual device allocated {} bytes at host_ptr={:p}, stored as CUdeviceptr={:p}",
+                bytesize,
+                host_ptr,
+                (*dptr).0
+            );
         }
 
         return Ok(());
@@ -355,30 +358,39 @@ pub(crate) fn set_d8_v2(dst: hipDeviceptr_t, value: ::core::ffi::c_uchar, n: usi
 
 #[cfg(feature = "intel")]
 pub(crate) fn set_d8_v2(dst: CUdeviceptr, value: ::core::ffi::c_uchar, n: usize) -> CUresult {
-    eprintln!("[DEBUG set_d8_v2] Called with dst={:p}, value={}, n={}", dst.0, value, n);
+    crate::r#impl::hetgpu_debug!(
+        "[DEBUG set_d8_v2] Called with dst={:p}, value={}, n={}",
+        dst.0,
+        value,
+        n
+    );
 
     // Get current context
     let ctx = match context::get_current_ze() {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!("[DEBUG set_d8_v2] Failed to get context: {:?}", e);
+            crate::r#impl::hetgpu_debug!("[DEBUG set_d8_v2] Failed to get context: {:?}", e);
             return Err(e);
         }
     };
 
     // Check if this is a virtual device (null handle)
     if ctx.device.0.is_null() {
-        eprintln!("[DEBUG set_d8_v2] Using virtual device path");
+        crate::r#impl::hetgpu_debug!("[DEBUG set_d8_v2] Using virtual device path");
         // Virtual device: use memset on host memory
         if dst.0.is_null() || dst.0 == 0x1 as *mut _ {
-            eprintln!("[DEBUG set_d8_v2] Skipping null/sentinel pointer");
+            crate::r#impl::hetgpu_debug!("[DEBUG set_d8_v2] Skipping null/sentinel pointer");
             return Ok(());
         }
 
         unsafe {
             std::ptr::write_bytes(dst.0 as *mut u8, value, n);
         }
-        eprintln!("[DEBUG set_d8_v2] Successfully set {} bytes to {}", n, value);
+        crate::r#impl::hetgpu_debug!(
+            "[DEBUG set_d8_v2] Successfully set {} bytes to {}",
+            n,
+            value
+        );
         return Ok(());
     }
 

@@ -572,7 +572,7 @@ fn test_hip_assert<
     let llvm_ir = pass::to_llvm_module(
         ast,
         pass::Attributes {
-        emit_debug_info: false,
+            emit_debug_info: false,
             clock_rate: 2124000,
         },
         |_| {},
@@ -594,7 +594,7 @@ fn test_llvm_assert(
     let llvm_ir = pass::to_llvm_module(
         ast,
         pass::Attributes {
-        emit_debug_info: false,
+            emit_debug_info: false,
             clock_rate: 2124000,
         },
         |_| {},

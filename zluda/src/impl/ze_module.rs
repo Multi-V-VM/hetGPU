@@ -24,16 +24,17 @@ impl SpirvModule {
         Ok(spirv_module)
     }
 
-    fn create_spirv_module(
-        ptx_text: &str,
-        name: &str,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    fn create_spirv_module(ptx_text: &str, name: &str) -> Result<Self, Box<dyn std::error::Error>> {
         // Get the current context
         let ctx = context::get_current_ze().unwrap();
 
         // Parse PTX
-        let ast = ptx_parser::parse_module_checked(ptx_text)
-            .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{:?}", e))) as Box<dyn std::error::Error>)?;
+        let ast = ptx_parser::parse_module_checked(ptx_text).map_err(|e| {
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("{:?}", e),
+            )) as Box<dyn std::error::Error>
+        })?;
 
         // Convert PTX to LLVM IR with default attributes
         let attributes = ptx::Attributes {
@@ -123,11 +124,9 @@ impl SpirvModule {
         }
 
         // Allocate space for function names
-        let mut function_names: Vec<*const ::core::ffi::c_char> =
-            vec![ptr::null(); count as usize];
-        let result = unsafe {
-            zeModuleGetKernelNames(self.module, &mut count, function_names.as_mut_ptr())
-        };
+        let mut function_names: Vec<*const ::core::ffi::c_char> = vec![ptr::null(); count as usize];
+        let result =
+            unsafe { zeModuleGetKernelNames(self.module, &mut count, function_names.as_mut_ptr()) };
 
         if result != ze_result_t::ZE_RESULT_SUCCESS {
             return Err(Box::new(std::io::Error::new(
@@ -269,7 +268,13 @@ pub(crate) fn load_data_impl(
     let mut build_log = ptr::null_mut();
 
     let result = unsafe {
-        zeModuleCreate(context, device, &module_desc, &mut ze_module, &mut build_log)
+        zeModuleCreate(
+            context,
+            device,
+            &module_desc,
+            &mut ze_module,
+            &mut build_log,
+        )
     };
 
     // Check if build log exists and handle it
@@ -309,8 +314,8 @@ fn ptx_to_spirv(spirv_module: &SpirvModule) -> Result<Vec<u8>, CUerror> {
         clock_rate: 2124000, // Default clock rate in kHz
         emit_debug_info: false,
     };
-    let llvm_module = ptx::to_llvm_module(ast, attributes, |_| {})
-        .map_err(|_| CUerror::INVALID_VALUE)?;
+    let llvm_module =
+        ptx::to_llvm_module(ast, attributes, |_| {}).map_err(|_| CUerror::INVALID_VALUE)?;
 
     // Get LLVM IR string from module
     let llvm_ir = llvm_module.llvm_ir.print_module_to_string();
@@ -376,7 +381,9 @@ pub(crate) fn get_function(
 
             // Store the kernel in the module's function list
             let module_mut = hmod as *const Module as *mut Module;
-            unsafe { (*module_mut).functions.push((name_str.to_string(), kernel)); }
+            unsafe {
+                (*module_mut).functions.push((name_str.to_string(), kernel));
+            }
 
             *hfunc = kernel_wrapper.wrap();
             CUresult::SUCCESS

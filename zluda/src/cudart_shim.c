@@ -1,7 +1,14 @@
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+
+#if defined(HETGPU_DEBUG_LOGS)
+#define HETGPU_LOG(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define HETGPU_LOG(...) ((void)0)
+#endif
 
 // Minimal shim for missing CUDA Runtime API symbols expected by
 // PyTorch CUDA libraries when running with hetGPU. We export only
@@ -41,10 +48,19 @@ typedef void* cudaGraphExec_t;
 typedef void* cudaGraphNode_t; // already defined
 typedef void* cudaDeviceProp_t; // opaque placeholder for device properties struct
 typedef void* cudaMemPool_t;
+typedef void* cudaUserObject_t;
+typedef void* cudaFunction_t;
 typedef struct { unsigned int x, y, z; } dim3;
 typedef void (*cudaStreamCallback_t)(cudaStream_t stream, cudaError_t status, void* userData);
 typedef void (*cudaHostFn_t)(void* userData);
 typedef int cudaMemcpyKind; // use int placeholder
+
+typedef struct {
+    void* payload;
+    cudaHostFn_t destroy;
+    unsigned int refcount;
+    unsigned int flags;
+} HetGPUUserObject;
 
 // Provide a stub for cudaGraphNodeGetDependencies. We simply report
 // zero dependencies and return success. This satisfies symbol lookup
@@ -92,6 +108,32 @@ cudaError_t cudaStreamGetCaptureInfo(cudaStream_t stream,
     if (pStatus) *pStatus = 0; // cudaStreamCaptureStatusNone
     if (pId) *pId = 0ULL;
     return 0;
+}
+
+cudaError_t cudaStreamGetCaptureInfo_v2(cudaStream_t stream,
+                                        cudaStreamCaptureStatus* pStatus,
+                                        unsigned long long* pId,
+                                        cudaGraph_t* phGraph,
+                                        const cudaGraphNode_t** ppDependencies,
+                                        size_t* pNumDependencies) {
+    (void)stream;
+    if (pStatus) *pStatus = 0;
+    if (pId) *pId = 0ULL;
+    if (phGraph) *phGraph = (cudaGraph_t)0;
+    if (ppDependencies) *ppDependencies = NULL;
+    if (pNumDependencies) *pNumDependencies = 0;
+    return 0;
+}
+
+cudaError_t cudaStreamGetCaptureInfo_v3(cudaStream_t stream,
+                                        cudaStreamCaptureStatus* pStatus,
+                                        unsigned long long* pId,
+                                        cudaGraph_t* phGraph,
+                                        const cudaGraphNode_t** ppDependencies,
+                                        size_t* pNumDependencies,
+                                        unsigned long long flags) {
+    (void)flags;
+    return cudaStreamGetCaptureInfo_v2(stream, pStatus, pId, phGraph, ppDependencies, pNumDependencies);
 }
 
 cudaError_t cudaStreamIsCapturing(cudaStream_t stream,
@@ -152,6 +194,13 @@ cudaError_t cudaStreamUpdateCaptureDependencies(cudaStream_t stream,
                                                unsigned int updateFlags) {
     (void)stream; (void)dependencies; (void)numDependencies; (void)updateFlags;
     return 0;
+}
+
+cudaError_t cudaStreamUpdateCaptureDependencies_v2(cudaStream_t stream,
+                                                  cudaGraphNode_t* dependencies,
+                                                  size_t numDependencies,
+                                                  unsigned long long updateFlags) {
+    return cudaStreamUpdateCaptureDependencies(stream, dependencies, numDependencies, (unsigned int)updateFlags);
 }
 
 cudaError_t cudaStreamCreateWithPriority(cudaStream_t* pStream,
@@ -229,10 +278,63 @@ typedef struct {
     size_t totalConstMem;
     int    major;
     int    minor;
+    size_t textureAlignment;
+    size_t texturePitchAlignment;
+    int    deviceOverlap;
+    int    multiProcessorCount;          // CRITICAL for PyTorch!
+    int    kernelExecTimeoutEnabled;
+    int    integrated;
+    int    canMapHostMemory;
+    int    computeMode;
+    int    maxTexture1D;
+    int    maxTexture1DMipmap;
+    int    maxTexture1DLinear;
+    int    maxTexture2D[2];
+    int    maxTexture2DMipmap[2];
+    int    maxTexture2DLinear[3];
+    int    maxTexture2DGather[2];
+    int    maxTexture3D[3];
+    int    maxTexture3DAlt[3];
+    int    maxTextureCubemap;
+    int    maxTexture1DLayered[2];
+    int    maxTexture2DLayered[3];
+    int    maxTextureCubemapLayered[2];
+    int    maxSurface1D;
+    int    maxSurface2D[2];
+    int    maxSurface3D[3];
+    int    maxSurface1DLayered[2];
+    int    maxSurface2DLayered[3];
+    int    maxSurfaceCubemap;
+    int    maxSurfaceCubemapLayered[2];
+    size_t surfaceAlignment;
+    int    concurrentKernels;
+    int    ECCEnabled;
+    int    pciBusID;
+    int    pciDeviceID;
+    int    pciDomainID;
+    int    tccDriver;
+    int    asyncEngineCount;
+    int    unifiedAddressing;
+    int    memoryClockRate;
+    int    memoryBusWidth;
+    int    l2CacheSize;
+    int    maxThreadsPerMultiProcessor;  // CRITICAL for PyTorch!
 } cudaDeviceProp_min;
 
 cudaError_t cudaGetDeviceProperties(cudaDeviceProp_t prop, int device) {
-    if (!prop) return 1; // cudaErrorInvalidValue
+    fprintf(stderr, "[hetGPU cudart_shim] cudaGetDeviceProperties called for device %d\n", device);
+    HETGPU_LOG("[cudart_shim] cudaGetDeviceProperties called for device %d\n", device);
+
+    if (!prop) {
+        fprintf(stderr, "[hetGPU cudart_shim] ERROR - prop is NULL\n");
+        HETGPU_LOG("[cudart_shim] cudaGetDeviceProperties: ERROR - prop is NULL\n");
+        return 1; // cudaErrorInvalidValue
+    }
+
+    if (device < 0 || device >= 1) {
+        HETGPU_LOG("[cudart_shim] cudaGetDeviceProperties: ERROR - invalid device %d\n", device);
+        return 100; // cudaErrorNoDevice
+    }
 
     // Fill a minimal struct and copy into caller memory
     cudaDeviceProp_min p;
@@ -241,6 +343,11 @@ cudaError_t cudaGetDeviceProperties(cudaDeviceProp_t prop, int device) {
     // Device name
     const char* name = "Virtual GPU (hetGPU sm_80)";
     strncpy(p.name, name, sizeof(p.name) - 1);
+
+    // IMPORTANT: Set memory fields
+    p.totalGlobalMem = 16ULL * 1024 * 1024 * 1024; // 16GB
+    p.sharedMemPerBlock = 48 * 1024; // 48KB
+    p.regsPerBlock = 65536;
 
     // Conservative, GPU-like defaults
     p.warpSize = 32;
@@ -254,50 +361,130 @@ cudaError_t cudaGetDeviceProperties(cudaDeviceProp_t prop, int device) {
     p.major = 8;
     p.minor = 0;
 
-    memcpy(prop, &p, sizeof(p));
-    fprintf(stderr, "[cudart_shim] cudaGetDeviceProperties: name='%s' cc=%d.%d\n", p.name, p.major, p.minor);
+    // CRITICAL: Set SM count and threads per SM to avoid division by zero in PyTorch
+    // PyTorch's SoftMax computes: max_active_blocks = multiProcessorCount * getBlocksPerSM()
+    // Then: outer_blocks = (max_active_blocks + inner_blocks - 1) / inner_blocks
+    // If max_active_blocks = 0, we get SIGFPE!
+    p.multiProcessorCount = 80;           // SM count (like A100)
+    p.maxThreadsPerMultiProcessor = 2048; // Threads per SM (sm_80 standard)
+    fprintf(stderr, "[hetGPU cudart_shim] Set multiProcessorCount=%d, maxThreadsPerMultiProcessor=%d\n",
+            p.multiProcessorCount, p.maxThreadsPerMultiProcessor);
 
-    // Defensive: also stamp major/minor at several known offsets used by
-    // different CUDA headers to avoid layout mismatches.
-    // These offsets are relative to the start of cudaDeviceProp and cover
-    // common placements (immediately after totalConstMem).
+    // Fill other fields with reasonable defaults
+    p.textureAlignment = 512;
+    p.texturePitchAlignment = 32;
+    p.deviceOverlap = 1;
+    p.kernelExecTimeoutEnabled = 0;
+    p.integrated = 0;
+    p.canMapHostMemory = 1;
+    p.computeMode = 0; // cudaComputeModeDefault
+    p.concurrentKernels = 1;
+    p.ECCEnabled = 0;
+    p.pciBusID = 0;
+    p.pciDeviceID = 0;
+    p.pciDomainID = 0;
+    p.tccDriver = 0;
+    p.asyncEngineCount = 2;
+    p.unifiedAddressing = 1;
+    p.memoryClockRate = 1215000; // kHz
+    p.memoryBusWidth = 5120; // bits (A100-like)
+    p.l2CacheSize = 40 * 1024 * 1024; // 40MB
+
+    memcpy(prop, &p, sizeof(p));
+    HETGPU_LOG("[cudart_shim] cudaGetDeviceProperties: SUCCESS name='%s' cc=%d.%d mem=%zuMB\n",
+            p.name, p.major, p.minor, p.totalGlobalMem / (1024*1024));
+
+    // Debug: Calculate actual offset of multiProcessorCount in our struct
+    size_t actual_mp_offset = offsetof(cudaDeviceProp_min, multiProcessorCount);
+    size_t actual_threads_offset = offsetof(cudaDeviceProp_min, maxThreadsPerMultiProcessor);
+    fprintf(stderr, "[hetGPU cudart_shim] After memcpy, sizeof(p)=%zu\n", sizeof(p));
+    fprintf(stderr, "[hetGPU cudart_shim] Actual offset of multiProcessorCount=%zu, maxThreadsPerMultiProcessor=%zu\n",
+            actual_mp_offset, actual_threads_offset);
+
+    // Read back the actual values at those offsets
+    unsigned char* base = (unsigned char*)prop;
+    int mp_val = *(int*)(base + actual_mp_offset);
+    int threads_val = *(int*)(base + actual_threads_offset);
+    fprintf(stderr, "[hetGPU cudart_shim] Values at actual offsets: MP=%d, threads=%d\n",
+            mp_val, threads_val);
+
+    // Defensive: stamp critical values at multiple offsets to handle different struct layouts
     {
         unsigned char* base = (unsigned char*)prop;
         const int major = 8, minor = 0;
-        // Try multiple known offsets to accommodate struct layout differences.
-        size_t cand_major[] = { 316, 320, 328, 332, 336, 344 };
+        const int sm_count = 80;
+        const int max_threads_per_sm = 2048;
+
+        // FIRST: Write SM count and threads to avoid compute capability conflicts
+        // Write SM count, but skip offsets 316-360 to avoid corrupting major/minor
+        for (size_t off = 260; off < 316; off += 4) {
+            *(int*)(base + off) = sm_count;
+        }
+        // Skip 316-360 (major/minor area)
+        for (size_t off = 364; off < 420; off += 4) {
+            *(int*)(base + off) = sm_count;
+        }
+
+        // Write threads/SM to a higher range
+        for (size_t off = 500; off < 800; off += 4) {
+            *(int*)(base + off) = max_threads_per_sm;
+        }
+
+        // THEN: Aggressively stamp major/minor at MANY offsets to override any corruption
+        // PyTorch expects major/minor somewhere around 316-360
+        size_t cand_major[] = { 312, 316, 320, 324, 328, 332, 336, 340, 344, 348, 352, 356, 360 };
         for (size_t i = 0; i < sizeof(cand_major)/sizeof(cand_major[0]); ++i) {
-            // Write major, then minor adjacent
             *(int*)(base + cand_major[i]) = major;
             *(int*)(base + cand_major[i] + 4) = minor;
         }
+
+        fprintf(stderr, "[hetGPU cudart_shim] Stamped: major=%d minor=%d (312-360), SM=%d (260-420 skip 316-360), threads=%d (500-800)\n",
+                major, minor, sm_count, max_threads_per_sm);
     }
     (void)device;
     return 0;
+}
+
+cudaError_t cudaGetDeviceProperties_v2(cudaDeviceProp_t prop, int device) {
+    return cudaGetDeviceProperties(prop, device);
 }
 
 // Global to track current device
 static int current_device = 0;
 
 cudaError_t cudaSetDevice(int device) {
+    // For virtual device support, be permissive
+    if (device < 0) {
+        return 1; // cudaErrorInvalidDevice
+    }
+
     // Get the CUDA device handle
     CUdevice cu_device;
     CUresult result = cuDeviceGet(&cu_device, device);
     if (result != 0) {
-        return (cudaError_t)result;
+        // For virtual device, still set current_device and succeed
+        HETGPU_LOG("[cudart_shim] cudaSetDevice(%d): cuDeviceGet failed (%d), continuing with virtual device\n", device, result);
+        current_device = device;
+        return 0; // Success for virtual device
     }
 
     // Retain the primary context for this device
     CUcontext ctx;
     result = cuDevicePrimaryCtxRetain(&ctx, cu_device);
     if (result != 0) {
-        return (cudaError_t)result;
+        // For virtual device, still set current_device and succeed
+        HETGPU_LOG("[cudart_shim] cudaSetDevice(%d): cuDevicePrimaryCtxRetain failed (%d), continuing with virtual device\n", device, result);
+        current_device = device;
+        return 0; // Success for virtual device
     }
 
     // Set it as the current context
     result = cuCtxSetCurrent(ctx);
     if (result != 0) {
-        return (cudaError_t)result;
+        // For virtual device, still set current_device and succeed
+        HETGPU_LOG("[cudart_shim] cudaSetDevice(%d): cuCtxSetCurrent failed (%d), continuing with virtual device\n", device, result);
+        current_device = device;
+        return 0; // Success for virtual device
     }
 
     current_device = device;
@@ -305,6 +492,7 @@ cudaError_t cudaSetDevice(int device) {
 }
 
 cudaError_t cudaGetDevice(int* device) {
+    HETGPU_LOG("[cudart_shim] cudaGetDevice called, returning device %d\n", current_device);
     if (device) *device = current_device;
     return 0;
 }
@@ -331,10 +519,16 @@ cudaError_t cudaDeviceEnablePeerAccess(int peerDevice, unsigned int flags) {
     (void)peerDevice; (void)flags; return 0;
 }
 
+cudaError_t cudaDeviceSetLimit(int limit, size_t value) {
+    (void)limit;
+    (void)value;
+    return 0;
+}
+
 // Device attribute query
 cudaError_t cudaDeviceGetAttribute(int* value, int attr, int device) {
     if (!value) return 1; // cudaErrorInvalidValue
-    fprintf(stderr, "[cudart_shim] cudaDeviceGetAttribute(attr=%d, dev=%d)\n", attr, device);
+    HETGPU_LOG("[cudart_shim] cudaDeviceGetAttribute(attr=%d, dev=%d)\n", attr, device);
     // Provide sane defaults; explicitly handle common CC queries
     if (attr == 75 /* cudaDevAttrComputeCapabilityMajor */) { *value = 8; return 0; }
     if (attr == 76 /* cudaDevAttrComputeCapabilityMinor */) { *value = 0; return 0; }
@@ -379,6 +573,14 @@ cudaError_t cudaFreeHost(void* pHost) {
 cudaError_t cudaHostRegister(void* ptr, size_t size, unsigned int flags) { (void)ptr; (void)size; (void)flags; return 0; }
 cudaError_t cudaHostUnregister(void* ptr) { (void)ptr; return 0; }
 
+cudaError_t cudaHostGetDevicePointer(void** pDevice, void* pHost, unsigned int flags) {
+    (void)flags;
+    if (pDevice) {
+        *pDevice = pHost;
+    }
+    return 0;
+}
+
 // PCI bus id helper
 cudaError_t cudaDeviceGetPCIBusId(char* pciBusId, int len, int device) {
     (void)device; if (pciBusId && len>0) pciBusId[0] = '\0'; return 0;
@@ -416,6 +618,124 @@ cudaError_t cudaGraphGetNodes(cudaGraph_t graph, cudaGraphNode_t* nodes, size_t*
     (void)graph; (void)nodes; if (numNodes) *numNodes = 0; return 0;
 }
 cudaError_t cudaGraphDebugDotPrint(cudaGraph_t graph, const char* path, unsigned int flags) { (void)graph; (void)path; (void)flags; return 0; }
+
+cudaError_t cudaGraphAddEventRecordNode(cudaGraphNode_t* pGraphNode,
+                                        cudaGraph_t graph,
+                                        const cudaGraphNode_t* pDependencies,
+                                        size_t numDependencies,
+                                        cudaEvent_t event) {
+    (void)graph; (void)pDependencies; (void)numDependencies; (void)event;
+    if (pGraphNode) {
+        *pGraphNode = (cudaGraphNode_t)0;
+    }
+    return 0;
+}
+
+cudaError_t cudaGraphAddEventWaitNode(cudaGraphNode_t* pGraphNode,
+                                      cudaGraph_t graph,
+                                      const cudaGraphNode_t* pDependencies,
+                                      size_t numDependencies,
+                                      cudaEvent_t event) {
+    (void)graph; (void)pDependencies; (void)numDependencies; (void)event;
+    if (pGraphNode) {
+        *pGraphNode = (cudaGraphNode_t)0;
+    }
+    return 0;
+}
+
+cudaError_t cudaGraphAddDependencies(cudaGraph_t graph,
+                                     const cudaGraphNode_t* from,
+                                     const cudaGraphNode_t* to,
+                                     size_t numDependencies) {
+    (void)graph;
+    (void)from;
+    (void)to;
+    (void)numDependencies;
+    return 0;
+}
+
+cudaError_t cudaGraphAddDependencies_v2(cudaGraph_t graph,
+                                        const cudaGraphNode_t* from,
+                                        const cudaGraphNode_t* to,
+                                        size_t numDependencies) {
+    return cudaGraphAddDependencies(graph, from, to, numDependencies);
+}
+
+cudaError_t cudaGraphRetainUserObject(cudaGraph_t graph,
+                                      void* object,
+                                      unsigned int count) {
+    (void)graph;
+    (void)object;
+    (void)count;
+    return 0;
+}
+
+cudaError_t cudaGraphReleaseUserObject(cudaGraph_t graph,
+                                       void* object,
+                                       unsigned int count) {
+    (void)graph;
+    (void)object;
+    (void)count;
+    return 0;
+}
+
+cudaError_t cudaUserObjectCreate(cudaUserObject_t* object_out,
+                                 void* ptr,
+                                 cudaHostFn_t destroy,
+                                 unsigned int initialRefcount,
+                                 unsigned int flags) {
+    if (!object_out) {
+        return 1; // cudaErrorInvalidValue
+    }
+
+    HetGPUUserObject* obj = (HetGPUUserObject*)malloc(sizeof(HetGPUUserObject));
+    if (!obj) {
+        *object_out = NULL;
+        return 2; // cudaErrorMemoryAllocation
+    }
+
+    obj->payload = ptr;
+    obj->destroy = destroy;
+    obj->flags = flags;
+    obj->refcount = (initialRefcount == 0) ? 1U : initialRefcount;
+
+    *object_out = (cudaUserObject_t)obj;
+    return 0;
+}
+
+cudaError_t cudaUserObjectRetain(cudaUserObject_t object, unsigned int count) {
+    if (!object) {
+        return 1; // cudaErrorInvalidValue
+    }
+
+    HetGPUUserObject* obj = (HetGPUUserObject*)object;
+    if (count == 0) {
+        count = 1;
+    }
+    obj->refcount += count;
+    return 0;
+}
+
+cudaError_t cudaUserObjectRelease(cudaUserObject_t object, unsigned int count) {
+    if (!object) {
+        return 0;
+    }
+
+    HetGPUUserObject* obj = (HetGPUUserObject*)object;
+    if (count == 0) {
+        count = 1;
+    }
+
+    if (count >= obj->refcount) {
+        if (obj->destroy) {
+            obj->destroy(obj->payload);
+        }
+        free(obj);
+    } else {
+        obj->refcount -= count;
+    }
+    return 0;
+}
 
 // Occupancy/API helpers
 cudaError_t cudaFuncSetAttribute(const void* func, int attr, int value) { (void)func; (void)attr; (void)value; return 0; }
@@ -483,17 +803,26 @@ extern CUresult cuLaunchKernel(
 );
 
 // Some code paths call the runtime API cudaLaunchKernel (not the internal __cudaLaunchKernel).
-// Provide a wrapper that forwards to our internal hook.
+// Provide a wrapper that forwards to our internal hook and mark it used so the
+// symbol is always exported even if the linker tries to fold identical bodies.
+__attribute__((used))
 cudaError_t cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void** args, size_t sharedMem, cudaStream_t stream) {
-    return __cudaLaunchKernel(func, gridDim, blockDim, args, sharedMem, stream);
+    uintptr_t raw = (uintptr_t)func;
+    const void* normalized = (const void*)(raw & ~(uintptr_t)0x7);
+    if (normalized != func) {
+        HETGPU_LOG("[cudart_shim] cudaLaunchKernel normalized function pointer %p -> %p\n", func, normalized);
+    }
+    return __cudaLaunchKernel(normalized, gridDim, blockDim, args, sharedMem, stream);
 }
 
 cudaError_t __cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void** args, size_t sharedMem, cudaStream_t stream) {
-    fprintf(stderr, "[cudart_shim] __cudaLaunchKernel intercepted!\n");
-    fprintf(stderr, "  func=%p, grid=(%u,%u,%u), block=(%u,%u,%u), sharedMem=%zu\n",
+    HETGPU_LOG("[cudart_shim] __cudaLaunchKernel intercepted!\n");
+    HETGPU_LOG("  func=%p, grid=(%u,%u,%u), block=(%u,%u,%u), sharedMem=%zu\n",
             func, gridDim.x, gridDim.y, gridDim.z,
             blockDim.x, blockDim.y, blockDim.z, sharedMem);
+#if defined(HETGPU_DEBUG_LOGS)
     fflush(stderr);
+#endif
 
     // Forward to driver API cuLaunchKernel
     // This routes through our Rust implementation in function.rs
@@ -507,8 +836,10 @@ cudaError_t __cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, vo
         NULL  // extra parameters
     );
 
-    fprintf(stderr, "[cudart_shim] cuLaunchKernel returned: %d\n", result);
+    HETGPU_LOG("[cudart_shim] cuLaunchKernel returned: %d\n", result);
+#if defined(HETGPU_DEBUG_LOGS)
     fflush(stderr);
+#endif
 
     return (cudaError_t)result;
 }
@@ -534,7 +865,22 @@ void __cudaRegisterVar(void** fatCubinHandle,
 
 void* __cudaGetKernel(const void* f) { return (void*)f; }
 
+cudaError_t __cudaInitModule(void** fatCubinHandle) {
+    (void)fatCubinHandle;
+    return 0;
+}
+
 // Driver entry point query
+cudaError_t cudaGetDriverEntryPoint(const char* symbol,
+                                   void** funcPtr,
+                                   int driverVersion,
+                                   unsigned long long flags) {
+    // CUDA 12 introduced cudaGetDriverEntryPoint as a thin wrapper
+    // over the versioned API. We defer to the ByVersion variant so
+    // both entry points share the same behavior in the shim.
+    return cudaGetDriverEntryPointByVersion(symbol, funcPtr, driverVersion, flags);
+}
+
 cudaError_t cudaGetDriverEntryPointByVersion(const char* symbol,
                                              void** funcPtr,
                                              int driverVersion,
@@ -574,6 +920,28 @@ cudaError_t cudaMemPoolSetAccess(cudaMemPool_t memPool, const void* descList, si
     (void)memPool; (void)descList; (void)count; return 0;
 }
 
+cudaError_t cudaMemPoolCreate(cudaMemPool_t* memPool, const void* poolProps) {
+    (void)poolProps;
+    if (memPool) {
+        *memPool = (cudaMemPool_t)0;
+    }
+    return 0;
+}
+
+cudaError_t cudaMemPoolDestroy(cudaMemPool_t memPool) {
+    (void)memPool;
+    return 0;
+}
+
+cudaError_t cudaMallocFromPoolAsync(void** ptr,
+                                    size_t size,
+                                    cudaMemPool_t memPool,
+                                    cudaStream_t stream) {
+    (void)memPool;
+    (void)stream;
+    return cudaMalloc(ptr, size);
+}
+
 // Memory info
 cudaError_t cudaMemGetInfo(size_t* free, size_t* total) {
     const size_t sixteen_gb = (size_t)16 * 1024 * 1024 * 1024ULL;
@@ -599,7 +967,7 @@ cudaError_t cudaMalloc(void** devPtr, size_t size) {
     CUdeviceptr dptr = 0;
     CUresult result = cuMemAlloc_v2(&dptr, size);
     if (result != 0) {
-        fprintf(stderr, "[cudart_shim] cudaMalloc(%zu) cuMemAlloc_v2 failed: %d; falling back to host alloc\n", size, result);
+        HETGPU_LOG("[cudart_shim] cudaMalloc(%zu) cuMemAlloc_v2 failed: %d; falling back to host alloc\n", size, result);
         // Fallback: host allocation (zeroed)
         void* ptr = NULL;
         if (size > 0) {
@@ -612,7 +980,7 @@ cudaError_t cudaMalloc(void** devPtr, size_t size) {
         return ptr ? 0 : 2; // cudaErrorMemoryAllocation if NULL
     }
     *devPtr = (void*)dptr;
-    fprintf(stderr, "[cudart_shim] cudaMalloc(%zu) -> %p\n", size, *devPtr);
+    HETGPU_LOG("[cudart_shim] cudaMalloc(%zu) -> %p\n", size, *devPtr);
     return 0;
 }
 
@@ -622,7 +990,7 @@ cudaError_t cudaFree(void* devPtr) {
     CUresult result = cuMemFree_v2((CUdeviceptr)devPtr);
     if (result != 0) {
         // Not a driver-managed pointer, fallback to host free
-        fprintf(stderr, "[cudart_shim] cudaFree(%p) cuMemFree_v2 failed: %d; freeing as host ptr\n", devPtr, result);
+        HETGPU_LOG("[cudart_shim] cudaFree(%p) cuMemFree_v2 failed: %d; freeing as host ptr\n", devPtr, result);
         free(devPtr);
         return 0;
     }
@@ -646,6 +1014,78 @@ cudaError_t cudaMemcpyPeerAsync(void* dst, int dstDevice, const void* src, int s
     if (dst && src && count > 0) {
         memcpy(dst, src, count);
     }
+    return 0;
+}
+
+cudaError_t cudaMemcpyToSymbol(const void* symbol,
+                               const void* src,
+                               size_t count,
+                               size_t offset,
+                               cudaMemcpyKind kind) {
+    (void)kind;
+    if (!symbol || !src || count == 0) {
+        return 0;
+    }
+    unsigned char* dst_bytes = (unsigned char*)(uintptr_t)symbol;
+    memcpy(dst_bytes + offset, src, count);
+    return 0;
+}
+
+cudaError_t cudaMemcpyToSymbolAsync(const void* symbol,
+                                    const void* src,
+                                    size_t count,
+                                    size_t offset,
+                                    cudaMemcpyKind kind,
+                                    cudaStream_t stream) {
+    (void)stream;
+    return cudaMemcpyToSymbol(symbol, src, count, offset, kind);
+}
+
+cudaError_t cudaMemcpyFromSymbol(void* dst,
+                                 const void* symbol,
+                                 size_t count,
+                                 size_t offset,
+                                 cudaMemcpyKind kind) {
+    (void)kind;
+    if (!dst || !symbol || count == 0) {
+        return 0;
+    }
+    const unsigned char* src_bytes = (const unsigned char*)(uintptr_t)symbol;
+    memcpy(dst, src_bytes + offset, count);
+    return 0;
+}
+
+cudaError_t cudaMemcpyFromSymbolAsync(void* dst,
+                                      const void* symbol,
+                                      size_t count,
+                                      size_t offset,
+                                      cudaMemcpyKind kind,
+                                      cudaStream_t stream) {
+    (void)stream;
+    return cudaMemcpyFromSymbol(dst, symbol, count, offset, kind);
+}
+
+cudaError_t cudaGetSymbolAddress(void** devPtr, const void* symbol) {
+    if (!devPtr) {
+        return 1; // cudaErrorInvalidValue
+    }
+    *devPtr = (void*)(uintptr_t)symbol;
+    return 0;
+}
+
+cudaError_t cudaGetSymbolSize(size_t* size, const void* symbol) {
+    (void)symbol;
+    if (size) {
+        *size = 0;
+    }
+    return 0;
+}
+
+cudaError_t cudaGetFuncBySymbol(cudaFunction_t* functionPtr, const void* symbol) {
+    if (!functionPtr) {
+        return 1; // cudaErrorInvalidValue
+    }
+    *functionPtr = (cudaFunction_t)(uintptr_t)symbol;
     return 0;
 }
 

@@ -675,7 +675,10 @@ pub(super) fn run_with_filename<'input>(
                 emit_ctx.emit_global(linking, var)?;
             }
             Directive2::Method(method) => {
-                let name = id_defs.ident_map[&method.name].name.as_deref().unwrap_or("unknown");
+                let name = id_defs.ident_map[&method.name]
+                    .name
+                    .as_deref()
+                    .unwrap_or("unknown");
                 let is_kernel = method.is_kernel;
                 emit_ctx.emit_method(method)?;
                 if is_kernel {
@@ -794,10 +797,9 @@ impl<'a, 'input> ModuleEmitContext<'a, 'input> {
             let fn_type = get_function_type(
                 self.context,
                 method.return_arguments.iter().map(|v| &v.info.v_type),
-                method
-                    .input_arguments
-                    .iter()
-                    .map(|v| get_input_argument_type(self.context, &v.info.v_type, v.info.state_space)),
+                method.input_arguments.iter().map(|v| {
+                    get_input_argument_type(self.context, &v.info.v_type, v.info.state_space)
+                }),
             )?;
             fn_ = unsafe { LLVMAddFunction(self.module, name.as_ptr(), fn_type) };
             self.emit_fn_attribute(fn_, "amdgpu-unsafe-fp-atomics", "true");
@@ -1995,7 +1997,7 @@ impl<'a> MethodEmitContext<'a> {
                 // Prmt no longer has a data field, the control is embedded in arguments
                 // We need to check how Prmt works now
                 todo!("Prmt needs to be reimplemented")
-            },
+            }
             ast::Instruction::Membar { data } => self.emit_membar(data),
             ast::Instruction::Trap {} => todo!(),
             // We now handle activemask instead of returning error
@@ -2005,7 +2007,12 @@ impl<'a> MethodEmitContext<'a> {
             | ast::Instruction::Bar { .. }
             | ast::Instruction::Bfi { .. } => return Err(error_unreachable()),
             // Catch-all for any remaining instruction variants
-            _ => return Err(TranslateError::Todo(format!("Instruction not yet implemented: {:?}", inst))),
+            _ => {
+                return Err(TranslateError::Todo(format!(
+                    "Instruction not yet implemented: {:?}",
+                    inst
+                )))
+            }
         }
     }
 
@@ -4162,7 +4169,9 @@ impl<'a> MethodEmitContext<'a> {
             (control >> 12) & 0b1111,
         ];
         if components.iter().any(|&c| c > 7) {
-            return Err(TranslateError::Todo("prmt with component > 7 not implemented".to_string()));
+            return Err(TranslateError::Todo(
+                "prmt with component > 7 not implemented".to_string(),
+            ));
         }
         let u32_type = get_scalar_type(self.context, ast::ScalarType::U32);
         let v4u8_type = get_type(self.context, &ast::Type::Vector(4, ast::ScalarType::U8))?;

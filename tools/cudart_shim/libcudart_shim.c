@@ -1,6 +1,13 @@
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(HETGPU_DEBUG_LOGS)
+#define HETGPU_LOG(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define HETGPU_LOG(...) ((void)0)
+#endif
 
 // Minimal shim for missing CUDA Runtime API symbols expected by
 // PyTorch CUDA libraries when running with hetGPU. We export only
@@ -22,10 +29,19 @@ typedef void* cudaGraphExec_t;
 typedef void* cudaGraphNode_t; // already defined
 typedef void* cudaDeviceProp_t; // opaque placeholder for device properties struct
 typedef void* cudaMemPool_t;
+typedef void* cudaUserObject_t;
+typedef void* cudaFunction_t;
 typedef struct { unsigned int x, y, z; } dim3;
 typedef void (*cudaStreamCallback_t)(cudaStream_t stream, cudaError_t status, void* userData);
 typedef void (*cudaHostFn_t)(void* userData);
 typedef int cudaMemcpyKind; // use int placeholder
+
+typedef struct {
+    void* payload;
+    cudaHostFn_t destroy;
+    unsigned int refcount;
+    unsigned int flags;
+} HetGPUUserObject;
 
 // Provide a stub for cudaGraphNodeGetDependencies. We simply report
 // zero dependencies and return success. This satisfies symbol lookup
@@ -73,6 +89,32 @@ cudaError_t cudaStreamGetCaptureInfo(cudaStream_t stream,
     if (pStatus) *pStatus = 0; // cudaStreamCaptureStatusNone
     if (pId) *pId = 0ULL;
     return 0;
+}
+
+cudaError_t cudaStreamGetCaptureInfo_v2(cudaStream_t stream,
+                                        cudaStreamCaptureStatus* pStatus,
+                                        unsigned long long* pId,
+                                        cudaGraph_t* phGraph,
+                                        const cudaGraphNode_t** ppDependencies,
+                                        size_t* pNumDependencies) {
+    (void)stream;
+    if (pStatus) *pStatus = 0;
+    if (pId) *pId = 0ULL;
+    if (phGraph) *phGraph = (cudaGraph_t)0;
+    if (ppDependencies) *ppDependencies = NULL;
+    if (pNumDependencies) *pNumDependencies = 0;
+    return 0;
+}
+
+cudaError_t cudaStreamGetCaptureInfo_v3(cudaStream_t stream,
+                                        cudaStreamCaptureStatus* pStatus,
+                                        unsigned long long* pId,
+                                        cudaGraph_t* phGraph,
+                                        const cudaGraphNode_t** ppDependencies,
+                                        size_t* pNumDependencies,
+                                        unsigned long long flags) {
+    (void)flags;
+    return cudaStreamGetCaptureInfo_v2(stream, pStatus, pId, phGraph, ppDependencies, pNumDependencies);
 }
 
 cudaError_t cudaStreamIsCapturing(cudaStream_t stream,
@@ -133,6 +175,13 @@ cudaError_t cudaStreamUpdateCaptureDependencies(cudaStream_t stream,
                                                unsigned int updateFlags) {
     (void)stream; (void)dependencies; (void)numDependencies; (void)updateFlags;
     return 0;
+}
+
+cudaError_t cudaStreamUpdateCaptureDependencies_v2(cudaStream_t stream,
+                                                  cudaGraphNode_t* dependencies,
+                                                  size_t numDependencies,
+                                                  unsigned long long updateFlags) {
+    return cudaStreamUpdateCaptureDependencies(stream, dependencies, numDependencies, (unsigned int)updateFlags);
 }
 
 cudaError_t cudaStreamCreateWithPriority(cudaStream_t* pStream,
@@ -197,6 +246,10 @@ cudaError_t cudaGetDeviceProperties(cudaDeviceProp_t prop, int device) {
     (void)prop; (void)device; return 0;
 }
 
+cudaError_t cudaGetDeviceProperties_v2(cudaDeviceProp_t prop, int device) {
+    return cudaGetDeviceProperties(prop, device);
+}
+
 cudaError_t cudaSetDevice(int device) { (void)device; return 0; }
 cudaError_t cudaGetDevice(int* device) { if (device) *device = 0; return 0; }
 
@@ -226,6 +279,10 @@ cudaError_t cudaDeviceEnablePeerAccess(int peerDevice, unsigned int flags) {
     (void)peerDevice; (void)flags; return 0;
 }
 
+cudaError_t cudaDeviceSetLimit(int limit, size_t value) {
+    (void)limit; (void)value; return 0;
+}
+
 // Device attribute query
 cudaError_t cudaDeviceGetAttribute(int* value, int attr, int device) {
     (void)device;
@@ -245,6 +302,14 @@ cudaError_t cudaHostAlloc(void** pHost, size_t size, unsigned int flags) {
 cudaError_t cudaFreeHost(void* pHost) { (void)pHost; return 0; }
 cudaError_t cudaHostRegister(void* ptr, size_t size, unsigned int flags) { (void)ptr; (void)size; (void)flags; return 0; }
 cudaError_t cudaHostUnregister(void* ptr) { (void)ptr; return 0; }
+
+cudaError_t cudaHostGetDevicePointer(void** pDevice, void* pHost, unsigned int flags) {
+    (void)flags;
+    if (pDevice) {
+        *pDevice = pHost;
+    }
+    return 0;
+}
 
 // PCI bus id helper
 cudaError_t cudaDeviceGetPCIBusId(char* pciBusId, int len, int device) {
@@ -284,6 +349,110 @@ cudaError_t cudaGraphGetNodes(cudaGraph_t graph, cudaGraphNode_t* nodes, size_t*
 }
 cudaError_t cudaGraphDebugDotPrint(cudaGraph_t graph, const char* path, unsigned int flags) { (void)graph; (void)path; (void)flags; return 0; }
 
+cudaError_t cudaGraphAddEventRecordNode(cudaGraphNode_t* pGraphNode,
+                                        cudaGraph_t graph,
+                                        const cudaGraphNode_t* pDependencies,
+                                        size_t numDependencies,
+                                        cudaEvent_t event) {
+    (void)graph; (void)pDependencies; (void)numDependencies; (void)event;
+    if (pGraphNode) *pGraphNode = (cudaGraphNode_t)0;
+    return 0;
+}
+
+cudaError_t cudaGraphAddEventWaitNode(cudaGraphNode_t* pGraphNode,
+                                      cudaGraph_t graph,
+                                      const cudaGraphNode_t* pDependencies,
+                                      size_t numDependencies,
+                                      cudaEvent_t event) {
+    (void)graph; (void)pDependencies; (void)numDependencies; (void)event;
+    if (pGraphNode) *pGraphNode = (cudaGraphNode_t)0;
+    return 0;
+}
+
+cudaError_t cudaGraphAddDependencies(cudaGraph_t graph,
+                                     const cudaGraphNode_t* from,
+                                     const cudaGraphNode_t* to,
+                                     size_t numDependencies) {
+    (void)graph; (void)from; (void)to; (void)numDependencies; return 0;
+}
+
+cudaError_t cudaGraphAddDependencies_v2(cudaGraph_t graph,
+                                        const cudaGraphNode_t* from,
+                                        const cudaGraphNode_t* to,
+                                        size_t numDependencies) {
+    return cudaGraphAddDependencies(graph, from, to, numDependencies);
+}
+
+cudaError_t cudaGraphRetainUserObject(cudaGraph_t graph,
+                                      void* object,
+                                      unsigned int count) {
+    (void)graph; (void)object; (void)count; return 0;
+}
+
+cudaError_t cudaGraphReleaseUserObject(cudaGraph_t graph,
+                                       void* object,
+                                       unsigned int count) {
+    (void)graph; (void)object; (void)count; return 0;
+}
+
+cudaError_t cudaUserObjectCreate(cudaUserObject_t* object_out,
+                                 void* ptr,
+                                 cudaHostFn_t destroy,
+                                 unsigned int initialRefcount,
+                                 unsigned int flags) {
+    if (!object_out) {
+        return 1; // cudaErrorInvalidValue
+    }
+
+    HetGPUUserObject* obj = (HetGPUUserObject*)malloc(sizeof(HetGPUUserObject));
+    if (!obj) {
+        *object_out = NULL;
+        return 2; // cudaErrorMemoryAllocation
+    }
+
+    obj->payload = ptr;
+    obj->destroy = destroy;
+    obj->flags = flags;
+    obj->refcount = (initialRefcount == 0) ? 1U : initialRefcount;
+
+    *object_out = (cudaUserObject_t)obj;
+    return 0;
+}
+
+cudaError_t cudaUserObjectRetain(cudaUserObject_t object, unsigned int count) {
+    if (!object) {
+        return 1; // cudaErrorInvalidValue
+    }
+
+    HetGPUUserObject* obj = (HetGPUUserObject*)object;
+    if (count == 0) {
+        count = 1;
+    }
+    obj->refcount += count;
+    return 0;
+}
+
+cudaError_t cudaUserObjectRelease(cudaUserObject_t object, unsigned int count) {
+    if (!object) {
+        return 0;
+    }
+
+    HetGPUUserObject* obj = (HetGPUUserObject*)object;
+    if (count == 0) {
+        count = 1;
+    }
+
+    if (count >= obj->refcount) {
+        if (obj->destroy) {
+            obj->destroy(obj->payload);
+        }
+        free(obj);
+    } else {
+        obj->refcount -= count;
+    }
+    return 0;
+}
+
 // Occupancy/API helpers
 cudaError_t cudaFuncSetAttribute(const void* func, int attr, int value) { (void)func; (void)attr; (void)value; return 0; }
 cudaError_t cudaFuncGetAttributes(void* attr, const void* func) { (void)attr; (void)func; return 0; }
@@ -303,6 +472,18 @@ cudaError_t __cudaPopCallConfiguration(dim3* gridDim, dim3* blockDim, size_t* sh
     if (blockDim) { blockDim->x = blockDim->y = blockDim->z = 1; }
     if (sharedMem) { *sharedMem = 0; }
     if (stream) { *stream = (cudaStream_t)0; }
+    return 0;
+}
+
+__attribute__((used))
+cudaError_t cudaLaunchKernel(const void* func,
+                             dim3 gridDim,
+                             dim3 blockDim,
+                             void** args,
+                             size_t sharedMem,
+                             cudaStream_t stream) {
+    (void)gridDim; (void)blockDim; (void)args; (void)sharedMem; (void)stream;
+    (void)func;
     return 0;
 }
 
@@ -331,7 +512,19 @@ void __cudaRegisterVar(void** fatCubinHandle,
 
 void* __cudaGetKernel(const void* f) { return (void*)f; }
 
+cudaError_t __cudaInitModule(void** fatCubinHandle) {
+    (void)fatCubinHandle;
+    return 0;
+}
+
 // Driver entry point query
+cudaError_t cudaGetDriverEntryPoint(const char* symbol,
+                                   void** funcPtr,
+                                   int driverVersion,
+                                   unsigned long long flags) {
+    return cudaGetDriverEntryPointByVersion(symbol, funcPtr, driverVersion, flags);
+}
+
 cudaError_t cudaGetDriverEntryPointByVersion(const char* symbol,
                                              void** funcPtr,
                                              int driverVersion,
@@ -371,6 +564,20 @@ cudaError_t cudaMemPoolSetAccess(cudaMemPool_t memPool, const void* descList, si
     (void)memPool; (void)descList; (void)count; return 0;
 }
 
+cudaError_t cudaMemPoolCreate(cudaMemPool_t* memPool, const void* poolProps) {
+    (void)poolProps;
+    if (memPool) *memPool = (cudaMemPool_t)0;
+    return 0;
+}
+
+cudaError_t cudaMemPoolDestroy(cudaMemPool_t memPool) {
+    (void)memPool; return 0;
+}
+
+cudaError_t cudaMallocFromPoolAsync(void** ptr, size_t size, cudaMemPool_t memPool, cudaStream_t stream) {
+    (void)memPool; (void)stream; return cudaMalloc(ptr, size);
+}
+
 // Memory info
 cudaError_t cudaMemGetInfo(size_t* free, size_t* total) {
     const size_t sixteen_gb = (size_t)16 * 1024 * 1024 * 1024ULL;
@@ -407,7 +614,72 @@ cudaError_t cudaMemcpyAsync(void* dst, const void* src, size_t count, cudaMemcpy
 }
 
 cudaError_t cudaMemcpyPeerAsync(void* dst, int dstDevice, const void* src, int srcDevice, size_t count, cudaStream_t stream) {
-    (void)dst; (void)dstDevice; (void)src; (void)srcDevice; (void)count; (void)stream;
+    (void)dstDevice; (void)srcDevice; (void)stream;
+    if (dst && src && count > 0) {
+        memcpy(dst, src, count);
+    }
+    return 0;
+}
+
+cudaError_t cudaMemcpyToSymbol(const void* symbol,
+                               const void* src,
+                               size_t count,
+                               size_t offset,
+                               cudaMemcpyKind kind) {
+    (void)kind;
+    if (!symbol || !src || count == 0) return 0;
+    unsigned char* dst_bytes = (unsigned char*)(uintptr_t)symbol;
+    memcpy(dst_bytes + offset, src, count);
+    return 0;
+}
+
+cudaError_t cudaMemcpyToSymbolAsync(const void* symbol,
+                                    const void* src,
+                                    size_t count,
+                                    size_t offset,
+                                    cudaMemcpyKind kind,
+                                    cudaStream_t stream) {
+    (void)stream;
+    return cudaMemcpyToSymbol(symbol, src, count, offset, kind);
+}
+
+cudaError_t cudaMemcpyFromSymbol(void* dst,
+                                 const void* symbol,
+                                 size_t count,
+                                 size_t offset,
+                                 cudaMemcpyKind kind) {
+    (void)kind;
+    if (!dst || !symbol || count == 0) return 0;
+    const unsigned char* src_bytes = (const unsigned char*)(uintptr_t)symbol;
+    memcpy(dst, src_bytes + offset, count);
+    return 0;
+}
+
+cudaError_t cudaMemcpyFromSymbolAsync(void* dst,
+                                      const void* symbol,
+                                      size_t count,
+                                      size_t offset,
+                                      cudaMemcpyKind kind,
+                                      cudaStream_t stream) {
+    (void)stream;
+    return cudaMemcpyFromSymbol(dst, symbol, count, offset, kind);
+}
+
+cudaError_t cudaGetSymbolAddress(void** devPtr, const void* symbol) {
+    if (!devPtr) return 1;
+    *devPtr = (void*)(uintptr_t)symbol;
+    return 0;
+}
+
+cudaError_t cudaGetSymbolSize(size_t* size, const void* symbol) {
+    (void)symbol;
+    if (size) *size = 0;
+    return 0;
+}
+
+cudaError_t cudaGetFuncBySymbol(cudaFunction_t* functionPtr, const void* symbol) {
+    if (!functionPtr) return 1;
+    *functionPtr = (cudaFunction_t)(uintptr_t)symbol;
     return 0;
 }
 

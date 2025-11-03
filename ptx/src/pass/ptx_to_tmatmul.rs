@@ -99,14 +99,16 @@ impl PtxToTMatmulCompiler {
                 if args.len() >= 2 {
                     let dst_ssa = self.map_ptx_to_ssa(args[0]);
                     let src_mem = args[1];
-                    self.codegen.emit_operation("tmatmul.ldv", &[src_mem], &[&dst_ssa])?;
+                    self.codegen
+                        .emit_operation("tmatmul.ldv", &[src_mem], &[&dst_ssa])?;
                 }
             }
             "st.global" | "st.param" | "st" => {
                 if args.len() >= 2 {
                     let src_ssa = self.map_ptx_to_ssa(args[0]);
                     let dst_mem = args[1];
-                    self.codegen.emit_operation("tmatmul.sv", &[&src_ssa, dst_mem], &[])?;
+                    self.codegen
+                        .emit_operation("tmatmul.sv", &[&src_ssa, dst_mem], &[])?;
                 }
             }
 
@@ -116,7 +118,11 @@ impl PtxToTMatmulCompiler {
                     let dst_ssa = self.map_ptx_to_ssa(args[0]);
                     let src1_ssa = self.map_ptx_to_ssa(args[1]);
                     let src2_ssa = self.map_ptx_to_ssa(args[2]);
-                    self.codegen.emit_operation("tmatmul.add", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                    self.codegen.emit_operation(
+                        "tmatmul.add",
+                        &[&src1_ssa, &src2_ssa],
+                        &[&dst_ssa],
+                    )?;
                 }
             }
             "sub.f32" | "sub.f64" | "sub" => {
@@ -124,7 +130,11 @@ impl PtxToTMatmulCompiler {
                     let dst_ssa = self.map_ptx_to_ssa(args[0]);
                     let src1_ssa = self.map_ptx_to_ssa(args[1]);
                     let src2_ssa = self.map_ptx_to_ssa(args[2]);
-                    self.codegen.emit_operation("tmatmul.sub", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                    self.codegen.emit_operation(
+                        "tmatmul.sub",
+                        &[&src1_ssa, &src2_ssa],
+                        &[&dst_ssa],
+                    )?;
                 }
             }
             "mul.f32" | "mul.f64" | "mul" => {
@@ -132,7 +142,11 @@ impl PtxToTMatmulCompiler {
                     let dst_ssa = self.map_ptx_to_ssa(args[0]);
                     let src1_ssa = self.map_ptx_to_ssa(args[1]);
                     let src2_ssa = self.map_ptx_to_ssa(args[2]);
-                    self.codegen.emit_operation("tmatmul.mul", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                    self.codegen.emit_operation(
+                        "tmatmul.mul",
+                        &[&src1_ssa, &src2_ssa],
+                        &[&dst_ssa],
+                    )?;
                 }
             }
             "div.f32" | "div.f64" | "div" => {
@@ -140,7 +154,11 @@ impl PtxToTMatmulCompiler {
                     let dst_ssa = self.map_ptx_to_ssa(args[0]);
                     let src1_ssa = self.map_ptx_to_ssa(args[1]);
                     let src2_ssa = self.map_ptx_to_ssa(args[2]);
-                    self.codegen.emit_operation("tmatmul.div", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                    self.codegen.emit_operation(
+                        "tmatmul.div",
+                        &[&src1_ssa, &src2_ssa],
+                        &[&dst_ssa],
+                    )?;
                 }
             }
 
@@ -165,8 +183,13 @@ impl PtxToTMatmulCompiler {
 
                     // Emit as mul + add
                     let temp_ssa = self.new_ssa();
-                    self.codegen.emit_operation("tmatmul.mul", &[&a_ssa, &b_ssa], &[&temp_ssa])?;
-                    self.codegen.emit_operation("tmatmul.add", &[&temp_ssa, &c_ssa], &[&dst_ssa])?;
+                    self.codegen
+                        .emit_operation("tmatmul.mul", &[&a_ssa, &b_ssa], &[&temp_ssa])?;
+                    self.codegen.emit_operation(
+                        "tmatmul.add",
+                        &[&temp_ssa, &c_ssa],
+                        &[&dst_ssa],
+                    )?;
                 }
             }
 
@@ -189,7 +212,8 @@ impl PtxToTMatmulCompiler {
             }
 
             _ => {
-                self.codegen.add_comment(&format!("PTX: {} (not yet mapped)", inst));
+                self.codegen
+                    .add_comment(&format!("PTX: {} (not yet mapped)", inst));
             }
         }
 
@@ -202,10 +226,14 @@ impl PtxToTMatmulCompiler {
         module: ast::Module<'input>,
     ) -> Result<TMatmulCompilationResult, String> {
         self.codegen.add_section("COMPILED FROM PTX");
-        self.codegen.add_comment(&format!("PTX version: {}.{}", module.version.0, module.version.1));
+        self.codegen.add_comment(&format!(
+            "PTX version: {}.{}",
+            module.version.0, module.version.1
+        ));
 
         let directive_count = module.directives.len();
-        self.codegen.add_comment(&format!("Processing {} PTX directives", directive_count));
+        self.codegen
+            .add_comment(&format!("Processing {} PTX directives", directive_count));
 
         // Process each directive
         for directive in module.directives {
@@ -230,12 +258,17 @@ impl PtxToTMatmulCompiler {
     /// Compile a PTX function/kernel
     fn compile_function<'input>(
         &mut self,
-        function: ast::Function<'input, &'input str, ast::Statement<ast::ParsedOperand<&'input str>>>,
+        function: ast::Function<
+            'input,
+            &'input str,
+            ast::Statement<ast::ParsedOperand<&'input str>>,
+        >,
     ) -> Result<(), String> {
         let func_name = function.func_directive.name();
         self.current_function = Some(func_name.to_string());
 
-        self.codegen.add_section(&format!("FUNCTION: {}", func_name));
+        self.codegen
+            .add_section(&format!("FUNCTION: {}", func_name));
 
         // Process function body if it exists
         if let Some(body) = function.body {
@@ -248,7 +281,10 @@ impl PtxToTMatmulCompiler {
     }
 
     /// Compile a PTX statement
-    fn compile_statement(&mut self, statement: &ast::Statement<ast::ParsedOperand<&str>>) -> Result<(), String> {
+    fn compile_statement(
+        &mut self,
+        statement: &ast::Statement<ast::ParsedOperand<&str>>,
+    ) -> Result<(), String> {
         match statement {
             ast::Statement::Label(label) => {
                 self.codegen.add_comment(&format!("Label: {}", label));
@@ -270,7 +306,10 @@ impl PtxToTMatmulCompiler {
     }
 
     /// Compile a PTX instruction to TMatmul operations
-    fn compile_instruction(&mut self, inst: &ast::Instruction<ast::ParsedOperand<&str>>) -> Result<(), String> {
+    fn compile_instruction(
+        &mut self,
+        inst: &ast::Instruction<ast::ParsedOperand<&str>>,
+    ) -> Result<(), String> {
         self.stats.total_operations += 1;
 
         match inst {
@@ -284,7 +323,8 @@ impl PtxToTMatmulCompiler {
                 let src1_ssa = self.map_ptx_to_ssa(&src1_name);
                 let src2_ssa = self.map_ptx_to_ssa(&src2_name);
 
-                self.codegen.emit_operation("tmatmul.add", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.add", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
             }
             ast::Instruction::Sub { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
@@ -295,7 +335,8 @@ impl PtxToTMatmulCompiler {
                 let src1_ssa = self.map_ptx_to_ssa(&src1_name);
                 let src2_ssa = self.map_ptx_to_ssa(&src2_name);
 
-                self.codegen.emit_operation("tmatmul.sub", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.sub", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
             }
             ast::Instruction::Mul { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
@@ -306,7 +347,8 @@ impl PtxToTMatmulCompiler {
                 let src1_ssa = self.map_ptx_to_ssa(&src1_name);
                 let src2_ssa = self.map_ptx_to_ssa(&src2_name);
 
-                self.codegen.emit_operation("tmatmul.mul", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.mul", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
             }
             ast::Instruction::Div { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
@@ -317,7 +359,8 @@ impl PtxToTMatmulCompiler {
                 let src1_ssa = self.map_ptx_to_ssa(&src1_name);
                 let src2_ssa = self.map_ptx_to_ssa(&src2_name);
 
-                self.codegen.emit_operation("tmatmul.div", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.div", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
             }
 
             // Fused multiply-add
@@ -334,8 +377,13 @@ impl PtxToTMatmulCompiler {
 
                 // Emit as mul + add
                 let temp_ssa = self.new_ssa();
-                self.codegen.emit_operation("tmatmul.mul", &[&src1_ssa, &src2_ssa], &[&temp_ssa])?;
-                self.codegen.emit_operation("tmatmul.add", &[&temp_ssa, &src3_ssa], &[&dst_ssa])?;
+                self.codegen.emit_operation(
+                    "tmatmul.mul",
+                    &[&src1_ssa, &src2_ssa],
+                    &[&temp_ssa],
+                )?;
+                self.codegen
+                    .emit_operation("tmatmul.add", &[&temp_ssa, &src3_ssa], &[&dst_ssa])?;
             }
             ast::Instruction::Fma { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
@@ -350,8 +398,13 @@ impl PtxToTMatmulCompiler {
 
                 // Emit as mul + add
                 let temp_ssa = self.new_ssa();
-                self.codegen.emit_operation("tmatmul.mul", &[&src1_ssa, &src2_ssa], &[&temp_ssa])?;
-                self.codegen.emit_operation("tmatmul.add", &[&temp_ssa, &src3_ssa], &[&dst_ssa])?;
+                self.codegen.emit_operation(
+                    "tmatmul.mul",
+                    &[&src1_ssa, &src2_ssa],
+                    &[&temp_ssa],
+                )?;
+                self.codegen
+                    .emit_operation("tmatmul.add", &[&temp_ssa, &src3_ssa], &[&dst_ssa])?;
             }
 
             // Memory operations
@@ -360,14 +413,16 @@ impl PtxToTMatmulCompiler {
                 let src_name = Self::operand_to_string(&arguments.src);
 
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen.emit_operation("tmatmul.ldv", &[&src_name], &[&dst_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.ldv", &[&src_name], &[&dst_ssa])?;
             }
             ast::Instruction::St { arguments, .. } => {
                 let addr_name = Self::operand_to_string(&arguments.src1);
                 let val_name = Self::operand_to_string(&arguments.src2);
 
                 let val_ssa = self.map_ptx_to_ssa(&val_name);
-                self.codegen.emit_operation("tmatmul.sv", &[&val_ssa, &addr_name], &[])?;
+                self.codegen
+                    .emit_operation("tmatmul.sv", &[&val_ssa, &addr_name], &[])?;
             }
 
             // Move operations
@@ -387,7 +442,8 @@ impl PtxToTMatmulCompiler {
 
             // Other instructions - add as comments for now
             _ => {
-                self.codegen.add_comment(&format!("PTX: {} (not yet mapped)", Self::inst_name(inst)));
+                self.codegen
+                    .add_comment(&format!("PTX: {} (not yet mapped)", Self::inst_name(inst)));
             }
         }
 
@@ -576,7 +632,9 @@ fn sanitize_ptx_source(src: &str) -> String {
                 .collect();
             // Some formats have trailing comma before bracket; trim it
             if let Some(last) = dests.last_mut() {
-                if last.ends_with(',') { last.pop(); }
+                if last.ends_with(',') {
+                    last.pop();
+                }
             }
             let addr_inside = right.split(']').next().unwrap_or("").trim().to_string();
             for d in dests {
@@ -613,7 +671,9 @@ fn sanitize_ptx_source(src: &str) -> String {
         if cur.contains(" + 0") {
             cur = cur.replace(" + 0", "");
         }
-        if cur.contains(" ]") { cur = cur.replace(" ]", "]"); }
+        if cur.contains(" ]") {
+            cur = cur.replace(" ]", "]");
+        }
 
         out.push_str(&cur);
         out.push('\n');
@@ -637,11 +697,15 @@ struct GemmPattern;
 impl Pattern for GemmPattern {
     fn matches(&self, instructions: &[String]) -> bool {
         // Look for nested loops with MAD instructions
-        instructions.iter().any(|i| i.contains("mad.f32") || i.contains("fma"))
+        instructions
+            .iter()
+            .any(|i| i.contains("mad.f32") || i.contains("fma"))
     }
 
     fn optimize(&self, compiler: &mut PtxToTMatmulCompiler) -> Result<(), String> {
-        compiler.codegen.add_comment("Detected GEMM pattern - using tmatmul accelerator");
+        compiler
+            .codegen
+            .add_comment("Detected GEMM pattern - using tmatmul accelerator");
         // Would emit tmatmul_import/go/export sequence
         Ok(())
     }
@@ -664,14 +728,18 @@ impl Pattern for ActivationPattern {
         match self.kind {
             ActivationKind::Sigmoid => {
                 // Sigmoid: 1 / (1 + exp(-x))
-                instructions.iter().any(|i| i.contains("exp") && i.contains("rcp"))
+                instructions
+                    .iter()
+                    .any(|i| i.contains("exp") && i.contains("rcp"))
             }
-            ActivationKind::ReLU => {
-                instructions.iter().any(|i| i.contains("max") && i.contains("0"))
-            }
+            ActivationKind::ReLU => instructions
+                .iter()
+                .any(|i| i.contains("max") && i.contains("0")),
             ActivationKind::SiLU => {
                 // SiLU: x * sigmoid(x)
-                instructions.iter().any(|i| i.contains("mul") && i.contains("exp"))
+                instructions
+                    .iter()
+                    .any(|i| i.contains("mul") && i.contains("exp"))
             }
         }
     }
@@ -679,10 +747,14 @@ impl Pattern for ActivationPattern {
     fn optimize(&self, compiler: &mut PtxToTMatmulCompiler) -> Result<(), String> {
         match self.kind {
             ActivationKind::Sigmoid => {
-                compiler.codegen.add_comment("Detected sigmoid pattern - using sig instruction");
+                compiler
+                    .codegen
+                    .add_comment("Detected sigmoid pattern - using sig instruction");
             }
             ActivationKind::SiLU => {
-                compiler.codegen.add_comment("Detected SiLU pattern - using silu instruction");
+                compiler
+                    .codegen
+                    .add_comment("Detected SiLU pattern - using silu instruction");
             }
             ActivationKind::ReLU => {
                 compiler.codegen.add_comment("Detected ReLU pattern");
@@ -696,13 +768,21 @@ impl PatternOptimizer {
     pub fn new() -> Self {
         let mut patterns: Vec<Box<dyn Pattern>> = Vec::new();
         patterns.push(Box::new(GemmPattern));
-        patterns.push(Box::new(ActivationPattern { kind: ActivationKind::Sigmoid }));
-        patterns.push(Box::new(ActivationPattern { kind: ActivationKind::SiLU }));
+        patterns.push(Box::new(ActivationPattern {
+            kind: ActivationKind::Sigmoid,
+        }));
+        patterns.push(Box::new(ActivationPattern {
+            kind: ActivationKind::SiLU,
+        }));
 
         Self { patterns }
     }
 
-    pub fn optimize(&self, instructions: &[String], compiler: &mut PtxToTMatmulCompiler) -> Result<(), String> {
+    pub fn optimize(
+        &self,
+        instructions: &[String],
+        compiler: &mut PtxToTMatmulCompiler,
+    ) -> Result<(), String> {
         for pattern in &self.patterns {
             if pattern.matches(instructions) {
                 pattern.optimize(compiler)?;
@@ -761,7 +841,9 @@ mod tests {
         compiler.setup_standard_memory_map();
 
         // Test add instruction
-        compiler.convert_ptx_instruction("add.f32", &["r1", "r2", "r3"]).unwrap();
+        compiler
+            .convert_ptx_instruction("add.f32", &["r1", "r2", "r3"])
+            .unwrap();
 
         let assembly = compiler.get_assembly();
         assert!(assembly.contains("add"));

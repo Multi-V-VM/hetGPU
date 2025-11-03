@@ -5,7 +5,7 @@ use std::{collections::hash_map, fs::File, io::Write, iter, path::PathBuf, str::
 use syn::{
     parse_quote, punctuated::Punctuated, visit_mut::VisitMut, Abi, Fields, FieldsUnnamed, FnArg,
     ForeignItem, ForeignItemFn, Ident, Item, ItemConst, ItemForeignMod, ItemUse, LitStr, Path,
-    PathArguments, Signature, Type, TypePath, UseTree, PathSegment
+    PathArguments, PathSegment, Signature, Type, TypePath, UseTree,
 };
 
 fn main() {
@@ -583,7 +583,7 @@ fn cuda_derive_display_trait_for_item<'a>(
     state: &mut DeriveDisplayState<'a>,
     item: &'a Item,
 ) -> Option<syn::Item> {
-    let path_prefix = & state.types_crate;
+    let path_prefix = &state.types_crate;
     let path_prefix_iter = iter::repeat(&path_prefix);
     let mut prepend_path = PrependCudaPath {
         module: Ident::new("cuda", Span::call_site()),
@@ -856,7 +856,7 @@ fn generate_ze_runtime(output: &PathBuf, path: &[&str]) {
         .generate()
         .unwrap()
         .to_string();
-    
+
     let mut module: syn::File = syn::parse_str(&ze_header).unwrap();
     let mut converter = ConvertIntoRustResult {
         type_: "ze_result_t",
@@ -893,7 +893,6 @@ fn generate_ze_runtime(output: &PathBuf, path: &[&str]) {
             "ze_fence_handle_t",
         ],
     );
-    
 
     let mut output = output.clone();
     output.extend(path);
@@ -930,21 +929,20 @@ fn generate_tt_runtime(output: &PathBuf, path: &[&str]) {
         .generate()
         .unwrap()
         .to_string();
-    
+
     let mut module: syn::File = syn::parse_str(&tt_header).unwrap();
-    
+
     // Add Send/Sync implementations for opaque handle types
     add_send_sync(
         &mut module.items,
         &[
             "tt_Device",
-            "tt_Program", 
+            "tt_Program",
             "tt_Buffer",
             "tt_CircularBuffer",
             "tt_Kernel",
         ],
     );
-
 
     let mut output = output.clone();
     output.extend(path);

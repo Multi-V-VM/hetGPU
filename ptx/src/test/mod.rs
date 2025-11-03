@@ -1,8 +1,8 @@
 use crate::pass::{self, TranslateError};
 use ptx_parser as ast;
 
-mod spirv_run;
 mod sass_debug_mapping;
+mod spirv_run;
 
 #[cfg(not(feature = "ci_build"))]
 #[macro_export]
@@ -135,9 +135,14 @@ fn debug_round_trip_with_sass_mapping() -> Result<(), Box<dyn std::error::Error>
     println!("{}", regenerated_ptx);
 
     // Basic validation: check that PTX was generated
-    assert!(!regenerated_ptx.is_empty(), "Regenerated PTX should not be empty");
-    assert!(regenerated_ptx.contains(".target") || regenerated_ptx.contains("PTX"),
-            "Regenerated output should contain PTX markers");
+    assert!(
+        !regenerated_ptx.is_empty(),
+        "Regenerated PTX should not be empty"
+    );
+    assert!(
+        regenerated_ptx.contains(".target") || regenerated_ptx.contains("PTX"),
+        "Regenerated output should contain PTX markers"
+    );
 
     // Check for debug-related content (either .loc directives or debug metadata)
     let has_debug_info = regenerated_ptx.contains(".loc")
@@ -178,14 +183,18 @@ fn llvm_ir_contains_debug_metadata() -> Result<(), Box<dyn std::error::Error>> {
         |_| {},
     )?;
 
-    let llvm_ir = module.print_to_string()
+    let llvm_ir = module
+        .print_to_string()
         .map_err(|e| format!("Failed to get LLVM IR: {:?}", e))?;
 
     println!("=== LLVM IR ===");
     println!("{}", llvm_ir);
 
     // LLVM IR should contain function definitions
-    assert!(llvm_ir.contains("define"), "LLVM IR should contain function definitions");
+    assert!(
+        llvm_ir.contains("define"),
+        "LLVM IR should contain function definitions"
+    );
 
     Ok(())
 }

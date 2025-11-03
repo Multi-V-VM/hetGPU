@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Read PTX source
     let ptx_source = fs::read_to_string(input_file)?;
-    
+
     // Parse PTX
     let ast = ptx_parser::parse_module_checked(&ptx_source)
         .map_err(|e| format!("Failed to parse PTX: {:?}", e))?;
@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(mlir_code) => {
             println!("Generated MLIR:");
             println!("{}", mlir_code);
-            
+
             // Write to file
             let output_file = input_file.replace(".ptx", "_linalg.mlir");
             fs::write(&output_file, &mlir_code)?;

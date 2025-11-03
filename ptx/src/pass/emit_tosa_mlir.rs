@@ -18,7 +18,7 @@ const TENSOR_BATCH_DIM: i64 = 1;
 enum BasicType {
     I1,   // Boolean
     I8,   // 8-bit integer
-    I16,  // 16-bit integer  
+    I16,  // 16-bit integer
     I32,  // 32-bit integer
     I64,  // 64-bit integer
     F16,  // 16-bit float
@@ -29,9 +29,9 @@ enum BasicType {
 
 #[derive(Debug, Clone, PartialEq)]
 struct TensorType {
-    x: i64,           // Batch dimension (polymorphic)
-    y: i64,           // Size dimension (1 for scalars, n for vectors)
-    ty: BasicType,    // Element type
+    x: i64,        // Batch dimension (polymorphic)
+    y: i64,        // Size dimension (1 for scalars, n for vectors)
+    ty: BasicType, // Element type
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -124,11 +124,11 @@ struct PtxToTosaConverter<'a, 'input> {
     ssa_types: HashMap<String, MlirType>, // Track type of each SSA value
     parameter_values: HashMap<String, String>, // Track actual parameter data
     current_function_return_type: Option<MlirType>, // Track the expected return type of current function
-    ssa_to_var_name: HashMap<String, String>, // Track SSA value to original variable name
-    
+    ssa_to_var_name: HashMap<String, String>,       // Track SSA value to original variable name
+
     // Address tracking for load indirection
     param_addresses: HashMap<SpirvWord, String>, // Maps address variables to parameter names
-    next_arg_index: usize, // Track next argument index for data loads
+    next_arg_index: usize,                       // Track next argument index for data loads
 
     // Debug info fields
     debug_enabled: bool,
@@ -144,30 +144,42 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     // Helper methods for type checking
     fn is_integer_type(mlir_type: &MlirType) -> bool {
         match mlir_type {
-            MlirType::Basic(basic) => matches!(basic, BasicType::I1 | BasicType::I8 | BasicType::I16 | BasicType::I32 | BasicType::I64),
-            MlirType::Tensor(tensor) => matches!(tensor.ty, BasicType::I1 | BasicType::I8 | BasicType::I16 | BasicType::I32 | BasicType::I64),
+            MlirType::Basic(basic) => matches!(
+                basic,
+                BasicType::I1 | BasicType::I8 | BasicType::I16 | BasicType::I32 | BasicType::I64
+            ),
+            MlirType::Tensor(tensor) => matches!(
+                tensor.ty,
+                BasicType::I1 | BasicType::I8 | BasicType::I16 | BasicType::I32 | BasicType::I64
+            ),
         }
     }
-    
+
     fn is_float_type(mlir_type: &MlirType) -> bool {
         match mlir_type {
-            MlirType::Basic(basic) => matches!(basic, BasicType::F16 | BasicType::F32 | BasicType::F64 | BasicType::BF16),
-            MlirType::Tensor(tensor) => matches!(tensor.ty, BasicType::F16 | BasicType::F32 | BasicType::F64 | BasicType::BF16),
+            MlirType::Basic(basic) => matches!(
+                basic,
+                BasicType::F16 | BasicType::F32 | BasicType::F64 | BasicType::BF16
+            ),
+            MlirType::Tensor(tensor) => matches!(
+                tensor.ty,
+                BasicType::F16 | BasicType::F32 | BasicType::F64 | BasicType::BF16
+            ),
         }
     }
-    
+
     fn get_element_type(mlir_type: &MlirType) -> BasicType {
         match mlir_type {
             MlirType::Basic(basic) => basic.clone(),
             MlirType::Tensor(tensor) => tensor.ty.clone(),
         }
     }
-    
+
     // Helper to check if type contains specific element
     fn has_element_type(type_str: &str, elem: &str) -> bool {
         type_str.contains(elem)
     }
-    
+
     fn scalar_type_to_string(&self, scalar: ast::ScalarType) -> &'static str {
         match scalar {
             ast::ScalarType::B8 => "b8",
@@ -196,7 +208,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ast::ScalarType::E5m2x2 => "e5m2x2",
         }
     }
-    
+
     fn ptx_scalar_to_basic_type(scalar: ast::ScalarType) -> BasicType {
         match scalar {
             ast::ScalarType::B8 | ast::ScalarType::U8 | ast::ScalarType::S8 => BasicType::I8,
@@ -212,7 +224,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             _ => BasicType::I32,
         }
     }
-    
+
     fn new(id_defs: &'a GlobalStringIdentResolver2<'input>) -> Self {
         Self {
             id_defs,
@@ -228,7 +240,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             parameter_values: HashMap::new(),
             current_function_return_type: None,
             ssa_to_var_name: HashMap::new(),
-            
+
             // Address tracking
             param_addresses: HashMap::new(),
             next_arg_index: 0,
@@ -349,11 +361,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 y: 1,
                 ty: BasicType::I32,
             }),
-            FunctionCategory::Comparison | FunctionCategory::Shift => MlirType::Tensor(TensorType {
-                x: TENSOR_BATCH_DIM,
-                y: 1,
-                ty: BasicType::I32,
-            }),
+            FunctionCategory::Comparison | FunctionCategory::Shift => {
+                MlirType::Tensor(TensorType {
+                    x: TENSOR_BATCH_DIM,
+                    y: 1,
+                    ty: BasicType::I32,
+                })
+            }
             FunctionCategory::Default => self.get_default_tensor_type(),
         }
     }
@@ -365,11 +379,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 y: 1,
                 ty: BasicType::I32,
             }),
-            FunctionCategory::Comparison | FunctionCategory::Shift => MlirType::Tensor(TensorType {
-                x: TENSOR_BATCH_DIM,
-                y: 1,
-                ty: BasicType::I32,
-            }),
+            FunctionCategory::Comparison | FunctionCategory::Shift => {
+                MlirType::Tensor(TensorType {
+                    x: TENSOR_BATCH_DIM,
+                    y: 1,
+                    ty: BasicType::I32,
+                })
+            }
             FunctionCategory::Default => self.get_default_tensor_type(),
         }
     }
@@ -378,9 +394,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         eprintln!("ZLUDA DEBUG: Current value_map contents:");
         let mut entries: Vec<_> = self.value_map.iter().collect();
         entries.sort_by_key(|(k, _)| k.0);
-        
+
         for (k, v) in entries {
-            let var_name = self.id_defs.ident_map.get(k)
+            let var_name = self
+                .id_defs
+                .ident_map
+                .get(k)
                 .and_then(|entry| entry.name.as_ref())
                 .map(|n| n.to_string())
                 .unwrap_or_else(|| {
@@ -401,7 +420,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             eprintln!("  {:3} ({:20}) -> {}", k.0, var_name, v);
         }
     }
-    
+
     fn debug_print_ssa_types(&self) {
         eprintln!("ZLUDA DEBUG: Current ssa_types contents:");
         let mut entries: Vec<_> = self.ssa_types.iter().collect();
@@ -411,23 +430,28 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 .and_then(|s| s.parse::<u32>().ok())
                 .unwrap_or(u32::MAX)
         });
-        
+
         for (ssa_val, type_str) in entries {
             // Try to find the variable name associated with this SSA value
-            let var_info = self.value_map.iter()
+            let var_info = self
+                .value_map
+                .iter()
                 .find(|(_, v)| *v == ssa_val)
                 .and_then(|(k, _)| {
-                    self.id_defs.ident_map.get(k)
+                    self.id_defs
+                        .ident_map
+                        .get(k)
                         .and_then(|entry| entry.name.as_ref())
                         .map(|n| format!(" ({})", n))
                 })
                 .unwrap_or_else(|| {
                     // Check if this SSA value has a name mapping
-                    self.ssa_to_var_name.get(ssa_val)
+                    self.ssa_to_var_name
+                        .get(ssa_val)
                         .map(|n| format!(" ({})", n))
                         .unwrap_or_else(|| String::new())
                 });
-            
+
             eprintln!("  {} : {}{}", ssa_val, type_str, var_info);
         }
         eprintln!("ZLUDA DEBUG: End of ssa_types");
@@ -545,18 +569,26 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let mut load_types = Vec::new();
         if let Some(ref body) = method.body {
             for statement in body {
-                if let Statement::Instruction(ast::Instruction::Ld { data, arguments }) = statement {
+                if let Statement::Instruction(ast::Instruction::Ld { data, arguments }) = statement
+                {
                     // Count loads that are from generic or global memory (data loads, not parameter loads)
-                    if data.state_space == ast::StateSpace::Generic || data.state_space == ast::StateSpace::Global {
+                    if data.state_space == ast::StateSpace::Generic
+                        || data.state_space == ast::StateSpace::Global
+                    {
                         num_data_loads += 1;
                         // Track the type of each load for proper signature generation
                         let load_type = match &data.typ {
                             ast::Type::Scalar(scalar) => self.get_scalar_tensor_type(*scalar),
-                            ast::Type::Vector(len, scalar) => self.get_vector_tensor_type(*len, *scalar),
+                            ast::Type::Vector(len, scalar) => {
+                                self.get_vector_tensor_type(*len, *scalar)
+                            }
                             _ => self.get_scalar_tensor_type(ast::ScalarType::U32), // default
                         };
                         load_types.push(load_type.clone());
-                        eprintln!("ZLUDA DEBUG: Found data load #{} of type {}", num_data_loads, load_type);
+                        eprintln!(
+                            "ZLUDA DEBUG: Found data load #{} of type {}",
+                            num_data_loads, load_type
+                        );
                     }
                 }
             }
@@ -568,28 +600,32 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // For TOSA MLIR, we need to generate parameters based on the actual data loads
         // in the function body, not the PTX pointer parameters
         let mut param_index = 0;
-        
-        eprintln!("ZLUDA DEBUG: Processing function {} with {} PTX parameters and {} data loads", 
-                 func_name, method.input_arguments.len(), num_data_loads);
-        
+
+        eprintln!(
+            "ZLUDA DEBUG: Processing function {} with {} PTX parameters and {} data loads",
+            func_name,
+            method.input_arguments.len(),
+            num_data_loads
+        );
+
         // Initialize actual_input_params outside the conditional
         let mut actual_input_params = Vec::new();
-        
+
         // Generate parameters based on the pre-scanned data loads
         if num_data_loads > 0 && !load_types.is_empty() {
             // For functions with data loads, generate one parameter per load
             // This handles cases where multiple values are loaded from the same pointer
             let num_params = load_types.len();
-            
+
             // Generate parameters using load types
             for i in 0..num_params {
                 if i > 0 {
                     signature.push_str(", ");
                 }
-                
+
                 let param_type = load_types[i].clone();
                 signature.push_str(&format!("%arg{}: {}", i, param_type));
-                
+
                 // For parameter mapping, use the first PTX input parameter
                 // Multiple loads may come from the same PTX parameter (e.g., array access)
                 if i == 0 && !method.input_arguments.is_empty() {
@@ -601,18 +637,24 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         } else {
             // Fallback: If no data loads were found, use the original PTX parameter logic
             // This handles special cases like single-parameter functions
-            
+
             for (i, param) in method.input_arguments.iter().enumerate() {
                 // Convert type to string for debug output
                 let type_str = match &param.info.v_type {
                     ast::Type::Scalar(s) => format!("Scalar({})", self.scalar_type_to_string(*s)),
-                    ast::Type::Vector(n, s) => format!("Vector({}, {})", n, self.scalar_type_to_string(*s)),
+                    ast::Type::Vector(n, s) => {
+                        format!("Vector({}, {})", n, self.scalar_type_to_string(*s))
+                    }
                     ast::Type::Array(_, s, dims) => format!("Array({} dims)", dims.len()),
-                    ast::Type::Pointer(s, space) => format!("Pointer({}, {:?})", self.scalar_type_to_string(*s), space),
+                    ast::Type::Pointer(s, space) => {
+                        format!("Pointer({}, {:?})", self.scalar_type_to_string(*s), space)
+                    }
                 };
-                eprintln!("ZLUDA DEBUG: Parameter {}: name={}, type={}", 
-                         i, param.name.0, type_str);
-                
+                eprintln!(
+                    "ZLUDA DEBUG: Parameter {}: name={}, type={}",
+                    i, param.name.0, type_str
+                );
+
                 // Include all input parameters except the last one (which is typically the output parameter)
                 let num_inputs = method.input_arguments.len();
                 if num_inputs > 1 && i >= num_inputs - 1 {
@@ -620,7 +662,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     eprintln!("ZLUDA DEBUG: Skipping parameter {} as output parameter", i);
                     continue;
                 }
-                
+
                 if param_index > 0 {
                     signature.push_str(", ");
                 }
@@ -630,7 +672,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     ast::Type::Pointer(scalar_type, _) => {
                         // This is a pointer to scalar data - use the scalar type as tensor
                         self.get_scalar_tensor_type(*scalar_type)
-                    },
+                    }
                     _ => {
                         // Regular parameter
                         self.convert_type_to_tosa(&param.info.v_type)?
@@ -642,32 +684,35 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 param_index += 1;
             }
         }
-        
+
         // Map parameters after we know which ones are actual inputs
         for (param_name, idx, param_type) in actual_input_params {
             let param_ssa = format!("%arg{}", idx);
-            eprintln!("ZLUDA DEBUG: Mapping parameter {} (id: {}) to SSA value {} with type {}", 
-                     self.get_variable_name(param_name).unwrap_or(format!("param_{}", param_name.0)), 
-                     param_name.0, param_ssa, param_type);
+            eprintln!(
+                "ZLUDA DEBUG: Mapping parameter {} (id: {}) to SSA value {} with type {}",
+                self.get_variable_name(param_name)
+                    .unwrap_or(format!("param_{}", param_name.0)),
+                param_name.0,
+                param_ssa,
+                param_type
+            );
             self.value_map.insert(param_name, param_ssa.clone());
             self.ssa_types.insert(param_ssa, param_type.clone());
         }
-        
+
         // ALSO map the output parameter if it was skipped
         // This is needed for tests like atom_cas where output is loaded as an address
         if method.input_arguments.len() > 1 {
             let last_idx = method.input_arguments.len() - 1;
             let output_param = &method.input_arguments[last_idx];
-            
+
             // Check if this parameter wasn't already mapped (it was skipped)
             if !self.value_map.contains_key(&output_param.name) {
                 let output_param_type = match &output_param.info.v_type {
-                    ast::Type::Pointer(scalar_type, _) => {
-                        self.get_scalar_tensor_type(*scalar_type)
-                    },
-                    _ => self.convert_type_to_tosa(&output_param.info.v_type)?
+                    ast::Type::Pointer(scalar_type, _) => self.get_scalar_tensor_type(*scalar_type),
+                    _ => self.convert_type_to_tosa(&output_param.info.v_type)?,
                 };
-                
+
                 // Map it to a special identifier that won't be in function signature
                 let output_ssa = format!("%output_param");
                 eprintln!("ZLUDA DEBUG: Mapping output parameter {} (id: {}) to SSA value {} with type {}", 
@@ -684,20 +729,25 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // For FMA and similar operations, the return type should match the operation type
         signature.push_str(" -> ");
 
-
         let output_type_mlir = if !method.input_arguments.is_empty() {
             // Always scan for store instructions to determine the actual return type
             let mut store_types = Vec::new();
-            
+
             if let Some(ref body) = method.body {
                 for statement in body {
-                    if let Statement::Instruction(ast::Instruction::St { data, arguments }) = statement {
-                        if data.state_space == ast::StateSpace::Generic || data.state_space == ast::StateSpace::Global {
+                    if let Statement::Instruction(ast::Instruction::St { data, arguments }) =
+                        statement
+                    {
+                        if data.state_space == ast::StateSpace::Generic
+                            || data.state_space == ast::StateSpace::Global
+                        {
                             // Track the type of each store for proper return type determination
                             let ty = match &data.typ {
                                 ast::Type::Scalar(scalar) => self.get_scalar_tensor_type(*scalar),
-                                ast::Type::Vector(len, scalar) => self.get_vector_tensor_type(*len, *scalar),
-                                _ => panic!() //self.get_scalar_tensor_type(ast::ScalarType::U32), // default
+                                ast::Type::Vector(len, scalar) => {
+                                    self.get_vector_tensor_type(*len, *scalar)
+                                }
+                                _ => panic!(), //self.get_scalar_tensor_type(ast::ScalarType::U32), // default
                             };
                             store_types.push(ty.clone());
                             eprintln!("ZLUDA DEBUG: Found store instruction of type {}", ty);
@@ -705,23 +755,24 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     }
                 }
             }
-            
+
             // If we found store instructions, use the last one's type
             if let Some(store_type) = store_types.last() {
-                eprintln!("ZLUDA DEBUG: Using store type {} for function return type", store_type);
+                eprintln!(
+                    "ZLUDA DEBUG: Using store type {} for function return type",
+                    store_type
+                );
                 store_type.clone()
             } else {
                 // Fall back to output parameter type if no stores found
                 let num_inputs = method.input_arguments.len();
                 let output_param_index = if num_inputs > 1 { num_inputs - 1 } else { 0 };
                 let output_param = &method.input_arguments[output_param_index];
-                
+
                 eprintln!("ZLUDA DEBUG: No store instructions found, using output parameter type");
                 match &output_param.info.v_type {
-                    ast::Type::Pointer(scalar_type, _) => {
-                        self.get_scalar_tensor_type(*scalar_type)
-                    },
-                    _ => self.convert_type_to_tosa(&output_param.info.v_type)?
+                    ast::Type::Pointer(scalar_type, _) => self.get_scalar_tensor_type(*scalar_type),
+                    _ => self.convert_type_to_tosa(&output_param.info.v_type)?,
                 }
             }
         } else {
@@ -729,7 +780,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             eprintln!("ZLUDA DEBUG: No input arguments, using default return type");
             self.get_scalar_tensor_type(ast::ScalarType::U64)
         };
-        
+
         let output_type_str = output_type_mlir.to_string();
         signature.push_str(&output_type_str);
         self.current_function_return_type = Some(output_type_mlir);
@@ -780,24 +831,32 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Convert function body
         let mut result_tensor = None;
         let mut output_stores = Vec::new(); // Collect values being stored to output parameters
-        
+
         if let Some(body) = method.body {
             // First, scan for all store instructions to identify output values
-            eprintln!("ZLUDA DEBUG: Scanning for store instructions in function {}", func_name);
+            eprintln!(
+                "ZLUDA DEBUG: Scanning for store instructions in function {}",
+                func_name
+            );
             for (idx, statement) in body.iter().enumerate() {
                 match statement {
-                    Statement::Instruction(ast::Instruction::St { data, arguments, .. }) => {
+                    Statement::Instruction(ast::Instruction::St {
+                        data, arguments, ..
+                    }) => {
                         // Check if this is storing to a parameter/output address
-                        if data.state_space == ast::StateSpace::Param || 
-                           data.state_space == ast::StateSpace::ParamEntry ||
-                           data.state_space == ast::StateSpace::Generic {
-                            eprintln!("  Found output store at #{}: storing value {} to addr {}", 
-                                     idx, arguments.src2.0, arguments.src1.0);
-                            
+                        if data.state_space == ast::StateSpace::Param
+                            || data.state_space == ast::StateSpace::ParamEntry
+                            || data.state_space == ast::StateSpace::Generic
+                        {
+                            eprintln!(
+                                "  Found output store at #{}: storing value {} to addr {}",
+                                idx, arguments.src2.0, arguments.src1.0
+                            );
+
                             // Collect information about the value being stored
                             let value_info = (arguments.src2, arguments.src1); // (value_id, dest_addr_id)
                             output_stores.push(value_info);
-                            
+
                             if let Some(ident_info) = self.id_defs.ident_map.get(&arguments.src2) {
                                 if let Some(name) = &ident_info.name {
                                     eprintln!("    Value name: {}", name);
@@ -811,7 +870,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     _ => {}
                 }
             }
-            
+
             eprintln!("\nZLUDA DEBUG: Found {} output stores", output_stores.len());
             eprintln!("{:?}", output_stores);
 
@@ -827,43 +886,55 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         eprintln!("  result_tensor: {:?}", result_tensor);
         eprintln!("  last_result_ssa: {:?}", self.last_result_ssa);
         eprintln!("  output_stores count: {}", output_stores.len());
-        
+
         // If we have output stores, find the SSA values for those stored values
         if !output_stores.is_empty() {
             // For now, handle single return value case
             if let Some((value_id, _dest_addr)) = output_stores.first() {
                 if let Some(ssa_value) = self.value_map.get(value_id) {
-                    eprintln!("ZLUDA DEBUG: Returning SSA value {} for stored value {}", ssa_value, value_id.0);
+                    eprintln!(
+                        "ZLUDA DEBUG: Returning SSA value {} for stored value {}",
+                        ssa_value, value_id.0
+                    );
                     self.write_line(&format!("return {} : {}", ssa_value, output_type_str));
                     self.indent_level -= 1;
                     self.write_line("}");
                     return Ok(());
                 } else {
-                    eprintln!("ZLUDA ERROR: Could not find SSA value for stored value {}", value_id.0);
+                    eprintln!(
+                        "ZLUDA ERROR: Could not find SSA value for stored value {}",
+                        value_id.0
+                    );
                 }
             }
         }
-        
+
         // Fall back to existing logic if no output stores
         if let Some(result) = result_tensor {
             // For bitwise functions, prefer to use the SSA type of the result value
             let return_type = match self.get_function_category(&func_name) {
                 FunctionCategory::Bitwise => {
                     // First try to get the type from SSA types, then last_result_type, then function return type
-                    self.ssa_types.get(&result).cloned()
+                    self.ssa_types
+                        .get(&result)
+                        .cloned()
                         .or_else(|| self.last_result_type.clone())
                         .or_else(|| self.current_function_return_type.clone())
                         .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
                 }
                 FunctionCategory::Comparison | FunctionCategory::Shift => {
                     // Similar handling for comparison and shift operations
-                    self.ssa_types.get(&result).cloned()
+                    self.ssa_types
+                        .get(&result)
+                        .cloned()
                         .or_else(|| self.last_result_type.clone())
                         .unwrap_or_else(|| self.get_return_type_for_function(&func_name))
                 }
                 FunctionCategory::Default => {
                     // For default functions, use SSA type first, then function return type
-                    self.ssa_types.get(&result).cloned()
+                    self.ssa_types
+                        .get(&result)
+                        .cloned()
                         .or_else(|| self.last_result_type.clone())
                         .or_else(|| self.current_function_return_type.clone())
                         .unwrap_or_else(|| self.get_default_tensor_type())
@@ -879,7 +950,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 FunctionCategory::Bitwise => {
                     // For bitwise operations, return the actual result from the operation
                     if let Some(result_ssa) = self.last_result_ssa.clone() {
-                        let return_type = self.ssa_types.get(&result_ssa).cloned()
+                        let return_type = self
+                            .ssa_types
+                            .get(&result_ssa)
+                            .cloned()
                             .unwrap_or_else(|| self.get_return_type_for_function(&func_name));
                         let return_type_str = return_type.to_string();
                         (result_ssa, return_type_str)
@@ -921,7 +995,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         self.indent_level -= 1;
         self.write_line("}");
-        
+
         // Clear function-specific state
         self.current_function_return_type = None;
 
@@ -997,44 +1071,47 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         &mut self,
         var: ast::Variable<SpirvWord>,
     ) -> Result<(), TranslateError> {
-        eprintln!("ZLUDA DEBUG: Declaring local variable with id: {}", var.name.0);
+        eprintln!(
+            "ZLUDA DEBUG: Declaring local variable with id: {}",
+            var.name.0
+        );
         let tensor_type = self.get_tensor_type(&var.info.v_type)?;
         let var_name = self
             .get_variable_name(var.name)
             .unwrap_or_else(|_| format!("var_{}", var.name.0));
-        
+
         // Create an SSA value for this local variable
         let ssa_name = self.next_ssa_value();
-        
+
         // Generate a constant initialization for the local variable
         let init_value = if Self::is_float_type(&tensor_type) {
             "0.0"
         } else {
             "0"
         };
-        
+
         // Convert MlirType to string for output
         let type_str = tensor_type.to_string();
-        
+
         self.write_line(&format!(
             "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
             ssa_name, init_value, type_str, type_str
         ));
-        
+
         self.value_map.insert(var.name, ssa_name.clone());
         self.ssa_types.insert(ssa_name.clone(), tensor_type.clone());
         // Track the SSA value to variable name mapping
-        self.ssa_to_var_name.insert(ssa_name.clone(), var_name.clone());
-        eprintln!("ZLUDA DEBUG: Registered local variable {} (id {}) as {} with zero initialization", 
-                 var_name, var.name.0, ssa_name);
-        
+        self.ssa_to_var_name
+            .insert(ssa_name.clone(), var_name.clone());
+        eprintln!(
+            "ZLUDA DEBUG: Registered local variable {} (id {}) as {} with zero initialization",
+            var_name, var.name.0, ssa_name
+        );
+
         // Add variable debug info if enabled
         if self.debug_enabled {
             self.add_variable_debug_info(var.name, &var_name, &type_str, "local");
-            self.write_line(&format!(
-                "// Local variable: {} : {}",
-                var_name, type_str
-            ));
+            self.write_line(&format!("// Local variable: {} : {}", var_name, type_str));
         }
 
         Ok(())
@@ -1092,30 +1169,29 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Get the predicate SSA value
         let pred_ssa = self.get_ssa_value(predicate)?;
         eprintln!("{pred_ssa:?}");
-        
+
         // For negated predicates, we need to apply logical_not
         let actual_pred = if negated {
             let neg_pred = self.next_ssa_value();
-            let pred_type = self.ssa_types.get(&pred_ssa)
+            let pred_type = self
+                .ssa_types
+                .get(&pred_ssa)
                 .ok_or_else(|| error_unreachable())?
                 .clone();
             let pred_type_str = pred_type.to_string();
             self.write_line(&format!(
                 "{} = tosa.logical_not {} : ({}) -> {}",
-                neg_pred,
-                pred_ssa,
-                pred_type_str,
-                pred_type_str
+                neg_pred, pred_ssa, pred_type_str, pred_type_str
             ));
             self.ssa_types.insert(neg_pred.clone(), pred_type);
             neg_pred
         } else {
             pred_ssa
         };
-        
+
         // Get the destination register of the instruction (if any)
         let dst_reg = self.extract_instruction_dst(&instruction);
-        
+
         // Save the old value of the destination (if it exists)
         let old_value = if let Some(dst) = dst_reg {
             let old_val = self.value_map.get(&dst).cloned();
@@ -1125,7 +1201,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         } else {
             None
         };
-        
+
         // Execute the instruction unconditionally
         eprintln!("ZLUDA DEBUG: About to convert instruction");
         if let Some(result_ssa) = self.convert_instruction(instruction)? {
@@ -1134,18 +1210,20 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             // generate a select between old and new
             if let (Some(dst), Some(old_val)) = (dst_reg, old_value) {
                 let selected = self.next_ssa_value();
-                let result_type = self.ssa_types.get(&result_ssa)
+                let result_type = self
+                    .ssa_types
+                    .get(&result_ssa)
                     .ok_or_else(|| error_unreachable())?
                     .clone();
                 let result_type_str = result_type.to_string();
-                
+
                 // Create proper i1 tensor type for predicate
                 let pred_type = MlirType::Tensor(TensorType {
                     x: TENSOR_BATCH_DIM,
                     y: 1,
                     ty: BasicType::I1,
                 });
-                
+
                 self.write_line(&format!(
                     "{} = tosa.select {}, {}, {} : ({}, {}, {}) -> {}",
                     selected,
@@ -1157,30 +1235,49 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     result_type_str,
                     result_type_str
                 ));
-                
+
                 // Update the mapping to point to the selected value
                 self.value_map.insert(dst, selected.clone());
                 self.ssa_types.insert(selected.clone(), result_type);
-                
+
                 // Set last_result_ssa to the selected value for return
                 self.last_result_ssa = Some(selected);
             }
         }
-        
+
         Ok(())
     }
-    
+
     // Extract the destination register from an instruction
-    fn extract_instruction_dst(&self, instruction: &ast::Instruction<SpirvWord>) -> Option<SpirvWord> {
+    fn extract_instruction_dst(
+        &self,
+        instruction: &ast::Instruction<SpirvWord>,
+    ) -> Option<SpirvWord> {
         match instruction {
-            ast::Instruction::Mov { arguments: ast::MovArgs { dst, .. }, .. } |
-            ast::Instruction::Add { arguments: ast::AddArgs { dst, .. }, .. } |
-            ast::Instruction::Sub { arguments: ast::SubArgs { dst, .. }, .. } |
-            ast::Instruction::Mul { arguments: ast::MulArgs { dst, .. }, .. } |
-            ast::Instruction::Ld { arguments: ast::LdArgs { dst, .. }, .. } |
-            ast::Instruction::Setp { arguments: ast::SetpArgs { dst1: dst, .. }, .. } => {
-                Some(*dst)
+            ast::Instruction::Mov {
+                arguments: ast::MovArgs { dst, .. },
+                ..
             }
+            | ast::Instruction::Add {
+                arguments: ast::AddArgs { dst, .. },
+                ..
+            }
+            | ast::Instruction::Sub {
+                arguments: ast::SubArgs { dst, .. },
+                ..
+            }
+            | ast::Instruction::Mul {
+                arguments: ast::MulArgs { dst, .. },
+                ..
+            }
+            | ast::Instruction::Ld {
+                arguments: ast::LdArgs { dst, .. },
+                ..
+            }
+            | ast::Instruction::Setp {
+                arguments: ast::SetpArgs { dst1: dst, .. },
+                ..
+            } => Some(*dst),
             _ => None,
         }
     }
@@ -1436,31 +1533,29 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             }
             ast::Instruction::Sin { arguments, .. } => {
                 eprintln!("ZLUDA DEBUG: Converting SIN instruction!");
-                Ok(Some(self.convert_sin_instruction(
-                    arguments.dst,
-                    arguments.src,
-                )?))
+                Ok(Some(
+                    self.convert_sin_instruction(arguments.dst, arguments.src)?,
+                ))
             }
             ast::Instruction::Cos { arguments, .. } => {
                 eprintln!("ZLUDA DEBUG: Converting COS instruction!");
-                Ok(Some(self.convert_cos_instruction(
-                    arguments.dst,
-                    arguments.src,
-                )?))
+                Ok(Some(
+                    self.convert_cos_instruction(arguments.dst, arguments.src)?,
+                ))
             }
             ast::Instruction::Lg2 { arguments, .. } => {
                 eprintln!("ZLUDA DEBUG: Converting LG2 instruction!");
-                Ok(Some(self.convert_lg2_instruction(
-                    arguments.dst,
-                    arguments.src,
-                )?))
+                Ok(Some(
+                    self.convert_lg2_instruction(arguments.dst, arguments.src)?,
+                ))
             }
-            ast::Instruction::Clz { data, arguments, .. } => {
+            ast::Instruction::Clz {
+                data, arguments, ..
+            } => {
                 eprintln!("ZLUDA DEBUG: Converting CLZ instruction!");
-                Ok(Some(self.convert_clz_instruction(
-                    arguments.dst,
-                    arguments.src,
-                )?))
+                Ok(Some(
+                    self.convert_clz_instruction(arguments.dst, arguments.src)?,
+                ))
             }
             ast::Instruction::Bra { arguments, .. } => {
                 eprintln!("ZLUDA DEBUG: Converting BRA instruction!");
@@ -1505,7 +1600,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 "{} = \"tosa.const\"() {{values = {}}} : () -> {}",
                 const_ssa, value, tensor_type_str
             ));
-            self.ssa_types.insert(const_ssa.clone(), tensor_type.clone());
+            self.ssa_types
+                .insert(const_ssa.clone(), tensor_type.clone());
             const_ssa
         } else {
             src2_ssa
@@ -1517,7 +1613,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ast::ArithDetails::Integer(_) => {
                 format!(
                     "{} = \"tosa.add\"({}, {}) : ({}, {}) -> {}",
-                    dst_ssa, src1_ssa, src2_final, tensor_type_str, tensor_type_str, tensor_type_str
+                    dst_ssa,
+                    src1_ssa,
+                    src2_final,
+                    tensor_type_str,
+                    tensor_type_str,
+                    tensor_type_str
                 )
             }
             ast::ArithDetails::Float(_) => {
@@ -1526,7 +1627,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let src2_casted = self.ensure_float_tensor(src2_final, src2)?;
                 format!(
                     "{} = \"tosa.add\"({}, {}) : ({}, {}) -> {}",
-                    dst_ssa, src1_casted, src2_casted, tensor_type_str, tensor_type_str, tensor_type_str
+                    dst_ssa,
+                    src1_casted,
+                    src2_casted,
+                    tensor_type_str,
+                    tensor_type_str,
+                    tensor_type_str
                 )
             }
         };
@@ -1581,7 +1687,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 "{} = \"tosa.const\"() {{values = {}}} : () -> {}",
                 const_ssa, value, tensor_type_str
             ));
-            self.ssa_types.insert(const_ssa.clone(), tensor_type.clone());
+            self.ssa_types
+                .insert(const_ssa.clone(), tensor_type.clone());
             const_ssa
         } else {
             src2_ssa
@@ -1598,7 +1705,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ast::ArithDetails::Integer(_) => {
                 self.write_line(&format!(
                     "{} = \"tosa.sub\"({}, {}) : ({}, {}) -> {}",
-                    dst_ssa, src1_ssa, src2_final, tensor_type_str, tensor_type_str, tensor_type_str
+                    dst_ssa,
+                    src1_ssa,
+                    src2_final,
+                    tensor_type_str,
+                    tensor_type_str,
+                    tensor_type_str
                 ));
             }
             ast::ArithDetails::Float(_) => {
@@ -1607,17 +1719,22 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let src2_casted = self.ensure_float_tensor(src2_final, src2)?;
                 self.write_line(&format!(
                     "{} = \"tosa.sub\"({}, {}) : ({}, {}) -> {}",
-                    dst_ssa, src1_casted, src2_casted, tensor_type_str, tensor_type_str, tensor_type_str
+                    dst_ssa,
+                    src1_casted,
+                    src2_casted,
+                    tensor_type_str,
+                    tensor_type_str,
+                    tensor_type_str
                 ));
             }
         }
 
         self.value_map.insert(dst, dst_ssa.clone());
         self.ssa_types.insert(dst_ssa.clone(), tensor_type);
-        
+
         // Store the result SSA for return
         self.last_result_ssa = Some(dst_ssa.clone());
-        
+
         Ok(dst_ssa)
     }
 
@@ -1632,7 +1749,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let src2_ssa = self.get_ssa_value(src2)?;
 
         // Get the actual tensor type from the first operand
-        let src_tensor_type = self.ssa_types.get(&src1_ssa)
+        let src_tensor_type = self
+            .ssa_types
+            .get(&src1_ssa)
             .cloned()
             .unwrap_or_else(|| self.get_default_tensor_type());
 
@@ -1644,7 +1763,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let src2_casted = self.ensure_float_tensor(src2_ssa, src2)?;
 
         // Get the tensor type for the casted operands (should be float if we casted)
-        let operand_type = self.ssa_types.get(&src1_casted)
+        let operand_type = self
+            .ssa_types
+            .get(&src1_casted)
             .cloned()
             .unwrap_or_else(|| self.get_default_tensor_type());
 
@@ -1660,10 +1781,17 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         let mul_result_ssa = self.next_ssa_value();
         self.write_line(&format!(
             "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, {}) -> {}",
-            mul_result_ssa, src1_casted, src2_casted, shift_ssa, 
-            operand_type, operand_type, shift_type, operand_type
+            mul_result_ssa,
+            src1_casted,
+            src2_casted,
+            shift_ssa,
+            operand_type,
+            operand_type,
+            shift_type,
+            operand_type
         ));
-        self.ssa_types.insert(mul_result_ssa.clone(), operand_type.clone());
+        self.ssa_types
+            .insert(mul_result_ssa.clone(), operand_type.clone());
 
         // Cast back to integer if the original operands were integers
         let final_result = if needs_cast_back {
@@ -1672,7 +1800,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 "{} = \"tosa.cast\"({}) : ({}) -> {}",
                 cast_back_ssa, mul_result_ssa, operand_type, src_tensor_type
             ));
-            self.ssa_types.insert(cast_back_ssa.clone(), src_tensor_type.clone());
+            self.ssa_types
+                .insert(cast_back_ssa.clone(), src_tensor_type.clone());
             cast_back_ssa
         } else {
             mul_result_ssa
@@ -1688,33 +1817,45 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         dst: SpirvWord,
         src: SpirvWord,
     ) -> Result<String, TranslateError> {
-        eprintln!("ZLUDA DEBUG: convert_mov_instruction - dst: {}, src: {}", dst.0, src.0);
-        
+        eprintln!(
+            "ZLUDA DEBUG: convert_mov_instruction - dst: {}, src: {}",
+            dst.0, src.0
+        );
+
         // Try to get the source SSA value
         let src_ssa = match self.get_ssa_value(src) {
             Ok(ssa) => ssa,
             Err(_) => {
                 // If source is not found, it might be a parameter or constant
                 // Get the identifier name for better error reporting
-                let param_name = self.id_defs.ident_map.get(&src)
+                let param_name = self
+                    .id_defs
+                    .ident_map
+                    .get(&src)
                     .and_then(|entry| entry.name.as_ref())
                     .map(|n| n.to_string())
                     .unwrap_or_else(|| format!("unknown_{}", src.0));
-                
+
                 eprintln!(
                     "ZLUDA DEBUG: Unknown source {} ({}) in Mov, handling gracefully",
                     src.0, param_name
                 );
-                
+
                 // Check if this could be a function parameter
-                if param_name.contains("arg") || param_name.contains("param") || param_name.starts_with("%") {
+                if param_name.contains("arg")
+                    || param_name.contains("param")
+                    || param_name.starts_with("%")
+                {
                     // Treat as a function parameter
                     let param_ref = if param_name.starts_with("%") {
                         param_name.clone()
                     } else {
                         format!("%arg{}", src.0 % 10)
                     };
-                    eprintln!("ZLUDA DEBUG: Treating {} as function parameter {}", param_name, param_ref);
+                    eprintln!(
+                        "ZLUDA DEBUG: Treating {} as function parameter {}",
+                        param_name, param_ref
+                    );
                     self.value_map.insert(src, param_ref.clone());
                     let tensor_type = self.get_integer_tensor_type();
                     self.ssa_types.insert(param_ref.clone(), tensor_type);
@@ -1725,8 +1866,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     if src.0 == 52 {
                         // This is likely temp.w - extract the 4th element from the vector
                         // First, find the vector that was loaded (should be temp)
-                        let vector_ssa = "%arg0".to_string();  // The input vector
-                        
+                        let vector_ssa = "%arg0".to_string(); // The input vector
+
                         // Extract the 4th element (index 3) using tosa.slice
                         let slice_ssa = self.next_ssa_value();
                         let tensor_type = MlirType::Tensor(TensorType {
@@ -1735,31 +1876,31 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                             ty: BasicType::I32,
                         });
                         let tensor_type_str = tensor_type.to_string();
-                        
+
                         self.write_line(&format!(
                             "{} = \"tosa.slice\"({}) {{start = array<i64: 3>, size = array<i64: 1>}} : (tensor<4xi32>) -> {}",
                             slice_ssa, vector_ssa, tensor_type_str
                         ));
-                        
+
                         // Register the slice for the source
                         self.value_map.insert(src, slice_ssa.clone());
                         self.ssa_types.insert(slice_ssa.clone(), tensor_type);
-                        
+
                         slice_ssa
                     } else {
                         // Create a placeholder constant
                         let placeholder_ssa = self.next_ssa_value();
                         let tensor_type = self.get_default_tensor_type();
-                        
+
                         self.write_line(&format!(
                             "{} = \"tosa.const\"() {{values = dense<0.0> : {}}} : () -> {}",
                             placeholder_ssa, tensor_type, tensor_type
                         ));
-                        
+
                         // Register the placeholder for the source
                         self.value_map.insert(src, placeholder_ssa.clone());
                         self.ssa_types.insert(placeholder_ssa.clone(), tensor_type);
-                        
+
                         placeholder_ssa
                     }
                 }
@@ -1787,125 +1928,145 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             "ZLUDA DEBUG: Load instruction - dst: {}, src: {}, state_space: {:?}",
             dst.0, src.0, data.state_space
         );
-        
+
         // Debug: Print current state
-        eprintln!("ZLUDA DEBUG: Current param_addresses: {:?}", self.param_addresses);
-        eprintln!("ZLUDA DEBUG: Current next_arg_index: {}", self.next_arg_index);
-        
+        eprintln!(
+            "ZLUDA DEBUG: Current param_addresses: {:?}",
+            self.param_addresses
+        );
+        eprintln!(
+            "ZLUDA DEBUG: Current next_arg_index: {}",
+            self.next_arg_index
+        );
 
         // Debug: Print current value_map state with variable names
         self.debug_print_value_map();
 
         // For param state space loads, we're loading an address
-        if data.state_space == ast::StateSpace::Param || data.state_space == ast::StateSpace::ParamEntry {
-            let src_name = self.id_defs.ident_map.get(&src)
+        if data.state_space == ast::StateSpace::Param
+            || data.state_space == ast::StateSpace::ParamEntry
+        {
+            let src_name = self
+                .id_defs
+                .ident_map
+                .get(&src)
                 .and_then(|entry| entry.name.as_ref())
                 .map(|n| n.to_string())
                 .unwrap_or_else(|| format!("param_{}", src.0));
-            
+
             eprintln!("ZLUDA DEBUG: Parameter space load - loading address from parameter '{}' into dst {}", 
                      src_name, dst.0);
-            
+
             // Track that this destination variable holds an address from this parameter
             self.param_addresses.insert(dst, src_name.clone());
-            
+
             // Don't create any SSA mapping yet - we'll do that when we load through this address
             return Ok(());
         }
-        
+
         // For other loads, check if we're loading through an address from a parameter
         if let Some(param_name) = self.param_addresses.get(&src).cloned() {
-            eprintln!("ZLUDA DEBUG: Loading data through address {} which came from parameter '{}'", 
-                     src.0, param_name);
-            
+            eprintln!(
+                "ZLUDA DEBUG: Loading data through address {} which came from parameter '{}'",
+                src.0, param_name
+            );
+
             // This is loading data through an address that came from a parameter
             // Map directly to the appropriate function argument
             let arg_name = format!("%arg{}", self.next_arg_index);
             self.next_arg_index += 1;
-            
-            eprintln!("ZLUDA DEBUG: Mapping dst {} directly to {}", dst.0, arg_name);
-            
+
+            eprintln!(
+                "ZLUDA DEBUG: Mapping dst {} directly to {}",
+                dst.0, arg_name
+            );
+
             // Determine the tensor type based on the load type
             let tensor_type = match &data.typ {
-                ast::Type::Vector(len, scalar) => {
-                    self.get_vector_tensor_type(*len, *scalar)
-                },
-                ast::Type::Scalar(scalar) => {
-                    self.get_scalar_tensor_type(*scalar)
-                },
+                ast::Type::Vector(len, scalar) => self.get_vector_tensor_type(*len, *scalar),
+                ast::Type::Scalar(scalar) => self.get_scalar_tensor_type(*scalar),
                 _ => self.get_tensor_type(&data.typ)?,
             };
-            
+
             // Update the value map for the destination
             self.value_map.insert(dst, arg_name.clone());
             self.ssa_types.insert(arg_name, tensor_type);
-            
+
             return Ok(());
         }
-        
+
         // Special case: Check if the src ID (e.g., 30) might be a synthetic ID for an indirect load
         // In PTX, [in_addr] means "load from the address stored in in_addr"
         // The parser might create a synthetic ID for this indirect reference
         eprintln!("ZLUDA DEBUG: Checking for indirect load pattern - src {} might reference an address variable", src.0);
-        
+
         // Look for address variables that were loaded from parameters
         for (addr_var_id, param_name) in &self.param_addresses {
-            eprintln!("ZLUDA DEBUG: Found address variable {} from parameter '{}'", addr_var_id.0, param_name);
+            eprintln!(
+                "ZLUDA DEBUG: Found address variable {} from parameter '{}'",
+                addr_var_id.0, param_name
+            );
             // Check if this load is ptx/src/pass/emit_tosa_mlir.rstrying to dereference this address
             // For now, assume that if we can't find the src in value_map and we have param addresses,
             // this is an indirect load through the first address we loaded
             if param_name == "input" {
                 eprintln!("ZLUDA DEBUG: Treating this as indirect load through address {} from input parameter", addr_var_id.0);
-                
+
                 let arg_name = format!("%arg{}", self.next_arg_index);
                 self.next_arg_index += 1;
-                
-                eprintln!("ZLUDA DEBUG: Mapping dst {} to {} (data from input parameter)", dst.0, arg_name);
-                
+
+                eprintln!(
+                    "ZLUDA DEBUG: Mapping dst {} to {} (data from input parameter)",
+                    dst.0, arg_name
+                );
+
                 // Determine the tensor type
                 let tensor_type = match &data.typ {
                     ast::Type::Scalar(scalar) => self.get_scalar_tensor_type(*scalar),
                     _ => self.get_tensor_type(&data.typ)?,
                 };
-                
+
                 self.value_map.insert(dst, arg_name.clone());
                 self.ssa_types.insert(arg_name, tensor_type);
-                
+
                 return Ok(());
             }
         }
-        
+
         // For regular loads (not from parameters), copy the value
         eprintln!("ZLUDA DEBUG: Regular load - src: {}, dst: {}", src.0, dst.0);
-        
-        let src_val = self.value_map.get(&src)
+
+        let src_val = self
+            .value_map
+            .get(&src)
             .ok_or_else(|| {
                 eprintln!("ZLUDA ERROR: Source {} not in value_map", src.0);
                 TranslateError::UnknownSymbol(format!("Source {} not in value_map", src.0))
             })?
             .clone();
-        
-        eprintln!("ZLUDA DEBUG: Copying value {} from src {} to dst {}", src_val, src.0, dst.0);
-        
+
+        eprintln!(
+            "ZLUDA DEBUG: Copying value {} from src {} to dst {}",
+            src_val, src.0, dst.0
+        );
+
         // Simply copy the value
         self.value_map.insert(dst, src_val.clone());
-        
+
         // Copy the type info if available
         if let Some(src_type) = self.ssa_types.get(&src_val).cloned() {
             self.ssa_types.insert(src_val, src_type);
         }
-        
+
         Ok(())
     }
 
-    
     // fn convert_load_instruction(
     //     &mut self,
     //     data: ast::LdDetails,
     //     dst: SpirvWord,
     //     src: SpirvWord,
     // ) -> Result<(), TranslateError> {
-
 
     //     // Dump self.value_map[dst] and self.value_map[src]
     //     eprintln!(
@@ -1918,7 +2079,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //         src,
     //         self.value_map.get(&src)
     //     );
-        
+
     //     // Debug: Print what we're about to do
     //     let dst_name = self.id_defs.ident_map.get(&dst)
     //         .and_then(|entry| entry.name.as_ref())
@@ -1932,20 +2093,20 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //         .and_then(|entry| entry.name.as_ref())
     //         .map(|n| n.to_string())
     //         .unwrap_or_else(|| format!("<unnamed_src_{}>", src.0));
-        
-    //     eprintln!("ZLUDA DEBUG: Processing load: {} ({}) <- {} ({})", 
+
+    //     eprintln!("ZLUDA DEBUG: Processing load: {} ({}) <- {} ({})",
     //              dst_name, dst.0, src_name, src.0);
 
     //     // If this is a parameter load and dst is unnamed, add a descriptive comment
     //     if data.state_space == ast::StateSpace::Param && dst_name.starts_with("<load_result_") {
     //         eprintln!("ZLUDA DEBUG: This appears to be loading from parameter {} into an SSA value", src_name);
     //     }
-        
+
     //     // Debug: Print current value_map state with variable names
     //     eprintln!("ZLUDA DEBUG: Current value_map contents:");
     //     let mut entries: Vec<_> = self.value_map.iter().collect();
     //     entries.sort_by_key(|(k, _)| k.0);
-        
+
     //     for (k, v) in entries {
     //         let var_name = self.id_defs.ident_map.get(k)
     //             .and_then(|entry| entry.name.as_ref())
@@ -1968,17 +2129,16 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //         eprintln!("  {:3} ({:20}) -> {}", k.0, var_name, v);
     //     }
 
-
     //     if let Some(src_val) = self.value_map.get(&src).cloned() {
     //         self.value_map.insert(dst, src_val);
     //         return Ok(());
     //     }
-        
+
     //     // If source is not found, it might be a parameter that wasn't included in the function signature
     //     // Create a placeholder for it
-    //     eprintln!("ZLUDA WARNING: Source {} ({}) not found in value_map, creating placeholder", 
+    //     eprintln!("ZLUDA WARNING: Source {} ({}) not found in value_map, creating placeholder",
     //              src.0, src_name);
-        
+
     //     // For parameters, create an appropriate SSA value
     //     if src_name.contains("output") || src_name.contains("input") {
     //         let placeholder_ssa = format!("%param_{}", src.0);
@@ -1991,7 +2151,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //     }
 
     //     panic!();
-        
+
     //     return Err(TranslateError::UnknownSymbol("unknown symbol".to_string()));
 
     // }
@@ -2002,37 +2162,50 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         src1: SpirvWord, // address to store to
         src2: SpirvWord, // value to store
     ) -> Result<(), TranslateError> {
-        eprintln!("ZLUDA DEBUG: Store instruction - src1 (addr): {}, src2 (value): {}, state_space: {:?}", 
-                 src1.0, src2.0, data.state_space);
-        
+        eprintln!(
+            "ZLUDA DEBUG: Store instruction - src1 (addr): {}, src2 (value): {}, state_space: {:?}",
+            src1.0, src2.0, data.state_space
+        );
+
         // For local/generic stores after insert_explicit_load_store pass,
         // we need to track the mapping so subsequent loads can find the value
-        if data.state_space == ast::StateSpace::Local || data.state_space == ast::StateSpace::Generic {
+        if data.state_space == ast::StateSpace::Local
+            || data.state_space == ast::StateSpace::Generic
+        {
             // Get the value being stored
             if let Ok(value_ssa) = self.get_ssa_value(src2) {
                 // Map the destination address to this value
                 self.value_map.insert(src1, value_ssa.clone());
-                eprintln!("ZLUDA DEBUG: Stored value {} at address {}", value_ssa, src1.0);
-                
+                eprintln!(
+                    "ZLUDA DEBUG: Stored value {} at address {}",
+                    value_ssa, src1.0
+                );
+
                 // Also copy type information if available
                 if let Some(value_type) = self.ssa_types.get(&value_ssa).cloned() {
                     self.ssa_types.insert(value_ssa, value_type);
                 }
             } else {
-                eprintln!("ZLUDA WARNING: Failed to get value for store src2: {}", src2.0);
+                eprintln!(
+                    "ZLUDA WARNING: Failed to get value for store src2: {}",
+                    src2.0
+                );
             }
         } else if data.state_space == ast::StateSpace::Param {
             // This is storing to an output parameter
             eprintln!("ZLUDA DEBUG: Store to parameter space");
-            
+
             // Get the value being stored
             if let Ok(value_ssa) = self.get_ssa_value(src2) {
                 // This value should be returned by the function
                 self.last_result_ssa = Some(value_ssa.clone());
-                eprintln!("ZLUDA DEBUG: Set last_result_ssa to {} for parameter store", value_ssa);
+                eprintln!(
+                    "ZLUDA DEBUG: Set last_result_ssa to {} for parameter store",
+                    value_ssa
+                );
             }
         }
-        
+
         // TOSA doesn't have explicit store operations, so we add a comment
         self.write_line("// Store operation (value tracking only)");
         Ok(())
@@ -2089,13 +2262,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //         let expected_return_type = self.current_function_return_type.as_ref()
     //             .map(|t| t.clone())
     //             .unwrap_or_else(|| self.get_integer_tensor_type());
-            
+
     //         let needs_full_tensor = expected_return_type.contains("32x32");
-            
+
     //         if needs_full_tensor {
     //             // Use full tensor types for compatibility with function signature
     //             let int_tensor_type = self.get_integer_tensor_type();
-                
+
     //             // Cast inputs to int tensors if needed
     //             let src1_int = if self.ssa_types.get(&src1_ssa).map(|t| t.contains("f32")).unwrap_or(false) {
     //                 let cast_ssa = self.next_ssa_value();
@@ -2108,7 +2281,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //             } else {
     //                 src1_ssa.clone()
     //             };
-                
+
     //             let src2_int = if self.ssa_types.get(&src2_ssa).map(|t| t.contains("f32")).unwrap_or(false) {
     //                 let cast_ssa = self.next_ssa_value();
     //                 self.write_line(&format!(
@@ -2120,7 +2293,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //             } else {
     //                 src2_ssa.clone()
     //             };
-                
+
     //             // Perform XOR operation
     //             let xor_result = self.next_ssa_value();
     //             self.write_line(&format!(
@@ -2128,7 +2301,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //                 xor_result, src1_int, src2_int, int_tensor_type, int_tensor_type, int_tensor_type
     //             ));
     //             self.ssa_types.insert(xor_result.clone(), int_tensor_type.to_string());
-                
+
     //             // Cast result back to expected type if needed
     //             if expected_return_type.contains("f32") {
     //                 self.write_line(&format!(
@@ -2149,9 +2322,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //             let expected_return_type = self.current_function_return_type.as_ref()
     //                 .map(|t| t.clone())
     //                 .unwrap_or_else(|| "tensor<1xi32>".to_string());
-                
+
     //             let scalar_tensor_type = self.get_integer_tensor_type();
-                
+
     //             // Use tosa.bitwise_xor for the actual XOR operation on scalars
     //             let xor_result = if expected_return_type.contains("f32") {
     //                 // Need to eventually cast to float, so use intermediate SSA
@@ -2160,13 +2333,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //                 // Can use dst_ssa directly
     //                 dst_ssa.clone()
     //             };
-                
+
     //             self.write_line(&format!(
     //                 "{} = \"tosa.bitwise_xor\"({}, {}) : ({}, {}) -> {}",
     //                 xor_result, src1_ssa, src2_ssa, scalar_tensor_type, scalar_tensor_type, scalar_tensor_type
     //             ));
     //             self.ssa_types.insert(xor_result.clone(), scalar_tensor_type.to_string());
-                
+
     //             // If function expects float return, cast the result
     //             if expected_return_type.contains("f32") {
     //                 self.write_line(&format!(
@@ -2180,7 +2353,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //                 self.ssa_types.insert(xor_result.clone(), scalar_tensor_type.to_string());
     //             }
     //         }
-            
+
     //         // Store the result SSA for return
     //         self.last_result_ssa = Some(dst_ssa.clone());
     //         self.value_map.insert(dst, dst_ssa.clone());
@@ -2196,7 +2369,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //             src1_int, src1_ssa, tensor_type
     //         ));
     //         self.ssa_types.insert(src1_int.clone(), self.get_integer_tensor_type());
-            
+
     //         self.write_line(&format!(
     //             "{} = \"tosa.cast\"({}) : ({}) -> tensor<32x32xi32>",
     //             src2_int, src2_ssa, tensor_type
@@ -2204,7 +2377,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //         self.ssa_types.insert(src2_int.clone(), self.get_integer_tensor_type());
 
     //         // Use tosa.bitwise_xor for the actual XOR operation on integers
-    //         self.write_line(&format!("{} = \"tosa.bitwise_xor\"({}, {}) : (tensor<32x32xi32>, tensor<32x32xi32>) -> tensor<32x32xi32>", 
+    //         self.write_line(&format!("{} = \"tosa.bitwise_xor\"({}, {}) : (tensor<32x32xi32>, tensor<32x32xi32>) -> tensor<32x32xi32>",
     //             result_int, src1_int, src2_int));
     //         self.ssa_types.insert(result_int.clone(), self.get_integer_tensor_type());
 
@@ -2214,7 +2387,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //             dst_ssa, result_int, tensor_type
     //         ));
     //         self.ssa_types.insert(dst_ssa.clone(), tensor_type.clone());
-            
+
     //         // Store the result SSA for return
     //         self.last_result_ssa = Some(dst_ssa.clone());
     //     }
@@ -2222,7 +2395,6 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     //     self.value_map.insert(dst, dst_ssa.clone());
     //     Ok(dst_ssa)
     // }
-
 
     fn convert_xor_instruction(
         &mut self,
@@ -2457,15 +2629,16 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ast::DivDetails::Float(_) => {
                 // For float division, use reciprocal and multiply: a/b = a * (1/b)
                 let tensor_type = self.get_default_tensor_type();
-                
+
                 // Compute reciprocal of divisor
                 let recip_ssa = self.next_ssa_value();
                 self.write_line(&format!(
                     "{} = \"tosa.reciprocal\"({}) : ({}) -> {}",
                     recip_ssa, src2_ssa, tensor_type, tensor_type
                 ));
-                self.ssa_types.insert(recip_ssa.clone(), tensor_type.clone());
-                
+                self.ssa_types
+                    .insert(recip_ssa.clone(), tensor_type.clone());
+
                 // Multiply dividend by reciprocal
                 let dst_ssa = self.next_ssa_value();
                 let shift_ssa = self.next_ssa_value();
@@ -2477,7 +2650,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, tensor<1xi8>) -> {}",
                     dst_ssa, src1_ssa, recip_ssa, shift_ssa, tensor_type, tensor_type, tensor_type
                 ));
-                
+
                 self.value_map.insert(dst, dst_ssa.clone());
                 self.ssa_types.insert(dst_ssa.clone(), tensor_type);
                 Ok(dst_ssa)
@@ -2488,7 +2661,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 // For now, we'll emit a placeholder constant
                 let int_tensor_type = self.get_integer_tensor_type();
                 let dst_ssa = self.next_ssa_value();
-                
+
                 self.write_line(&format!(
                     "// TODO: Integer division not directly supported in TOSA"
                 ));
@@ -2496,7 +2669,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.const\"() {{values = dense<1> : {}}} : () -> {}",
                     dst_ssa, int_tensor_type, int_tensor_type
                 ));
-                
+
                 self.value_map.insert(dst, dst_ssa.clone());
                 self.ssa_types.insert(dst_ssa.clone(), int_tensor_type);
                 Ok(dst_ssa)
@@ -2795,7 +2968,14 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             ));
             self.write_line(&format!(
                 "{} = \"tosa.mul\"({}, {}, {}) : ({}, {}, {}) -> {}",
-                temp_ssa, src1_ssa, src2_ssa, shift_ssa, tensor_type, tensor_type, shift_type, tensor_type
+                temp_ssa,
+                src1_ssa,
+                src2_ssa,
+                shift_ssa,
+                tensor_type,
+                tensor_type,
+                shift_type,
+                tensor_type
             ));
             self.write_line(&format!(
                 "{} = \"tosa.add\"({}, {}) : ({}, {}) -> {}",
@@ -2842,33 +3022,47 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         src2: SpirvWord,
         src3: SpirvWord,
     ) -> Result<String, TranslateError> {
-        let dst_name = self.id_defs.ident_map.get(&dst)
+        let dst_name = self
+            .id_defs
+            .ident_map
+            .get(&dst)
             .and_then(|entry| entry.name.as_ref())
             .map(|n| n.to_string())
             .unwrap_or_else(|| format!("<unnamed_{}>", dst.0));
-        let src1_name = self.id_defs.ident_map.get(&src1)
+        let src1_name = self
+            .id_defs
+            .ident_map
+            .get(&src1)
             .and_then(|entry| entry.name.as_ref())
             .map(|n| n.to_string())
             .unwrap_or_else(|| format!("<unnamed_{}>", src1.0));
-        let src2_name = self.id_defs.ident_map.get(&src2)
+        let src2_name = self
+            .id_defs
+            .ident_map
+            .get(&src2)
             .and_then(|entry| entry.name.as_ref())
             .map(|n| n.to_string())
             .unwrap_or_else(|| format!("<unnamed_{}>", src2.0));
-        let src3_name = self.id_defs.ident_map.get(&src3)
+        let src3_name = self
+            .id_defs
+            .ident_map
+            .get(&src3)
             .and_then(|entry| entry.name.as_ref())
             .map(|n| n.to_string())
             .unwrap_or_else(|| format!("<unnamed_{}>", src3.0));
-            
+
         eprintln!("ZLUDA DEBUG: FMA instruction - dst: {} ({}), src1: {} ({}), src2: {} ({}), src3: {} ({})",
                  dst_name, dst.0, src1_name, src1.0, src2_name, src2.0, src3_name, src3.0);
-        
+
         let dst_ssa = self.next_ssa_value();
         let src1_ssa = self.get_ssa_value(src1)?;
         let src2_ssa = self.get_ssa_value(src2)?;
         let src3_ssa = self.get_ssa_value(src3)?;
-        
-        eprintln!("ZLUDA DEBUG: FMA SSA values - dst: {}, src1: {}, src2: {}, src3: {}",
-                 dst_ssa, src1_ssa, src2_ssa, src3_ssa);
+
+        eprintln!(
+            "ZLUDA DEBUG: FMA SSA values - dst: {}, src1: {}, src2: {}, src3: {}",
+            dst_ssa, src1_ssa, src2_ssa, src3_ssa
+        );
 
         // FMA is typically for floating point, but decompose into mul + add for TOSA
         let tensor_type = self.get_default_tensor_type();
@@ -2988,13 +3182,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let nan1_not_ssa = self.next_ssa_value();
                 let nan2_not_ssa = self.next_ssa_value();
                 let or1_ssa = self.next_ssa_value();
-                
+
                 // Check equality
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     eq_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
                 ));
-                
+
                 // Check if src1 is NaN (x != x)
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3004,7 +3198,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan1_not_ssa, nan1_ssa
                 ));
-                
+
                 // Check if src2 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3014,7 +3208,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan2_not_ssa, nan2_ssa
                 ));
-                
+
                 // Result is true if equal OR either is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
@@ -3033,7 +3227,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let nan1_not_ssa = self.next_ssa_value();
                 let nan2_not_ssa = self.next_ssa_value();
                 let or1_ssa = self.next_ssa_value();
-                
+
                 // Check not equal
                 let eq_ssa = self.next_ssa_value();
                 self.write_line(&format!(
@@ -3044,7 +3238,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     neq_ssa, eq_ssa
                 ));
-                
+
                 // Check if src1 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3054,7 +3248,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan1_not_ssa, nan1_ssa
                 ));
-                
+
                 // Check if src2 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3064,7 +3258,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan2_not_ssa, nan2_ssa
                 ));
-                
+
                 // Result is true if not equal OR either is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
@@ -3083,13 +3277,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let nan1_not_ssa = self.next_ssa_value();
                 let nan2_not_ssa = self.next_ssa_value();
                 let or1_ssa = self.next_ssa_value();
-                
+
                 // Check less than
                 self.write_line(&format!(
                     "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     lt_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type
                 ));
-                
+
                 // Check if src1 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3099,7 +3293,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan1_not_ssa, nan1_ssa
                 ));
-                
+
                 // Check if src2 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3109,7 +3303,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan2_not_ssa, nan2_ssa
                 ));
-                
+
                 // Result is true if less than OR either is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
@@ -3128,13 +3322,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let nan1_not_ssa = self.next_ssa_value();
                 let nan2_not_ssa = self.next_ssa_value();
                 let or1_ssa = self.next_ssa_value();
-                
+
                 // Check less than or equal
                 self.write_line(&format!(
                     "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     le_ssa, src2_ssa, src1_ssa, tensor_type, tensor_type
                 ));
-                
+
                 // Check if src1 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3144,7 +3338,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan1_not_ssa, nan1_ssa
                 ));
-                
+
                 // Check if src2 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3154,7 +3348,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan2_not_ssa, nan2_ssa
                 ));
-                
+
                 // Result is true if less than or equal OR either is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
@@ -3173,13 +3367,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let nan1_not_ssa = self.next_ssa_value();
                 let nan2_not_ssa = self.next_ssa_value();
                 let or1_ssa = self.next_ssa_value();
-                
+
                 // Check greater than
                 self.write_line(&format!(
                     "{} = \"tosa.greater\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     gt_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
                 ));
-                
+
                 // Check if src1 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3189,7 +3383,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan1_not_ssa, nan1_ssa
                 ));
-                
+
                 // Check if src2 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3199,7 +3393,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan2_not_ssa, nan2_ssa
                 ));
-                
+
                 // Result is true if greater than OR either is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
@@ -3218,13 +3412,13 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let nan1_not_ssa = self.next_ssa_value();
                 let nan2_not_ssa = self.next_ssa_value();
                 let or1_ssa = self.next_ssa_value();
-                
+
                 // Check greater than or equal
                 self.write_line(&format!(
                     "{} = \"tosa.greater_equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     ge_ssa, src1_ssa, src2_ssa, tensor_type, tensor_type
                 ));
-                
+
                 // Check if src1 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3234,7 +3428,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan1_not_ssa, nan1_ssa
                 ));
-                
+
                 // Check if src2 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3244,7 +3438,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan2_not_ssa, nan2_ssa
                 ));
-                
+
                 // Result is true if greater than or equal OR either is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
@@ -3261,19 +3455,19 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let nan2_ssa = self.next_ssa_value();
                 let not_nan1_ssa = self.next_ssa_value();
                 let not_nan2_ssa = self.next_ssa_value();
-                
+
                 // Check if src1 is NaN (x == x means NOT NaN)
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     not_nan1_ssa, src1_ssa, src1_ssa, tensor_type, tensor_type
                 ));
-                
+
                 // Check if src2 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
                     not_nan2_ssa, src2_ssa, src2_ssa, tensor_type, tensor_type
                 ));
-                
+
                 // Result is true if NEITHER is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.logical_and\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
@@ -3286,7 +3480,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 let nan2_ssa = self.next_ssa_value();
                 let nan1_not_ssa = self.next_ssa_value();
                 let nan2_not_ssa = self.next_ssa_value();
-                
+
                 // Check if src1 is NaN (x != x)
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3296,7 +3490,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan1_not_ssa, nan1_ssa
                 ));
-                
+
                 // Check if src2 is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.equal\"({}, {}) : ({}, {}) -> tensor<1x1xi1>",
@@ -3306,7 +3500,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.logical_not\"({}) : (tensor<1x1xi1>) -> tensor<1x1xi1>",
                     nan2_not_ssa, nan2_ssa
                 ));
-                
+
                 // Result is true if EITHER is NaN
                 self.write_line(&format!(
                     "{} = \"tosa.logical_or\"({}, {}) : (tensor<1x1xi1>, tensor<1x1xi1>) -> tensor<1x1xi1>",
@@ -3404,7 +3598,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // implement negation as subtraction from zero: 0 - x = -x
         let zero_ssa = self.next_ssa_value();
         let zero_value = if is_float { "0.0" } else { "0" };
-        
+
         self.write_line(&format!(
             "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
             zero_ssa, zero_value, tensor_type, tensor_type
@@ -3417,10 +3611,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         self.value_map.insert(dst, dst_ssa.clone());
         self.ssa_types.insert(dst_ssa.clone(), tensor_type.clone());
-        
+
         // Set the last result type for return statement
         self.last_result_type = Some(tensor_type);
-        
+
         Ok(dst_ssa)
     }
 
@@ -3560,14 +3754,15 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
         // TOSA doesn't have a log2 operation, so we use change of base formula:
         // log2(x) = log(x) / log(2)
-        
+
         // First compute log(x)
         let log_x_ssa = self.next_ssa_value();
         self.write_line(&format!(
             "{} = \"tosa.log\"({}) : ({}) -> {}",
             log_x_ssa, src_ssa, tensor_type, tensor_type
         ));
-        self.ssa_types.insert(log_x_ssa.clone(), tensor_type.clone());
+        self.ssa_types
+            .insert(log_x_ssa.clone(), tensor_type.clone());
 
         // Create constant 2.0
         let two_const_ssa = self.next_ssa_value();
@@ -3575,7 +3770,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             "{} = \"tosa.const\"() {{values = dense<2.0> : {}}} : () -> {}",
             two_const_ssa, tensor_type, tensor_type
         ));
-        self.ssa_types.insert(two_const_ssa.clone(), tensor_type.clone());
+        self.ssa_types
+            .insert(two_const_ssa.clone(), tensor_type.clone());
 
         // Compute log(2)
         let log2_ssa = self.next_ssa_value();
@@ -3592,7 +3788,8 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             "{} = \"tosa.reciprocal\"({}) : ({}) -> {}",
             recip_log2_ssa, log2_ssa, tensor_type, tensor_type
         ));
-        self.ssa_types.insert(recip_log2_ssa.clone(), tensor_type.clone());
+        self.ssa_types
+            .insert(recip_log2_ssa.clone(), tensor_type.clone());
 
         // Multiply log(x) by reciprocal of log(2)
         let dst_ssa = self.next_ssa_value();
@@ -3619,7 +3816,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     ) -> Result<String, TranslateError> {
         let dst_ssa = self.next_ssa_value();
         let src_ssa = self.get_ssa_value(src)?;
-        
+
         // CLZ operates on integer types
         let tensor_type = self.get_scalar_tensor_type(ast::ScalarType::U32); // Default to i32 for B32, U32, S32
         let tensor_type_str = tensor_type.to_string();
@@ -3640,18 +3837,12 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         Ok(dst_ssa)
     }
 
-    fn convert_bra_instruction(
-        &mut self,
-        target: SpirvWord,
-    ) -> Result<String, TranslateError> {
+    fn convert_bra_instruction(&mut self, target: SpirvWord) -> Result<String, TranslateError> {
         // In MLIR, branches are control flow operations
         // For now, we emit simple branches without arguments
         // A proper implementation would pass values for phi nodes
-        self.write_line(&format!(
-            "cf.br ^bb{}", 
-            target.0
-        ));
-        
+        self.write_line(&format!("cf.br ^bb{}", target.0));
+
         // Branch instructions don't produce a value
         Ok(String::new())
     }
@@ -3659,7 +3850,9 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
     fn convert_type_to_tosa(&self, typ: &ast::Type) -> Result<MlirType, TranslateError> {
         match typ {
             ast::Type::Scalar(scalar_type) => Ok(self.get_scalar_tensor_type(*scalar_type)),
-            ast::Type::Vector(len, scalar_type) => Ok(self.get_vector_tensor_type(*len, *scalar_type)),
+            ast::Type::Vector(len, scalar_type) => {
+                Ok(self.get_vector_tensor_type(*len, *scalar_type))
+            }
             ast::Type::Array(_, scalar_type, dimensions) => {
                 // For arrays, we'll use the first dimension as y and multiply the rest
                 // This is a simplification for now
@@ -3730,11 +3923,14 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         format!("tensor<{}x{}>", 1, BasicType::I8)
     }
 
-
     fn create_default_return(&mut self, func_name: &str) -> (String, String) {
         let dummy_tensor = self.next_ssa_value();
         let return_type = self.get_return_type_for_function(func_name);
-        let value = if Self::is_integer_type(&return_type) { "0" } else { "0.0" };
+        let value = if Self::is_integer_type(&return_type) {
+            "0"
+        } else {
+            "0.0"
+        };
         let return_type_str = return_type.to_string();
         self.write_line(&format!(
             "{} = \"tosa.const\"() {{values = dense<{}> : {}}} : () -> {}",
@@ -3801,15 +3997,21 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             // Return the SSA value directly
             return Ok(ssa_value);
         }
-        
+
         // If not found in value_map, this is an error
-        let var_name = self.id_defs.ident_map.get(&var_id)
+        let var_name = self
+            .id_defs
+            .ident_map
+            .get(&var_id)
             .and_then(|entry| entry.name.as_ref())
             .map(|n| n.to_string())
             .unwrap_or_else(|| format!("<unnamed_{}>", var_id.0));
-            
+
         self.debug_print_value_map();
-        eprintln!("ZLUDA ERROR: Variable {} (id {}) not found in value_map", var_name, var_id.0);
+        eprintln!(
+            "ZLUDA ERROR: Variable {} (id {}) not found in value_map",
+            var_name, var_id.0
+        );
         panic!();
         Err(TranslateError::UnknownSymbol("unknown symbol".to_string()))
     }
@@ -3850,8 +4052,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         }
 
         if let Some(tensor_type) = tensor_type {
-            if Self::is_integer_type(&tensor_type)
-            {
+            if Self::is_integer_type(&tensor_type) {
                 // It's an integer tensor, cast it to float
                 let casted_ssa = self.next_ssa_value();
                 let float_type = self.get_default_tensor_type();
@@ -3859,8 +4060,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                     "{} = \"tosa.cast\"({}) : ({}) -> {}",
                     casted_ssa, ssa_value, tensor_type, float_type
                 ));
-                self.ssa_types
-                    .insert(casted_ssa.clone(), float_type);
+                self.ssa_types.insert(casted_ssa.clone(), float_type);
                 Ok(casted_ssa)
             } else {
                 // Already a float tensor
@@ -3875,8 +4075,7 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 "{} = \"tosa.cast\"({}) : ({}) -> {}",
                 casted_ssa, ssa_value, int_type, float_type
             ));
-            self.ssa_types
-                .insert(casted_ssa.clone(), float_type);
+            self.ssa_types.insert(casted_ssa.clone(), float_type);
             Ok(casted_ssa)
         } else {
             // For known values without type information, assume they're already correct
