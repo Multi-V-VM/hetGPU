@@ -249,14 +249,25 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
         }
 
         if result != ze_result_t::ZE_RESULT_SUCCESS || context.0.is_null() || device.0.is_null() {
-            eprintln!("[Intel Backend] Binary module load failed or virtual device detected ({:?}); creating placeholder module", result);
+            eprintln!("[Intel Backend] Binary module load failed or virtual device detected ({:?}); attempting PTX extraction", result);
+
+            // Try to extract PTX from CUBIN using cuobjdump
+            let ptx_source = try_extract_ptx_from_cubin(first_bytes);
+
+            if let Some(ref ptx) = ptx_source {
+                eprintln!("[Intel Backend] Successfully extracted {} bytes of PTX from CUBIN", ptx.len());
+                eprintln!("[Intel Backend] PTX preview: {}...", &ptx[..ptx.len().min(200)]);
+            } else {
+                eprintln!("[Intel Backend] No PTX found in CUBIN - operations will be no-ops");
+            }
+
             // Create placeholder module so downstream symbol lookups and launches are no-ops
             let new_module = Module {
                 context,
                 device,
                 module: ze_module_handle_t(ptr::null_mut()),
                 functions: Vec::new(),
-                ptx_source: None,
+                ptx_source,
                 tmatmul_assembly: None,
             };
             *module = new_module.wrap();
@@ -635,13 +646,18 @@ pub(crate) fn get_function(
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
         .unwrap_or(false);
     if use_cocotb || hmod.module.0.is_null() {
+        eprintln!("[Intel Backend] Creating placeholder kernel '{}' for cocotb execution", name_str);
         let kernel_wrapper = ZeKernel {
             context: hmod.context,
             device: hmod.device,
             module: hmod.module,
             kernel: ze_kernel_handle_t(std::ptr::null_mut()),
             name: name_str.to_string(),
+            ptx_source: hmod.ptx_source.clone(),  // Pass PTX to kernel for cocotb
         };
+        if let Some(ref ptx) = kernel_wrapper.ptx_source {
+            eprintln!("[Intel Backend] Kernel has {} bytes of PTX available", ptx.len());
+        }
         *hfunc = kernel_wrapper.wrap();
         return CUresult::SUCCESS;
     }
@@ -654,6 +670,7 @@ pub(crate) fn get_function(
             module: hmod.module,
             kernel: *kernel,
             name: name_str.to_string(),
+            ptx_source: hmod.ptx_source.clone(),
         }
         .wrap();
         return CUresult::SUCCESS;
@@ -678,6 +695,7 @@ pub(crate) fn get_function(
                 module: hmod.module,
                 kernel,
                 name: name_str.to_string(),
+                ptx_source: hmod.ptx_source.clone(),
             };
 
             // Store the kernel in the module's function list
@@ -703,6 +721,7 @@ pub(crate) struct ZeKernel {
     pub module: ze_module_handle_t,
     pub kernel: ze_kernel_handle_t,
     pub name: String,
+    pub ptx_source: Option<String>,  // Store PTX for cocotb execution
 }
 #[cfg(feature = "intel")]
 unsafe impl Send for ZeKernel {}
@@ -968,5 +987,84 @@ impl ZludaObject for TMatmulKernel {
 impl<'a> super::FromCuda<'a, CUfunction> for &'a TMatmulKernel {
     fn from_cuda(handle: &'a CUfunction) -> Result<Self, CUerror> {
         super::as_ref::<TMatmulKernel>(handle).as_result()
+    }
+}
+
+#[cfg(feature = "intel")]
+fn try_extract_ptx_from_cubin(binary: &[u8]) -> Option<String> {
+    // Check for ELF magic
+    if binary.len() < 4 || !(binary[0] == 0x7f && binary[1] == b'E' && binary[2] == b'L' && binary[3] == b'F') {
+        eprintln!("[PTX Extract] Not an ELF file");
+        return None;
+    }
+
+    eprintln!("[PTX Extract] ELF file detected, searching for embedded PTX...");
+
+    // Search for common PTX section markers in the binary
+    let ptx_markers: &[&[u8]] = &[
+        b".nv.info.ptx",
+        b".ptx",
+        b".version ",  // PTX version directive
+    ];
+
+    for marker in ptx_markers {
+        if let Some(pos) = find_bytes(binary, marker) {
+            eprintln!("[PTX Extract] Found marker {:?} at offset {}",
+                     std::str::from_utf8(marker).unwrap_or("???"), pos);
+
+            // Try to find PTX text near this marker
+            if let Some(ptx_start) = find_ptx_start(binary, pos.saturating_sub(10000)) {
+                if let Some(ptx) = extract_ptx_from_offset(binary, ptx_start) {
+                    return Some(ptx);
+                }
+            }
+        }
+    }
+
+    eprintln!("[PTX Extract] No PTX found in CUBIN");
+    None
+}
+
+#[cfg(feature = "intel")]
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|window| window == needle)
+}
+
+#[cfg(feature = "intel")]
+fn find_ptx_start(binary: &[u8], start_offset: usize) -> Option<usize> {
+    let version_marker = b".version ";
+    for i in start_offset..binary.len().saturating_sub(100) {
+        if binary[i..].starts_with(version_marker) {
+            eprintln!("[PTX Extract] Found .version directive at offset {}", i);
+            return Some(i);
+        }
+    }
+    None
+}
+
+#[cfg(feature = "intel")]
+fn extract_ptx_from_offset(binary: &[u8], start: usize) -> Option<String> {
+    let mut end = start;
+    while end < binary.len() && end < start + 100_000 {
+        let byte = binary[end];
+        if byte == 0 { break; }
+        if end > start + 100 {
+            let recent = &binary[end.saturating_sub(100)..end];
+            let binary_ratio = recent.iter().filter(|&&b| b > 127 || (b < 32 && b != b'\n' && b != b'\r' && b != b'\t')).count();
+            if binary_ratio > recent.len() / 2 { break; }
+        }
+        end += 1;
+    }
+
+    let ptx_bytes = &binary[start..end];
+    match std::str::from_utf8(ptx_bytes) {
+        Ok(ptx) => {
+            eprintln!("[PTX Extract] Extracted {} bytes of PTX", ptx.len());
+            Some(ptx.to_string())
+        },
+        Err(e) => {
+            eprintln!("[PTX Extract] Failed to decode PTX as UTF-8: {}", e);
+            None
+        }
     }
 }

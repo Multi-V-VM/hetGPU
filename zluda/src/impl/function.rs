@@ -104,6 +104,40 @@ pub(crate) unsafe fn launch_kernel(
                   grid_dim_x, grid_dim_y, grid_dim_z,
                   block_dim_x, block_dim_y, block_dim_z);
 
+        // NEW: Check if we have PTX source available for compilation
+        if let Some(ref ptx_source) = f.ptx_source {
+            eprintln!("[TMatmul Backend] PTX source available ({} bytes), compiling to TMatmul assembly...", ptx_source.len());
+
+            // Get cocotb directory
+            let cocotb_dir = std::env::var("HETGPU_TMATMUL_COCOTB_DIR")
+                .unwrap_or_else(|_| "/root/matmulfreellm/hardware/ternary_matmul/cocotb".to_string());
+
+            // Create run directory
+            let _ = std::fs::create_dir_all(format!("{}/run", cocotb_dir));
+
+            // Save PTX source to file
+            let ptx_path = std::path::Path::new(&cocotb_dir).join("run/kernel.ptx");
+            if let Err(e) = std::fs::write(&ptx_path, ptx_source) {
+                eprintln!("[TMatmul Backend] Failed to write PTX to {}: {}", ptx_path.display(), e);
+            } else {
+                eprintln!("[TMatmul Backend] PTX saved to {}", ptx_path.display());
+
+                // TODO: Compile PTX to TMatmul assembly
+                // For now, this would call the PTX → TMatmul compiler
+                // Example:
+                // let asm_path = std::path::Path::new(&cocotb_dir).join("run/kernel.asm");
+                // let compile_result = std::process::Command::new("ptx2tmatmul")
+                //     .arg(&ptx_path)
+                //     .arg("-o")
+                //     .arg(&asm_path)
+                //     .status();
+
+                eprintln!("[TMatmul Backend] PTX compilation to TMatmul assembly would happen here");
+            }
+        } else {
+            eprintln!("[TMatmul Backend] No PTX source available - kernel will be no-op");
+        }
+
         // Extract kernel parameters if available
         // Note: kernel_params is *mut *mut void where each element points to
         // a location in memory that holds the actual parameter value

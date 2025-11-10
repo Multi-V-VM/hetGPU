@@ -19,6 +19,11 @@ typedef int CUdevice;
 typedef void* CUdeviceptr;
 
 // Forward declarations for CUDA Driver API functions (implemented in Rust)
+typedef void* CUmodule;
+typedef void* CUfunction;
+typedef void* CUstream;
+
+extern CUresult cuInit(unsigned int flags);
 extern CUresult cuDeviceGet(CUdevice* device, int ordinal);
 extern CUresult cuDevicePrimaryCtxRetain(CUcontext* pctx, CUdevice dev);
 extern CUresult cuCtxSetCurrent(CUcontext ctx);
@@ -28,6 +33,15 @@ extern CUresult cuMemFree_v2(CUdeviceptr dptr);
 extern CUresult cuMemcpyHtoD_v2(CUdeviceptr dstDevice, const void* srcHost, size_t ByteCount);
 extern CUresult cuMemcpyDtoH_v2(void* dstHost, CUdeviceptr srcDevice, size_t ByteCount);
 extern CUresult cuMemsetD8_v2(CUdeviceptr dstDevice, unsigned char uc, size_t N);
+extern CUresult cuModuleLoadData(CUmodule* module, const void* image);
+extern CUresult cuModuleGetFunction(CUfunction* hfunc, CUmodule hmod, const char* name);
+extern CUresult cuLaunchKernel(CUfunction f,
+                               unsigned int gridDimX, unsigned int gridDimY, unsigned int gridDimZ,
+                               unsigned int blockDimX, unsigned int blockDimY, unsigned int blockDimZ,
+                               unsigned int sharedMemBytes,
+                               CUstream hStream,
+                               void** kernelParams,
+                               void** extra);
 
 // Opaque graph node type (avoid including CUDA headers).
 typedef void* cudaGraphNode_t;
@@ -213,67 +227,181 @@ const char* cudaGetErrorName(cudaError_t error) {
 // Note: cudaGetDeviceCount and cudaDriverGetVersion are already implemented in Rust (lib.rs)
 // so we don't define them here to avoid duplicate symbol errors
 
-// Minimal subset of cudaDeviceProp to populate capability and a few basics.
-// This matches the leading fields of CUDA's cudaDeviceProp across versions.
+// Full cudaDeviceProp struct matching CUDA 11.x/12.x layout
+// This must match PyTorch's expectations exactly
 typedef struct {
-    char   name[256];
-    size_t totalGlobalMem;
-    size_t sharedMemPerBlock;
-    int    regsPerBlock;
-    int    warpSize;
-    size_t memPitch;
-    int    maxThreadsPerBlock;
-    int    maxThreadsDim[3];
-    int    maxGridSize[3];
-    int    clockRate;
-    size_t totalConstMem;
-    int    major;
-    int    minor;
-} cudaDeviceProp_min;
+    char   name[256];                // 0-255
+    char   uuid[16];                 // 256-271 (cudaUUID_t)
+    char   luid[8];                  // 272-279
+    unsigned int luidDeviceNodeMask; // 280-283
+    int    _padding1;                // 284-287 (alignment)
+    size_t totalGlobalMem;           // 288-295
+    size_t sharedMemPerBlock;        // 296-303
+    int    regsPerBlock;             // 304-307
+    int    warpSize;                 // 308-311
+    size_t memPitch;                 // 312-319
+    int    maxThreadsPerBlock;       // 320-323
+    int    maxThreadsDim[3];         // 324-335
+    int    maxGridSize[3];           // 336-347
+    int    clockRate;                // 348-351
+    size_t totalConstMem;            // 352-359
+    int    major;                    // 360-363 ← This is the key field!
+    int    minor;                    // 364-367 ← This is the key field!
+    int    textureAlignment;         // 368-371
+    int    texturePitchAlignment;    // 372-375
+    int    deviceOverlap;            // 376-379
+    int    multiProcessorCount;      // 380-383
+    int    kernelExecTimeoutEnabled; // 384-387
+    int    integrated;               // 388-391
+    int    canMapHostMemory;         // 392-395
+    int    computeMode;              // 396-399
+    int    maxTexture1D;             // 400-403
+    int    maxTexture1DMipmap;       // 404-407
+    int    maxTexture1DLinear;       // 408-411
+    int    maxTexture2D[2];          // 412-419
+    int    maxTexture2DMipmap[2];    // 420-427
+    int    maxTexture2DLinear[3];    // 428-439
+    int    maxTexture2DGather[2];    // 440-447
+    int    maxTexture3D[3];          // 448-459
+    int    maxTexture3DAlt[3];       // 460-471
+    int    maxTextureCubemap;        // 472-475
+    int    maxTexture1DLayered[2];   // 476-483
+    int    maxTexture2DLayered[3];   // 484-495
+    int    maxTextureCubemapLayered[2]; // 496-503
+    int    maxSurface1D;             // 504-507
+    int    maxSurface2D[2];          // 508-515
+    int    maxSurface3D[3];          // 516-527
+    int    maxSurface1DLayered[2];   // 528-535
+    int    maxSurface2DLayered[3];   // 536-547
+    int    maxSurfaceCubemap;        // 548-551
+    int    maxSurfaceCubemapLayered[2]; // 552-559
+    size_t surfaceAlignment;         // 560-567
+    int    concurrentKernels;        // 568-571
+    int    ECCEnabled;               // 572-575
+    int    pciBusID;                 // 576-579
+    int    pciDeviceID;              // 580-583
+    int    pciDomainID;              // 584-587
+    int    tccDriver;                // 588-591
+    int    asyncEngineCount;         // 592-595
+    int    unifiedAddressing;        // 596-599
+    int    memoryClockRate;          // 600-603
+    int    memoryBusWidth;           // 604-607
+    int    l2CacheSize;              // 608-611
+    int    persistingL2CacheMaxSize; // 612-615
+    int    maxThreadsPerMultiProcessor; // 616-619
+    int    streamPrioritiesSupported;   // 620-623
+    int    globalL1CacheSupported;      // 624-627
+    int    localL1CacheSupported;       // 628-631
+    size_t sharedMemPerMultiprocessor;  // 632-639
+    int    regsPerMultiprocessor;       // 640-643
+    int    managedMemory;               // 644-647
+    int    isMultiGpuBoard;             // 648-651
+    int    multiGpuBoardGroupID;        // 652-655
+    int    hostNativeAtomicSupported;   // 656-659
+    int    singleToDoublePrecisionPerfRatio; // 660-663
+    int    pageableMemoryAccess;        // 664-667
+    int    concurrentManagedAccess;     // 668-671
+    int    computePreemptionSupported;  // 672-675
+    int    canUseHostPointerForRegisteredMem; // 676-679
+    int    cooperativeLaunch;           // 680-683
+    int    cooperativeMultiDeviceLaunch; // 684-687
+    size_t sharedMemPerBlockOptin;      // 688-695
+    int    pageableMemoryAccessUsesHostPageTables; // 696-699
+    int    directManagedMemAccessFromHost; // 700-703
+} cudaDeviceProp_full;
 
 cudaError_t cudaGetDeviceProperties(cudaDeviceProp_t prop, int device) {
     if (!prop) return 1; // cudaErrorInvalidValue
 
-    // Fill a minimal struct and copy into caller memory
-    cudaDeviceProp_min p;
+    // Fill full struct matching CUDA 11.x/12.x layout
+    cudaDeviceProp_full p;
     memset(&p, 0, sizeof(p));
 
     // Device name
     const char* name = "Virtual GPU (hetGPU sm_80)";
     strncpy(p.name, name, sizeof(p.name) - 1);
 
-    // Conservative, GPU-like defaults
+    // Memory properties
+    p.totalGlobalMem = 4ULL * 1024 * 1024 * 1024;  // 4GB
+    p.sharedMemPerBlock = 48 * 1024;               // 48KB
+    p.sharedMemPerMultiprocessor = 64 * 1024;      // 64KB
+    p.totalConstMem = 64 * 1024;                   // 64KB
+    p.memPitch = 2147483647;
+    p.surfaceAlignment = 512;
+
+    // Compute resources
+    p.regsPerBlock = 65536;
+    p.regsPerMultiprocessor = 65536;
     p.warpSize = 32;
     p.maxThreadsPerBlock = 1024;
-    p.maxThreadsDim[0] = 1024; p.maxThreadsDim[1] = 1024; p.maxThreadsDim[2] = 64;
-    p.maxGridSize[0] = 2147483647; p.maxGridSize[1] = 65535; p.maxGridSize[2] = 65535;
-    p.clockRate = 1410000; // kHz
-    p.totalConstMem = 64 * 1024;
+    p.maxThreadsPerMultiProcessor = 1536;
+    p.multiProcessorCount = 80;  // Like A100
 
-    // Compute capability (match driver attribute path)
+    // Thread/block dimensions
+    p.maxThreadsDim[0] = 1024;
+    p.maxThreadsDim[1] = 1024;
+    p.maxThreadsDim[2] = 64;
+    p.maxGridSize[0] = 2147483647;
+    p.maxGridSize[1] = 65535;
+    p.maxGridSize[2] = 65535;
+
+    // Clock rates
+    p.clockRate = 1410000;        // 1.41 GHz
+    p.memoryClockRate = 1215000;  // 1.215 GHz
+    p.memoryBusWidth = 5120;      // 5120-bit (like A100)
+
+    // Compute capability - THE KEY FIELDS!
     p.major = 8;
     p.minor = 0;
 
-    memcpy(prop, &p, sizeof(p));
-    fprintf(stderr, "[cudart_shim] cudaGetDeviceProperties: name='%s' cc=%d.%d\n", p.name, p.major, p.minor);
+    // Cache properties
+    p.l2CacheSize = 40 * 1024 * 1024;  // 40MB
+    p.persistingL2CacheMaxSize = 40 * 1024 * 1024;
 
-    // Defensive: also stamp major/minor at several known offsets used by
-    // different CUDA headers to avoid layout mismatches.
-    // These offsets are relative to the start of cudaDeviceProp and cover
-    // common placements (immediately after totalConstMem).
-    {
-        unsigned char* base = (unsigned char*)prop;
-        const int major = 8, minor = 0;
-        // Try multiple known offsets to accommodate struct layout differences.
-        size_t cand_major[] = { 316, 320, 328, 332, 336, 344 };
-        for (size_t i = 0; i < sizeof(cand_major)/sizeof(cand_major[0]); ++i) {
-            // Write major, then minor adjacent
-            *(int*)(base + cand_major[i]) = major;
-            *(int*)(base + cand_major[i] + 4) = minor;
-        }
-    }
+    // Capabilities
+    p.concurrentKernels = 1;
+    p.ECCEnabled = 0;
+    p.asyncEngineCount = 2;
+    p.unifiedAddressing = 1;
+    p.managedMemory = 1;
+    p.computePreemptionSupported = 1;
+    p.cooperativeLaunch = 1;
+    p.cooperativeMultiDeviceLaunch = 0;
+    p.pageableMemoryAccess = 1;
+    p.concurrentManagedAccess = 1;
+    p.canUseHostPointerForRegisteredMem = 1;
+    p.directManagedMemAccessFromHost = 1;
+    p.globalL1CacheSupported = 1;
+    p.localL1CacheSupported = 1;
+
+    // Texture limits (conservative defaults)
+    p.maxTexture1D = 131072;
+    p.maxTexture2D[0] = 131072;
+    p.maxTexture2D[1] = 65536;
+    p.maxTexture3D[0] = 16384;
+    p.maxTexture3D[1] = 16384;
+    p.maxTexture3D[2] = 16384;
+
+    // PCI info (fake but valid)
+    p.pciBusID = 0;
+    p.pciDeviceID = 0;
+    p.pciDomainID = 0;
+
+    // Copy full struct to caller's buffer
+    memcpy(prop, &p, sizeof(p));
+
+    fprintf(stderr, "[cudart_shim] cudaGetDeviceProperties: name='%s' cc=%d.%d (offset major=%zu, minor=%zu)\n",
+            p.name, p.major, p.minor,
+            offsetof(cudaDeviceProp_full, major),
+            offsetof(cudaDeviceProp_full, minor));
+
     (void)device;
     return 0;
+}
+
+// v2 API variant - just calls the base implementation
+cudaError_t cudaGetDeviceProperties_v2(cudaDeviceProp_t prop, int device) {
+    return cudaGetDeviceProperties(prop, device);
 }
 
 // Global to track current device
@@ -334,12 +462,54 @@ cudaError_t cudaDeviceEnablePeerAccess(int peerDevice, unsigned int flags) {
 // Device attribute query
 cudaError_t cudaDeviceGetAttribute(int* value, int attr, int device) {
     if (!value) return 1; // cudaErrorInvalidValue
-    fprintf(stderr, "[cudart_shim] cudaDeviceGetAttribute(attr=%d, dev=%d)\n", attr, device);
-    // Provide sane defaults; explicitly handle common CC queries
-    if (attr == 75 /* cudaDevAttrComputeCapabilityMajor */) { *value = 8; return 0; }
-    if (attr == 76 /* cudaDevAttrComputeCapabilityMinor */) { *value = 0; return 0; }
-    // Generic non-zero default to avoid divide-by-zero in upstream code
-    *value = 1;
+
+    // Common CUDA device attributes (from cuda_runtime_api.h)
+    enum cudaDeviceAttr {
+        cudaDevAttrMaxThreadsPerBlock = 1,
+        cudaDevAttrMaxBlockDimX = 2,
+        cudaDevAttrMaxBlockDimY = 3,
+        cudaDevAttrMaxBlockDimZ = 4,
+        cudaDevAttrMaxGridDimX = 5,
+        cudaDevAttrMaxGridDimY = 6,
+        cudaDevAttrMaxGridDimZ = 7,
+        cudaDevAttrMaxSharedMemoryPerBlock = 8,
+        cudaDevAttrTotalConstantMemory = 9,
+        cudaDevAttrWarpSize = 10,
+        cudaDevAttrMaxPitch = 11,
+        cudaDevAttrMaxRegistersPerBlock = 12,
+        cudaDevAttrClockRate = 13,
+        cudaDevAttrTextureAlignment = 14,
+        cudaDevAttrMultiProcessorCount = 16,
+        cudaDevAttrComputeCapabilityMajor = 75,
+        cudaDevAttrComputeCapabilityMinor = 76,
+    };
+
+    // Return realistic values for GPU-like device
+    switch (attr) {
+        case cudaDevAttrMaxThreadsPerBlock: *value = 1024; break;
+        case cudaDevAttrMaxBlockDimX: *value = 1024; break;
+        case cudaDevAttrMaxBlockDimY: *value = 1024; break;
+        case cudaDevAttrMaxBlockDimZ: *value = 64; break;
+        case cudaDevAttrMaxGridDimX: *value = 2147483647; break;
+        case cudaDevAttrMaxGridDimY: *value = 65535; break;
+        case cudaDevAttrMaxGridDimZ: *value = 65535; break;
+        case cudaDevAttrMaxSharedMemoryPerBlock: *value = 49152; break;
+        case cudaDevAttrTotalConstantMemory: *value = 65536; break;
+        case cudaDevAttrWarpSize: *value = 32; break;
+        case cudaDevAttrMaxPitch: *value = 2147483647; break;
+        case cudaDevAttrMaxRegistersPerBlock: *value = 65536; break;
+        case cudaDevAttrClockRate: *value = 1410000; break;  // kHz
+        case cudaDevAttrTextureAlignment: *value = 512; break;
+        case cudaDevAttrMultiProcessorCount: *value = 80; break;  // SM count (A100-like)
+        case cudaDevAttrComputeCapabilityMajor: *value = 8; break;
+        case cudaDevAttrComputeCapabilityMinor: *value = 0; break;
+        default:
+            // Generic non-zero default to avoid divide-by-zero
+            *value = 1;
+            break;
+    }
+
+    (void)device;
     return 0;
 }
 
@@ -482,6 +652,27 @@ extern CUresult cuLaunchKernel(
     void** extra
 );
 
+// Fat binary registration - map host function pointers to Driver API handles
+#define MAX_MODULES 64
+#define MAX_FUNCTIONS 1024
+
+typedef struct {
+    CUmodule module;
+    void* fatCubinHandle;
+} RegisteredModule;
+
+typedef struct {
+    void* hostFun;           // Host function pointer (from PyTorch)
+    CUfunction cuFunc;       // Driver API function handle
+    char name[256];          // Kernel name for debugging
+    CUmodule module;         // Parent module
+} RegisteredFunction;
+
+static RegisteredModule g_modules[MAX_MODULES];
+static int g_module_count = 0;
+static RegisteredFunction g_functions[MAX_FUNCTIONS];
+static int g_function_count = 0;
+
 // Some code paths call the runtime API cudaLaunchKernel (not the internal __cudaLaunchKernel).
 // Provide a wrapper that forwards to our internal hook.
 cudaError_t cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void** args, size_t sharedMem, cudaStream_t stream) {
@@ -495,10 +686,36 @@ cudaError_t __cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, vo
             blockDim.x, blockDim.y, blockDim.z, sharedMem);
     fflush(stderr);
 
-    // Forward to driver API cuLaunchKernel
+    if (func == NULL) {
+        fprintf(stderr, "[cudart_shim] ERROR: NULL function pointer\n");
+        return 1;  // cudaErrorInvalidValue
+    }
+
+    // Look up the function in our registration table
+    CUfunction cuFunc = NULL;
+    const char* funcName = "<unknown>";
+
+    for (int i = 0; i < g_function_count; i++) {
+        if (g_functions[i].hostFun == func) {
+            cuFunc = g_functions[i].cuFunc;
+            funcName = g_functions[i].name;
+            fprintf(stderr, "[cudart_shim] Found registered function '%s': %p -> %p\n",
+                    funcName, func, cuFunc);
+            break;
+        }
+    }
+
+    if (cuFunc == NULL) {
+        // Function not found in registry - might be from older code path
+        fprintf(stderr, "[cudart_shim] Function %p not in registry, using as-is\n", func);
+        cuFunc = (CUfunction)func;
+    }
+
+    // Forward to Driver API cuLaunchKernel
     // This routes through our Rust implementation in function.rs
+    // which has PTX extraction and cocotb execution support
     CUresult result = cuLaunchKernel(
-        (CUfunction)func,
+        cuFunc,
         gridDim.x, gridDim.y, gridDim.z,
         blockDim.x, blockDim.y, blockDim.z,
         (unsigned int)sharedMem,
@@ -507,17 +724,136 @@ cudaError_t __cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, vo
         NULL  // extra parameters
     );
 
-    fprintf(stderr, "[cudart_shim] cuLaunchKernel returned: %d\n", result);
+    fprintf(stderr, "[cudart_shim] cuLaunchKernel('%s') returned: %d\n", funcName, result);
     fflush(stderr);
 
     return (cudaError_t)result;
 }
 
-void** __cudaRegisterFatBinary(void* fatCubin) { (void)fatCubin; static void* handle; return &handle; }
-void __cudaRegisterFatBinaryEnd(void** fatCubinHandle) { (void)fatCubinHandle; }
-void __cudaUnregisterFatBinary(void** fatCubinHandle) { (void)fatCubinHandle; }
-void __cudaRegisterFunction(void** fatCubinHandle, const char* hostFun, char* deviceFun, const char* deviceName, int thread_limit, void* tid, void* bid, void* bDim, void* gDim, void* wSize) {
-    (void)fatCubinHandle; (void)hostFun; (void)deviceFun; (void)deviceName; (void)thread_limit; (void)tid; (void)bid; (void)bDim; (void)gDim; (void)wSize;
+void** __cudaRegisterFatBinary(void* fatCubin) {
+    fprintf(stderr, "[cudart_shim] __cudaRegisterFatBinary called with %p\n", fatCubin);
+
+    if (!fatCubin) {
+        fprintf(stderr, "[cudart_shim] ERROR: NULL fatCubin!\n");
+        static void* dummy = NULL;
+        return &dummy;
+    }
+
+    // Fat binary starts with magic number followed by version
+    unsigned int* magic = (unsigned int*)fatCubin;
+    fprintf(stderr, "[cudart_shim] Fat binary magic: 0x%08x\n", magic[0]);
+
+    // Expected magic: 0x466243B1 for CUDA fat binary (little-endian "1BCF")
+    // Version is in magic[1]
+
+    // Fat binary format (simplified):
+    // struct __fatBinC_Wrapper_t {
+    //     int magic;           // 0x466243B1
+    //     int version;         // 1
+    //     void* data;          // pointer to __fatBinC_t
+    //     void* filename;
+    // }
+
+    void** wrapper = (void**)fatCubin;
+    void* data = (magic[0] == 0x466243B1 && wrapper[1]) ? wrapper[1] : (void*)((char*)fatCubin + 16);
+
+    // For now, try to extract the first CUBIN we can find
+    // Real implementation would parse the full fat binary structure
+
+    // Try to load as raw binary via Driver API
+    // This will trigger our PTX extraction in module.rs
+    CUmodule module = NULL;
+
+    // NOTE: Don't call cuInit here - let PyTorch handle initialization
+    // PyTorch will call cuInit/cudaGetDeviceCount before registration
+    // Calling it here causes "initialization error" conflicts
+
+    // Try to load the data as a module
+    // cuModuleLoadData expects either PTX or CUBIN
+    CUresult result = cuModuleLoadData(&module, data);
+
+    if (result != 0) {
+        fprintf(stderr, "[cudart_shim] cuModuleLoadData failed: %d\n", result);
+        fprintf(stderr, "[cudart_shim] Trying offset +16...\n");
+        result = cuModuleLoadData(&module, (char*)fatCubin + 16);
+    }
+
+    if (result != 0) {
+        fprintf(stderr, "[cudart_shim] cuModuleLoadData failed again: %d\n", result);
+        fprintf(stderr, "[cudart_shim] Module load failed, but continuing with placeholder\n");
+        // Don't fail completely - return a handle even if load fails
+        // This allows the rest of the code to continue
+    } else {
+        fprintf(stderr, "[cudart_shim] Successfully loaded module: %p\n", module);
+    }
+
+    // Store the module
+    if (g_module_count < MAX_MODULES) {
+        g_modules[g_module_count].module = module;
+        g_modules[g_module_count].fatCubinHandle = fatCubin;
+        g_module_count++;
+
+        fprintf(stderr, "[cudart_shim] Registered module %d (total: %d)\n",
+                g_module_count - 1, g_module_count);
+    }
+
+    // Return the module handle as the fatCubinHandle
+    // PyTorch will pass this back to __cudaRegisterFunction
+    static void* handle_storage[MAX_MODULES];
+    handle_storage[g_module_count - 1] = (void*)module;
+    return &handle_storage[g_module_count - 1];
+}
+
+void __cudaRegisterFatBinaryEnd(void** fatCubinHandle) {
+    fprintf(stderr, "[cudart_shim] __cudaRegisterFatBinaryEnd called\n");
+    (void)fatCubinHandle;
+}
+
+void __cudaUnregisterFatBinary(void** fatCubinHandle) {
+    fprintf(stderr, "[cudart_shim] __cudaUnregisterFatBinary called\n");
+    (void)fatCubinHandle;
+}
+
+void __cudaRegisterFunction(void** fatCubinHandle, const char* hostFun, char* deviceFun,
+                            const char* deviceName, int thread_limit, void* tid, void* bid,
+                            void* bDim, void* gDim, void* wSize) {
+    (void)deviceFun; (void)thread_limit; (void)tid; (void)bid; (void)bDim; (void)gDim; (void)wSize;
+
+    if (!fatCubinHandle || !hostFun || !deviceName) {
+        fprintf(stderr, "[cudart_shim] __cudaRegisterFunction: invalid arguments\n");
+        return;
+    }
+
+    CUmodule module = (CUmodule)(*fatCubinHandle);
+    fprintf(stderr, "[cudart_shim] __cudaRegisterFunction: hostFun=%p, name='%s', module=%p\n",
+            hostFun, deviceName, module);
+
+    // Get the function from the module
+    CUfunction func = NULL;
+    CUresult result = cuModuleGetFunction(&func, module, deviceName);
+
+    if (result != 0) {
+        fprintf(stderr, "[cudart_shim] cuModuleGetFunction('%s') failed: %d\n", deviceName, result);
+        // Continue anyway - func will be NULL, which we handle in launch
+    } else {
+        fprintf(stderr, "[cudart_shim] Got function '%s': %p\n", deviceName, func);
+    }
+
+    // Store the mapping
+    if (g_function_count < MAX_FUNCTIONS) {
+        g_functions[g_function_count].hostFun = (void*)hostFun;
+        g_functions[g_function_count].cuFunc = func;
+        g_functions[g_function_count].module = module;
+        strncpy(g_functions[g_function_count].name, deviceName, 255);
+        g_functions[g_function_count].name[255] = '\0';
+
+        fprintf(stderr, "[cudart_shim] Registered function %d: %p -> %p ('%s')\n",
+                g_function_count, hostFun, func, deviceName);
+
+        g_function_count++;
+    } else {
+        fprintf(stderr, "[cudart_shim] WARNING: Function table full!\n");
+    }
 }
 
 void __cudaRegisterVar(void** fatCubinHandle,

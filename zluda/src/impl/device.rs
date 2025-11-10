@@ -47,51 +47,14 @@ pub(crate) fn get(device: *mut hipDevice_t, ordinal: i32) -> hipError_t {
 }
 
 #[cfg(feature = "intel")]
-pub(crate) fn get(device: *mut ze_device_handle_t, ordinal: i32) -> ze_result_t {
-    unsafe {
-        // Initialize Level Zero
-        match zeInit(0) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
-            e => return e,
-        }
-
-        // Get driver count
-        let mut driver_count = 0;
-        match zeDriverGet(&mut driver_count, ptr::null_mut()) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
-            e => return e,
-        }
-
-        // Get drivers
-        let mut drivers = vec![ptr::null_mut(); driver_count as usize];
-        match zeDriverGet(&mut driver_count, *drivers.as_mut_ptr()) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
-            e => return e,
-        }
-
-        // Get device count for the first driver
-        let mut device_count = 0;
-        match zeDeviceGet(*drivers[0], &mut device_count, ptr::null_mut()) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
-            e => return e,
-        }
-
-        if ordinal >= device_count as i32 {
-            return ze_result_t::ZE_RESULT_ERROR_INVALID_ARGUMENT;
-        }
-
-        // Get devices
-        let mut devices = vec![ptr::null_mut(); device_count as usize];
-        match zeDeviceGet(*drivers[0], &mut device_count, *devices.as_mut_ptr()) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
-            e => return e,
-        }
-
-        // Set the requested device
-        *device = *devices[ordinal as usize];
-
-        ze_result_t::ZE_RESULT_SUCCESS
+pub(crate) fn get(device: *mut i32, ordinal: i32) -> CUresult {
+    // Use global_state to get device (supports virtual device fallback)
+    let devices = super::driver::global_state()?;
+    if ordinal < 0 || ordinal >= devices.devices.len() as i32 {
+        return Err(CUerror::INVALID_DEVICE);
     }
+    unsafe { *device = ordinal };
+    Ok(())
 }
 
 #[cfg(feature = "amd")]
@@ -975,15 +938,24 @@ pub(crate) fn total_mem_v2(bytes: *mut usize, dev: hipDevice_t) -> hipError_t {
 
 #[cfg(feature = "intel")]
 pub(crate) fn total_mem_v2(bytes: *mut usize, dev: ze_device_handle_t) -> ze_result_t {
+    if bytes.is_null() {
+        return ze_result_t::ZE_RESULT_ERROR_INVALID_NULL_POINTER;
+    }
+
     let mut props: ze_device_properties_t = unsafe { mem::zeroed() };
     props.stype = ze_structure_type_t::ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
 
-    unsafe {
-        let _ = zeDeviceGetProperties(dev, &mut props);
-    }
+    let result = unsafe { zeDeviceGetProperties(dev, &mut props) };
 
-    unsafe {
-        *bytes = props.maxMemAllocSize as usize;
+    // If Level Zero query fails (e.g., virtual device), return 16GB as default
+    if result != ze_result_t::ZE_RESULT_SUCCESS || props.maxMemAllocSize == 0 {
+        unsafe {
+            *bytes = 16 * 1024 * 1024 * 1024; // 16GB virtual device memory
+        }
+    } else {
+        unsafe {
+            *bytes = props.maxMemAllocSize as usize;
+        }
     }
 
     ze_result_t::ZE_RESULT_SUCCESS
@@ -1068,9 +1040,11 @@ pub(crate) fn primary_context_retain(
 #[cfg(feature = "intel")]
 pub(crate) fn primary_context_retain(
     pctx: &mut CUcontext,
-    ze_dev: ze_device_handle_t,
+    dev: i32,
 ) -> Result<(), CUerror> {
-    let (ctx, raw_ctx) = context::get_primary_ze(ze_dev)?;
+    // Get device from global state using ordinal
+    let device_obj = super::driver::device(dev)?;
+    let (ctx, raw_ctx) = device_obj.primary_context();
     {
         let mut mutable_ctx = ctx.mutable.lock().map_err(|_| CUerror::UNKNOWN)?;
         mutable_ctx.ref_count += 1;
@@ -1111,8 +1085,10 @@ pub(crate) fn primary_context_release(hip_dev: hipDevice_t) -> Result<(), CUerro
 }
 
 #[cfg(feature = "intel")]
-pub(crate) fn primary_context_release(ze_dev: ze_device_handle_t) -> Result<(), CUerror> {
-    let (ctx, _) = context::get_primary_ze(ze_dev)?;
+pub(crate) fn primary_context_release(dev: i32) -> Result<(), CUerror> {
+    // Get device from global state using ordinal
+    let device_obj = super::driver::device(dev)?;
+    let (ctx, _) = device_obj.primary_context();
     {
         let mut mutable_ctx = ctx.mutable.lock().map_err(|_| CUerror::UNKNOWN)?;
         if mutable_ctx.ref_count == 0 {

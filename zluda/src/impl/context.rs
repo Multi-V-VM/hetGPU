@@ -172,23 +172,31 @@ pub(crate) struct OwnedByContext {
 #[cfg(all(feature = "intel", not(feature = "amd")))]
 impl Context {
     pub(crate) fn new(device: ze_device_handle_t) -> Self {
-        // Create Level Zero context
-        let mut context_desc = ze_context_desc_t {
-            stype: ze_structure_type_t::ZE_STRUCTURE_TYPE_CONTEXT_DESC,
-            pNext: ptr::null(),
-            flags: 0,
-        };
+        // Check if this is a virtual device (null handle)
+        let context_handle = if device.0.is_null() {
+            // Virtual device - don't try to create real Level Zero context
+            ze_context_handle_t(ptr::null_mut())
+        } else {
+            // Real device - create Level Zero context
+            let mut context_desc = ze_context_desc_t {
+                stype: ze_structure_type_t::ZE_STRUCTURE_TYPE_CONTEXT_DESC,
+                pNext: ptr::null(),
+                flags: 0,
+            };
 
-        let mut context_handle = ze_context_handle_t(ptr::null_mut());
-        let mut drivers = vec![ze_driver_handle_t(ptr::null_mut()); 1];
-        let mut driver_count = 1;
-        
-        unsafe {
-            // This is a simplified initialization - in reality you'd need proper error handling
-            let _ = zeInit(0);
-            let _ = zeDriverGet(&mut driver_count, drivers.as_mut_ptr());
-            let _ = zeContextCreate(drivers[0], &context_desc, &mut context_handle);
-        }
+            let mut context_handle = ze_context_handle_t(ptr::null_mut());
+            let mut drivers = vec![ze_driver_handle_t(ptr::null_mut()); 1];
+            let mut driver_count = 1;
+
+            unsafe {
+                // This is a simplified initialization - in reality you'd need proper error handling
+                let _ = zeInit(0);
+                let _ = zeDriverGet(&mut driver_count, drivers.as_mut_ptr());
+                let _ = zeContextCreate(drivers[0], &context_desc, &mut context_handle);
+            }
+
+            context_handle
+        };
 
         Self {
             device,

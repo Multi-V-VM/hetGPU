@@ -26,6 +26,7 @@ libcudart.so.13 {
     cudaGetErrorName;
     cudaGetDeviceCount;
     cudaGetDeviceProperties;
+    cudaGetDeviceProperties_v2;
     cudaSetDevice;
     cudaGetDevice;
     cudaRuntimeGetVersion;
@@ -60,8 +61,12 @@ libcudart.so.13 {
     cudaFuncSetAttribute;
     cudaFuncGetAttributes;
     cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags;
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor;
+    cudaOccupancyMaxPotentialBlockSize;
+    cudaOccupancyMaxPotentialBlockSizeVariableSMem;
     cudaThreadExchangeStreamCaptureMode;
     cudaLaunchKernelExC;
+    cudaLaunchKernel;
     cudaProfilerStart;
     cudaProfilerStop;
     __cudaPushCallConfiguration;

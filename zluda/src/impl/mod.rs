@@ -195,10 +195,11 @@ impl<'a> FromCuda<'a, CUfunction_attribute> for ze_kernel_desc_t {
         match *attr {
             // Map each attribute appropriately
             // This is a placeholder - actual implementation will depend on attributes
-            _ => return Err(CUerror::NOT_SUPPORTED),
+            _ => {}
         }
 
-        Ok(desc)
+        // For now, return NOT_SUPPORTED for all attributes
+        Err(CUerror::NOT_SUPPORTED)
     }
 }
 
