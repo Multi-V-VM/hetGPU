@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #if defined(HETGPU_DEBUG_LOGS)
 #define HETGPU_LOG(...) fprintf(stderr, __VA_ARGS__)
@@ -75,6 +76,14 @@ typedef struct {
     unsigned int refcount;
     unsigned int flags;
 } HetGPUUserObject;
+
+// Forward declarations for functions called before they're defined
+cudaError_t cudaMalloc(void** devPtr, size_t size);
+cudaError_t cudaGetDriverEntryPointByVersion(const char* symbol,
+                                             void** funcPtr,
+                                             int driverVersion,
+                                             unsigned long long flags);
+cudaError_t __cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void** args, size_t sharedMem, cudaStream_t stream);
 
 // Provide a stub for cudaGraphNodeGetDependencies. We simply report
 // zero dependencies and return success. This satisfies symbol lookup
@@ -172,7 +181,8 @@ cudaError_t cudaStreamEndCapture(cudaStream_t stream,
 
 // Basic stream create/destroy
 cudaError_t cudaStreamCreate(cudaStream_t* pStream) {
-    if (pStream) *pStream = (cudaStream_t)0; return 0;
+    if (pStream) *pStream = (cudaStream_t)0;
+    return 0;
 }
 
 cudaError_t cudaStreamCreateWithFlags(cudaStream_t* pStream, unsigned int flags) {
@@ -502,7 +512,8 @@ cudaError_t cudaGetDevice(int* device) {
 }
 
 cudaError_t cudaRuntimeGetVersion(int* version) {
-    if (version) *version = 12080; return 0;
+    if (version) *version = 12080;
+    return 0;
 }
 
 cudaError_t cudaDeviceSynchronize(void) { return 0; }
@@ -929,12 +940,35 @@ cudaError_t __cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, vo
         NULL  // extra parameters
     );
 
+#if defined(HETGPU_DEBUG_LOGS)
     fprintf(stderr, "[cudart_shim] cuLaunchKernel('%s') returned: %d\n", funcName, result);
     fflush(stderr);
 #endif
 
     return (cudaError_t)result;
 }
+
+// Fat binary structures
+typedef struct {
+    unsigned int magic;      // 0xBA55ED50
+    unsigned short version;  // 0x01
+    unsigned short header_size;
+    unsigned long files_size;
+} FatbinHeader;
+
+typedef struct {
+    unsigned short kind;     // 0x01 = PTX, 0x02 = ELF/CUBIN
+    unsigned short version;
+    unsigned int header_size;
+    unsigned int padded_payload_size;
+    unsigned int unknown0;
+    unsigned int payload_size;
+    // More fields follow...
+} FatbinFileHeader;
+
+#define FATBIN_MAGIC 0xBA55ED50
+#define FATBIN_KIND_PTX 0x01
+#define FATBIN_KIND_ELF 0x02
 
 void** __cudaRegisterFatBinary(void* fatCubin) {
     fprintf(stderr, "[cudart_shim] __cudaRegisterFatBinary called with %p\n", fatCubin);
@@ -946,46 +980,156 @@ void** __cudaRegisterFatBinary(void* fatCubin) {
     }
 
     // Fat binary starts with magic number followed by version
-    unsigned int* magic = (unsigned int*)fatCubin;
-    fprintf(stderr, "[cudart_shim] Fat binary magic: 0x%08x\n", magic[0]);
+    unsigned int* wrapper_magic = (unsigned int*)fatCubin;
+    fprintf(stderr, "[cudart_shim] Fat binary wrapper magic: 0x%08x\n", wrapper_magic[0]);
 
-    // Expected magic: 0x466243B1 for CUDA fat binary (little-endian "1BCF")
-    // Version is in magic[1]
-
-    // Fat binary format (simplified):
-    // struct __fatBinC_Wrapper_t {
-    //     int magic;           // 0x466243B1
-    //     int version;         // 1
-    //     void* data;          // pointer to __fatBinC_t
-    //     void* filename;
+    // Parse FatbincWrapper:
+    // struct FatbincWrapper {
+    //     unsigned int magic;      // 0x466243B1 (offset 0, 4 bytes)
+    //     unsigned int version;    // 1 or 2    (offset 4, 4 bytes)
+    //     void* data;              // pointer to FatbinHeader (offset 8, 8 bytes)
+    //     void* filename_or_fatbins;           (offset 16, 8 bytes)
     // }
+    // So data pointer is at offset 8
+    void* fatbin_header_ptr = NULL;
 
-    void** wrapper = (void**)fatCubin;
-    void* data = (magic[0] == 0x466243B1 && wrapper[1]) ? wrapper[1] : (void*)((char*)fatCubin + 16);
+    if (wrapper_magic[0] == 0x466243B1) {
+        // Read the data pointer which is at offset 8
+        void** data_ptr_location = (void**)((char*)fatCubin + 8);
+        fatbin_header_ptr = *data_ptr_location;
+    } else {
+        // Fallback: assume data is offset by 16 bytes
+        fatbin_header_ptr = (char*)fatCubin + 16;
+    }
 
-    // For now, try to extract the first CUBIN we can find
-    // Real implementation would parse the full fat binary structure
+    fprintf(stderr, "[cudart_shim] FatbinHeader pointer: %p\n", fatbin_header_ptr);
 
-    // Try to load as raw binary via Driver API
-    // This will trigger our PTX extraction in module.rs
+    // Parse FatbinHeader to find the actual CUBIN/PTX payload
+    FatbinHeader* fatbin_header = (FatbinHeader*)fatbin_header_ptr;
+    void* payload = NULL;
+    size_t payload_size = 0;
+
+    if (fatbin_header && fatbin_header->magic == FATBIN_MAGIC) {
+        fprintf(stderr, "[cudart_shim] Valid FatbinHeader found (magic: 0x%08x)\n", fatbin_header->magic);
+        fprintf(stderr, "[cudart_shim] Header size: %u, Files size: %lu\n",
+                fatbin_header->header_size, fatbin_header->files_size);
+
+        // Start of file headers
+        unsigned char* file_ptr = (unsigned char*)fatbin_header + fatbin_header->header_size;
+        unsigned char* end_ptr = file_ptr + fatbin_header->files_size;
+
+        // Iterate through file headers to find PTX or CUBIN
+        while (file_ptr < end_ptr) {
+            FatbinFileHeader* file_header = (FatbinFileHeader*)file_ptr;
+
+            fprintf(stderr, "[cudart_shim] File entry: kind=0x%04x, header_size=%u, payload_size=%u, padded=%u\n",
+                    file_header->kind, file_header->header_size, file_header->payload_size, file_header->padded_payload_size);
+
+            // Prefer PTX over CUBIN
+            if (file_header->kind == FATBIN_KIND_PTX && payload == NULL) {
+                payload = file_ptr + file_header->header_size;
+                payload_size = file_header->payload_size;
+                fprintf(stderr, "[cudart_shim] Found PTX payload at offset +%lu, size=%zu\n",
+                        (unsigned long)((char*)payload - (char*)fatbin_header_ptr), payload_size);
+                break;  // Prefer PTX, so break immediately
+            } else if (file_header->kind == FATBIN_KIND_ELF && payload == NULL) {
+                payload = file_ptr + file_header->header_size;
+                payload_size = file_header->payload_size;
+                fprintf(stderr, "[cudart_shim] Found ELF/CUBIN payload at offset +%lu, size=%zu\n",
+                        (unsigned long)((char*)payload - (char*)fatbin_header_ptr), payload_size);
+                // Don't break - keep looking for PTX
+            }
+
+            // Move to next file entry
+            file_ptr += file_header->padded_payload_size + file_header->header_size;
+        }
+    } else {
+        fprintf(stderr, "[cudart_shim] Invalid or missing FatbinHeader, using data pointer directly\n");
+        payload = fatbin_header_ptr;
+    }
+
+    // If we didn't find a payload, use the data pointer directly as fallback
+    if (payload == NULL) {
+        fprintf(stderr, "[cudart_shim] No valid payload found in fat binary, using data pointer as fallback\n");
+        payload = fatbin_header_ptr;
+    }
+
+    // If we found a CUBIN (not PTX), try to extract PTX using cuobjdump
+    // This is necessary because many PyTorch modules only include CUBIN, not PTX
+    if (payload != NULL && payload_size > 0) {
+        // Check if this is likely a CUBIN (starts with 0x7fELF or looks binary)
+        unsigned char* payload_bytes = (unsigned char*)payload;
+        int is_binary = (payload_bytes[0] == 0x7f || payload_bytes[0] > 127 ||
+                         (payload_bytes[0] < 32 && payload_bytes[0] != '\n'));
+
+        if (is_binary) {
+            fprintf(stderr, "[cudart_shim] Detected binary CUBIN, attempting PTX extraction via cuobjdump...\n");
+
+            // Write CUBIN to temporary file
+            char tmpfile_cubin[256];
+            snprintf(tmpfile_cubin, sizeof(tmpfile_cubin), "/tmp/hetgpu_cubin_%p.cubin", fatCubin);
+            FILE* f = fopen(tmpfile_cubin, "wb");
+            if (f) {
+                fwrite(payload, 1, payload_size, f);
+                fclose(f);
+
+                // Extract PTX using cuobjdump
+                char tmpfile_ptx[256];
+                snprintf(tmpfile_ptx, sizeof(tmpfile_ptx), "/tmp/hetgpu_ptx_%p.ptx", fatCubin);
+
+                char cmd[512];
+                snprintf(cmd, sizeof(cmd), "/usr/local/cuda-13.0/bin/cuobjdump --dump-ptx %s -o %s 2>/dev/null",
+                         tmpfile_cubin, tmpfile_ptx);
+
+                int ret = system(cmd);
+                fprintf(stderr, "[cudart_shim] cuobjdump returned: %d\n", ret);
+
+                if (ret == 0) {
+                    // Read the extracted PTX
+                    FILE* ptx_f = fopen(tmpfile_ptx, "rb");
+                    if (ptx_f) {
+                        fseek(ptx_f, 0, SEEK_END);
+                        long ptx_size = ftell(ptx_f);
+                        fseek(ptx_f, 0, SEEK_SET);
+
+                        fprintf(stderr, "[cudart_shim] PTX file size: %ld bytes\n", ptx_size);
+
+                        if (ptx_size > 0 && ptx_size < 100*1024*1024) {  // Sanity check: < 100MB
+                            void* ptx_data = malloc(ptx_size + 1);
+                            if (ptx_data) {
+                                size_t read_size = fread(ptx_data, 1, ptx_size, ptx_f);
+                                ((char*)ptx_data)[read_size] = '\0';
+
+                                fprintf(stderr, "[cudart_shim] Successfully extracted %ld bytes of PTX from CUBIN\n", ptx_size);
+
+                                // Use PTX instead of CUBIN
+                                payload = ptx_data;
+                                payload_size = ptx_size;
+                            }
+                        } else {
+                            fprintf(stderr, "[cudart_shim] PTX file empty or too large\n");
+                        }
+                        fclose(ptx_f);
+                    } else {
+                        fprintf(stderr, "[cudart_shim] Failed to open PTX file: %s\n", tmpfile_ptx);
+                    }
+                    // Keep temp files for debugging
+                    // unlink(tmpfile_ptx);
+                } else {
+                    fprintf(stderr, "[cudart_shim] cuobjdump failed with exit code: %d\n", ret);
+                }
+                // Keep temp files for debugging
+                // unlink(tmpfile_cubin);
+            }
+        }
+    }
+
+    // Try to load the payload as a module
     CUmodule module = NULL;
-
-    // NOTE: Don't call cuInit here - let PyTorch handle initialization
-    // PyTorch will call cuInit/cudaGetDeviceCount before registration
-    // Calling it here causes "initialization error" conflicts
-
-    // Try to load the data as a module
-    // cuModuleLoadData expects either PTX or CUBIN
-    CUresult result = cuModuleLoadData(&module, data);
+    CUresult result = cuModuleLoadData(&module, payload);
 
     if (result != 0) {
         fprintf(stderr, "[cudart_shim] cuModuleLoadData failed: %d\n", result);
-        fprintf(stderr, "[cudart_shim] Trying offset +16...\n");
-        result = cuModuleLoadData(&module, (char*)fatCubin + 16);
-    }
-
-    if (result != 0) {
-        fprintf(stderr, "[cudart_shim] cuModuleLoadData failed again: %d\n", result);
         fprintf(stderr, "[cudart_shim] Module load failed, but continuing with placeholder\n");
         // Don't fail completely - return a handle even if load fails
         // This allows the rest of the code to continue
