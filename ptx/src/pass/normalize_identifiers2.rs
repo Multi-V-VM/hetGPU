@@ -108,13 +108,14 @@ fn run_variable<'input, 'b>(
             align: variable.info.align,
             v_type: variable.info.v_type,
             state_space: variable.info.state_space,
-            array_init: variable.info.array_init
+            array_init: variable
+                .info
+                .array_init
                 .into_iter()
                 .map(|reg_or_imm| match reg_or_imm {
-                    ast::RegOrImmediate::Reg(name) => {
-                        resolver.add_or_get_in_current_scope_untyped(name)
-                            .map(ast::RegOrImmediate::Reg)
-                    }
+                    ast::RegOrImmediate::Reg(name) => resolver
+                        .add_or_get_in_current_scope_untyped(name)
+                        .map(ast::RegOrImmediate::Reg),
                     ast::RegOrImmediate::Imm(imm) => Ok(ast::RegOrImmediate::Imm(imm)),
                 })
                 .collect::<Result<Vec<_>, _>>()?,
@@ -186,10 +187,9 @@ fn convert_array_init<'input, 'b>(
     array_init
         .iter()
         .map(|reg_or_imm| match reg_or_imm {
-            ast::RegOrImmediate::Reg(name) => {
-                resolver.add_or_get_in_current_scope_untyped(name)
-                    .map(ast::RegOrImmediate::Reg)
-            }
+            ast::RegOrImmediate::Reg(name) => resolver
+                .add_or_get_in_current_scope_untyped(name)
+                .map(ast::RegOrImmediate::Reg),
             ast::RegOrImmediate::Imm(imm) => Ok(ast::RegOrImmediate::Imm(*imm)),
         })
         .collect::<Result<Vec<_>, _>>()
@@ -205,10 +205,8 @@ fn run_multivariable<'input, 'b>(
             let converted_array_init = convert_array_init(resolver, &info.array_init)?;
             for i in 0..count {
                 let var_name = Cow::Owned(format!("{}{}", name, i));
-                let ident = resolver.add(
-                    var_name,
-                    Some((info.v_type.clone(), info.state_space)),
-                )?;
+                let ident =
+                    resolver.add(var_name, Some((info.v_type.clone(), info.state_space)))?;
                 result.push(Statement::Variable(ast::Variable {
                     name: ident,
                     info: ast::VariableInfo {
@@ -224,10 +222,8 @@ fn run_multivariable<'input, 'b>(
             let converted_array_init = convert_array_init(resolver, &info.array_init)?;
             for name in names {
                 let var_name = Cow::Borrowed(name);
-                let ident = resolver.add(
-                    var_name,
-                    Some((info.v_type.clone(), info.state_space)),
-                )?;
+                let ident =
+                    resolver.add(var_name, Some((info.v_type.clone(), info.state_space)))?;
                 result.push(Statement::Variable(ast::Variable {
                     name: ident,
                     info: ast::VariableInfo {

@@ -1,8 +1,8 @@
 use super::{driver, FromCuda, ZludaObject};
 use cuda_types::cuda::*;
 use rustc_hash::FxHashSet;
-use std::{cell::RefCell, ptr, sync::Mutex};
 use std::ffi::c_uint;
+use std::{cell::RefCell, ptr, sync::Mutex};
 
 // Feature-specific imports
 #[cfg(feature = "amd")]
@@ -65,7 +65,12 @@ thread_local! {
     pub(crate) static CONTEXT_STACK: RefCell<Vec<(CUcontext, i32)>> = RefCell::new(Vec::new());
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 thread_local! {
     pub(crate) static CONTEXT_STACK: RefCell<Vec<(CUcontext, i32)>> = RefCell::new(Vec::new());
 }
@@ -94,7 +99,7 @@ impl Clone for Context {
 
 #[cfg(feature = "amd")]
 pub(crate) struct OwnedByContext {
-    pub(crate) ref_count: usize, 
+    pub(crate) ref_count: usize,
     pub(crate) _memory: FxHashSet<hipDeviceptr_t>,
     pub(crate) _streams: FxHashSet<hipStream_t>,
     pub(crate) _modules: FxHashSet<CUmodule>,
@@ -297,9 +302,9 @@ impl Clone for Context {
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 pub(crate) struct OwnedByContext {
     pub(crate) ref_count: usize,
-    pub(crate) _memory: FxHashSet<usize>,    
-    pub(crate) _streams: FxHashSet<usize>,   
-    pub(crate) _modules: FxHashSet<usize>,   
+    pub(crate) _memory: FxHashSet<usize>,
+    pub(crate) _streams: FxHashSet<usize>,
+    pub(crate) _modules: FxHashSet<usize>,
 }
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
@@ -355,19 +360,39 @@ impl ZludaObject for Context {
 }
 
 // TMatmul implementation
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) struct Context {
     pub(crate) device_id: i32,
     pub(crate) mutable: Mutex<OwnedByContext>,
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 unsafe impl Send for Context {}
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 unsafe impl Sync for Context {}
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 impl Clone for Context {
     fn clone(&self) -> Self {
         let guard = self.mutable.lock().unwrap();
@@ -381,13 +406,23 @@ impl Clone for Context {
     }
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) struct OwnedByContext {
     pub(crate) ref_count: usize,
     pub(crate) _modules: FxHashSet<usize>,
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 impl Context {
     pub(crate) fn new(device_id: i32) -> Self {
         Self {
@@ -405,7 +440,12 @@ impl Context {
     }
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 impl ZludaObject for Context {
     const COOKIE: usize = 0x1c9a63e0bfb35ca4;
     type CudaHandle = CUcontext;
@@ -415,7 +455,12 @@ impl ZludaObject for Context {
     }
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn set_current(raw_ctx: CUcontext) -> CUresult {
     if raw_ctx.0 != ptr::null_mut() {
         let ctx: &Context = FromCuda::from_cuda(&raw_ctx)?;
@@ -433,7 +478,12 @@ pub(crate) fn set_current(raw_ctx: CUcontext) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn push(ctx: CUcontext, device_id: i32) {
     CONTEXT_STACK.with(|stack| {
         let mut stack = stack.borrow_mut();
@@ -441,8 +491,15 @@ pub(crate) fn push(ctx: CUcontext, device_id: i32) {
     });
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
-pub(crate) fn get_primary_tmatmul(device_id: i32) -> Result<(&'static Context, CUcontext), CUerror> {
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_primary_tmatmul(
+    device_id: i32,
+) -> Result<(&'static Context, CUcontext), CUerror> {
     let dev = driver::device_tmatmul(device_id)?;
     Ok(dev.primary_context())
 }
@@ -602,7 +659,7 @@ pub(crate) fn get_device_properties(
 ) -> Result<ze_device_properties_t, CUerror> {
     let mut props: ze_device_properties_t = unsafe { std::mem::zeroed() };
     props.stype = ze_structure_type_t::ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
-    
+
     unsafe { zeDeviceGetProperties(device, &mut props).to_cuda_result(props) }
 }
 
@@ -729,12 +786,11 @@ pub(crate) fn push(ctx: CUcontext, device_id: i32) {
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 pub(crate) fn get_device_properties(device_id: i32) -> Result<String, CUerror> {
-    let tt_device = tt_runtime_sys::Device::new(device_id as u32)
-        .map_err(|_| CUerror::INVALID_DEVICE)?;
-    
-    let device_name = tt_device.get_name()
-        .map_err(|_| CUerror::UNKNOWN)?;
-    
+    let tt_device =
+        tt_runtime_sys::Device::new(device_id as u32).map_err(|_| CUerror::INVALID_DEVICE)?;
+
+    let device_name = tt_device.get_name().map_err(|_| CUerror::UNKNOWN)?;
+
     Ok(device_name)
 }
 
@@ -774,7 +830,12 @@ pub(crate) fn peek_current() -> Option<CUcontext> {
             stack.last().map(|(ctx, _)| *ctx)
         })
     }
-    #[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+    #[cfg(all(
+        feature = "tmatmul",
+        not(feature = "amd"),
+        not(feature = "intel"),
+        not(feature = "tenstorrent")
+    ))]
     {
         CONTEXT_STACK.with(|stack| {
             let stack = stack.borrow();

@@ -1,15 +1,18 @@
-libcudart.so.13 {
+libcudart.so.12 {
   global:
     cudaGraphNodeGetDependencies;
     cudaGraphNodeGetType;
     cudaGraphAddEmptyNode;
     cudaStreamGetCaptureInfo;
+    cudaStreamGetCaptureInfo_v2;
+    cudaStreamGetCaptureInfo_v3;
     cudaStreamIsCapturing;
     cudaStreamCreate;
     cudaStreamCreateWithFlags;
     cudaStreamBeginCapture;
     cudaStreamEndCapture;
     cudaStreamUpdateCaptureDependencies;
+    cudaStreamUpdateCaptureDependencies_v2;
     cudaStreamDestroy;
     cudaStreamAddCallback;
     cudaLaunchHostFunc;
@@ -39,11 +42,13 @@ libcudart.so.13 {
     cudaStreamCreateWithPriority;
     cudaDeviceCanAccessPeer;
     cudaDeviceEnablePeerAccess;
+    cudaDeviceSetLimit;
     cudaDeviceGetAttribute;
     cudaHostAlloc;
     cudaFreeHost;
     cudaHostRegister;
     cudaHostUnregister;
+    cudaHostGetDevicePointer;
     cudaDeviceGetPCIBusId;
     cudaPointerGetAttributes;
     cudaIpcGetEventHandle;
@@ -56,6 +61,15 @@ libcudart.so.13 {
     cudaGraphLaunch;
     cudaGraphInstantiateWithFlags;
     cudaGraphInstantiate;
+    cudaGraphAddEventRecordNode;
+    cudaGraphAddEventWaitNode;
+    cudaGraphAddDependencies;
+    cudaGraphAddDependencies_v2;
+    cudaGraphRetainUserObject;
+    cudaGraphReleaseUserObject;
+    cudaUserObjectCreate;
+    cudaUserObjectRetain;
+    cudaUserObjectRelease;
     cudaGraphGetNodes;
     cudaGraphDebugDotPrint;
     cudaFuncSetAttribute;
@@ -78,6 +92,8 @@ libcudart.so.13 {
     __cudaRegisterFunction;
     __cudaRegisterVar;
     __cudaGetKernel;
+    __cudaInitModule;
+    cudaGetDriverEntryPoint;
     cudaGetDriverEntryPointByVersion;
     cudaGetLastError;
     cudaPeekAtLastError;
@@ -86,12 +102,22 @@ libcudart.so.13 {
     cudaMemPoolGetAttribute;
     cudaMemPoolSetAttribute;
     cudaMemPoolSetAccess;
+    cudaMemPoolCreate;
+    cudaMemPoolDestroy;
+    cudaMallocFromPoolAsync;
     cudaMemGetInfo;
     cudaMalloc;
     cudaFree;
     cudaMemcpy;
     cudaMemcpyAsync;
     cudaMemcpyPeerAsync;
+    cudaMemcpyToSymbol;
+    cudaMemcpyToSymbolAsync;
+    cudaMemcpyFromSymbol;
+    cudaMemcpyFromSymbolAsync;
+    cudaGetSymbolAddress;
+    cudaGetSymbolSize;
+    cudaGetFuncBySymbol;
     cudaMallocAsync;
     cudaFreeAsync;
     cudaMemset;

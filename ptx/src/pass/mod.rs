@@ -15,24 +15,24 @@ use strum_macros::EnumIter;
 pub(crate) mod debug_integration;
 mod deparamize_functions;
 pub(crate) mod emit_llvm;
-pub(crate) mod emit_tosa_mlir;
 pub mod emit_tmatmul_asm;
-pub mod ptx_to_tmatmul;
+pub(crate) mod emit_tosa_mlir;
 mod expand_operands;
 mod fix_special_registers;
 mod fix_special_registers2;
 mod hoist_globals;
 mod insert_explicit_load_store;
 mod insert_implicit_conversions2;
-pub(crate) mod mlir_debug_framework;
-pub(crate) mod mlir_debugger_integration;
 mod insert_post_saturation;
 mod instruction_mode_to_global_mode;
 pub mod llvm;
+pub(crate) mod mlir_debug_framework;
+pub(crate) mod mlir_debugger_integration;
 mod normalize_basic_blocks;
 mod normalize_identifiers;
 mod normalize_identifiers2;
 mod normalize_predicates2;
+pub mod ptx_to_tmatmul;
 mod remove_unreachable_basic_blocks;
 mod replace_instructions_with_function_calls;
 mod replace_instructions_with_functions;
@@ -159,8 +159,7 @@ impl Module {
 
         // Use llvm-dis to convert the bitcode to text
         // Try to use the built LLVM tools first, fall back to system
-        let llvm_dis_cmd = option_env!("LLVM_DIS_PATH")
-            .unwrap_or("llvm-dis");
+        let llvm_dis_cmd = option_env!("LLVM_DIS_PATH").unwrap_or("llvm-dis");
 
         let llvm_dis_output = Command::new(&llvm_dis_cmd)
             .arg(temp_bc_path)
@@ -341,8 +340,7 @@ pub fn to_llvm_module_with_debug_round_trip<'input>(
 
         // Use llc to convert LLVM IR to PTX with full DWARF debug info
         // Try to use the built LLVM tools first, fall back to system
-        let llc_cmd = option_env!("LLC_PATH")
-            .unwrap_or("llc");
+        let llc_cmd = option_env!("LLC_PATH").unwrap_or("llc");
 
         let ptx_temp_path = format!("/tmp/zluda_ptx_{}.ptx", timestamp);
         let llc_output = std::process::Command::new(&llc_cmd)
@@ -350,14 +348,17 @@ pub fn to_llvm_module_with_debug_round_trip<'input>(
                 "-march=nvptx64",
                 "-mcpu=sm_61", // Use newer compute capability for better debug support
                 "-filetype=asm", // Generate assembly (PTX)
-                "-O0", // No optimization to preserve debug info
+                "-O0",         // No optimization to preserve debug info
                 &llvm_temp_path,
                 "-o",
                 &ptx_temp_path,
             ])
             .output()
             .map_err(|e| {
-                TranslateError::UnexpectedError(format!("Failed to execute llc ({}): {}", llc_cmd, e))
+                TranslateError::UnexpectedError(format!(
+                    "Failed to execute llc ({}): {}",
+                    llc_cmd, e
+                ))
             })?;
 
         if !llc_output.status.success() {
@@ -476,8 +477,7 @@ pub fn to_llvm_module_with_debug_round_trip_and_filename<'input>(
 
         // Use llc to convert LLVM IR to PTX with full DWARF debug info
         // Try to use the built LLVM tools first, fall back to system
-        let llc_cmd = option_env!("LLC_PATH")
-            .unwrap_or("llc");
+        let llc_cmd = option_env!("LLC_PATH").unwrap_or("llc");
 
         let ptx_temp_path = format!("/tmp/zluda_ptx_{}.ptx", timestamp);
         let llc_output = std::process::Command::new(&llc_cmd)
@@ -485,14 +485,17 @@ pub fn to_llvm_module_with_debug_round_trip_and_filename<'input>(
                 "-march=nvptx64",
                 "-mcpu=sm_61", // Use newer compute capability for better debug support
                 "-filetype=asm", // Generate assembly (PTX)
-                "-O0", // No optimization to preserve debug info
+                "-O0",         // No optimization to preserve debug info
                 &llvm_temp_path,
                 "-o",
                 &ptx_temp_path,
             ])
             .output()
             .map_err(|e| {
-                TranslateError::UnexpectedError(format!("Failed to execute llc ({}): {}", llc_cmd, e))
+                TranslateError::UnexpectedError(format!(
+                    "Failed to execute llc ({}): {}",
+                    llc_cmd, e
+                ))
             })?;
 
         if !llc_output.status.success() {
@@ -539,7 +542,8 @@ pub struct KernelInfo {
 /// Convert PTX to MLIR (TOSA dialect)
 pub fn to_mlir_module<'input>(_ast: ast::Module<'input>) -> Result<String, TranslateError> {
     Err(TranslateError::Todo(
-        "to_mlir_module - MLIR backend requires additional passes that are not yet integrated".to_string(),
+        "to_mlir_module - MLIR backend requires additional passes that are not yet integrated"
+            .to_string(),
     ))
 }
 
@@ -566,8 +570,7 @@ pub fn to_mlir_module<'input>(_ast: ast::Module<'input>) -> Result<String, Trans
 /// println!("{}", assembly);
 /// ```
 pub fn ptx_to_tmatmul_assembly(ptx_source: &str) -> Result<String, TranslateError> {
-    ptx_to_tmatmul::ptx_to_tmatmul(ptx_source)
-        .map_err(|e| TranslateError::UnexpectedError(e))
+    ptx_to_tmatmul::ptx_to_tmatmul(ptx_source).map_err(|e| TranslateError::UnexpectedError(e))
 }
 
 /// Convert PTX AST directly to TMatmul assembly with custom memory mappings
@@ -586,7 +589,8 @@ pub fn ptx_ast_to_tmatmul_assembly<'input>(
         compiler.setup_standard_memory_map();
     }
 
-    compiler.compile_module(ast)
+    compiler
+        .compile_module(ast)
         .map_err(|e| TranslateError::UnexpectedError(e))
 }
 
@@ -1478,7 +1482,14 @@ impl SpecialRegistersMap {
 
     fn generate_declarations<'input>(
         resolver: &mut GlobalStringIdentResolver2<'input>,
-    ) -> Vec<(PtxSpecialRegister, (Vec<ast::Variable<SpirvWord>>, SpirvWord, Vec<ast::Variable<SpirvWord>>))> {
+    ) -> Vec<(
+        PtxSpecialRegister,
+        (
+            Vec<ast::Variable<SpirvWord>>,
+            SpirvWord,
+            Vec<ast::Variable<SpirvWord>>,
+        ),
+    )> {
         let mut result = Vec::new();
         Self::foreach_declaration(resolver, |sreg, decl| {
             result.push((sreg, decl));

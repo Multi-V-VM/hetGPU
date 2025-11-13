@@ -35,7 +35,8 @@ impl RegisterAllocator {
             if !self.allocated_regs[reg_idx] {
                 let reg_name = format!("v{}", reg_idx);
                 self.allocated_regs[reg_idx] = true;
-                self.value_to_reg.insert(ssa_value.to_string(), reg_name.clone());
+                self.value_to_reg
+                    .insert(ssa_value.to_string(), reg_name.clone());
                 self.next_reg = (reg_idx + 1) % 8;
                 return Ok(reg_name);
             }
@@ -103,25 +104,65 @@ impl std::fmt::Display for MemoryLocation {
 #[derive(Debug, Clone)]
 pub enum TMatmulInstruction {
     // Memory operations
-    LoadVector { dst: String, src: MemoryLocation },
-    StoreVector { src: String, dst: MemoryLocation },
+    LoadVector {
+        dst: String,
+        src: MemoryLocation,
+    },
+    StoreVector {
+        src: String,
+        dst: MemoryLocation,
+    },
 
     // Arithmetic operations
-    Add { dst: String, src1: String, src2: String },
-    Sub { dst: String, src1: String, src2: String },
-    Mul { dst: String, src1: String, src2: String },
-    Div { dst: String, src1: String, src2: String },
+    Add {
+        dst: String,
+        src1: String,
+        src2: String,
+    },
+    Sub {
+        dst: String,
+        src1: String,
+        src2: String,
+    },
+    Mul {
+        dst: String,
+        src1: String,
+        src2: String,
+    },
+    Div {
+        dst: String,
+        src1: String,
+        src2: String,
+    },
 
     // Activation functions
-    Sigmoid { dst: String, src: String },
-    ComplementSigmoid { dst: String, src: String },
-    SiLU { dst: String, src: String },
+    Sigmoid {
+        dst: String,
+        src: String,
+    },
+    ComplementSigmoid {
+        dst: String,
+        src: String,
+    },
+    SiLU {
+        dst: String,
+        src: String,
+    },
 
     // Special operations
-    Norm { dst: String, src: String },
-    TMatmulImport { src: String },
-    TMatmulGo { weights: MemoryLocation },
-    TMatmulExport { dst: String },
+    Norm {
+        dst: String,
+        src: String,
+    },
+    TMatmulImport {
+        src: String,
+    },
+    TMatmulGo {
+        weights: MemoryLocation,
+    },
+    TMatmulExport {
+        dst: String,
+    },
 
     // Comments and labels
     Comment(String),
@@ -197,19 +238,23 @@ impl TMatmulProgram {
     }
 
     pub fn add_comment(&mut self, comment: &str) {
-        self.instructions.push(TMatmulInstruction::Comment(comment.to_string()));
+        self.instructions
+            .push(TMatmulInstruction::Comment(comment.to_string()));
     }
 
     pub fn add_section_separator(&mut self, section_name: &str) {
-        self.instructions.push(TMatmulInstruction::Comment("".to_string()));
+        self.instructions
+            .push(TMatmulInstruction::Comment("".to_string()));
         self.instructions.push(TMatmulInstruction::Comment(format!(
             "-------------------------------------------------------"
         )));
-        self.instructions.push(TMatmulInstruction::Comment(format!(" {}", section_name)));
+        self.instructions
+            .push(TMatmulInstruction::Comment(format!(" {}", section_name)));
         self.instructions.push(TMatmulInstruction::Comment(format!(
             "-------------------------------------------------------"
         )));
-        self.instructions.push(TMatmulInstruction::Comment("".to_string()));
+        self.instructions
+            .push(TMatmulInstruction::Comment("".to_string()));
     }
 
     /// Generate assembly code
@@ -217,16 +262,32 @@ impl TMatmulProgram {
         let mut output = String::new();
 
         // Header
-        writeln!(&mut output, ";-------------------------------------------------------").unwrap();
+        writeln!(
+            &mut output,
+            ";-------------------------------------------------------"
+        )
+        .unwrap();
         writeln!(&mut output, "; vector registers: v0..v7").unwrap();
         writeln!(&mut output, ";").unwrap();
-        writeln!(&mut output, "; DDR: X, WG, WF, WC, WO, WU1, WU2, WN, oH, B, O, TEMP_VEC").unwrap();
+        writeln!(
+            &mut output,
+            "; DDR: X, WG, WF, WC, WO, WU1, WU2, WN, oH, B, O, TEMP_VEC"
+        )
+        .unwrap();
         writeln!(&mut output, ";").unwrap();
         writeln!(&mut output, "; instructions:").unwrap();
         writeln!(&mut output, "; memory: ldv sv").unwrap();
         writeln!(&mut output, "; operations: add sub mul div sig csig silu").unwrap();
-        writeln!(&mut output, "; misc: norm tmatmul_import tmatmul_go tmatmul_export").unwrap();
-        writeln!(&mut output, ";-------------------------------------------------------").unwrap();
+        writeln!(
+            &mut output,
+            "; misc: norm tmatmul_import tmatmul_go tmatmul_export"
+        )
+        .unwrap();
+        writeln!(
+            &mut output,
+            ";-------------------------------------------------------"
+        )
+        .unwrap();
         writeln!(&mut output).unwrap();
 
         // Instructions
@@ -260,139 +321,150 @@ impl TMatmulCodegen {
     }
 
     /// Generate code for an MLIR tmatmul operation
-    pub fn emit_operation(&mut self, op: &str, operands: &[&str], results: &[&str]) -> Result<(), String> {
+    pub fn emit_operation(
+        &mut self,
+        op: &str,
+        operands: &[&str],
+        results: &[&str],
+    ) -> Result<(), String> {
         match op {
             "tmatmul.ldv" => {
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src_mem = self.mem_map.get(operands[0])
+                let src_mem = self
+                    .mem_map
+                    .get(operands[0])
                     .cloned()
                     .unwrap_or(MemoryLocation::Custom(operands[0].to_string()));
-                self.program.add_instruction(TMatmulInstruction::LoadVector {
-                    dst,
-                    src: src_mem,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::LoadVector { dst, src: src_mem });
             }
             "tmatmul.sv" => {
-                let src = self.reg_allocator.get_register(operands[0])
+                let src = self
+                    .reg_allocator
+                    .get_register(operands[0])
                     .ok_or("Source not allocated")?
                     .clone();
-                let dst_mem = self.mem_map.get(operands[1])
+                let dst_mem = self
+                    .mem_map
+                    .get(operands[1])
                     .cloned()
                     .unwrap_or(MemoryLocation::Custom(operands[1].to_string()));
-                self.program.add_instruction(TMatmulInstruction::StoreVector {
-                    src,
-                    dst: dst_mem,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::StoreVector { src, dst: dst_mem });
             }
             "tmatmul.add" => {
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src1 = self.reg_allocator.get_register(operands[0])
+                let src1 = self
+                    .reg_allocator
+                    .get_register(operands[0])
                     .ok_or("Operand 1 not allocated")?
                     .clone();
-                let src2 = self.reg_allocator.get_register(operands[1])
+                let src2 = self
+                    .reg_allocator
+                    .get_register(operands[1])
                     .ok_or("Operand 2 not allocated")?
                     .clone();
-                self.program.add_instruction(TMatmulInstruction::Add {
-                    dst,
-                    src1,
-                    src2,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::Add { dst, src1, src2 });
             }
             "tmatmul.mul" => {
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src1 = self.reg_allocator.get_register(operands[0])
+                let src1 = self
+                    .reg_allocator
+                    .get_register(operands[0])
                     .ok_or("Operand 1 not allocated")?
                     .clone();
-                let src2 = self.reg_allocator.get_register(operands[1])
+                let src2 = self
+                    .reg_allocator
+                    .get_register(operands[1])
                     .ok_or("Operand 2 not allocated")?
                     .clone();
-                self.program.add_instruction(TMatmulInstruction::Mul {
-                    dst,
-                    src1,
-                    src2,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::Mul { dst, src1, src2 });
             }
             "tmatmul.sig" => {
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src = self.reg_allocator.get_register(operands[0])
+                let src = self
+                    .reg_allocator
+                    .get_register(operands[0])
                     .ok_or("Source not allocated")?
                     .clone();
-                self.program.add_instruction(TMatmulInstruction::Sigmoid {
-                    dst,
-                    src,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::Sigmoid { dst, src });
             }
             "tmatmul.csig" => {
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src = self.reg_allocator.get_register(operands[0])
+                let src = self
+                    .reg_allocator
+                    .get_register(operands[0])
                     .ok_or("Source not allocated")?
                     .clone();
-                self.program.add_instruction(TMatmulInstruction::ComplementSigmoid {
-                    dst,
-                    src,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::ComplementSigmoid { dst, src });
             }
             "tmatmul.silu" => {
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src = self.reg_allocator.get_register(operands[0])
+                let src = self
+                    .reg_allocator
+                    .get_register(operands[0])
                     .ok_or("Source not allocated")?
                     .clone();
-                self.program.add_instruction(TMatmulInstruction::SiLU {
-                    dst,
-                    src,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::SiLU { dst, src });
             }
             "tmatmul.norm" => {
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src = self.reg_allocator.get_register(operands[0])
+                let src = self
+                    .reg_allocator
+                    .get_register(operands[0])
                     .ok_or("Source not allocated")?
                     .clone();
-                self.program.add_instruction(TMatmulInstruction::Norm {
-                    dst,
-                    src,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::Norm { dst, src });
             }
             "tmatmul.tmatmul_import" => {
-                let src = self.reg_allocator.get_register(operands[0])
+                let src = self
+                    .reg_allocator
+                    .get_register(operands[0])
                     .ok_or("Source not allocated")?
                     .clone();
-                self.program.add_instruction(TMatmulInstruction::TMatmulImport {
-                    src,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::TMatmulImport { src });
             }
             "tmatmul.tmatmul_go" => {
-                let weights = self.mem_map.get(operands[0])
+                let weights = self
+                    .mem_map
+                    .get(operands[0])
                     .cloned()
                     .unwrap_or(MemoryLocation::Custom(operands[0].to_string()));
-                self.program.add_instruction(TMatmulInstruction::TMatmulGo {
-                    weights,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::TMatmulGo { weights });
             }
             "tmatmul.tmatmul_export" => {
                 let dst = self.reg_allocator.allocate(results[0])?;
-                self.program.add_instruction(TMatmulInstruction::TMatmulExport {
-                    dst,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::TMatmulExport { dst });
             }
             "tmatmul.matmul" => {
                 // Combined operation: import -> go -> export
-                let input_reg = self.reg_allocator.get_register(operands[0])
+                let input_reg = self
+                    .reg_allocator
+                    .get_register(operands[0])
                     .ok_or("Input not allocated")?
                     .clone();
-                let weights = self.mem_map.get(operands[1])
+                let weights = self
+                    .mem_map
+                    .get(operands[1])
                     .cloned()
                     .unwrap_or(MemoryLocation::Custom(operands[1].to_string()));
                 let output_reg = self.reg_allocator.allocate(results[0])?;
 
-                self.program.add_instruction(TMatmulInstruction::TMatmulImport {
-                    src: input_reg,
-                });
-                self.program.add_instruction(TMatmulInstruction::TMatmulGo {
-                    weights,
-                });
-                self.program.add_instruction(TMatmulInstruction::TMatmulExport {
-                    dst: output_reg,
-                });
+                self.program
+                    .add_instruction(TMatmulInstruction::TMatmulImport { src: input_reg });
+                self.program
+                    .add_instruction(TMatmulInstruction::TMatmulGo { weights });
+                self.program
+                    .add_instruction(TMatmulInstruction::TMatmulExport { dst: output_reg });
             }
             _ => {
                 return Err(format!("Unknown operation: {}", op));
@@ -443,9 +515,15 @@ mod tests {
         codegen.map_memory("oH", MemoryLocation::OH);
 
         codegen.add_section("TEST SECTION");
-        codegen.emit_operation("tmatmul.ldv", &["X"], &["%0"]).unwrap();
-        codegen.emit_operation("tmatmul.norm", &["%0"], &["%1"]).unwrap();
-        codegen.emit_operation("tmatmul.sv", &["%1", "oH"], &[]).unwrap();
+        codegen
+            .emit_operation("tmatmul.ldv", &["X"], &["%0"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.norm", &["%0"], &["%1"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.sv", &["%1", "oH"], &[])
+            .unwrap();
 
         let asm = codegen.get_assembly();
         assert!(asm.contains("ldv"));

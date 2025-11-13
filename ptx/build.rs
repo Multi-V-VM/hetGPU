@@ -13,7 +13,8 @@ fn main() {
     if let Ok(entries) = std::fs::read_dir(target_dir.join("debug").join("build")) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.file_name()
+            if path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .map(|n| n.starts_with("llvm_zluda-"))
                 .unwrap_or(false)

@@ -15,8 +15,8 @@ pub use pass::to_llvm_module_with_debug_round_trip;
 pub use pass::to_llvm_module_with_filename;
 pub use pass::to_mlir_module;
 pub use pass::Attributes;
-pub use pass::TranslateError;
 pub use pass::Module;
+pub use pass::TranslateError;
 
 use std::collections::HashMap;
 

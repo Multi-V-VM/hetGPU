@@ -48,8 +48,12 @@ mod tests {
         codegen.map_memory("input", MemoryLocation::X);
         codegen.map_memory("output", MemoryLocation::O);
 
-        codegen.emit_operation("tmatmul.ldv", &["input"], &["%0"]).unwrap();
-        codegen.emit_operation("tmatmul.sv", &["%0", "output"], &[]).unwrap();
+        codegen
+            .emit_operation("tmatmul.ldv", &["input"], &["%0"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.sv", &["%0", "output"], &[])
+            .unwrap();
 
         let assembly = codegen.get_assembly();
 
@@ -66,10 +70,18 @@ mod tests {
 
         codegen.map_memory("X", MemoryLocation::X);
 
-        codegen.emit_operation("tmatmul.ldv", &["X"], &["%0"]).unwrap();
-        codegen.emit_operation("tmatmul.ldv", &["X"], &["%1"]).unwrap();
-        codegen.emit_operation("tmatmul.add", &["%0", "%1"], &["%2"]).unwrap();
-        codegen.emit_operation("tmatmul.mul", &["%2", "%0"], &["%3"]).unwrap();
+        codegen
+            .emit_operation("tmatmul.ldv", &["X"], &["%0"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.ldv", &["X"], &["%1"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.add", &["%0", "%1"], &["%2"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.mul", &["%2", "%0"], &["%3"])
+            .unwrap();
 
         let assembly = codegen.get_assembly();
 
@@ -85,10 +97,18 @@ mod tests {
 
         codegen.map_memory("X", MemoryLocation::X);
 
-        codegen.emit_operation("tmatmul.ldv", &["X"], &["%0"]).unwrap();
-        codegen.emit_operation("tmatmul.sig", &["%0"], &["%1"]).unwrap();
-        codegen.emit_operation("tmatmul.csig", &["%0"], &["%2"]).unwrap();
-        codegen.emit_operation("tmatmul.silu", &["%0"], &["%3"]).unwrap();
+        codegen
+            .emit_operation("tmatmul.ldv", &["X"], &["%0"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.sig", &["%0"], &["%1"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.csig", &["%0"], &["%2"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.silu", &["%0"], &["%3"])
+            .unwrap();
 
         let assembly = codegen.get_assembly();
 
@@ -104,8 +124,12 @@ mod tests {
         codegen.map_memory("X", MemoryLocation::X);
         codegen.map_memory("W", MemoryLocation::WF);
 
-        codegen.emit_operation("tmatmul.ldv", &["X"], &["%0"]).unwrap();
-        codegen.emit_operation("tmatmul.matmul", &["%0", "W"], &["%1"]).unwrap();
+        codegen
+            .emit_operation("tmatmul.ldv", &["X"], &["%0"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.matmul", &["%0", "W"], &["%1"])
+            .unwrap();
 
         let assembly = codegen.get_assembly();
 
@@ -122,14 +146,21 @@ mod tests {
 
         codegen.map_memory("X", MemoryLocation::X);
 
-        codegen.emit_operation("tmatmul.ldv", &["X"], &["%0"]).unwrap();
-        codegen.emit_operation("tmatmul.norm", &["%0"], &["%1"]).unwrap();
-        codegen.emit_operation("tmatmul.norm", &["%1"], &["%2"]).unwrap();
+        codegen
+            .emit_operation("tmatmul.ldv", &["X"], &["%0"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.norm", &["%0"], &["%1"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.norm", &["%1"], &["%2"])
+            .unwrap();
 
         let assembly = codegen.get_assembly();
 
         // Check for double normalization (count lines starting with "    norm")
-        let norm_count = assembly.lines()
+        let norm_count = assembly
+            .lines()
             .filter(|line| line.trim_start().starts_with("norm"))
             .count();
         assert_eq!(norm_count, 2);
@@ -150,24 +181,48 @@ mod tests {
         codegen.add_section("MLGRU Test");
 
         // Load input and hidden state
-        codegen.emit_operation("tmatmul.ldv", &["X"], &["%0"]).unwrap();
-        codegen.emit_operation("tmatmul.sv", &["%0", "TEMP_VEC"], &[]).unwrap();
-        codegen.emit_operation("tmatmul.norm", &["%0"], &["%0"]).unwrap();
-        codegen.emit_operation("tmatmul.ldv", &["oH"], &["%1"]).unwrap();
+        codegen
+            .emit_operation("tmatmul.ldv", &["X"], &["%0"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.sv", &["%0", "TEMP_VEC"], &[])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.norm", &["%0"], &["%0"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.ldv", &["oH"], &["%1"])
+            .unwrap();
 
         // Compute gates
-        codegen.emit_operation("tmatmul.matmul", &["%0", "WF"], &["%2"]).unwrap();
-        codegen.emit_operation("tmatmul.matmul", &["%0", "WC"], &["%3"]).unwrap();
+        codegen
+            .emit_operation("tmatmul.matmul", &["%0", "WF"], &["%2"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.matmul", &["%0", "WC"], &["%3"])
+            .unwrap();
 
         // Activations
-        codegen.emit_operation("tmatmul.sig", &["%2"], &["%7"]).unwrap();
-        codegen.emit_operation("tmatmul.silu", &["%3"], &["%3"]).unwrap();
+        codegen
+            .emit_operation("tmatmul.sig", &["%2"], &["%7"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.silu", &["%3"], &["%3"])
+            .unwrap();
 
         // Hidden state update
-        codegen.emit_operation("tmatmul.mul", &["%7", "%1"], &["%5"]).unwrap();
-        codegen.emit_operation("tmatmul.csig", &["%2"], &["%6"]).unwrap();
-        codegen.emit_operation("tmatmul.mul", &["%6", "%3"], &["%6"]).unwrap();
-        codegen.emit_operation("tmatmul.add", &["%5", "%6"], &["%1"]).unwrap();
+        codegen
+            .emit_operation("tmatmul.mul", &["%7", "%1"], &["%5"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.csig", &["%2"], &["%6"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.mul", &["%6", "%3"], &["%6"])
+            .unwrap();
+        codegen
+            .emit_operation("tmatmul.add", &["%5", "%6"], &["%1"])
+            .unwrap();
 
         let assembly = codegen.get_assembly();
 
@@ -193,7 +248,9 @@ mod tests {
 
         codegen.add_section("TEST SECTION");
         codegen.add_comment("This is a test");
-        codegen.emit_operation("tmatmul.ldv", &["X"], &["%0"]).unwrap();
+        codegen
+            .emit_operation("tmatmul.ldv", &["X"], &["%0"])
+            .unwrap();
 
         let assembly = codegen.get_assembly();
 

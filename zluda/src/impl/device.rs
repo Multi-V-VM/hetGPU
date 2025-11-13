@@ -2,7 +2,7 @@ use super::context;
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
-use std::{mem, ptr, ffi::c_void};
+use std::{ffi::c_void, mem, ptr};
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
 
@@ -419,8 +419,10 @@ pub(crate) fn get_attribute(
     attrib: CUdevice_attribute,
     dev_idx: ze_device_handle_t,
 ) -> ze_result_t {
+    eprintln!("[hetGPU] get_attribute called: attrib={:?}, dev_idx={:?}", attrib, dev_idx);
     // Check if this is a virtual device (null handle) - return GPU-like defaults
     let is_virtual = dev_idx.0.is_null();
+    eprintln!("[hetGPU] is_virtual={}", is_virtual);
 
     if is_virtual {
         // Virtual device - return GPU-like values without querying hardware
@@ -499,7 +501,7 @@ pub(crate) fn get_attribute(
 
     unsafe {
         match zeDeviceGetProperties(dev_idx, &mut props) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
     }
@@ -574,7 +576,17 @@ pub(crate) fn get_attribute(
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT => {
-            *pi = props.numEUsPerSubslice as i32;
+            // For TMatmul backend, return fixed value to avoid SIGFPE
+            #[cfg(feature = "tmatmul")]
+            {
+                eprintln!("[hetGPU] MULTIPROCESSOR_COUNT: returning 80 (tmatmul feature)");
+                *pi = 80;
+            }
+            #[cfg(not(feature = "tmatmul"))]
+            {
+                eprintln!("[hetGPU] MULTIPROCESSOR_COUNT: returning {} (intel path)", props.numEUsPerSubslice);
+                *pi = props.numEUsPerSubslice as i32;
+            }
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_KERNEL_EXEC_TIMEOUT => {
@@ -630,11 +642,11 @@ pub(crate) fn get_attribute(
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_BUS_ID => {
-            *pi = 0;  // Default value
+            *pi = 0; // Default value
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID => {
-            *pi = 0;  // Default value
+            *pi = 0; // Default value
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE => {
@@ -650,7 +662,17 @@ pub(crate) fn get_attribute(
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR => {
-            *pi = props.numThreadsPerEU as i32;
+            // For TMatmul backend, return fixed value to avoid SIGFPE
+            #[cfg(feature = "tmatmul")]
+            {
+                eprintln!("[hetGPU] MAX_THREADS_PER_MULTIPROCESSOR: returning 2048 (tmatmul feature)");
+                *pi = 2048;
+            }
+            #[cfg(not(feature = "tmatmul"))]
+            {
+                eprintln!("[hetGPU] MAX_THREADS_PER_MULTIPROCESSOR: returning {} (intel path)", props.numThreadsPerEU);
+                *pi = props.numThreadsPerEU as i32;
+            }
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT => {
@@ -662,7 +684,7 @@ pub(crate) fn get_attribute(
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID => {
-            *pi = 0;  // Default value
+            *pi = 0; // Default value
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TEXTURE_PITCH_ALIGNMENT => {
@@ -773,18 +795,14 @@ pub(crate) fn get_uuid(uuid: *mut ze_device_uuid_t, device: ze_device_handle_t) 
 
     unsafe {
         match zeDeviceGetProperties(device, &mut props) {
-            ze_result_t::ZE_RESULT_SUCCESS => {},
+            ze_result_t::ZE_RESULT_SUCCESS => {}
             e => return e,
         }
     }
 
     // Copy UUID from device properties
     unsafe {
-        ptr::copy_nonoverlapping(
-            props.uuid.id.as_ptr(),
-            (*uuid).id.as_mut_ptr(),
-            16,
-        );
+        ptr::copy_nonoverlapping(props.uuid.id.as_ptr(), (*uuid).id.as_mut_ptr(), 16);
     }
 
     ze_result_t::ZE_RESULT_SUCCESS
@@ -828,7 +846,8 @@ pub(crate) fn get_luid(
         luid.cast::<[i8; 8]>()
             .as_mut()
             .ok_or(ze_result_t::ZE_RESULT_ERROR_INVALID_ARGUMENT)
-    }.unwrap();
+    }
+    .unwrap();
 
     let mut props: ze_device_properties_t = unsafe { mem::zeroed() };
     props.stype = ze_structure_type_t::ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
@@ -1157,7 +1176,9 @@ impl ZeResultExt for ze_result_t {
             ze_result_t::ZE_RESULT_ERROR_INVALID_SIZE => Err(CUerror::INVALID_VALUE),
             ze_result_t::ZE_RESULT_ERROR_UNSUPPORTED_SIZE => Err(CUerror::INVALID_VALUE),
             ze_result_t::ZE_RESULT_ERROR_UNSUPPORTED_FEATURE => Err(CUerror::NOT_SUPPORTED),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_SYNCHRONIZATION_OBJECT => Err(CUerror::INVALID_HANDLE),
+            ze_result_t::ZE_RESULT_ERROR_INVALID_SYNCHRONIZATION_OBJECT => {
+                Err(CUerror::INVALID_HANDLE)
+            }
             ze_result_t::ZE_RESULT_ERROR_INVALID_ENUMERATION => Err(CUerror::INVALID_VALUE),
             ze_result_t::ZE_RESULT_ERROR_UNSUPPORTED_ENUMERATION => Err(CUerror::NOT_SUPPORTED),
             ze_result_t::ZE_RESULT_ERROR_UNSUPPORTED_IMAGE_FORMAT => Err(CUerror::INVALID_VALUE),
@@ -1165,11 +1186,21 @@ impl ZeResultExt for ze_result_t {
             ze_result_t::ZE_RESULT_ERROR_INVALID_GLOBAL_NAME => Err(CUerror::NOT_FOUND),
             ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_NAME => Err(CUerror::NOT_FOUND),
             ze_result_t::ZE_RESULT_ERROR_INVALID_FUNCTION_NAME => Err(CUerror::NOT_FOUND),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_GROUP_SIZE_DIMENSION => Err(CUerror::INVALID_VALUE),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_GLOBAL_WIDTH_DIMENSION => Err(CUerror::INVALID_VALUE),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_INDEX => Err(CUerror::INVALID_VALUE),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_SIZE => Err(CUerror::INVALID_VALUE),
-            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ATTRIBUTE_VALUE => Err(CUerror::INVALID_VALUE),
+            ze_result_t::ZE_RESULT_ERROR_INVALID_GROUP_SIZE_DIMENSION => {
+                Err(CUerror::INVALID_VALUE)
+            }
+            ze_result_t::ZE_RESULT_ERROR_INVALID_GLOBAL_WIDTH_DIMENSION => {
+                Err(CUerror::INVALID_VALUE)
+            }
+            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_INDEX => {
+                Err(CUerror::INVALID_VALUE)
+            }
+            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_SIZE => {
+                Err(CUerror::INVALID_VALUE)
+            }
+            ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_ATTRIBUTE_VALUE => {
+                Err(CUerror::INVALID_VALUE)
+            }
             ze_result_t::ZE_RESULT_ERROR_INVALID_MODULE_UNLINKED => Err(CUerror::INVALID_PTX),
             ze_result_t::ZE_RESULT_ERROR_INVALID_COMMAND_LIST_TYPE => Err(CUerror::INVALID_VALUE),
             ze_result_t::ZE_RESULT_ERROR_OVERLAPPING_REGIONS => Err(CUerror::INVALID_VALUE),
@@ -1205,7 +1236,7 @@ pub(crate) fn get_attribute(
     if pi.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let devices = super::driver::global_state()?;
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
@@ -1243,11 +1274,15 @@ pub(crate) fn get_attribute(
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR => 2048,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT => 2,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING => 1,
-        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR => COMPUTE_CAPABILITY_MAJOR,
-        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR => COMPUTE_CAPABILITY_MINOR,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR => {
+            COMPUTE_CAPABILITY_MAJOR
+        }
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR => {
+            COMPUTE_CAPABILITY_MINOR
+        }
         _ => return Err(CUerror::INVALID_VALUE),
     };
-    
+
     unsafe { *pi = result };
     Ok(())
 }
@@ -1268,7 +1303,7 @@ pub(crate) fn get_name(
     if name.is_null() || len <= 0 {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let devices = super::driver::global_state()?;
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
@@ -1276,12 +1311,12 @@ pub(crate) fn get_name(
 
     let device_name = b"Tenstorrent Device\0";
     let copy_len = std::cmp::min(device_name.len(), len as usize - 1);
-    
+
     unsafe {
         std::ptr::copy_nonoverlapping(device_name.as_ptr() as *const i8, name, copy_len);
         *name.add(copy_len) = 0;
     }
-    
+
     Ok(())
 }
 
@@ -1290,7 +1325,7 @@ pub(crate) fn get_uuid(uuid: *mut [u8; 16], dev: i32) -> CUresult {
     if uuid.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let devices = super::driver::global_state()?;
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
@@ -1301,7 +1336,7 @@ pub(crate) fn get_uuid(uuid: *mut [u8; 16], dev: i32) -> CUresult {
     device_uuid[0..4].copy_from_slice(&(dev as u32).to_le_bytes());
     device_uuid[4..8].copy_from_slice(b"TTTT"); // Tenstorrent marker
     device_uuid[8..16].copy_from_slice(b"ZLUDA001"); // ZLUDA version
-    
+
     unsafe { *uuid = device_uuid };
     Ok(())
 }
@@ -1320,7 +1355,7 @@ pub(crate) fn get_luid(
     if luid.is_null() || device_node_mask.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let devices = super::driver::global_state()?;
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
@@ -1330,12 +1365,12 @@ pub(crate) fn get_luid(
     let mut device_luid = [0u8; 8];
     device_luid[0..4].copy_from_slice(&(dev as u32).to_le_bytes());
     device_luid[4..8].copy_from_slice(b"TTTT");
-    
+
     unsafe {
         *luid = device_luid;
         *device_node_mask = 1u32 << (dev as u32 % 32);
     }
-    
+
     Ok(())
 }
 
@@ -1344,7 +1379,7 @@ pub(crate) fn total_mem_v2(bytes: *mut usize, dev: i32) -> CUresult {
     if bytes.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let devices = super::driver::global_state()?;
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
@@ -1372,22 +1407,19 @@ pub(crate) fn get_properties(prop: &mut CUdevprop, dev: i32) -> CUresult {
     prop.regsPerBlock = 65536;
     prop.clockRate = 1000;
     prop.textureAlign = 512;
-    
+
     Ok(())
 }
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
-pub(crate) fn primary_context_retain(
-    pctx: *mut CUcontext,
-    dev: i32,
-) -> CUresult {
+pub(crate) fn primary_context_retain(pctx: *mut CUcontext, dev: i32) -> CUresult {
     if pctx.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
-    
+
     let (primary_ctx, handle) = super::context::get_primary_tt(dev)?;
     primary_ctx.increment_ref_count();
-    
+
     unsafe { *pctx = handle };
     Ok(())
 }
@@ -1406,14 +1438,24 @@ pub(crate) fn primary_context_release(dev: i32) -> CUresult {
 }
 
 // TMatmul device function implementations
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn compute_capability(major: &mut i32, minor: &mut i32, _dev: i32) -> CUresult {
     *major = COMPUTE_CAPABILITY_MAJOR;
     *minor = COMPUTE_CAPABILITY_MINOR;
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn get(device: *mut i32, ordinal: i32) -> CUresult {
     let devices = super::driver::global_state()?;
     if ordinal < 0 || ordinal >= devices.devices.len() as i32 {
@@ -1423,7 +1465,12 @@ pub(crate) fn get(device: *mut i32, ordinal: i32) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn get_attribute(
     pi: *mut ::core::ffi::c_int,
     attrib: CUdevice_attribute,
@@ -1467,12 +1514,16 @@ pub(crate) fn get_attribute(
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE3D_DEPTH => 16384,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE => 5001000, // 5 GHz
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH => 384, // bits
-        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_L2_CACHE_SIZE => 6291456, // 6MB
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_L2_CACHE_SIZE => 6291456,     // 6MB
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR => 2048,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT => 2,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING => 1,
-        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR => COMPUTE_CAPABILITY_MAJOR,
-        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR => COMPUTE_CAPABILITY_MINOR,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR => {
+            COMPUTE_CAPABILITY_MAJOR
+        }
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR => {
+            COMPUTE_CAPABILITY_MINOR
+        }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_CONCURRENT_KERNELS => 1,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_ECC_ENABLED => 0,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_BUS_ID => 0,
@@ -1494,14 +1545,24 @@ pub(crate) fn get_attribute(
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> CUresult {
     let devices = super::driver::global_state()?;
     *count = devices.devices.len() as ::core::ffi::c_int;
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn get_name(
     name: *mut ::core::ffi::c_char,
     len: ::core::ffi::c_int,
@@ -1527,7 +1588,12 @@ pub(crate) fn get_name(
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn get_uuid(uuid: *mut [u8; 16], dev: i32) -> CUresult {
     if uuid.is_null() {
         return Err(CUerror::INVALID_VALUE);
@@ -1547,12 +1613,22 @@ pub(crate) fn get_uuid(uuid: *mut [u8; 16], dev: i32) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn get_uuid_v2(uuid: *mut [u8; 16], dev: i32) -> CUresult {
     get_uuid(uuid, dev)
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn get_luid(
     luid: *mut [u8; 8],
     device_node_mask: *mut ::core::ffi::c_uint,
@@ -1579,7 +1655,12 @@ pub(crate) fn get_luid(
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn total_mem_v2(bytes: *mut usize, dev: i32) -> CUresult {
     if bytes.is_null() {
         return Err(CUerror::INVALID_VALUE);
@@ -1595,7 +1676,12 @@ pub(crate) fn total_mem_v2(bytes: *mut usize, dev: i32) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn get_properties(prop: &mut CUdevprop, dev: i32) -> CUresult {
     let devices = super::driver::global_state()?;
     if dev < 0 || dev >= devices.devices.len() as i32 {
@@ -1616,11 +1702,13 @@ pub(crate) fn get_properties(prop: &mut CUdevprop, dev: i32) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
-pub(crate) fn primary_context_retain(
-    pctx: *mut CUcontext,
-    dev: i32,
-) -> CUresult {
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn primary_context_retain(pctx: *mut CUcontext, dev: i32) -> CUresult {
     if pctx.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
@@ -1635,7 +1723,12 @@ pub(crate) fn primary_context_retain(
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn primary_context_release(dev: i32) -> CUresult {
     let (ctx, _) = super::context::get_primary_tmatmul(dev)?;
     {
@@ -1650,18 +1743,32 @@ pub(crate) fn primary_context_release(dev: i32) -> CUresult {
 }
 
 #[cfg(feature = "intel")]
-pub(crate) fn primary_context_get_state(
-    dev: i32,
-    flags: &mut u32,
-    active: &mut i32,
-) -> CUresult {
+pub(crate) fn primary_context_get_state(dev: i32, flags: &mut u32, active: &mut i32) -> CUresult {
+    crate::r#impl::hetgpu_debug!("[hetGPU DEBUG] cuDevicePrimaryCtxGetState(dev={})", dev);
+
     // For virtual device, report that context exists and is active
     if dev < 0 {
+        crate::r#impl::hetgpu_debug!(
+            "[hetGPU DEBUG] cuDevicePrimaryCtxGetState: INVALID_DEVICE (dev < 0)"
+        );
         return Err(CUerror::INVALID_DEVICE);
     }
 
-    let devices = super::driver::global_state()?;
+    let devices = match super::driver::global_state() {
+        Ok(d) => d,
+        Err(e) => {
+            crate::r#impl::hetgpu_debug!(
+                "[hetGPU DEBUG] cuDevicePrimaryCtxGetState: failed to get global_state: {:?}",
+                e
+            );
+            return Err(e);
+        }
+    };
+
     if dev >= devices.devices.len() as i32 {
+        crate::r#impl::hetgpu_debug!(
+            "[hetGPU DEBUG] cuDevicePrimaryCtxGetState: INVALID_DEVICE (dev >= device_count)"
+        );
         return Err(CUerror::INVALID_DEVICE);
     }
 
@@ -1669,15 +1776,21 @@ pub(crate) fn primary_context_get_state(
     *flags = 0;
     *active = 1;
 
+    crate::r#impl::hetgpu_debug!(
+        "[hetGPU DEBUG] cuDevicePrimaryCtxGetState: SUCCESS (flags={}, active={})",
+        *flags,
+        *active
+    );
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
-pub(crate) fn primary_context_get_state(
-    dev: i32,
-    flags: &mut u32,
-    active: &mut i32,
-) -> CUresult {
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn primary_context_get_state(dev: i32, flags: &mut u32, active: &mut i32) -> CUresult {
     // For TMatmul virtual device, report that context exists and is active
     if dev < 0 {
         return Err(CUerror::INVALID_DEVICE);

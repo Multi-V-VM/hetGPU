@@ -34,7 +34,8 @@ fn run_process_and_check_for_zluda_dump(name: &'static str) -> io::Result<()> {
     let zluda_with_exe = PathBuf::from(env!("CARGO_BIN_EXE_zluda_with"));
     let mut zluda_dump_dll = zluda_with_exe.parent().unwrap().to_path_buf();
     zluda_dump_dll.push("zluda_dump.dll");
-    let helpers_dir = std::env::var("HELPERS_OUT_DIR").unwrap_or_else(|_| "target/debug".to_string());
+    let helpers_dir =
+        std::env::var("HELPERS_OUT_DIR").unwrap_or_else(|_| "target/debug".to_string());
     let exe_under_test = format!("{}{}{}.exe", helpers_dir, std::path::MAIN_SEPARATOR, name);
     let mut test_cmd = Command::new(&zluda_with_exe);
     let test_cmd = test_cmd

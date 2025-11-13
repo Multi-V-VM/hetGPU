@@ -576,12 +576,16 @@ unsafe extern "system" fn heap_alloc(
     arg1: usize,
     arg2: usize,
 ) -> CUresult {
-    r#impl::unimplemented()
+    // Virtual backend: return success without actual allocation
+    eprintln!("[hetGPU] heap_alloc called (stub)");
+    CUresult::CUDA_SUCCESS
 }
 
 // TODO: reverse and implement for Linux
 unsafe extern "system" fn heap_free(halloc: *mut HeapAllocRecord, arg1: *mut usize) -> CUresult {
-    r#impl::unimplemented()
+    // Virtual backend: return success without actual free
+    eprintln!("[hetGPU] heap_free called (stub)");
+    CUresult::CUDA_SUCCESS
 }
 
 const DEVICE_EXTENDED_RT_GUID: CUuuid = CUuuid {

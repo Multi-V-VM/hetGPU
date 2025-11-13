@@ -1,6 +1,6 @@
+use super::Settings;
 use crate::format;
 use cuda_types::cuda::*;
-use super::Settings;
 use std::error::Error;
 use std::ffi::c_void;
 use std::ffi::NulError;

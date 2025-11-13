@@ -50,10 +50,13 @@ impl ZludaObject for Module {
 
 // CUDA: cuModuleGetLoadingMode
 // Report a safe default loading mode so callers don't crash.
-#[cfg(any(feature = "amd", feature = "intel", feature = "tenstorrent", feature = "tmatmul"))]
-pub(crate) fn get_loading_mode(
-    mode: *mut cuda_types::cuda::CUmoduleLoadingMode,
-) -> CUresult {
+#[cfg(any(
+    feature = "amd",
+    feature = "intel",
+    feature = "tenstorrent",
+    feature = "tmatmul"
+))]
+pub(crate) fn get_loading_mode(mode: *mut cuda_types::cuda::CUmoduleLoadingMode) -> CUresult {
     if mode.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
@@ -116,15 +119,17 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
         .map_err(|_| CUerror::INVALID_VALUE)?;
 
     // Use the new debug-aware compilation pipeline for SASS to PTX mapping
-    eprintln!("ZLUDA DEBUG: Starting PTX to LLVM to PTX compilation for SASS mapping...");
+    crate::r#impl::hetgpu_debug!(
+        "ZLUDA DEBUG: Starting PTX to LLVM to PTX compilation for SASS mapping..."
+    );
     match ptx::ptx_to_llvm_to_ptx_with_sass_mapping(text) {
         Ok((llvm_module, reconstructed_ptx, sass_mapping)) => {
             // Log the SASS to PTX mapping for debugging
-            eprintln!(
+            crate::r#impl::hetgpu_debug!(
                 "ZLUDA DEBUG: Generated SASS to PTX mapping with {} entries",
                 sass_mapping.len()
             );
-            eprintln!(
+            crate::r#impl::hetgpu_debug!(
                 "ZLUDA DEBUG: Reconstructed PTX length: {} bytes",
                 reconstructed_ptx.len()
             );
@@ -172,7 +177,9 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
 
 #[cfg(feature = "intel")]
 pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -> CUresult {
-    eprintln!("[Intel Backend] cuModuleLoadData called from PyTorch/application");
+    crate::r#impl::hetgpu_debug!(
+        "[Intel Backend] cuModuleLoadData called from PyTorch/application"
+    );
 
     if image.is_null() {
         return Err(CUerror::INVALID_VALUE);
@@ -181,7 +188,10 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     // Detect if this is binary CUBIN or PTX text
     let first_bytes = unsafe { std::slice::from_raw_parts(image as *const u8, 4096.min(4096)) };
 
-    eprintln!("[Intel Backend] First 32 bytes: {:02x?}", &first_bytes[..32.min(first_bytes.len())]);
+    crate::r#impl::hetgpu_debug!(
+        "[Intel Backend] First 32 bytes: {:02x?}",
+        &first_bytes[..32.min(first_bytes.len())]
+    );
 
     // Check for binary formats (ELF, CUDA fatbin, gzip-compressed, etc.)
     let is_binary = if first_bytes.len() >= 4 {
@@ -195,14 +205,16 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
         first_bytes.iter().take(16).filter(|&&b| {
             // Count bytes that are clearly binary (not ASCII printable, not common whitespace/control)
             b > 127 || (b < 32 && b != b'\n' && b != b'\r' && b != b'\t' && b != 0)
-        }).count() > 4  // If more than 4 suspicious bytes in first 16, it's binary
+        }).count() > 4 // If more than 4 suspicious bytes in first 16, it's binary
     } else {
         false
     };
 
     if is_binary {
         // This is binary CUBIN - pass it through to Level Zero
-        eprintln!("[Intel Backend] Detected binary CUBIN, passing to Level Zero...");
+        crate::r#impl::hetgpu_debug!(
+            "[Intel Backend] Detected binary CUBIN, passing to Level Zero..."
+        );
 
         // For binary modules, we need to use Level Zero's native module loading
         // which can handle pre-compiled binaries
@@ -217,9 +229,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
             let ptr = image as *const u8;
             // Scan up to 10MB for the binary size
             while binary_size < 10 * 1024 * 1024 {
-                if *ptr.add(binary_size) == 0 &&
-                   binary_size > 0 &&
-                   *ptr.add(binary_size - 1) == 0 {
+                if *ptr.add(binary_size) == 0 && binary_size > 0 && *ptr.add(binary_size - 1) == 0 {
                     break;
                 }
                 binary_size += 1;
@@ -241,7 +251,13 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
         let mut build_log = ptr::null_mut();
 
         let result = unsafe {
-            zeModuleCreate(context, device, &module_desc, &mut ze_module, &mut build_log)
+            zeModuleCreate(
+                context,
+                device,
+                &module_desc,
+                &mut ze_module,
+                &mut build_log,
+            )
         };
 
         if !build_log.is_null() {
@@ -306,33 +322,42 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     let is_virtual = ctx_handle.0.is_null() || dev_handle.0.is_null();
 
     if use_cocotb || is_virtual {
-        eprintln!("[TMatmul Backend] Cocotb fallback enabled (HETGPU_TMATMUL_COCOTB=1)");
+        crate::r#impl::hetgpu_debug!(
+            "[TMatmul Backend] Cocotb fallback enabled (HETGPU_TMATMUL_COCOTB=1)"
+        );
         match ptx::pass::ptx_to_tmatmul_assembly(text) {
             Ok(tmatmul_asm) => {
                 // Write to /tmp for inspection
                 let asm_path = std::env::temp_dir().join("tmatmul_kernel.S");
                 if let Err(e) = std::fs::write(&asm_path, &tmatmul_asm) {
-                    eprintln!("[TMatmul Backend] Failed to write /tmp/tmatmul_kernel.S: {}", e);
+                    crate::r#impl::hetgpu_debug!(
+                        "[TMatmul Backend] Failed to write /tmp/tmatmul_kernel.S: {}",
+                        e
+                    );
                 } else {
-                    eprintln!("[TMatmul Backend] Assembly saved to: {}", asm_path.display());
+                    crate::r#impl::hetgpu_debug!(
+                        "[TMatmul Backend] Assembly saved to: {}",
+                        asm_path.display()
+                    );
                 }
 
                 // Optionally copy into hardware simulator asm dir
-                let hw_asm_dir = std::env::var("HETGPU_TMATMUL_ASM_DIR")
-                    .unwrap_or_else(|_| "/root/matmulfreellm/hardware/ternary_matmul/asm".to_string());
+                let hw_asm_dir = std::env::var("HETGPU_TMATMUL_ASM_DIR").unwrap_or_else(|_| {
+                    "/root/matmulfreellm/hardware/ternary_matmul/asm".to_string()
+                });
                 let hw_asm_out = std::path::Path::new(&hw_asm_dir).join("hetgpu_kernel.S");
                 if let Err(e) = (|| -> Result<(), std::io::Error> {
                     std::fs::create_dir_all(&hw_asm_dir)?;
                     std::fs::write(&hw_asm_out, &tmatmul_asm)?;
                     Ok(())
                 })() {
-                    eprintln!(
+                    crate::r#impl::hetgpu_debug!(
                         "[TMatmul Backend] Warning: could not write {}: {}",
                         hw_asm_out.display(),
                         e
                     );
                 } else {
-                    eprintln!(
+                    crate::r#impl::hetgpu_debug!(
                         "[TMatmul Backend] Staged assembly for cocotb at: {}",
                         hw_asm_out.display()
                     );
@@ -357,9 +382,13 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                     .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
                     .unwrap_or(false);
                 if autorun {
-                    eprintln!("[TMatmul Backend] Launching Verilator+cocotb run (autorun)");
-                    let cocotb_dir = std::env::var("HETGPU_TMATMUL_COCOTB_DIR")
-                        .unwrap_or_else(|_| "/root/matmulfreellm/hardware/ternary_matmul/cocotb".to_string());
+                    crate::r#impl::hetgpu_debug!(
+                        "[TMatmul Backend] Launching Verilator+cocotb run (autorun)"
+                    );
+                    let cocotb_dir =
+                        std::env::var("HETGPU_TMATMUL_COCOTB_DIR").unwrap_or_else(|_| {
+                            "/root/matmulfreellm/hardware/ternary_matmul/cocotb".to_string()
+                        });
                     let make_status = std::process::Command::new("make")
                         .arg("SIM=verilator")
                         .arg("MODULE=tb_asm")
@@ -367,14 +396,20 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                         .status();
                     match make_status {
                         Ok(status) => {
-                            eprintln!("[TMatmul Backend] cocotb run finished with status: {}", status);
+                            crate::r#impl::hetgpu_debug!(
+                                "[TMatmul Backend] cocotb run finished with status: {}",
+                                status
+                            );
                         }
                         Err(e) => {
-                            eprintln!("[TMatmul Backend] Failed to launch cocotb make: {}", e);
+                            crate::r#impl::hetgpu_debug!(
+                                "[TMatmul Backend] Failed to launch cocotb make: {}",
+                                e
+                            );
                         }
                     }
                 } else {
-                    eprintln!(
+                    crate::r#impl::hetgpu_debug!(
                         "[TMatmul Backend] To execute on simulator: (1) cd /root/matmulfreellm/hardware/ternary_matmul/cocotb (2) make SIM=verilator MODULE=tb_asm"
                     );
                 }
@@ -382,16 +417,20 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                 return Ok(());
             }
             Err(e) => {
-                eprintln!("[TMatmul Backend] Compilation error: {}", e);
+                crate::r#impl::hetgpu_debug!("[TMatmul Backend] Compilation error: {}", e);
                 // Try a sanitized PTX pass to strip/normalize unsupported statements for parser
                 let sanitized = sanitize_ptx_for_virtual(text);
                 match ptx::pass::ptx_to_tmatmul_assembly(&sanitized) {
                     Ok(tmatmul_asm) => {
-                        eprintln!("[TMatmul Backend] Retrying with sanitized PTX succeeded");
+                        crate::r#impl::hetgpu_debug!(
+                            "[TMatmul Backend] Retrying with sanitized PTX succeeded"
+                        );
                         let asm_path = std::env::temp_dir().join("tmatmul_kernel.S");
                         let _ = std::fs::write(&asm_path, &tmatmul_asm);
-                        let hw_asm_dir = std::env::var("HETGPU_TMATMUL_ASM_DIR")
-                            .unwrap_or_else(|_| "/root/matmulfreellm/hardware/ternary_matmul/asm".to_string());
+                        let hw_asm_dir =
+                            std::env::var("HETGPU_TMATMUL_ASM_DIR").unwrap_or_else(|_| {
+                                "/root/matmulfreellm/hardware/ternary_matmul/asm".to_string()
+                            });
                         let hw_asm_out = std::path::Path::new(&hw_asm_dir).join("hetgpu_kernel.S");
                         let _ = (|| -> Result<(), std::io::Error> {
                             std::fs::create_dir_all(&hw_asm_dir)?;
@@ -413,7 +452,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                         return Ok(());
                     }
                     Err(_) => {
-                        eprintln!("[TMatmul Backend] Sanitized PTX still failed; using placeholder module");
+                        crate::r#impl::hetgpu_debug!("[TMatmul Backend] Sanitized PTX still failed; using placeholder module");
                         let (context, device) = (ctx_handle, dev_handle);
                         let new_module = Module {
                             context,
@@ -436,7 +475,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     match ptx::ptx_to_llvm_to_ptx_with_sass_mapping(text) {
         Ok((llvm_module, reconstructed_ptx, sass_mapping)) => {
             // Log the SASS to PTX mapping for debugging
-            eprintln!(
+            crate::r#impl::hetgpu_debug!(
                 "ZLUDA DEBUG: Intel backend - Generated SASS to PTX mapping with {} entries",
                 sass_mapping.len()
             );
@@ -474,7 +513,7 @@ fn ensure_virtual_context(ctx: ze_context_handle_t, dev: ze_device_handle_t) {
     if has_ctx {
         return;
     }
-    eprintln!("[Intel Backend] Installing virtual context for synchronization");
+    crate::r#impl::hetgpu_debug!("[Intel Backend] Installing virtual context for synchronization");
     // Create a minimal Level Zero context (handles may still be null in virtual)
     let placeholder = super::context::Context::new(ze_device_handle_t(std::ptr::null_mut()));
     let cu_ctx = placeholder.wrap();
@@ -556,7 +595,13 @@ pub(crate) fn load_data_impl(
     let mut build_log = ptr::null_mut();
 
     let result = unsafe {
-        zeModuleCreate(context, device, &module_desc, &mut ze_module, &mut build_log)
+        zeModuleCreate(
+            context,
+            device,
+            &module_desc,
+            &mut ze_module,
+            &mut build_log,
+        )
     };
 
     // Check if build log exists and handle it
@@ -586,16 +631,13 @@ fn ptx_to_spirv(spirv_module: &ze_module::SpirvModule) -> Result<Vec<u8>, CUerro
         clock_rate: 2124000, // Default clock rate in kHz
         emit_debug_info: false,
     };
-    let llvm_module =
-        ptx::to_llvm_module(ast, attributes, |_| {})
-            .map_err(|_| CUerror::UNKNOWN)?;
+    let llvm_module = ptx::to_llvm_module(ast, attributes, |_| {}).map_err(|_| CUerror::UNKNOWN)?;
 
     // Get LLVM IR string from module
     let llvm_ir = llvm_module.llvm_ir.print_module_to_string();
 
     // Use the robust SPIRV conversion (stub implementation)
-    let spirv_binary = ptx::llvm_to_spirv_robust(llvm_ir.to_str())
-        .map_err(|_| CUerror::UNKNOWN)?;
+    let spirv_binary = ptx::llvm_to_spirv_robust(llvm_ir.to_str()).map_err(|_| CUerror::UNKNOWN)?;
 
     Ok(spirv_binary)
 }
@@ -701,9 +743,7 @@ pub(crate) fn get_function(
             // Store the kernel in the module's function list
             let module_mut = hmod as *const Module as *mut Module;
             unsafe {
-                (*module_mut)
-                    .functions
-                    .push((name_str.to_string(), kernel));
+                (*module_mut).functions.push((name_str.to_string(), kernel));
             }
 
             *hfunc = kernel_wrapper.wrap();
@@ -859,18 +899,38 @@ impl<'a> super::FromCuda<'a, CUfunction> for &'a TtKernel {
 }
 
 // TMatmul module implementations
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) struct Module {
     assembly_code: String,
     kernels: Vec<(String, String)>, // (kernel_name, assembly_code)
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 unsafe impl Send for Module {}
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 unsafe impl Sync for Module {}
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 impl ZludaObject for Module {
     const COOKIE: usize = 0xe9138bd040487d4a;
 
@@ -883,7 +943,12 @@ impl ZludaObject for Module {
     }
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -> CUresult {
     if image.is_null() {
         return Err(CUerror::INVALID_VALUE);
@@ -894,27 +959,28 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
         .to_str()
         .map_err(|_| CUerror::INVALID_VALUE)?;
 
-    eprintln!("[TMatmul Backend] Compiling PTX to TMatmul assembly...");
+    crate::r#impl::hetgpu_debug!("[TMatmul Backend] Compiling PTX to TMatmul assembly...");
 
     // Compile PTX to TMatmul assembly
-    let tmatmul_asm = ptx::pass::ptx_to_tmatmul_assembly(text)
-        .map_err(|e| {
-            eprintln!("[TMatmul Backend] Compilation error: {}", e);
-            CUerror::NO_BINARY_FOR_GPU
-        })?;
+    let tmatmul_asm = ptx::pass::ptx_to_tmatmul_assembly(text).map_err(|e| {
+        crate::r#impl::hetgpu_debug!("[TMatmul Backend] Compilation error: {}", e);
+        CUerror::NO_BINARY_FOR_GPU
+    })?;
 
-    eprintln!("[TMatmul Backend] Successfully compiled to TMatmul assembly");
-    eprintln!("[TMatmul Backend] Assembly:\n{}", tmatmul_asm);
+    crate::r#impl::hetgpu_debug!("[TMatmul Backend] Successfully compiled to TMatmul assembly");
+    crate::r#impl::hetgpu_debug!("[TMatmul Backend] Assembly:\n{}", tmatmul_asm);
 
     // Save assembly to file for hardware execution
     let asm_path = std::env::temp_dir().join("tmatmul_kernel.S");
-    std::fs::write(&asm_path, &tmatmul_asm)
-        .map_err(|e| {
-            eprintln!("[TMatmul Backend] Failed to write assembly: {}", e);
-            CUerror::UNKNOWN
-        })?;
+    std::fs::write(&asm_path, &tmatmul_asm).map_err(|e| {
+        crate::r#impl::hetgpu_debug!("[TMatmul Backend] Failed to write assembly: {}", e);
+        CUerror::UNKNOWN
+    })?;
 
-    eprintln!("[TMatmul Backend] Assembly saved to: {}", asm_path.display());
+    crate::r#impl::hetgpu_debug!(
+        "[TMatmul Backend] Assembly saved to: {}",
+        asm_path.display()
+    );
 
     // Create module
     let new_module = Module {
@@ -926,12 +992,22 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn unload(hmod: CUmodule) -> CUresult {
     super::drop_checked::<Module>(hmod)
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn get_function(
     hfunc: &mut CUfunction,
     hmod: &Module,
@@ -947,7 +1023,7 @@ pub(crate) fn get_function(
             .map_err(|_| CUerror::INVALID_VALUE)?
     };
 
-    eprintln!("[TMatmul Backend] Getting function: {}", function_name);
+    crate::r#impl::hetgpu_debug!("[TMatmul Backend] Getting function: {}", function_name);
 
     // Create TMatmul kernel handle
     let kernel = TMatmulKernel {
@@ -960,30 +1036,58 @@ pub(crate) fn get_function(
 }
 
 // TMatmul kernel structure
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) struct TMatmulKernel {
     function_name: String,
     assembly_code: String,
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 unsafe impl Send for TMatmulKernel {}
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 unsafe impl Sync for TMatmulKernel {}
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 impl ZludaObject for TMatmulKernel {
     const COOKIE: usize = 0xad74ceadb9b2d51c;
 
     type CudaHandle = CUfunction;
 
     fn drop_checked(&mut self) -> CUresult {
-        eprintln!("[TMatmul Backend] Cleaning up kernel: {}", self.function_name);
+        crate::r#impl::hetgpu_debug!(
+            "[TMatmul Backend] Cleaning up kernel: {}",
+            self.function_name
+        );
         Ok(())
     }
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 impl<'a> super::FromCuda<'a, CUfunction> for &'a TMatmulKernel {
     fn from_cuda(handle: &'a CUfunction) -> Result<Self, CUerror> {
         super::as_ref::<TMatmulKernel>(handle).as_result()

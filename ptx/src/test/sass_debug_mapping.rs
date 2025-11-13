@@ -80,7 +80,7 @@ fn compile_ptx_to_cubin(ptx_path: &str, cubin_path: &str) -> Result<(), String> 
         .args(&[
             "-arch=sm_61",
             "--gpu-name=sm_61",
-            "-g", // Generate debug info
+            "-g",        // Generate debug info
             "-lineinfo", // Include line info
             ptx_path,
             "-o",
@@ -103,11 +103,7 @@ fn compile_ptx_to_cubin(ptx_path: &str, cubin_path: &str) -> Result<(), String> 
 /// Extract SASS disassembly with debug info
 fn disassemble_cubin(cubin_path: &str) -> Result<String, String> {
     let output = Command::new("cuobjdump")
-        .args(&[
-            "-sass",
-            "-lineinfo",
-            cubin_path,
-        ])
+        .args(&["-sass", "-lineinfo", cubin_path])
         .output()
         .map_err(|e| format!("Failed to run cuobjdump: {}", e))?;
 
@@ -299,7 +295,10 @@ fn test_loc_directive_accuracy() -> Result<(), Box<dyn std::error::Error>> {
         "PTX should contain .loc directives for source line mapping"
     );
 
-    println!("✓ Found {} .loc directives in generated PTX", loc_directives.len());
+    println!(
+        "✓ Found {} .loc directives in generated PTX",
+        loc_directives.len()
+    );
 
     Ok(())
 }
@@ -316,8 +315,8 @@ fn test_dwarf_debug_sections() -> Result<(), Box<dyn std::error::Error>> {
     // Check for DWARF debug sections in PTX
     let has_debug_info = regenerated_ptx.contains(".section\t.debug_info");
     let has_debug_abbrev = regenerated_ptx.contains(".section\t.debug_abbrev");
-    let has_debug_line = regenerated_ptx.contains(".section\t.debug_line") ||
-                         regenerated_ptx.contains(".file");
+    let has_debug_line =
+        regenerated_ptx.contains(".section\t.debug_line") || regenerated_ptx.contains(".file");
 
     println!("=== Debug Sections Present ===");
     println!(".debug_info: {}", has_debug_info);

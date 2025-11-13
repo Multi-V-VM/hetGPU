@@ -161,20 +161,62 @@ def _install_torch_cuda_fallbacks() -> None:
             import triton.backends.nvidia.driver as _nvd  # type: ignore
 
             def _hetgpu_wrap_launch(fn):
-                def _wrapped(*args, **kwargs):
+                def _wrapped(self, *args, **kwargs):
+                    # Extract launch parameters
+                    if len(args) >= 4:
+                        gridX, gridY, gridZ, stream = args[0], args[1], args[2], args[3]
+                        function = args[4] if len(args) > 4 else None
+
+                        # Try to process through tmatmul if enabled
+                        backend = _get_tmatmul_backend()
+                        if backend and hasattr(self, '_kernel_name') and hasattr(self, '_ptx_code'):
+                            try:
+                                # Extract kernel arguments from remaining args
+                                kernel_args = args[7:] if len(args) > 7 else []
+
+                                result = backend.process_kernel_launch(
+                                    self._ptx_code,
+                                    self._kernel_name,
+                                    (gridX, gridY, gridZ),
+                                    (1, 1, 1),  # Block size not available here
+                                    kernel_args
+                                )
+
+                                if result and result.get('simulated'):
+                                    if os.getenv("HETGPU_DEBUG", "0") == "1":
+                                        print(f"[hetGPU] Kernel executed via cocotb simulation")
+                                    # Return early - simulation handled execution
+                                    return None
+                            except Exception as e:
+                                if os.getenv("HETGPU_DEBUG", "0") == "1":
+                                    print(f"[hetGPU] TMatmul processing failed: {e}")
+
+                    # Normal CUDA launch path
                     try:
-                        return fn(*args, **kwargs)
-                    except Exception as e:
-                        if os.getenv("HETGPU_TMATMUL_COCOTB", "0").lower() in ("1", "true"):
-                            msg = str(e)
-                            if "Triton Error [CUDA]" in msg or "CUDA_ERROR" in msg:
-                                print("[hetGPU] Swallowing Triton launch error on virtual backend:", msg)
+                        return fn(self, *args, **kwargs)
+                    except RuntimeError as e:
+                        err_msg = str(e)
+                        if "invalid resource handle" in err_msg:
+                            # Check if we're in autotuning context (stack inspection)
+                            import traceback
+                            stack = traceback.format_stack()
+                            in_autotuner = any("autotuner.py" in frame for frame in stack)
+
+                            if in_autotuner:
+                                # During autotuning, skip invalid kernels and let Triton try other configs
+                                if os.getenv("HETGPU_DEBUG", "0") == "1":
+                                    print(f"[hetGPU] Autotuner kernel failed with invalid handle, trying next config")
                                 return None
+                            else:
+                                # Not in autotuning - this is a real error, propagate it
+                                if os.getenv("HETGPU_DEBUG", "0") == "1":
+                                    print(f"[hetGPU] Launch failed outside autotuning: {err_msg}")
+                                raise
                         raise
                 return _wrapped
 
-            # Patch common function classes if present
-            for _cls_name in ("Function", "CuFunction"):
+            # Patch CudaLauncher.__call__ to catch invalid stream/resource errors
+            for _cls_name in ("CudaLauncher", "Function", "CuFunction"):
                 if hasattr(_nvd, _cls_name):
                     _cls = getattr(_nvd, _cls_name)
                     if hasattr(_cls, "__call__"):
@@ -190,12 +232,24 @@ def _install_torch_cuda_fallbacks() -> None:
                 def _wrapped(self, *args, **kwargs):
                     try:
                         return run_fn(self, *args, **kwargs)
-                    except Exception as e:
-                        if os.getenv("HETGPU_TMATMUL_COCOTB", "0").lower() in ("1", "true"):
-                            msg = str(e)
-                            if "Triton Error [CUDA]" in msg or "CUDA_ERROR" in msg:
-                                print("[hetGPU] Swallowing Triton JIT run error on virtual backend:", msg)
+                    except RuntimeError as e:
+                        err_msg = str(e)
+                        if "invalid resource handle" in err_msg:
+                            # Check if we're in autotuning context
+                            import traceback
+                            stack = traceback.format_stack()
+                            in_autotuner = any("autotuner.py" in frame for frame in stack)
+
+                            if in_autotuner:
+                                # During autotuning, skip and try next config
+                                if os.getenv("HETGPU_DEBUG", "0") == "1":
+                                    print(f"[hetGPU] JIT run failed in autotuner, trying next config")
                                 return None
+                            else:
+                                # Real error outside autotuning
+                                if os.getenv("HETGPU_DEBUG", "0") == "1":
+                                    print(f"[hetGPU] JIT run failed outside autotuning: {err_msg}")
+                                raise
                         raise
                 return _wrapped
 
@@ -240,9 +294,53 @@ def _install_torch_cuda_fallbacks() -> None:
         import subprocess as _subprocess
         import shutil as _shutil
 
+        # TMatmul + Cocotb Integration
+        _tmatmul_backend = None
+        _tmatmul_enabled = os.getenv("HETGPU_TMATMUL_COCOTB", "0") == "1"
+
+        def _get_tmatmul_backend():
+            """Lazy-load TMatmul backend"""
+            global _tmatmul_backend
+            if _tmatmul_backend is None and _tmatmul_enabled:
+                try:
+                    import tmatmul_cocotb_integration
+                    _tmatmul_backend = tmatmul_cocotb_integration.get_backend()
+                    if os.getenv("HETGPU_DEBUG", "0") == "1":
+                        print("[hetGPU] TMatmul cocotb backend loaded")
+                except Exception as e:
+                    if os.getenv("HETGPU_DEBUG", "0") == "1":
+                        print(f"[hetGPU] Could not load TMatmul backend: {e}")
+            return _tmatmul_backend
+
+        # Global CUDA initialization state
+        _cuda_ctx_initialized = [False]
+
+        def _ensure_cuda_context():
+            """Ensure CUDA driver is initialized and has a valid context"""
+            if _cuda_ctx_initialized[0]:
+                return True
+            try:
+                # Check if PyTorch already initialized CUDA
+                import torch
+                if torch.cuda.is_available():
+                    # Force PyTorch to initialize CUDA
+                    _ = torch.zeros(1, device='cuda')
+                    _cuda_ctx_initialized[0] = True
+                    return True
+            except Exception as e:
+                if os.getenv("HETGPU_DEBUG", "0") == "1":
+                    print(f"[hetGPU] Failed to ensure CUDA context: {e}")
+            return False
+
         # JIT-compile/load via CUDA driver entry (cuModuleLoadData), which our
         # libcuda routes to the TMatmul pipeline for PTX on the virtual backend.
         def _hetgpu_triton_load_binary(*args, **kwargs):
+            # Ensure CUDA context is initialized before loading modules
+            _ensure_cuda_context()
+
+            if os.getenv("HETGPU_DEBUG", "0") == "1":
+                print(f"[hetGPU] load_binary called with name={kwargs.get('name')}, args len={len(args)}")
+
             # Accept flexible Triton signatures; try to locate the actual binary buffer
             kernel_bytes = kwargs.get("binary") or kwargs.get("kernel")
             name = kwargs.get("name")
@@ -275,10 +373,26 @@ def _install_torch_cuda_fallbacks() -> None:
             if kernel_bytes is None:
                 return (0, 0, 0, 0, 1024)
             try:
-                lib = _ct.CDLL("libcuda.so.1")
-            except OSError:
-                # No driver available; return placeholders
-                return (0, 0, 0, 0, 1024)
+                # Try to load hetGPU's libcuda (may be preloaded via LD_PRELOAD)
+                lib = _ct.CDLL(None)  # Load from current process (picks up LD_PRELOAD)
+                # Verify it has CUDA functions
+                if not hasattr(lib, 'cuModuleLoadData'):
+                    if os.getenv("HETGPU_DEBUG", "0") == "1":
+                        print(f"[hetGPU] Preloaded lib missing cuModuleLoadData, trying libcuda.so.1")
+                    lib = _ct.CDLL("libcuda.so.1")
+                else:
+                    if os.getenv("HETGPU_DEBUG", "0") == "1":
+                        print(f"[hetGPU] Using preloaded libcuda with cuModuleLoadData")
+            except OSError as e:
+                if os.getenv("HETGPU_DEBUG", "0") == "1":
+                    print(f"[hetGPU] Failed to load preloaded lib: {e}, trying libcuda.so.1")
+                try:
+                    lib = _ct.CDLL("libcuda.so.1")
+                except OSError:
+                    # No driver available; return placeholders
+                    if os.getenv("HETGPU_DEBUG", "0") == "1":
+                        print(f"[hetGPU] ERROR: Could not load libcuda.so.1")
+                    return (0, 0, 0, 0, 1024)
 
             CUmodule = _ct.c_void_p
             try:
@@ -382,19 +496,37 @@ def _install_torch_cuda_fallbacks() -> None:
             mod = CUmodule()
             try:
                 res = cuModuleLoadData(_ct.byref(mod), image_ptr)
-                if res == 0:
+                if os.getenv("HETGPU_DEBUG", "0") == "1":
+                    print(f"[hetGPU] cuModuleLoadData result: {res}, module: {mod.value}, name: {name}, is_ptx: {is_ptx}")
+                if res == 0 and mod.value:
                     utils._hetgpu_last_module = int(mod.value or 0)
                     # Try to resolve a function for the kernel name if provided
                     func_handle = _ct.c_void_p()
                     if name and isinstance(name, str):
                         try:
                             # Resolve to a valid CUfunction; if it fails, leave placeholder
-                            cuModuleGetFunction(_ct.byref(func_handle), mod, name.encode("utf-8"))
-                        except Exception:
+                            func_res = cuModuleGetFunction(_ct.byref(func_handle), mod, name.encode("utf-8"))
+                            if os.getenv("HETGPU_DEBUG", "0") == "1":
+                                print(f"[hetGPU] cuModuleGetFunction({name}) result: {func_res}, function: {func_handle.value}")
+                        except Exception as e:
+                            if os.getenv("HETGPU_DEBUG", "0") == "1":
+                                print(f"[hetGPU] cuModuleGetFunction({name}) exception: {e}")
                             pass
-                    return (int(mod.value or 0), int(func_handle.value or 0), 0, 0, 1024)
+                    result = (int(mod.value or 0), int(func_handle.value or 0), 0, 0, 1024)
+                    if os.getenv("HETGPU_DEBUG", "0") == "1":
+                        print(f"[hetGPU] Returning handles: module={result[0]}, function={result[1]}, name={name}")
+                    # Warn if handles are invalid
+                    if result[0] == 0 or result[1] == 0:
+                        if os.getenv("HETGPU_DEBUG", "0") == "1":
+                            print(f"[hetGPU] WARNING: Invalid handles returned! This will cause launch failures")
+                    return result
+                else:
+                    if os.getenv("HETGPU_DEBUG", "0") == "1":
+                        print(f"[hetGPU] cuModuleLoadData failed with result {res}")
                 return (0, 0, 0, 0, 1024)
-            except Exception:
+            except Exception as e:
+                if os.getenv("HETGPU_DEBUG", "0") == "1":
+                    print(f"[hetGPU] cuModuleLoadData exception: {e}")
                 return (0, 0, 0, 0, 1024)
 
         def _hetgpu_triton_load(src, name=None):
@@ -408,8 +540,8 @@ def _install_torch_cuda_fallbacks() -> None:
         utils.load_binary = _hetgpu_triton_load_binary  # type: ignore[attr-defined]
         utils.load = _hetgpu_triton_load  # type: ignore[attr-defined]
 
-        # Stub kernel launch to a no-op on virtual backend (override unconditionally)
-        _triton_driver.active.launch = lambda *a, **k: 0  # type: ignore[attr-defined]
+        # Note: We don't stub launch here - let the compiled launcher actually invoke
+        # cuLaunchKernel, which will be routed through hetGPU's libcuda to the backend
 
         # Hook Triton's compile to capture PTX and map it by kernel name.
         try:
@@ -485,6 +617,17 @@ def _install_torch_cuda_fallbacks() -> None:
                     if kname and ptx_bytes:
                         try:
                             utils._hetgpu_ptx_by_name[kname] = ptx_bytes  # type: ignore[index]
+
+                            # Also process through TMatmul if enabled
+                            backend = _get_tmatmul_backend()
+                            if backend:
+                                try:
+                                    asm_file = backend.compile_ptx_to_tmatmul(ptx_bytes, kname)
+                                    if os.getenv("HETGPU_DEBUG", "0") == "1":
+                                        print(f"[hetGPU] Compiled {kname} → {asm_file}")
+                                except Exception as e:
+                                    if os.getenv("HETGPU_DEBUG", "0") == "1":
+                                        print(f"[hetGPU] TMatmul compilation failed for {kname}: {e}")
                         except Exception:
                             pass
                 except Exception:
@@ -501,6 +644,26 @@ def _install_torch_cuda_fallbacks() -> None:
             _triton_driver.active.num_devices = lambda: 1  # type: ignore[attr-defined]
         if not hasattr(_triton_driver.active, "get_current_device"):
             _triton_driver.active.get_current_device = lambda: 0  # type: ignore[attr-defined]
+
+        # Get stream from PyTorch's CUDA context instead of creating our own
+        if not hasattr(_triton_driver.active, "get_current_stream"):
+            def _hetgpu_get_pytorch_stream(device=None):
+                """Get the current CUDA stream from PyTorch"""
+                try:
+                    import torch
+                    if device is None:
+                        device = torch.cuda.current_device()
+                    # Get PyTorch's current stream handle for this device
+                    stream = torch.cuda.current_stream(device)
+                    # Extract the raw CUDA stream pointer
+                    # cuda_stream is a property that returns the integer stream handle
+                    return stream.cuda_stream
+                except Exception as e:
+                    # Fall back to default/null stream (0) if PyTorch stream unavailable
+                    if os.getenv("HETGPU_DEBUG", "0") == "1":
+                        print(f"[hetGPU] Could not get PyTorch stream: {e}, using default stream")
+                    return 0
+            _triton_driver.active.get_current_stream = _hetgpu_get_pytorch_stream  # type: ignore[attr-defined]
     except Exception:
         pass
 
@@ -740,3 +903,30 @@ try:
     _install_torch_cuda_fallbacks()
 except Exception as e:
     warnings.warn(f"[hetGPU] sitecustomize failed to install fallbacks: {e}")
+
+# Install Triton compatibility patches for hetGPU
+if _is_hetgpu_active():
+    try:
+        import sys
+
+        # Use both the import-hook approach and direct patching
+        # Import hook for modules loaded later
+        import triton_hetgpu_patch
+
+        # Direct hot-patch for modules that may already be loaded
+        try:
+            import triton_hotpatch
+
+            # Try to apply patches immediately if triton is already loaded
+            triton_hotpatch.apply_patches()
+
+            # Also install deferred patcher in case triton loads later
+            triton_hotpatch.install_deferred_patcher()
+
+        except Exception as e:
+            # If hotpatch fails, that's ok - the import hook will catch it
+            pass
+
+        print("[hetGPU sitecustomize] Triton patches installed")
+    except ImportError as e:
+        warnings.warn(f"[hetGPU] Could not import triton patches: {e}")

@@ -2,11 +2,37 @@ use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
 use std::mem::{self, ManuallyDrop, MaybeUninit};
+use std::os::raw::c_char;
+use std::sync::OnceLock;
 #[cfg(feature = "intel")]
 use ze_device::ze_device_limit_t;
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
-use std::os::raw::c_char;
+
+#[cfg(debug_assertions)]
+pub(crate) fn debug_logs_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("HETGPU_DEBUG_LOGS")
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "on"))
+            .unwrap_or(false)
+    })
+}
+
+#[cfg(not(debug_assertions))]
+pub(crate) fn debug_logs_enabled() -> bool {
+    false
+}
+
+macro_rules! hetgpu_debug {
+    ($($arg:tt)*) => {{
+        if crate::r#impl::debug_logs_enabled() {
+            eprintln!($($arg)*);
+        }
+    }};
+}
+
+pub(crate) use hetgpu_debug;
 
 pub(super) mod context;
 pub(super) mod device;
@@ -147,17 +173,11 @@ from_cuda_nop!(
 );
 
 // Wrapper entry points expected by cuda_function_declarations! for error string helpers
-pub(crate) fn get_error_string(
-    error: CUresult,
-    pStr: &mut *const c_char,
-) -> Result<(), CUerror> {
+pub(crate) fn get_error_string(error: CUresult, pStr: &mut *const c_char) -> Result<(), CUerror> {
     driver::get_error_string(error, pStr)
 }
 
-pub(crate) fn get_error_name(
-    error: CUresult,
-    pStr: &mut *const c_char,
-) -> Result<(), CUerror> {
+pub(crate) fn get_error_name(error: CUresult, pStr: &mut *const c_char) -> Result<(), CUerror> {
     driver::get_error_name(error, pStr)
 }
 
@@ -545,7 +565,9 @@ impl IntoCuResult for ze_result_t {
 
 #[cfg(feature = "intel")]
 impl IntoCuResult for Result<(), CUerror> {
-    fn into_cu_result(self) -> Result<(), CUerror> { self }
+    fn into_cu_result(self) -> Result<(), CUerror> {
+        self
+    }
 }
 
 #[cfg(feature = "intel")]
