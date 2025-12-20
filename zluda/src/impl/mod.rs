@@ -47,6 +47,9 @@ pub mod ze_device;
 #[cfg(feature = "intel")]
 pub mod ze_module;
 
+#[cfg(feature = "cutile")]
+pub mod cutile;
+
 #[cfg(debug_assertions)]
 pub(crate) fn unimplemented() -> CUresult {
     unimplemented!()

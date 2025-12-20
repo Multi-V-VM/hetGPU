@@ -7852,3 +7852,211 @@ unsafe impl Send for CUfunction {}
 unsafe impl Sync for CUfunction {}
 unsafe impl Send for CUlibrary {}
 unsafe impl Sync for CUlibrary {}
+
+// =============================================================================
+// CuTile API Types (CUDA 13.1+)
+// =============================================================================
+
+/// CuTile module handle
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CUtileModule_st {
+    _unused: [u8; 0],
+}
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct CUtileModule(pub *mut CUtileModule_st);
+
+impl Default for CUtileModule {
+    fn default() -> Self {
+        Self(std::ptr::null_mut())
+    }
+}
+
+unsafe impl Send for CUtileModule {}
+unsafe impl Sync for CUtileModule {}
+
+/// CuTile kernel handle
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CUtileKernel_st {
+    _unused: [u8; 0],
+}
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct CUtileKernel(pub *mut CUtileKernel_st);
+
+impl Default for CUtileKernel {
+    fn default() -> Self {
+        Self(std::ptr::null_mut())
+    }
+}
+
+unsafe impl Send for CUtileKernel {}
+unsafe impl Sync for CUtileKernel {}
+
+/// CuTile tensor descriptor
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CUtileTensor_st {
+    _unused: [u8; 0],
+}
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct CUtileTensor(pub *mut CUtileTensor_st);
+
+impl Default for CUtileTensor {
+    fn default() -> Self {
+        Self(std::ptr::null_mut())
+    }
+}
+
+unsafe impl Send for CUtileTensor {}
+unsafe impl Sync for CUtileTensor {}
+
+/// CuTile data type enumeration
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct CUtileDataType(pub ::core::ffi::c_uint);
+
+impl CUtileDataType {
+    pub const CUTILE_FLOAT16: CUtileDataType = CUtileDataType(0);
+    pub const CUTILE_FLOAT32: CUtileDataType = CUtileDataType(1);
+    pub const CUTILE_FLOAT64: CUtileDataType = CUtileDataType(2);
+    pub const CUTILE_INT8: CUtileDataType = CUtileDataType(3);
+    pub const CUTILE_INT16: CUtileDataType = CUtileDataType(4);
+    pub const CUTILE_INT32: CUtileDataType = CUtileDataType(5);
+    pub const CUTILE_INT64: CUtileDataType = CUtileDataType(6);
+    pub const CUTILE_UINT8: CUtileDataType = CUtileDataType(7);
+    pub const CUTILE_UINT16: CUtileDataType = CUtileDataType(8);
+    pub const CUTILE_UINT32: CUtileDataType = CUtileDataType(9);
+    pub const CUTILE_UINT64: CUtileDataType = CUtileDataType(10);
+    pub const CUTILE_BFLOAT16: CUtileDataType = CUtileDataType(11);
+    pub const CUTILE_TF32: CUtileDataType = CUtileDataType(12);
+}
+
+/// CuTile tile layout
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct CUtileLayout(pub ::core::ffi::c_uint);
+
+impl CUtileLayout {
+    pub const CUTILE_LAYOUT_ROW_MAJOR: CUtileLayout = CUtileLayout(0);
+    pub const CUTILE_LAYOUT_COL_MAJOR: CUtileLayout = CUtileLayout(1);
+    pub const CUTILE_LAYOUT_TILE_K: CUtileLayout = CUtileLayout(2);
+}
+
+/// CuTile bytecode format
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct CUtileBytecodeFormat(pub ::core::ffi::c_uint);
+
+impl CUtileBytecodeFormat {
+    pub const CUTILE_BYTECODE_IR: CUtileBytecodeFormat = CUtileBytecodeFormat(0);
+    pub const CUTILE_BYTECODE_MLIR: CUtileBytecodeFormat = CUtileBytecodeFormat(1);
+    pub const CUTILE_BYTECODE_BINARY: CUtileBytecodeFormat = CUtileBytecodeFormat(2);
+}
+
+/// CuTile module creation descriptor
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CUtileModuleDesc {
+    /// Size of this structure
+    pub structSize: usize,
+    /// Pointer to bytecode
+    pub bytecode: *const ::core::ffi::c_void,
+    /// Size of bytecode in bytes
+    pub bytecodeSize: usize,
+    /// Bytecode format
+    pub format: CUtileBytecodeFormat,
+    /// Compilation options (null-terminated string)
+    pub options: *const ::core::ffi::c_char,
+    /// Log buffer for compilation messages
+    pub logBuffer: *mut ::core::ffi::c_char,
+    /// Size of log buffer
+    pub logBufferSize: usize,
+}
+
+impl Default for CUtileModuleDesc {
+    fn default() -> Self {
+        Self {
+            structSize: std::mem::size_of::<Self>(),
+            bytecode: std::ptr::null(),
+            bytecodeSize: 0,
+            format: CUtileBytecodeFormat::CUTILE_BYTECODE_IR,
+            options: std::ptr::null(),
+            logBuffer: std::ptr::null_mut(),
+            logBufferSize: 0,
+        }
+    }
+}
+
+/// CuTile tensor descriptor
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CUtileTensorDesc {
+    /// Size of this structure
+    pub structSize: usize,
+    /// Number of dimensions
+    pub numDims: ::core::ffi::c_uint,
+    /// Dimensions (max 8)
+    pub dims: [usize; 8],
+    /// Strides (max 8)
+    pub strides: [usize; 8],
+    /// Data type
+    pub dataType: CUtileDataType,
+    /// Layout
+    pub layout: CUtileLayout,
+    /// Device pointer to data
+    pub data: CUdeviceptr,
+}
+
+impl Default for CUtileTensorDesc {
+    fn default() -> Self {
+        Self {
+            structSize: std::mem::size_of::<Self>(),
+            numDims: 0,
+            dims: [0; 8],
+            strides: [0; 8],
+            dataType: CUtileDataType::CUTILE_FLOAT32,
+            layout: CUtileLayout::CUTILE_LAYOUT_ROW_MAJOR,
+            data: CUdeviceptr(std::ptr::null_mut()),
+        }
+    }
+}
+
+/// CuTile launch configuration
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CUtileLaunchConfig {
+    /// Size of this structure
+    pub structSize: usize,
+    /// Grid dimensions
+    pub gridDimX: ::core::ffi::c_uint,
+    pub gridDimY: ::core::ffi::c_uint,
+    pub gridDimZ: ::core::ffi::c_uint,
+    /// Block dimensions
+    pub blockDimX: ::core::ffi::c_uint,
+    pub blockDimY: ::core::ffi::c_uint,
+    pub blockDimZ: ::core::ffi::c_uint,
+    /// Shared memory size
+    pub sharedMemBytes: ::core::ffi::c_uint,
+    /// Stream to execute on
+    pub stream: CUstream,
+}
+
+impl Default for CUtileLaunchConfig {
+    fn default() -> Self {
+        Self {
+            structSize: std::mem::size_of::<Self>(),
+            gridDimX: 1,
+            gridDimY: 1,
+            gridDimZ: 1,
+            blockDimX: 1,
+            blockDimY: 1,
+            blockDimZ: 1,
+            sharedMemBytes: 0,
+            stream: CUstream(std::ptr::null_mut()),
+        }
+    }
+}

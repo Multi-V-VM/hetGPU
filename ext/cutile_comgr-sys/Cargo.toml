@@ -1,0 +1,20 @@
+[package]
+name = "cutile_comgr_sys"
+version = "0.1.0"
+edition = "2021"
+description = "Rust bindings for CuTile to TOSA transformation pipeline"
+license = "MIT OR Apache-2.0"
+authors = ["ZLUDA Team"]
+
+[dependencies]
+tempfile = "3.4.0"
+lazy_static = "1.4.0"
+thiserror = "1.0"
+
+[build-dependencies]
+cc = "1.0"
+bindgen = "0.69"
+
+[lib]
+name = "cutile_comgr_sys"
+path = "src/lib.rs"

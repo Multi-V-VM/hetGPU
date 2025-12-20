@@ -23,8 +23,8 @@ members = [
     "ext/ze_runtime-sys",
     "ext/hip_runtime-sys",
     "ext/tt_comgr-sys",
-    "ext/tt_runtime-sys"
-    
+    "ext/tt_runtime-sys",
+    "ext/cutile_comgr-sys",
 ]
 
 default-members = ["zluda", "zluda_ml", "zluda_inject", "zluda_redirect"]
@@ -34,6 +34,7 @@ features = [
     "intel",
     "tenstorrent",
     "gemmini",
+    "cutile",
 ]
 default = [
     "gemmini"

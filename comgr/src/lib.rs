@@ -4,6 +4,8 @@ use amd_comgr_sys::*;
 use gemmini_comgr_sys::*;
 #[cfg(feature = "intel")]
 use intel_comgr_sys::*;
+#[cfg(feature = "cutile")]
+use cutile_comgr_sys::*;
 use std::{
     ffi::{CStr, CString},
     mem, ptr,
@@ -838,6 +840,180 @@ pub fn compile_bitcode(
         "ZLUDA DEBUG: Gemmini compilation complete, output size: {} bytes",
         result.len()
     );
+
+    Ok(result)
+}
+
+/// CuTile bytecode to TOSA transformation and execution pipeline
+///
+/// This function takes CuTile bytecode, transforms it to TOSA,
+/// and lowers it to the specified target backend.
+#[cfg(feature = "cutile")]
+pub fn compile_cutile_bytecode(
+    target: &CStr,
+    cutile_bytecode: &[u8],
+) -> Result<Vec<u8>, cutile_comgr_status_s> {
+    eprintln!("ZLUDA DEBUG: Compiling CuTile bytecode for target: {:?}",
+              target.to_string_lossy());
+    eprintln!("ZLUDA DEBUG: Bytecode size: {} bytes", cutile_bytecode.len());
+
+    // Determine target backend from target string
+    let target_str = target.to_string_lossy();
+    let target_backend = if target_str.contains("tenstorrent") || target_str.contains("tt") {
+        cutile_comgr_target_s::CUTILE_COMGR_TARGET_TENSTORRENT
+    } else if target_str.contains("intel") || target_str.contains("xe") {
+        cutile_comgr_target_s::CUTILE_COMGR_TARGET_INTEL
+    } else if target_str.contains("amd") || target_str.contains("gfx") {
+        cutile_comgr_target_s::CUTILE_COMGR_TARGET_AMD
+    } else if target_str.contains("gemmini") || target_str.contains("riscv") {
+        cutile_comgr_target_s::CUTILE_COMGR_TARGET_GEMMINI
+    } else {
+        cutile_comgr_target_s::CUTILE_COMGR_TARGET_CPU
+    };
+
+    // Create input data
+    let mut input_data = cutile_comgr_data_t { handle: 0 };
+    cutile_comgr_create_data(
+        cutile_comgr_data_kind_s::CUTILE_COMGR_DATA_KIND_BYTECODE,
+        &mut input_data,
+    )?;
+    cutile_comgr_data_set_bytes(
+        input_data,
+        cutile_bytecode.as_ptr() as *const std::os::raw::c_void,
+        cutile_bytecode.len(),
+    )?;
+    cutile_comgr_data_set_name(input_data, c"input.ctir".as_ptr())?;
+
+    // Create input data set
+    let mut input_set = cutile_comgr_data_set_t { handle: 0 };
+    cutile_comgr_create_data_set(&mut input_set)?;
+    cutile_comgr_data_set_add(input_set, input_data)?;
+
+    // Create action info with target
+    let mut action_info = cutile_comgr_action_info_t { handle: 0 };
+    cutile_comgr_create_action_info(&mut action_info)?;
+    cutile_comgr_action_info_set_target(action_info, target_backend)?;
+
+    // Create output data set
+    let mut output_set = cutile_comgr_data_set_t { handle: 0 };
+    cutile_comgr_create_data_set(&mut output_set)?;
+
+    // Execute full pipeline: bytecode -> CuTile MLIR -> TOSA -> target executable
+    cutile_comgr_do_action(
+        cutile_comgr_action_kind_s::CUTILE_COMGR_ACTION_FULL_PIPELINE,
+        action_info,
+        input_set,
+        output_set,
+    )?;
+
+    // Get output data count
+    let mut count = 0;
+    cutile_comgr_get_data_count(output_set, &mut count)?;
+
+    if count == 0 {
+        eprintln!("ZLUDA ERROR: No output generated from CuTile pipeline");
+        return Err(cutile_comgr_status_s::CUTILE_COMGR_STATUS_ERROR);
+    }
+
+    // Get first output data
+    let mut output_data = cutile_comgr_data_t { handle: 0 };
+    cutile_comgr_get_data(output_set, 0, &mut output_data)?;
+
+    // Get size
+    let mut size = 0;
+    cutile_comgr_data_get_bytes(output_data, std::ptr::null_mut(), &mut size)?;
+
+    // Read content
+    let mut result = vec![0u8; size];
+    cutile_comgr_data_get_bytes(
+        output_data,
+        result.as_mut_ptr() as *mut std::os::raw::c_void,
+        &mut size,
+    )?;
+
+    // Cleanup
+    cutile_comgr_release_data(output_data)?;
+    cutile_comgr_release_data(input_data)?;
+    cutile_comgr_release_data_set(output_set)?;
+    cutile_comgr_release_data_set(input_set)?;
+    cutile_comgr_release_action_info(action_info)?;
+
+    eprintln!(
+        "ZLUDA DEBUG: CuTile pipeline complete, output size: {} bytes",
+        result.len()
+    );
+
+    Ok(result)
+}
+
+/// Transform CuTile MLIR text to TOSA MLIR text
+#[cfg(feature = "cutile")]
+pub fn transform_cutile_to_tosa(
+    cutile_mlir: &[u8],
+) -> Result<Vec<u8>, cutile_comgr_status_s> {
+    eprintln!("ZLUDA DEBUG: Transforming CuTile MLIR to TOSA");
+
+    // Create input data
+    let mut input_data = cutile_comgr_data_t { handle: 0 };
+    cutile_comgr_create_data(
+        cutile_comgr_data_kind_s::CUTILE_COMGR_DATA_KIND_MLIR_CUTILE,
+        &mut input_data,
+    )?;
+    cutile_comgr_data_set_bytes(
+        input_data,
+        cutile_mlir.as_ptr() as *const std::os::raw::c_void,
+        cutile_mlir.len(),
+    )?;
+    cutile_comgr_data_set_name(input_data, c"input.mlir".as_ptr())?;
+
+    // Create input data set
+    let mut input_set = cutile_comgr_data_set_t { handle: 0 };
+    cutile_comgr_create_data_set(&mut input_set)?;
+    cutile_comgr_data_set_add(input_set, input_data)?;
+
+    // Create action info
+    let mut action_info = cutile_comgr_action_info_t { handle: 0 };
+    cutile_comgr_create_action_info(&mut action_info)?;
+
+    // Create output data set
+    let mut output_set = cutile_comgr_data_set_t { handle: 0 };
+    cutile_comgr_create_data_set(&mut output_set)?;
+
+    // Execute CuTile to TOSA transformation
+    cutile_comgr_do_action(
+        cutile_comgr_action_kind_s::CUTILE_COMGR_ACTION_CUTILE_TO_TOSA,
+        action_info,
+        input_set,
+        output_set,
+    )?;
+
+    // Get output
+    let mut count = 0;
+    cutile_comgr_get_data_count(output_set, &mut count)?;
+
+    if count == 0 {
+        return Err(cutile_comgr_status_s::CUTILE_COMGR_STATUS_ERROR);
+    }
+
+    let mut output_data = cutile_comgr_data_t { handle: 0 };
+    cutile_comgr_get_data(output_set, 0, &mut output_data)?;
+
+    let mut size = 0;
+    cutile_comgr_data_get_bytes(output_data, std::ptr::null_mut(), &mut size)?;
+
+    let mut result = vec![0u8; size];
+    cutile_comgr_data_get_bytes(
+        output_data,
+        result.as_mut_ptr() as *mut std::os::raw::c_void,
+        &mut size,
+    )?;
+
+    // Cleanup
+    cutile_comgr_release_data(output_data)?;
+    cutile_comgr_release_data(input_data)?;
+    cutile_comgr_release_data_set(output_set)?;
+    cutile_comgr_release_data_set(input_set)?;
+    cutile_comgr_release_action_info(action_info)?;
 
     Ok(result)
 }

@@ -1,3 +1,6 @@
 [submodule "ext/llvm-project"]
 	path = ext/llvm-project
 	url = https://github.com/Multi-V-VM/llvm-project
+[submodule "ext/cuda-tile"]
+	path = ext/cuda-tile
+	url = https://github.com/NVIDIA/cuda-tile
