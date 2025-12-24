@@ -1885,6 +1885,25 @@ derive_parser!(
     #[derive(Debug, Copy, Clone, Display, PartialEq, Eq, Hash)]
     pub enum GridDepControlAction { }
 
+    // TCGen05 enums
+    #[derive(Debug, Copy, Clone, Display, PartialEq, Eq, Hash)]
+    pub enum Tcgen05CtaGroup { }
+
+    #[derive(Debug, Copy, Clone, Display, PartialEq, Eq, Hash)]
+    pub enum Tcgen05LdStShape { }
+
+    #[derive(Debug, Copy, Clone, Display, PartialEq, Eq, Hash)]
+    pub enum Tcgen05LdStNum { }
+
+    #[derive(Debug, Copy, Clone, Display, PartialEq, Eq, Hash)]
+    pub enum Tcgen05MmaKind { }
+
+    #[derive(Debug, Copy, Clone, Display, PartialEq, Eq, Hash)]
+    pub enum Tcgen05FenceOrder { }
+
+    #[derive(Debug, Copy, Clone, Display, PartialEq, Eq, Hash)]
+    pub enum Tcgen05CpSrcFmt { }
+
     // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-mov
     mov{.vec}.type  d, a => {
         Instruction::Mov {
@@ -3943,6 +3962,146 @@ derive_parser!(
     .blayout: MatrixLayout = {.col};
     .ctype: ScalarType = {.f16, .f32};
     .dtype: ScalarType = {.f16, .f32};
+
+    // ========================================================================
+    // TCGen05 (TensorCore 5th Generation) Instructions for SM_100 (Blackwell)
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tensorcore-5th-generation-instructions
+    // Each sub-instruction is a separate opcode entry to avoid pattern conflicts
+    // ========================================================================
+
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-alloc
+    tcgen05.alloc.cta_group.sync.aligned taddr, [saddr], nCols => {
+        Instruction::Tcgen05Alloc {
+            data: Tcgen05AllocDetails { cta_group },
+            arguments: Tcgen05AllocArgs { dst: taddr, src_addr: saddr, src_num_cols: nCols }
+        }
+    }
+    .cta_group: Tcgen05CtaGroup = { .cta_group::1, .cta_group::2 };
+
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-dealloc
+    tcgen05.dealloc.cta_group.sync.aligned taddr, nCols => {
+        Instruction::Tcgen05Dealloc {
+            data: Tcgen05DeallocDetails { cta_group },
+            arguments: Tcgen05DeallocArgs { src_addr: taddr, src_num_cols: nCols }
+        }
+    }
+    .cta_group: Tcgen05CtaGroup = { .cta_group::1, .cta_group::2 };
+
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-relinquish-alloc-permit
+    tcgen05.relinquish_alloc_permit.cta_group.sync.aligned => {
+        Instruction::Tcgen05RelinquishAllocPermit {
+            data: Tcgen05RelinquishAllocPermitDetails { cta_group }
+        }
+    }
+    .cta_group: Tcgen05CtaGroup = { .cta_group::1, .cta_group::2 };
+
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-ld
+    tcgen05.ld.sync.aligned.shape.num.b32 r, [taddr]{, src_offset} => {
+        Instruction::Tcgen05Ld {
+            data: Tcgen05LdDetails { shape, num, pack: Tcgen05Pack::None },
+            arguments: Tcgen05LdArgs { dst: r, src_addr: taddr, src_offset }
+        }
+    }
+    tcgen05.ld.sync.aligned.shape.num.pack::16b.b32 r, [taddr]{, src_offset} => {
+        Instruction::Tcgen05Ld {
+            data: Tcgen05LdDetails { shape, num, pack: Tcgen05Pack::Pack16b },
+            arguments: Tcgen05LdArgs { dst: r, src_addr: taddr, src_offset }
+        }
+    }
+    .shape: Tcgen05LdStShape = { .s16x64b, .s16x128b, .s16x256b, .s32x32b };
+    .num: Tcgen05LdStNum = { .x1, .x2, .x4, .x8, .x16, .x32, .x64, .x128 };
+
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-st
+    tcgen05.st.sync.aligned.shape.num.b32 [taddr], r{, dst_offset} => {
+        Instruction::Tcgen05St {
+            data: Tcgen05StDetails { shape, num, unpack: Tcgen05Unpack::None },
+            arguments: Tcgen05StArgs { dst_addr: taddr, src: r, dst_offset }
+        }
+    }
+    tcgen05.st.sync.aligned.shape.num.unpack::16b.b32 [taddr], r{, dst_offset} => {
+        Instruction::Tcgen05St {
+            data: Tcgen05StDetails { shape, num, unpack: Tcgen05Unpack::Unpack16b },
+            arguments: Tcgen05StArgs { dst_addr: taddr, src: r, dst_offset }
+        }
+    }
+    .shape: Tcgen05LdStShape = { .s16x64b, .s16x128b, .s16x256b, .s32x32b };
+    .num: Tcgen05LdStNum = { .x1, .x2, .x4, .x8, .x16, .x32, .x64, .x128 };
+
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-wait
+    tcgen05.wait.cta_group.sync.aligned => {
+        Instruction::Tcgen05Wait {
+            data: Tcgen05WaitDetails { cta_group }
+        }
+    }
+    .cta_group: Tcgen05CtaGroup = { .cta_group::1, .cta_group::2 };
+
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-fence
+    tcgen05.fence.before_after.cta_group => {
+        Instruction::Tcgen05Fence {
+            data: Tcgen05FenceDetails { cta_group, before_after }
+        }
+    }
+    .before_after: Tcgen05FenceOrder = { .before, .after };
+    .cta_group: Tcgen05CtaGroup = { .cta_group::1, .cta_group::2 };
+
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-commit
+    tcgen05.commit.cta_group.sync.aligned src_mbar, src_waitcnt => {
+        Instruction::Tcgen05Commit {
+            data: Tcgen05CommitDetails { cta_group },
+            arguments: Tcgen05CommitArgs { src_mbar, src_waitcnt }
+        }
+    }
+    .cta_group: Tcgen05CtaGroup = { .cta_group::1, .cta_group::2 };
+
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-cp
+    tcgen05.cp.cta_group.shape.src_fmt [dst_taddr], src_desc => {
+        Instruction::Tcgen05Cp {
+            data: Tcgen05CpDetails { cta_group, shape, src_fmt, multicast: false },
+            arguments: Tcgen05CpArgs { dst_addr: dst_taddr, src_desc, src_ctamask: None }
+        }
+    }
+    tcgen05.cp.cta_group.shape.multicast::cluster.src_fmt [dst_taddr], src_desc, src_ctamask => {
+        Instruction::Tcgen05Cp {
+            data: Tcgen05CpDetails { cta_group, shape, src_fmt, multicast: true },
+            arguments: Tcgen05CpArgs { dst_addr: dst_taddr, src_desc, src_ctamask: Some(src_ctamask) }
+        }
+    }
+    .cta_group: Tcgen05CtaGroup = { .cta_group::1, .cta_group::2 };
+    .shape: Tcgen05LdStShape = { .s16x64b, .s16x128b, .s16x256b, .s32x32b };
+    .src_fmt: Tcgen05CpSrcFmt = { .b32, .b64, .b128 };
+
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-shift
+    tcgen05.shift.cta_group.down [src_taddr] => {
+        Instruction::Tcgen05Shift {
+            data: Tcgen05ShiftDetails { cta_group },
+            arguments: Tcgen05ShiftArgs { src_addr: src_taddr }
+        }
+    }
+    .cta_group: Tcgen05CtaGroup = { .cta_group::1, .cta_group::2 };
+
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma
+    // Dense/Sparse MMA (non-warp-specialized) - sparse variant detected by optional .sp modifier
+    tcgen05.mma{.sp}.cta_group.mma_kind [dst_d], src_a_desc, src_b_desc, src_idesc{, src_smeta}, src_enable_input_d => {
+        Instruction::Tcgen05Mma {
+            data: Tcgen05MmaDetails::new(cta_group, mma_kind, sp, false),
+            arguments: Tcgen05MmaArgs { dst: dst_d, src_a_desc, src_b_desc, src_idesc, src_enable_input_d, src_scale_d: None, src_sparse_meta: src_smeta }
+        }
+    }
+    .cta_group: Tcgen05CtaGroup = { .cta_group::1, .cta_group::2 };
+    .mma_kind: Tcgen05MmaKind = { .kind::f16, .kind::tf32, .kind::f8f6f4, .kind::mxf8f6f4, .kind::mxf4, .kind::mxf4nvf4 };
+
+    // Warp-specialized MMA (with optional sparse variant)
+    tcgen05.mma.ws{.sp}.cta_group.mma_kind [dst_d], src_a_desc, src_b_desc, src_idesc{, src_smeta}, src_disable_output, src_enable_input_d, src_scale_d => {
+        let mut details = Tcgen05MmaDetails::new(cta_group, mma_kind, sp, true);
+        details.disable_output_lane = src_disable_output.as_immediate().and_then(|v| v.as_u64()).unwrap_or(0) != 0;
+        details.scale_input_d = src_scale_d.as_immediate().and_then(|v| v.as_u64()).unwrap_or(0) != 0;
+        Instruction::Tcgen05Mma {
+            data: details,
+            arguments: Tcgen05MmaArgs { dst: dst_d, src_a_desc, src_b_desc, src_idesc, src_enable_input_d, src_scale_d: Some(src_scale_d), src_sparse_meta: src_smeta }
+        }
+    }
+    .cta_group: Tcgen05CtaGroup = { .cta_group::1, .cta_group::2 };
+    .mma_kind: Tcgen05MmaKind = { .kind::f16, .kind::tf32, .kind::f8f6f4, .kind::mxf8f6f4, .kind::mxf4, .kind::mxf4nvf4 };
 );
 
 #[cfg(test)]

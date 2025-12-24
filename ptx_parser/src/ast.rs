@@ -1,6 +1,8 @@
 use super::{
     AtomSemantics, MemScope, RawRoundingMode, RawSetpCompareOp, ScalarType, SetpBoolPostOp,
     StateSpace, VectorPrefix,
+    // TCGen05 enums
+    Tcgen05CtaGroup, Tcgen05LdStShape, Tcgen05LdStNum, Tcgen05MmaKind, Tcgen05FenceOrder, Tcgen05CpSrcFmt,
 };
 use crate::{
     FunnelShiftMode, MatrixLayout, MatrixNumber, MatrixShape, Mul24Control, PtxError,
@@ -735,6 +737,111 @@ ptx_parser_macros::generate_instruction_type!(
                     repr: T,
                     type: { data.ctype() },
                 }
+            }
+        },
+        // ====================================================================
+        // TCGen05 (TensorCore 5th Generation) Instructions for SM_100
+        // ====================================================================
+        Tcgen05Alloc {
+            type: !,
+            data: Tcgen05AllocDetails,
+            arguments<T>: {
+                dst: T,
+                src_addr: {
+                    repr: T,
+                    space: { StateSpace::Shared },
+                },
+                src_num_cols: T,
+            }
+        },
+        Tcgen05Dealloc {
+            type: !,
+            data: Tcgen05DeallocDetails,
+            arguments<T>: {
+                src_addr: T,
+                src_num_cols: T,
+            }
+        },
+        Tcgen05RelinquishAllocPermit {
+            type: !,
+            data: Tcgen05RelinquishAllocPermitDetails,
+        },
+        Tcgen05Ld {
+            type: Type::Scalar(ScalarType::B32),
+            data: Tcgen05LdDetails,
+            arguments<T>: {
+                dst: T,
+                src_addr: T,
+                src_offset: {
+                    repr: Option<T>,
+                    type: { Type::Scalar(ScalarType::U32) },
+                },
+            }
+        },
+        Tcgen05St {
+            type: Type::Scalar(ScalarType::B32),
+            data: Tcgen05StDetails,
+            arguments<T>: {
+                dst_addr: T,
+                src: T,
+                dst_offset: {
+                    repr: Option<T>,
+                    type: { Type::Scalar(ScalarType::U32) },
+                },
+            }
+        },
+        Tcgen05Wait {
+            type: !,
+            data: Tcgen05WaitDetails,
+        },
+        Tcgen05Fence {
+            type: !,
+            data: Tcgen05FenceDetails,
+        },
+        Tcgen05Commit {
+            type: !,
+            data: Tcgen05CommitDetails,
+            arguments<T>: {
+                src_mbar: T,
+                src_waitcnt: T,
+            }
+        },
+        Tcgen05Cp {
+            type: !,
+            data: Tcgen05CpDetails,
+            arguments<T>: {
+                dst_addr: T,
+                src_desc: T,
+                src_ctamask: {
+                    repr: Option<T>,
+                    type: { Type::Scalar(ScalarType::U16) },
+                },
+            }
+        },
+        Tcgen05Shift {
+            type: !,
+            data: Tcgen05ShiftDetails,
+            arguments<T>: {
+                src_addr: T,
+            }
+        },
+        Tcgen05Mma {
+            type: !,
+            data: Tcgen05MmaDetails,
+            arguments<T>: {
+                dst: T,
+                src_a_desc: T,
+                src_b_desc: T,
+                src_idesc: T,
+                src_enable_input_d: T,
+                src_scale_d: {
+                    repr: Option<T>,
+                    type: { Type::Scalar(ScalarType::U32) },
+                },
+                src_sparse_meta: {
+                    repr: Option<T>,
+                    type: { Type::Scalar(ScalarType::U32) },
+                },
             }
         }
     }
@@ -2456,5 +2563,154 @@ impl MmaDetails {
     }
     pub fn ctype(&self) -> Type {
         Type::Vector(4, ScalarType::F32)
+    }
+}
+
+// ============================================================================
+// TCGen05 (TensorCore 5th Generation) Instructions for SM_100 (Blackwell)
+// Note: Tcgen05CtaGroup, Tcgen05MmaKind, Tcgen05LdStShape, Tcgen05LdStNum,
+// Tcgen05FenceOrder, Tcgen05CpSrcFmt are defined in lib.rs (derive_parser! macro)
+// ============================================================================
+
+/// Pack format for tcgen05.ld
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Display)]
+pub enum Tcgen05Pack {
+    #[display("")]
+    None,
+    #[display(".pack::16b")]
+    Pack16b,
+}
+
+/// Unpack format for tcgen05.st
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Display)]
+pub enum Tcgen05Unpack {
+    #[display("")]
+    None,
+    #[display(".unpack::16b")]
+    Unpack16b,
+}
+
+/// Details for tcgen05.alloc instruction
+#[derive(Debug)]
+pub struct Tcgen05AllocDetails {
+    pub cta_group: Tcgen05CtaGroup,
+}
+
+/// Details for tcgen05.dealloc instruction
+#[derive(Debug)]
+pub struct Tcgen05DeallocDetails {
+    pub cta_group: Tcgen05CtaGroup,
+}
+
+/// Details for tcgen05.relinquish_alloc_permit instruction
+#[derive(Debug)]
+pub struct Tcgen05RelinquishAllocPermitDetails {
+    pub cta_group: Tcgen05CtaGroup,
+}
+
+/// Details for tcgen05.ld instruction
+#[derive(Debug)]
+pub struct Tcgen05LdDetails {
+    pub shape: Tcgen05LdStShape,
+    pub num: Tcgen05LdStNum,
+    pub pack: Tcgen05Pack,
+}
+
+/// Details for tcgen05.st instruction
+#[derive(Debug)]
+pub struct Tcgen05StDetails {
+    pub shape: Tcgen05LdStShape,
+    pub num: Tcgen05LdStNum,
+    pub unpack: Tcgen05Unpack,
+}
+
+/// Details for tcgen05.wait instruction
+#[derive(Debug)]
+pub struct Tcgen05WaitDetails {
+    pub cta_group: Tcgen05CtaGroup,
+}
+
+/// Details for tcgen05.fence instruction
+#[derive(Debug)]
+pub struct Tcgen05FenceDetails {
+    pub cta_group: Tcgen05CtaGroup,
+    pub before_after: Tcgen05FenceOrder,
+}
+
+/// Details for tcgen05.commit instruction
+#[derive(Debug)]
+pub struct Tcgen05CommitDetails {
+    pub cta_group: Tcgen05CtaGroup,
+}
+
+/// Details for tcgen05.cp instruction (tensor memory copy)
+#[derive(Debug)]
+pub struct Tcgen05CpDetails {
+    pub cta_group: Tcgen05CtaGroup,
+    pub shape: Tcgen05LdStShape,
+    pub src_fmt: Tcgen05CpSrcFmt,
+    pub multicast: bool,
+}
+
+/// Details for tcgen05.shift instruction
+#[derive(Debug)]
+pub struct Tcgen05ShiftDetails {
+    pub cta_group: Tcgen05CtaGroup,
+}
+
+/// Details for tcgen05.mma instruction (dense matrix multiply-accumulate)
+#[derive(Debug)]
+pub struct Tcgen05MmaDetails {
+    pub cta_group: Tcgen05CtaGroup,
+    pub kind: Tcgen05MmaKind,
+    /// Scale factors for block-scaled variants
+    pub scale_a: bool,
+    pub scale_b: bool,
+    /// For sparse variants (tcgen05.mma.sp)
+    pub sparse: bool,
+    /// For warp-specialized variants (tcgen05.mma.ws)
+    pub warp_specialized: bool,
+    /// Enable input D (accumulator)
+    pub enable_input_d: bool,
+    /// Disable output lane
+    pub disable_output_lane: bool,
+    /// Scale input D
+    pub scale_input_d: bool,
+}
+
+impl Tcgen05MmaDetails {
+    pub fn new(
+        cta_group: Tcgen05CtaGroup,
+        kind: Tcgen05MmaKind,
+        sparse: bool,
+        warp_specialized: bool,
+    ) -> Self {
+        Self {
+            cta_group,
+            kind,
+            scale_a: false,
+            scale_b: false,
+            sparse,
+            warp_specialized,
+            enable_input_d: false,
+            disable_output_lane: false,
+            scale_input_d: false,
+        }
+    }
+}
+
+impl Default for Tcgen05MmaDetails {
+    fn default() -> Self {
+        Self {
+            cta_group: Tcgen05CtaGroup::CtaGroup1,
+            kind: Tcgen05MmaKind::KindF16,
+            scale_a: false,
+            scale_b: false,
+            sparse: false,
+            warp_specialized: false,
+            enable_input_d: false,
+            disable_output_lane: false,
+            scale_input_d: false,
+        }
     }
 }
