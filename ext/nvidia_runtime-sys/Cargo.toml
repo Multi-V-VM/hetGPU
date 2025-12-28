@@ -1,0 +1,9 @@
+[package]
+name = "nvidia_runtime_sys"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cuda_types = { path = "../../cuda_types" }
+libc = "0.2"
+lazy_static = "1.4"

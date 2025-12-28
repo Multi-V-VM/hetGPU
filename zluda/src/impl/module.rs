@@ -375,6 +375,11 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                     tmatmul_assembly: Some(tmatmul_asm),
                 };
                 *module = new_module.wrap();
+                // Register PTX source for checkpoint/restore
+                crate::r#impl::checkpoint::register_module_ptx(
+                    module.0 as u64,
+                    text,
+                );
                 ensure_virtual_context(ctx_handle, dev_handle);
 
                 // Optionally auto-run cocotb if requested
@@ -444,10 +449,15 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                             device,
                             module: ze_module_handle_t(std::ptr::null_mut()),
                             functions: Vec::new(),
-                            ptx_source: Some(sanitized),
+                            ptx_source: Some(sanitized.clone()),
                             tmatmul_assembly: Some(tmatmul_asm),
                         };
                         *module = new_module.wrap();
+                        // Register PTX source for checkpoint/restore
+                        crate::r#impl::checkpoint::register_module_ptx(
+                            module.0 as u64,
+                            &sanitized,
+                        );
                         ensure_virtual_context(ctx_handle, dev_handle);
                         return Ok(());
                     }
@@ -463,6 +473,11 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                             tmatmul_assembly: None,
                         };
                         *module = new_module.wrap();
+                        // Register PTX source for checkpoint/restore
+                        crate::r#impl::checkpoint::register_module_ptx(
+                            module.0 as u64,
+                            text,
+                        );
                         ensure_virtual_context(ctx_handle, dev_handle);
                         return Ok(());
                     }
@@ -696,6 +711,7 @@ pub(crate) fn get_function(
             kernel: ze_kernel_handle_t(std::ptr::null_mut()),
             name: name_str.to_string(),
             ptx_source: hmod.ptx_source.clone(),  // Pass PTX to kernel for cocotb
+            module_handle: hmod.module.0 as u64,
         };
         if let Some(ref ptx) = kernel_wrapper.ptx_source {
             eprintln!("[Intel Backend] Kernel has {} bytes of PTX available", ptx.len());
@@ -713,6 +729,7 @@ pub(crate) fn get_function(
             kernel: *kernel,
             name: name_str.to_string(),
             ptx_source: hmod.ptx_source.clone(),
+            module_handle: hmod.module.0 as u64,
         }
         .wrap();
         return CUresult::SUCCESS;
@@ -738,6 +755,7 @@ pub(crate) fn get_function(
                 kernel,
                 name: name_str.to_string(),
                 ptx_source: hmod.ptx_source.clone(),
+                module_handle: hmod.module.0 as u64,
             };
 
             // Store the kernel in the module's function list
@@ -762,6 +780,7 @@ pub(crate) struct ZeKernel {
     pub kernel: ze_kernel_handle_t,
     pub name: String,
     pub ptx_source: Option<String>,  // Store PTX for cocotb execution
+    pub module_handle: u64,  // Handle for checkpoint tracking
 }
 #[cfg(feature = "intel")]
 unsafe impl Send for ZeKernel {}

@@ -65,11 +65,17 @@ thread_local! {
     pub(crate) static CONTEXT_STACK: RefCell<Vec<(CUcontext, i32)>> = RefCell::new(Vec::new());
 }
 
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+thread_local! {
+    pub(crate) static CONTEXT_STACK: RefCell<Vec<(CUcontext, CUdevice)>> = RefCell::new(Vec::new());
+}
+
 #[cfg(all(
     feature = "tmatmul",
     not(feature = "amd"),
     not(feature = "intel"),
-    not(feature = "tenstorrent")
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
 ))]
 thread_local! {
     pub(crate) static CONTEXT_STACK: RefCell<Vec<(CUcontext, i32)>> = RefCell::new(Vec::new());
@@ -359,12 +365,100 @@ impl ZludaObject for Context {
     }
 }
 
+// NVIDIA implementation - direct passthrough to real libcuda.so
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) struct Context {
+    pub(crate) device: CUdevice,
+    pub(crate) cuda_ctx: CUcontext,  // Real CUDA context from libcuda.so
+    pub(crate) mutable: Mutex<OwnedByContext>,
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+unsafe impl Send for Context {}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+unsafe impl Sync for Context {}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+impl Clone for Context {
+    fn clone(&self) -> Self {
+        let guard = self.mutable.lock().unwrap();
+        Self {
+            device: self.device,
+            cuda_ctx: self.cuda_ctx,
+            mutable: Mutex::new(OwnedByContext {
+                ref_count: guard.ref_count,
+                _memory: guard._memory.clone(),
+                _streams: guard._streams.clone(),
+                _modules: guard._modules.clone(),
+            }),
+        }
+    }
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) struct OwnedByContext {
+    pub(crate) ref_count: usize,
+    pub(crate) _memory: FxHashSet<u64>,
+    pub(crate) _streams: FxHashSet<usize>,
+    pub(crate) _modules: FxHashSet<usize>,
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+impl Context {
+    pub(crate) fn new(device: CUdevice, cuda_ctx: CUcontext) -> Self {
+        Self {
+            device,
+            cuda_ctx,
+            mutable: Mutex::new(OwnedByContext {
+                ref_count: 0,
+                _memory: FxHashSet::default(),
+                _streams: FxHashSet::default(),
+                _modules: FxHashSet::default(),
+            }),
+        }
+    }
+
+    pub(crate) fn increment_ref_count(&self) {
+        let mut guard = self.mutable.lock().unwrap();
+        guard.ref_count += 1;
+    }
+
+    pub(crate) fn decrement_ref_count(&self) -> usize {
+        let mut guard = self.mutable.lock().unwrap();
+        if guard.ref_count > 0 {
+            guard.ref_count -= 1;
+        }
+        guard.ref_count
+    }
+
+    pub(crate) fn is_destroyed(&self) -> bool {
+        let mutable = self.mutable.lock().unwrap();
+        mutable.ref_count == 0
+    }
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+impl ZludaObject for Context {
+    const COOKIE: usize = 0x1c9a63e0bfb35ca4;
+    type CudaHandle = CUcontext;
+
+    fn drop_checked(&mut self) -> CUresult {
+        // Destroy the real CUDA context
+        unsafe {
+            nvidia_runtime_sys::cuCtxDestroy_v2(self.cuda_ctx);
+        }
+        Ok(())
+    }
+}
+
 // TMatmul implementation
 #[cfg(all(
     feature = "tmatmul",
     not(feature = "amd"),
     not(feature = "intel"),
-    not(feature = "tenstorrent")
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
 ))]
 pub(crate) struct Context {
     pub(crate) device_id: i32,
@@ -807,6 +901,55 @@ pub(crate) fn get_primary_tt(device_id: i32) -> Result<(&'static Context, CUcont
     Ok(dev.primary_context())
 }
 
+// NVIDIA functions
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn synchronize() -> CUresult {
+    unsafe { nvidia_runtime_sys::cuCtxSynchronize() }
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn set_current(raw_ctx: CUcontext) -> CUresult {
+    if raw_ctx.0 == ptr::null_mut() {
+        CONTEXT_STACK.with(|stack| {
+            let mut stack = stack.borrow_mut();
+            stack.pop();
+        });
+    } else {
+        let ctx: &Context = FromCuda::from_cuda(&raw_ctx)?;
+        let device = ctx.device;
+        CONTEXT_STACK.with(|stack| {
+            let mut stack = stack.borrow_mut();
+            stack.push((raw_ctx, device));
+        });
+        // Set the real CUDA context
+        unsafe {
+            nvidia_runtime_sys::cuCtxSetCurrent(ctx.cuda_ctx);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn push(ctx: CUcontext, device: CUdevice) {
+    CONTEXT_STACK.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        stack.push((ctx, device));
+    });
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn get_primary_nvidia(device: CUdevice) -> Result<(&'static Context, CUcontext), CUerror> {
+    let dev = driver::device_nvidia(device)?;
+    Ok(dev.primary_context())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn get_current_nvidia() -> Result<&'static Context, CUerror> {
+    let current = peek_current().ok_or(CUerror::INVALID_CONTEXT)?;
+    let context: &Context = FromCuda::from_cuda(&current)?;
+    Ok(unsafe { std::mem::transmute(context) })
+}
+
 // Common functions that work across all backends
 pub(crate) fn peek_current() -> Option<CUcontext> {
     #[cfg(feature = "amd")]
@@ -830,11 +973,19 @@ pub(crate) fn peek_current() -> Option<CUcontext> {
             stack.last().map(|(ctx, _)| *ctx)
         })
     }
+    #[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+    {
+        CONTEXT_STACK.with(|stack| {
+            let stack = stack.borrow();
+            stack.last().map(|(ctx, _)| *ctx)
+        })
+    }
     #[cfg(all(
         feature = "tmatmul",
         not(feature = "amd"),
         not(feature = "intel"),
-        not(feature = "tenstorrent")
+        not(feature = "tenstorrent"),
+        not(feature = "nvidia")
     ))]
     {
         CONTEXT_STACK.with(|stack| {

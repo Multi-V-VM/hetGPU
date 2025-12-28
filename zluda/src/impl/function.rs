@@ -83,6 +83,24 @@ pub(crate) unsafe fn launch_kernel(
     kernel_params: *mut *mut ::core::ffi::c_void,
     extra: *mut *mut ::core::ffi::c_void,
 ) -> ze_result_t {
+    // Check for checkpoint at launch point
+    if super::checkpoint::check_checkpoint_at_launch() {
+        // Checkpoint was triggered and pause was requested
+        // Return success without executing the kernel
+        return ze_result_t::ZE_RESULT_SUCCESS;
+    }
+
+    // Start tracking kernel execution for checkpoint support
+    let exec_id = super::checkpoint::begin_kernel_execution(
+        &f.name,
+        (grid_dim_x, grid_dim_y, grid_dim_z),
+        (block_dim_x, block_dim_y, block_dim_z),
+        shared_mem_bytes,
+        stream.0 as u64,
+        f.module_handle,
+        f.kernel.0 as u64,
+    );
+
     // Detect virtual backend (no real Level Zero device available)
     let mut virtual_backend = false;
     if let Ok(gs) = crate::r#impl::driver::global_state() {
@@ -292,6 +310,7 @@ pub(crate) unsafe fn launch_kernel(
                         "[TMatmul Backend] CPU matmul complete, wrote {:p}",
                         c_ptr
                     );
+                    super::checkpoint::end_kernel_execution(exec_id);
                     return ze_result_t::ZE_RESULT_SUCCESS;
                 }
             }
@@ -339,12 +358,14 @@ pub(crate) unsafe fn launch_kernel(
                         out_bin.display(),
                         c_ptr
                     );
+                    super::checkpoint::end_kernel_execution(exec_id);
                     return ze_result_t::ZE_RESULT_SUCCESS;
                 }
             }
             crate::r#impl::hetgpu_debug!(
                 "[TMatmul Backend] Cocotb output missing; virtual success"
             );
+            super::checkpoint::end_kernel_execution(exec_id);
             return ze_result_t::ZE_RESULT_SUCCESS;
         }
 
@@ -395,6 +416,7 @@ pub(crate) unsafe fn launch_kernel(
             // Check if we have output buffer and parameters
             if output_ptr.is_null() {
                 crate::r#impl::hetgpu_debug!("[TMatmul Backend] No output buffer detected; skipping simulation (virtual success)");
+                super::checkpoint::end_kernel_execution(exec_id);
                 return ze_result_t::ZE_RESULT_SUCCESS;
             }
 
@@ -467,9 +489,11 @@ pub(crate) unsafe fn launch_kernel(
             crate::r#impl::hetgpu_debug!(
                 "[TMatmul Backend] Cocotb disabled; treating as no-op launch (virtual success)"
             );
+            super::checkpoint::end_kernel_execution(exec_id);
             return ze_result_t::ZE_RESULT_SUCCESS;
         }
         // In cocotb/virtual path, do not proceed to Level Zero calls. Treat as success.
+        super::checkpoint::end_kernel_execution(exec_id);
         return ze_result_t::ZE_RESULT_SUCCESS;
     }
 
@@ -477,6 +501,7 @@ pub(crate) unsafe fn launch_kernel(
     let result = unsafe { zeKernelSetGroupSize(f.kernel, block_dim_x, block_dim_y, block_dim_z) };
 
     if result != ze_result_t::ZE_RESULT_SUCCESS {
+        super::checkpoint::end_kernel_execution(exec_id);
         return result;
     }
 
@@ -496,6 +521,7 @@ pub(crate) unsafe fn launch_kernel(
                 );
 
                 if result != ze_result_t::ZE_RESULT_SUCCESS {
+                    super::checkpoint::end_kernel_execution(exec_id);
                     return result;
                 }
 
@@ -537,6 +563,7 @@ pub(crate) unsafe fn launch_kernel(
     };
 
     if command_list.0.is_null() {
+        super::checkpoint::end_kernel_execution(exec_id);
         return ze_result_t::ZE_RESULT_ERROR_UNINITIALIZED;
     }
 
@@ -560,6 +587,7 @@ pub(crate) unsafe fn launch_kernel(
     };
 
     if result != ze_result_t::ZE_RESULT_SUCCESS {
+        super::checkpoint::end_kernel_execution(exec_id);
         return result;
     }
 
@@ -567,6 +595,7 @@ pub(crate) unsafe fn launch_kernel(
     let result = unsafe { zeCommandListClose(command_list) };
 
     if result != ze_result_t::ZE_RESULT_SUCCESS {
+        super::checkpoint::end_kernel_execution(exec_id);
         return result;
     }
 
@@ -576,6 +605,7 @@ pub(crate) unsafe fn launch_kernel(
     };
 
     if result != ze_result_t::ZE_RESULT_SUCCESS {
+        super::checkpoint::end_kernel_execution(exec_id);
         return result;
     }
 
@@ -586,10 +616,13 @@ pub(crate) unsafe fn launch_kernel(
         let result = unsafe { zeCommandQueueSynchronize(stream, u64::MAX) };
 
         if result != ze_result_t::ZE_RESULT_SUCCESS {
+            super::checkpoint::end_kernel_execution(exec_id);
             return result;
         }
     }
 
+    // End kernel execution tracking
+    super::checkpoint::end_kernel_execution(exec_id);
     ze_result_t::ZE_RESULT_SUCCESS
 }
 

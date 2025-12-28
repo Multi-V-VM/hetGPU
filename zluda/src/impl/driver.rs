@@ -411,6 +411,14 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
 pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     unsafe { hipInit(flags).unwrap() };
     global_state()?;
+
+    // Install checkpoint signal handler if enabled
+    if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
+        if let Err(e) = super::checkpoint::install_signal_handler() {
+            eprintln!("[hetGPU] Warning: Failed to install checkpoint handler: {}", e);
+        }
+    }
+
     Ok(())
 }
 
@@ -433,6 +441,14 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     }
 
     global_state()?;
+
+    // Install checkpoint signal handler if enabled
+    if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
+        if let Err(e) = super::checkpoint::install_signal_handler() {
+            eprintln!("[hetGPU] Warning: Failed to install checkpoint handler: {}", e);
+        }
+    }
+
     Ok(())
 }
 
@@ -444,6 +460,14 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     let _ = flags;
 
     global_state()?;
+
+    // Install checkpoint signal handler if enabled
+    if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
+        if let Err(e) = super::checkpoint::install_signal_handler() {
+            eprintln!("[hetGPU] Warning: Failed to install checkpoint handler: {}", e);
+        }
+    }
+
     Ok(())
 }
 
@@ -483,6 +507,14 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
 pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     let _ = flags;
     global_state()?;
+
+    // Install checkpoint signal handler if enabled
+    if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
+        if let Err(e) = super::checkpoint::install_signal_handler() {
+            eprintln!("[hetGPU] Warning: Failed to install checkpoint handler: {}", e);
+        }
+    }
+
     Ok(())
 }
 

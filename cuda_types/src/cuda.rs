@@ -8020,7 +8020,7 @@ impl Default for CUtileTensorDesc {
             strides: [0; 8],
             dataType: CUtileDataType::CUTILE_FLOAT32,
             layout: CUtileLayout::CUTILE_LAYOUT_ROW_MAJOR,
-            data: CUdeviceptr(std::ptr::null_mut()),
+            data: CUdeviceptr_v2(std::ptr::null_mut()),
         }
     }
 }

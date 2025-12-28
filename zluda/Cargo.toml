@@ -36,7 +36,10 @@ hip_runtime_sys = { path = "../ext/hip_runtime-sys" }
 tt_runtime_sys = { path = "../ext/tt_runtime-sys" }
 tt_comgr_sys = { path = "../ext/tt_comgr-sys" }
 cutile_comgr_sys = { path = "../ext/cutile_comgr-sys" }
+nvidia_runtime_sys = { path = "../ext/nvidia_runtime-sys" }
 libc = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [build-dependencies]
 cc = "1"

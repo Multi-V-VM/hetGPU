@@ -9,6 +9,9 @@ use ze_device::ze_device_limit_t;
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
 
+#[cfg(feature = "nvidia")]
+pub use nvidia_runtime_sys;
+
 #[cfg(debug_assertions)]
 pub(crate) fn debug_logs_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -41,6 +44,9 @@ pub(super) mod function;
 pub(super) mod memory;
 pub(super) mod module;
 pub(super) mod pointer;
+
+// Checkpoint/resume support for GPU state
+pub mod checkpoint;
 
 #[cfg(feature = "intel")]
 pub mod ze_device;

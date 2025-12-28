@@ -518,6 +518,17 @@ impl<'a> MethodEmitContext<'a> {
             ast::Instruction::CpAsyncWaitGroup { .. } => Ok(()), // nop
             ast::Instruction::CpAsyncWaitAll { .. } => Ok(()), // nop
             ast::Instruction::GridDepControl { .. } => Ok(()), // nop
+            ast::Instruction::Tcgen05Alloc { .. } => Ok(()), // nop - SM_100+ tensor core
+            ast::Instruction::Tcgen05Dealloc { .. } => Ok(()), // nop - SM_100+ tensor core
+            ast::Instruction::Tcgen05RelinquishAllocPermit { .. } => Ok(()), // nop - SM_100+ tensor core
+            ast::Instruction::Tcgen05Ld { .. } => Ok(()), // nop - SM_100+ tensor core
+            ast::Instruction::Tcgen05St { .. } => Ok(()), // nop - SM_100+ tensor core
+            ast::Instruction::Tcgen05Wait { .. } => Ok(()), // nop - SM_100+ tensor core
+            ast::Instruction::Tcgen05Fence { .. } => Ok(()), // nop - SM_100+ tensor core
+            ast::Instruction::Tcgen05Commit { .. } => Ok(()), // nop - SM_100+ tensor core
+            ast::Instruction::Tcgen05Cp { .. } => Ok(()), // nop - SM_100+ tensor core
+            ast::Instruction::Tcgen05Shift { .. } => Ok(()), // nop - SM_100+ tensor core
+            ast::Instruction::Tcgen05Mma { .. } => Ok(()), // nop - SM_100+ tensor core
             // replaced by a function call
             ast::Instruction::Bfe { .. }
             | ast::Instruction::Bar { .. }

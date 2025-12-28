@@ -198,7 +198,18 @@ fn run_instruction<'input>(
         | ast::Instruction::ReduxSync { .. }
         | ast::Instruction::GridDepControl { .. }
         | ast::Instruction::LdMatrix { .. }
-        | ast::Instruction::Mma { .. } => result.push(Statement::Instruction(instruction)),
+        | ast::Instruction::Mma { .. }
+        | ast::Instruction::Tcgen05Alloc { .. }
+        | ast::Instruction::Tcgen05Dealloc { .. }
+        | ast::Instruction::Tcgen05RelinquishAllocPermit { .. }
+        | ast::Instruction::Tcgen05Ld { .. }
+        | ast::Instruction::Tcgen05St { .. }
+        | ast::Instruction::Tcgen05Wait { .. }
+        | ast::Instruction::Tcgen05Fence { .. }
+        | ast::Instruction::Tcgen05Commit { .. }
+        | ast::Instruction::Tcgen05Cp { .. }
+        | ast::Instruction::Tcgen05Shift { .. }
+        | ast::Instruction::Tcgen05Mma { .. } => result.push(Statement::Instruction(instruction)),
         ast::Instruction::Add {
             data:
                 ast::ArithDetails::Float(ast::ArithFloat {
