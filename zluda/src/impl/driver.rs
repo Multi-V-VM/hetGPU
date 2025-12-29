@@ -1,6 +1,8 @@
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+use nvidia_runtime_sys;
 use std::{ffi::CString, sync::OnceLock};
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 use tt_runtime_sys::*;
@@ -590,4 +592,143 @@ pub(crate) fn device_tmatmul(dev_id: i32) -> Result<&'static Device, CUerror> {
 #[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
 thread_local! {
     static TMATMUL_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
+}
+
+// NVIDIA backend - pass through to real libcuda.so
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
+    static GLOBAL_STATE: OnceLock<Result<GlobalState, CUerror>> = OnceLock::new();
+
+    GLOBAL_STATE
+        .get_or_init(|| {
+            // Initialize NVIDIA CUDA via nvidia_runtime_sys
+            let init_result = nvidia_runtime_sys::cuInit(0);
+            if init_result != 0 {
+                eprintln!("[NVIDIA Backend] cuInit failed with error {}", init_result);
+                return Err(CUerror::NOT_INITIALIZED);
+            }
+
+            // Get device count
+            let mut device_count: i32 = 0;
+            let count_result = nvidia_runtime_sys::cuDeviceGetCount(&mut device_count);
+            if count_result != 0 || device_count == 0 {
+                eprintln!("[NVIDIA Backend] No NVIDIA devices found");
+                return Err(CUerror::NO_DEVICE);
+            }
+
+            eprintln!("[NVIDIA Backend] Found {} NVIDIA device(s)", device_count);
+
+            let mut devices_vec = Vec::new();
+
+            for i in 0..device_count {
+                // Get device handle
+                let mut cuda_device: i32 = 0;
+                let dev_result = nvidia_runtime_sys::cuDeviceGet(&mut cuda_device, i);
+                if dev_result != 0 {
+                    eprintln!("[NVIDIA Backend] Failed to get device {}", i);
+                    continue;
+                }
+
+                // Get device name
+                let mut name_buf = [0i8; 256];
+                let name_result = nvidia_runtime_sys::cuDeviceGetName(name_buf.as_mut_ptr(), 256, cuda_device);
+                let device_name = if name_result == 0 {
+                    let name_cstr = unsafe { CStr::from_ptr(name_buf.as_ptr()) };
+                    name_cstr.to_str().unwrap_or("Unknown").to_string()
+                } else {
+                    "Unknown".to_string()
+                };
+
+                eprintln!("[NVIDIA Backend] Device {}: {}", i, device_name);
+
+                let comgr_isa = CString::new(device_name).map_err(|_| CUerror::UNKNOWN)?;
+
+                // Create a primary CUDA context for this device
+                let mut cuda_ctx = cuda_types::cuda::CUcontext(std::ptr::null_mut());
+                let ctx_result = nvidia_runtime_sys::cuDevicePrimaryCtxRetain(&mut cuda_ctx, cuda_device);
+                if ctx_result != 0 {
+                    eprintln!("[NVIDIA Backend] Failed to retain primary context for device {}: error {}", i, ctx_result);
+                    continue;
+                }
+
+                // Create context for this device
+                let ctx = context::Context::new(cuda_device, cuda_ctx);
+
+                let device = Device {
+                    _comgr_isa: comgr_isa,
+                    primary_context: LiveCheck::new(ctx),
+                };
+
+                // Store device in NVIDIA_DEVICES map
+                let device_box = Box::new(device.clone());
+                let device_box_clone = Box::new(*device_box.clone());
+
+                NVIDIA_DEVICES.with(|map| {
+                    let mut map = map.borrow_mut();
+                    let device_ptr =
+                        unsafe { NonNull::new_unchecked(Box::into_raw(device_box_clone)) };
+                    map.insert(i, device_ptr);
+                });
+
+                devices_vec.push(*device_box);
+            }
+
+            if devices_vec.is_empty() {
+                return Err(CUerror::NO_DEVICE);
+            }
+
+            Ok(GlobalState {
+                devices: devices_vec,
+            })
+        })
+        .as_ref()
+        .map_err(|e| *e)
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
+    // Call real cuInit
+    let result = nvidia_runtime_sys::cuInit(flags);
+    if result != 0 {
+        eprintln!("[NVIDIA Backend] cuInit failed with error {}", result);
+        return Err(CUerror::NOT_INITIALIZED);
+    }
+
+    global_state()?;
+
+    // Install checkpoint signal handler if enabled
+    if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
+        if let Err(e) = super::checkpoint::install_signal_handler() {
+            eprintln!("[hetGPU] Warning: Failed to install checkpoint handler: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
+    // Get version from real CUDA driver
+    let result = nvidia_runtime_sys::cuDriverGetVersion(version);
+    if result != 0 {
+        // Fallback to our version
+        *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn device_nvidia(dev_id: i32) -> Result<&'static Device, CUerror> {
+    NVIDIA_DEVICES.with(|map| {
+        let map_ref = map.borrow();
+        map_ref
+            .get(&dev_id)
+            .ok_or(CUerror::INVALID_DEVICE)
+            .map(|dev_ptr| unsafe { dev_ptr.as_ref() })
+    })
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+thread_local! {
+    static NVIDIA_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
 }

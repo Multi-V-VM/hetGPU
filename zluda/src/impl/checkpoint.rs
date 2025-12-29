@@ -11,6 +11,204 @@ use std::fs;
 
 use serde::{Serialize, Deserialize};
 
+// =============================================================================
+// Fine-Grained Checkpoint Structures
+// =============================================================================
+
+/// Checkpoint granularity levels
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CheckpointGranularity {
+    /// Checkpoint at kernel launch boundaries only
+    KernelLevel,
+    /// Checkpoint at basic block boundaries within kernel
+    BasicBlockLevel,
+    /// Checkpoint at individual PTX instruction level
+    InstructionLevel,
+    /// Checkpoint at warp synchronization points
+    WarpSyncLevel,
+}
+
+impl Default for CheckpointGranularity {
+    fn default() -> Self {
+        CheckpointGranularity::KernelLevel
+    }
+}
+
+/// PTX instruction checkpoint state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PtxInstructionState {
+    /// Instruction index within the kernel (program counter)
+    pub instruction_pc: u64,
+    /// PTX line number (for debugging)
+    pub ptx_line: u32,
+    /// Instruction opcode (e.g., "add", "mul", "ld.global")
+    pub opcode: String,
+    /// Source operands
+    pub src_operands: Vec<String>,
+    /// Destination operand
+    pub dst_operand: Option<String>,
+    /// Predicate (if any)
+    pub predicate: Option<String>,
+}
+
+/// Register state for a single thread
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadRegisterState {
+    /// Thread ID within block (x, y, z)
+    pub thread_id: (u32, u32, u32),
+    /// 32-bit registers (r0-r255)
+    pub regs_32: HashMap<u8, u32>,
+    /// 64-bit registers (rd0-rd255)
+    pub regs_64: HashMap<u8, u64>,
+    /// Predicate registers (p0-p7)
+    pub pred_regs: HashMap<u8, bool>,
+    /// Float registers (f0-f255)
+    pub float_regs: HashMap<u8, f32>,
+    /// Double registers (fd0-fd255)
+    pub double_regs: HashMap<u8, f64>,
+    /// Special registers (tid, ntid, ctaid, nctaid, etc.)
+    pub special_regs: HashMap<String, u64>,
+    /// Current instruction pointer
+    pub current_pc: u64,
+    /// Is thread active (not masked by divergence)?
+    pub is_active: bool,
+}
+
+/// Warp execution state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WarpState {
+    /// Warp ID within block
+    pub warp_id: u32,
+    /// Thread states for all threads in warp (32 threads per warp)
+    pub thread_states: Vec<ThreadRegisterState>,
+    /// Warp-level program counter
+    pub warp_pc: u64,
+    /// Active mask (which threads are active)
+    pub active_mask: u32,
+    /// Convergence point stack (for divergence handling)
+    pub convergence_stack: Vec<(u64, u32)>, // (reconvergence_pc, saved_mask)
+    /// Barrier participation mask
+    pub barrier_mask: u32,
+}
+
+/// Block execution state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockState {
+    /// Block ID (x, y, z)
+    pub block_id: (u32, u32, u32),
+    /// Warp states for all warps in block
+    pub warp_states: Vec<WarpState>,
+    /// Shared memory snapshot
+    pub shared_memory: Vec<u8>,
+    /// Shared memory size
+    pub shared_memory_size: u64,
+    /// Number of warps that have reached barrier
+    pub barrier_count: u32,
+    /// Block-level synchronization state
+    pub sync_state: BlockSyncState,
+}
+
+/// Block synchronization state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BlockSyncState {
+    /// Normal execution
+    Running,
+    /// Waiting at barrier N
+    AtBarrier(u32),
+    /// Completed
+    Completed,
+}
+
+/// Memory region with fine-grained tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryRegionState {
+    /// Device pointer
+    pub device_ptr: u64,
+    /// Size in bytes
+    pub size: u64,
+    /// Memory type (global, constant, texture)
+    pub memory_type: PtxMemoryType,
+    /// Data content (compressed if large)
+    pub data: Vec<u8>,
+    /// Is data dirty (modified since last checkpoint)?
+    pub is_dirty: bool,
+    /// Checksum for verification
+    pub checksum: u64,
+    /// Access pattern tracking
+    pub access_regions: Vec<(u64, u64)>, // (offset, size) pairs that were accessed
+}
+
+/// PTX Memory types (for fine-grained checkpointing)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PtxMemoryType {
+    Global,
+    Constant,
+    Texture,
+    Shared,
+    Local,
+    Parameter,
+}
+
+/// Fine-grained kernel execution state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FineGrainedKernelState {
+    /// Base kernel info
+    pub base: KernelExecutionState,
+    /// Checkpoint granularity level
+    pub granularity: CheckpointGranularity,
+    /// Block states for all active blocks
+    pub block_states: Vec<BlockState>,
+    /// Global memory regions
+    pub memory_regions: Vec<MemoryRegionState>,
+    /// Parsed PTX instructions (for instruction-level checkpointing)
+    pub ptx_instructions: Vec<PtxInstructionState>,
+    /// Current grid progress (completed blocks)
+    pub completed_blocks: u64,
+    /// Total blocks in grid
+    pub total_blocks: u64,
+    /// Kernel start PC
+    pub kernel_start_pc: u64,
+    /// Kernel end PC
+    pub kernel_end_pc: u64,
+}
+
+/// Fine-grained checkpoint data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FineGrainedCheckpointData {
+    /// Version for compatibility
+    pub version: u32,
+    /// Timestamp
+    pub timestamp: u64,
+    /// Checkpoint granularity
+    pub granularity: CheckpointGranularity,
+    /// Active fine-grained kernel states
+    pub kernel_states: Vec<FineGrainedKernelState>,
+    /// PTX sources
+    pub ptx_sources: HashMap<u64, String>,
+    /// Checkpoint metadata
+    pub metadata: CheckpointMetadata,
+}
+
+/// Checkpoint metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckpointMetadata {
+    /// Checkpoint ID
+    pub checkpoint_id: u64,
+    /// Parent checkpoint ID (for incremental checkpointing)
+    pub parent_id: Option<u64>,
+    /// Is this an incremental checkpoint?
+    pub is_incremental: bool,
+    /// Backend that created this checkpoint
+    pub source_backend: String,
+    /// CUDA compute capability
+    pub compute_capability: (u32, u32),
+    /// Estimated resume time in microseconds
+    pub estimated_resume_time_us: u64,
+}
+
+/// Global checkpoint counter for incremental checkpointing
+static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// Global flag for checkpoint request (set by SIGINT handler)
 static CHECKPOINT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -143,6 +341,358 @@ impl CheckpointManager {
         serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse checkpoint: {}", e))
     }
+
+    /// Save fine-grained checkpoint
+    pub fn save_fine_grained_checkpoint(
+        &self,
+        granularity: CheckpointGranularity,
+        kernel_states: Vec<FineGrainedKernelState>,
+    ) -> Result<PathBuf, String> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let checkpoint_id = CHECKPOINT_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let filename = format!("hetgpu_finegrained_{}_{}.json", checkpoint_id, timestamp);
+        let filepath = self.checkpoint_dir.join(&filename);
+
+        let metadata = CheckpointMetadata {
+            checkpoint_id,
+            parent_id: None,
+            is_incremental: false,
+            source_backend: detect_backend(),
+            compute_capability: (8, 6), // Default SM_86
+            estimated_resume_time_us: estimate_resume_time(&kernel_states),
+        };
+
+        let checkpoint_data = FineGrainedCheckpointData {
+            version: 2, // Version 2 for fine-grained
+            timestamp,
+            granularity,
+            kernel_states,
+            ptx_sources: self.ptx_cache.clone(),
+            metadata,
+        };
+
+        let json = serde_json::to_string_pretty(&checkpoint_data)
+            .map_err(|e| format!("JSON serialization error: {}", e))?;
+
+        fs::write(&filepath, json)
+            .map_err(|e| format!("Failed to write checkpoint: {}", e))?;
+
+        eprintln!("[hetGPU] Fine-grained checkpoint saved: {:?}", filepath);
+        eprintln!("[hetGPU]   Granularity: {:?}", granularity);
+        eprintln!("[hetGPU]   Kernels: {}", checkpoint_data.kernel_states.len());
+
+        Ok(filepath)
+    }
+
+    /// Load fine-grained checkpoint
+    pub fn load_fine_grained_checkpoint(path: &str) -> Result<FineGrainedCheckpointData, String> {
+        let content = fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read checkpoint: {}", e))?;
+
+        serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse fine-grained checkpoint: {}", e))
+    }
+}
+
+// =============================================================================
+// PTX Instruction Parsing
+// =============================================================================
+
+/// Parse PTX source into instruction states for fine-grained checkpointing
+pub fn parse_ptx_instructions(ptx_source: &str) -> Vec<PtxInstructionState> {
+    let mut instructions = Vec::new();
+    let mut pc: u64 = 0;
+    let mut in_kernel = false;
+
+    for (line_num, line) in ptx_source.lines().enumerate() {
+        let line = line.trim();
+
+        // Skip empty lines and comments
+        if line.is_empty() || line.starts_with("//") {
+            continue;
+        }
+
+        // Track kernel entry/exit
+        if line.contains(".entry") || line.contains(".func") {
+            in_kernel = true;
+            continue;
+        }
+
+        if line == "}" {
+            in_kernel = false;
+            continue;
+        }
+
+        // Skip directives
+        if line.starts_with(".") {
+            continue;
+        }
+
+        // Skip labels
+        if line.ends_with(":") {
+            continue;
+        }
+
+        if !in_kernel {
+            continue;
+        }
+
+        // Parse instruction
+        if let Some(instr) = parse_single_instruction(line, pc, line_num as u32) {
+            instructions.push(instr);
+            pc += 1;
+        }
+    }
+
+    instructions
+}
+
+/// Parse a single PTX instruction line
+fn parse_single_instruction(line: &str, pc: u64, ptx_line: u32) -> Option<PtxInstructionState> {
+    let line = line.trim();
+
+    // Handle predicated instructions: @%p1 bra LABEL
+    let (predicate, rest) = if line.starts_with('@') {
+        let parts: Vec<&str> = line.splitn(2, ' ').collect();
+        if parts.len() == 2 {
+            (Some(parts[0].to_string()), parts[1].trim())
+        } else {
+            return None;
+        }
+    } else {
+        (None, line)
+    };
+
+    // Remove trailing semicolon
+    let rest = rest.trim_end_matches(';').trim();
+
+    // Split into parts
+    let parts: Vec<&str> = rest.split_whitespace().collect();
+    if parts.is_empty() {
+        return None;
+    }
+
+    let opcode = parts[0].to_string();
+
+    // Handle different instruction formats
+    let (dst_operand, src_operands) = if parts.len() > 1 {
+        // Look for comma-separated operands
+        let operand_str = parts[1..].join(" ");
+        let operands: Vec<&str> = operand_str.split(',').map(|s| s.trim()).collect();
+
+        if operands.is_empty() {
+            (None, Vec::new())
+        } else if is_store_instruction(&opcode) {
+            // Store instructions: st.xxx [addr], src
+            (None, operands.iter().map(|s| s.to_string()).collect())
+        } else if operands.len() == 1 {
+            // Single operand (like ret, bra)
+            (Some(operands[0].to_string()), Vec::new())
+        } else {
+            // Normal instruction: dst, src1, src2, ...
+            let dst = Some(operands[0].to_string());
+            let srcs = operands[1..].iter().map(|s| s.to_string()).collect();
+            (dst, srcs)
+        }
+    } else {
+        (None, Vec::new())
+    };
+
+    Some(PtxInstructionState {
+        instruction_pc: pc,
+        ptx_line,
+        opcode,
+        src_operands,
+        dst_operand,
+        predicate,
+    })
+}
+
+/// Check if instruction is a store
+fn is_store_instruction(opcode: &str) -> bool {
+    opcode.starts_with("st.") || opcode.starts_with("atom.")
+}
+
+/// Detect current backend
+fn detect_backend() -> String {
+    #[cfg(feature = "nvidia")]
+    return "nvidia".to_string();
+    #[cfg(feature = "amd")]
+    return "amd".to_string();
+    #[cfg(feature = "intel")]
+    return "intel".to_string();
+    #[cfg(feature = "tenstorrent")]
+    return "tenstorrent".to_string();
+    #[cfg(not(any(feature = "nvidia", feature = "amd", feature = "intel", feature = "tenstorrent")))]
+    return "unknown".to_string();
+}
+
+/// Estimate resume time based on checkpoint state
+fn estimate_resume_time(kernel_states: &[FineGrainedKernelState]) -> u64 {
+    let mut total_us: u64 = 0;
+
+    for state in kernel_states {
+        // Base overhead
+        total_us += 100;
+
+        // Memory restore overhead (1us per KB)
+        for region in &state.memory_regions {
+            total_us += region.size / 1024;
+        }
+
+        // Block state restore overhead
+        total_us += state.block_states.len() as u64 * 10;
+
+        // Instruction state overhead
+        total_us += state.ptx_instructions.len() as u64;
+    }
+
+    total_us
+}
+
+/// Create initial thread register state
+pub fn create_initial_thread_state(thread_id: (u32, u32, u32), block_dim: (u32, u32, u32), block_id: (u32, u32, u32), grid_dim: (u32, u32, u32)) -> ThreadRegisterState {
+    let mut special_regs = HashMap::new();
+
+    // Thread ID registers
+    special_regs.insert("tid.x".to_string(), thread_id.0 as u64);
+    special_regs.insert("tid.y".to_string(), thread_id.1 as u64);
+    special_regs.insert("tid.z".to_string(), thread_id.2 as u64);
+
+    // Block dimension registers
+    special_regs.insert("ntid.x".to_string(), block_dim.0 as u64);
+    special_regs.insert("ntid.y".to_string(), block_dim.1 as u64);
+    special_regs.insert("ntid.z".to_string(), block_dim.2 as u64);
+
+    // Block ID registers
+    special_regs.insert("ctaid.x".to_string(), block_id.0 as u64);
+    special_regs.insert("ctaid.y".to_string(), block_id.1 as u64);
+    special_regs.insert("ctaid.z".to_string(), block_id.2 as u64);
+
+    // Grid dimension registers
+    special_regs.insert("nctaid.x".to_string(), grid_dim.0 as u64);
+    special_regs.insert("nctaid.y".to_string(), grid_dim.1 as u64);
+    special_regs.insert("nctaid.z".to_string(), grid_dim.2 as u64);
+
+    // Warp size
+    special_regs.insert("WARP_SZ".to_string(), 32);
+
+    // Lane ID
+    let lane_id = thread_id.0 % 32;
+    special_regs.insert("laneid".to_string(), lane_id as u64);
+
+    ThreadRegisterState {
+        thread_id,
+        regs_32: HashMap::new(),
+        regs_64: HashMap::new(),
+        pred_regs: HashMap::new(),
+        float_regs: HashMap::new(),
+        double_regs: HashMap::new(),
+        special_regs,
+        current_pc: 0,
+        is_active: true,
+    }
+}
+
+/// Create initial warp state
+pub fn create_initial_warp_state(warp_id: u32, block_dim: (u32, u32, u32), block_id: (u32, u32, u32), grid_dim: (u32, u32, u32)) -> WarpState {
+    let mut thread_states = Vec::with_capacity(32);
+    let threads_per_block = block_dim.0 * block_dim.1 * block_dim.2;
+    let warp_start = warp_id * 32;
+
+    for lane in 0..32 {
+        let linear_tid = warp_start + lane;
+        if linear_tid < threads_per_block {
+            let tid_x = linear_tid % block_dim.0;
+            let tid_y = (linear_tid / block_dim.0) % block_dim.1;
+            let tid_z = linear_tid / (block_dim.0 * block_dim.1);
+            thread_states.push(create_initial_thread_state(
+                (tid_x, tid_y, tid_z),
+                block_dim,
+                block_id,
+                grid_dim,
+            ));
+        }
+    }
+
+    let active_mask = if threads_per_block >= warp_start + 32 {
+        0xFFFFFFFF
+    } else if threads_per_block > warp_start {
+        (1u32 << (threads_per_block - warp_start)) - 1
+    } else {
+        0
+    };
+
+    WarpState {
+        warp_id,
+        thread_states,
+        warp_pc: 0,
+        active_mask,
+        convergence_stack: Vec::new(),
+        barrier_mask: 0,
+    }
+}
+
+/// Create initial block state
+pub fn create_initial_block_state(
+    block_id: (u32, u32, u32),
+    block_dim: (u32, u32, u32),
+    grid_dim: (u32, u32, u32),
+    shared_mem_size: u64,
+) -> BlockState {
+    let threads_per_block = block_dim.0 * block_dim.1 * block_dim.2;
+    let warps_per_block = (threads_per_block + 31) / 32;
+
+    let mut warp_states = Vec::with_capacity(warps_per_block as usize);
+    for warp_id in 0..warps_per_block {
+        warp_states.push(create_initial_warp_state(warp_id, block_dim, block_id, grid_dim));
+    }
+
+    BlockState {
+        block_id,
+        warp_states,
+        shared_memory: vec![0u8; shared_mem_size as usize],
+        shared_memory_size: shared_mem_size,
+        barrier_count: 0,
+        sync_state: BlockSyncState::Running,
+    }
+}
+
+/// Create fine-grained kernel state from basic state
+pub fn create_fine_grained_state(
+    base: KernelExecutionState,
+    granularity: CheckpointGranularity,
+) -> FineGrainedKernelState {
+    let grid_dim = base.grid_dim;
+    let block_dim = base.block_dim;
+    let total_blocks = (grid_dim.0 as u64) * (grid_dim.1 as u64) * (grid_dim.2 as u64);
+
+    // Parse PTX instructions if available
+    let ptx_instructions = if let Some(ref ptx) = base.ptx_source {
+        parse_ptx_instructions(ptx)
+    } else {
+        Vec::new()
+    };
+
+    let kernel_end_pc = ptx_instructions.len() as u64;
+
+    FineGrainedKernelState {
+        base,
+        granularity,
+        block_states: Vec::new(), // Will be populated during execution
+        memory_regions: Vec::new(),
+        ptx_instructions,
+        completed_blocks: 0,
+        total_blocks,
+        kernel_start_pc: 0,
+        kernel_end_pc,
+    }
 }
 
 /// Serializable checkpoint data
@@ -169,6 +719,10 @@ pub fn get_checkpoint_manager() -> &'static Mutex<CheckpointManager> {
 }
 
 /// Install SIGINT handler for checkpoint
+///
+/// IMPORTANT: The signal handler is async-signal-safe - it only sets an atomic flag.
+/// The actual checkpoint is performed at safe points (e.g., after cuCtxSynchronize)
+/// to avoid conflicts with NVIDIA driver internal state.
 #[cfg(unix)]
 pub fn install_signal_handler() -> Result<(), String> {
     if HANDLER_INSTALLED.swap(true, Ordering::SeqCst) {
@@ -176,52 +730,40 @@ pub fn install_signal_handler() -> Result<(), String> {
         return Ok(());
     }
 
+    // Async-signal-safe handler - ONLY sets the flag
+    // No locks, no allocations, no file I/O - these cause core dumps on NVIDIA
     extern "C" fn sigint_handler(_: libc::c_int) {
         CHECKPOINT_REQUESTED.store(true, Ordering::SeqCst);
 
-        // Print notification
-        let msg = b"\n[hetGPU] Checkpoint requested - saving GPU state...\n";
+        // Only use async-signal-safe functions (write() is safe)
+        // Use a static message to avoid any allocations
+        let msg = b"\n[hetGPU] Checkpoint requested (will save at next sync point)...\n";
         unsafe {
             libc::write(libc::STDERR_FILENO, msg.as_ptr() as *const libc::c_void, msg.len());
         }
 
-        // Try to save checkpoint
-        if let Ok(manager) = get_checkpoint_manager().lock() {
-            match manager.save_checkpoint() {
-                Ok(path) => {
-                    let msg = format!("[hetGPU] Checkpoint saved to: {:?}\n", path);
-                    unsafe {
-                        libc::write(
-                            libc::STDERR_FILENO,
-                            msg.as_ptr() as *const libc::c_void,
-                            msg.len(),
-                        );
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("[hetGPU] Checkpoint failed: {}\n", e);
-                    unsafe {
-                        libc::write(
-                            libc::STDERR_FILENO,
-                            msg.as_ptr() as *const libc::c_void,
-                            msg.len(),
-                        );
-                    }
-                }
-            }
-        }
+        // DO NOT call save_checkpoint() here - it's not async-signal-safe!
+        // The checkpoint will be saved at the next safe point (cuCtxSynchronize, etc.)
     }
 
     unsafe {
-        // Use signal() which is simpler and more portable
-        let prev = libc::signal(libc::SIGINT, sigint_handler as libc::sighandler_t);
-        if prev == libc::SIG_ERR {
+        // Use sigaction() with SA_RESTART for better NVIDIA compatibility
+        // SA_RESTART: automatically restart interrupted system calls
+        // This prevents EINTR errors that can confuse the NVIDIA driver
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = sigint_handler as usize;
+        sa.sa_flags = libc::SA_RESTART;
+        libc::sigemptyset(&mut sa.sa_mask);
+
+        let ret = libc::sigaction(libc::SIGINT, &sa, std::ptr::null_mut());
+        if ret != 0 {
             HANDLER_INSTALLED.store(false, Ordering::SeqCst);
             return Err("Failed to install SIGINT handler".to_string());
         }
     }
 
     eprintln!("[hetGPU] Checkpoint handler installed (Ctrl+C to checkpoint)");
+    eprintln!("[hetGPU] Note: Checkpoint will be saved at the next GPU sync point");
     Ok(())
 }
 
@@ -243,6 +785,37 @@ pub fn clear_checkpoint_request() {
 /// Request a checkpoint programmatically
 pub fn request_checkpoint() {
     CHECKPOINT_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+/// Check for pending checkpoint and save if requested
+/// This should be called at safe points (after cuCtxSynchronize, etc.)
+/// Returns true if a checkpoint was saved
+pub fn process_pending_checkpoint() -> bool {
+    if !is_checkpoint_requested() {
+        return false;
+    }
+
+    // Clear the flag first to avoid re-entry
+    clear_checkpoint_request();
+
+    eprintln!("[hetGPU] Processing pending checkpoint at safe point...");
+
+    // Now it's safe to acquire locks and do file I/O
+    if let Ok(manager) = get_checkpoint_manager().lock() {
+        match manager.save_checkpoint() {
+            Ok(path) => {
+                eprintln!("[hetGPU] Checkpoint saved to: {:?}", path);
+                return true;
+            }
+            Err(e) => {
+                eprintln!("[hetGPU] Checkpoint failed: {}", e);
+            }
+        }
+    } else {
+        eprintln!("[hetGPU] Failed to acquire checkpoint manager lock");
+    }
+
+    false
 }
 
 /// Generate new kernel execution ID
@@ -1218,4 +1791,25 @@ pub extern "C" fn hetgpu_checkpoint_get_memory_data(
     }
 
     copy_size as i32
+}
+
+/// Request checkpoint programmatically (C-compatible)
+/// This triggers a checkpoint without using signals, avoiding core dumps on some backends
+#[no_mangle]
+pub extern "C" fn hetgpu_request_checkpoint() {
+    eprintln!("[hetGPU] Programmatic checkpoint requested...");
+
+    // Save checkpoint directly
+    if let Ok(manager) = get_checkpoint_manager().lock() {
+        match manager.save_checkpoint() {
+            Ok(path) => {
+                eprintln!("[hetGPU] Checkpoint saved to: {:?}", path);
+            }
+            Err(e) => {
+                eprintln!("[hetGPU] Checkpoint failed: {}", e);
+            }
+        }
+    } else {
+        eprintln!("[hetGPU] Failed to acquire checkpoint manager lock");
+    }
 }

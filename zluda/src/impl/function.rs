@@ -1,9 +1,11 @@
-#[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
+#[cfg(any(feature = "tenstorrent", feature = "nvidia"))]
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+use nvidia_runtime_sys;
 
 use std::ptr;
 #[cfg(feature = "amd")]
@@ -833,5 +835,81 @@ pub(crate) fn launch_kernel(
     let _ = shared_mem_bytes;
     let _ = stream;
 
+    Ok(())
+}
+
+// NVIDIA backend function implementations - passthrough to real libcuda.so
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn get_attribute(
+    pi: &mut ::core::ffi::c_int,
+    attrib: cuda_types::cuda::CUfunction_attribute,
+    hfunc: &super::module::NvidiaKernel,
+) -> CUresult {
+    let result = nvidia_runtime_sys::cuFuncGetAttribute(pi, attrib, hfunc.cuda_function);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn launch_kernel(
+    f: &super::module::NvidiaKernel,
+    grid_dim_x: ::core::ffi::c_uint,
+    grid_dim_y: ::core::ffi::c_uint,
+    grid_dim_z: ::core::ffi::c_uint,
+    block_dim_x: ::core::ffi::c_uint,
+    block_dim_y: ::core::ffi::c_uint,
+    block_dim_z: ::core::ffi::c_uint,
+    shared_mem_bytes: ::core::ffi::c_uint,
+    h_stream: cuda_types::cuda::CUstream,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    extra: *mut *mut ::core::ffi::c_void,
+) -> CUresult {
+    let result = nvidia_runtime_sys::cuLaunchKernel(
+        f.cuda_function,
+        grid_dim_x,
+        grid_dim_y,
+        grid_dim_z,
+        block_dim_x,
+        block_dim_y,
+        block_dim_z,
+        shared_mem_bytes,
+        h_stream,
+        kernel_params,
+        extra,
+    );
+    if result != 0 {
+        eprintln!("[NVIDIA Backend] cuLaunchKernel failed with error {}", result);
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn launch_kernel_ex(
+    config: &cuda_types::cuda::CUlaunchConfig,
+    f: &super::module::NvidiaKernel,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    extra: *mut *mut ::core::ffi::c_void,
+) -> CUresult {
+    // cuLaunchKernelEx wraps cuLaunchKernel with additional config
+    let result = nvidia_runtime_sys::cuLaunchKernel(
+        f.cuda_function,
+        config.gridDimX,
+        config.gridDimY,
+        config.gridDimZ,
+        config.blockDimX,
+        config.blockDimY,
+        config.blockDimZ,
+        config.sharedMemBytes,
+        config.hStream,
+        kernel_params,
+        extra,
+    );
+    if result != 0 {
+        eprintln!("[NVIDIA Backend] cuLaunchKernelEx failed with error {}", result);
+        return Err(CUerror::UNKNOWN);
+    }
     Ok(())
 }

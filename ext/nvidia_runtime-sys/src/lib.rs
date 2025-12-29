@@ -7,8 +7,13 @@ use std::ffi::CStr;
 use std::ptr;
 use std::sync::OnceLock;
 
+// Thread-safe wrapper for library handle
+struct LibHandle(*mut c_void);
+unsafe impl Send for LibHandle {}
+unsafe impl Sync for LibHandle {}
+
 // Library handle
-static CUDA_LIB: OnceLock<*mut c_void> = OnceLock::new();
+static CUDA_LIB: OnceLock<LibHandle> = OnceLock::new();
 
 // Function pointer types
 type CuInitFn = unsafe extern "C" fn(c_uint) -> CUresult;
@@ -62,6 +67,13 @@ type CuDevicePrimaryCtxRetainFn = unsafe extern "C" fn(*mut CUcontext, CUdevice)
 type CuDevicePrimaryCtxReleaseFn = unsafe extern "C" fn(CUdevice) -> CUresult;
 type CuDevicePrimaryCtxGetStateFn = unsafe extern "C" fn(CUdevice, *mut c_uint, *mut c_int) -> CUresult;
 type CuPointerGetAttributeFn = unsafe extern "C" fn(*mut c_void, CUpointer_attribute, CUdeviceptr) -> CUresult;
+type CuCtxGetDeviceFn = unsafe extern "C" fn(*mut CUdevice) -> CUresult;
+type CuCtxSetLimitFn = unsafe extern "C" fn(CUlimit, size_t) -> CUresult;
+type CuCtxGetLimitFn = unsafe extern "C" fn(*mut size_t, CUlimit) -> CUresult;
+type CuDeviceComputeCapabilityFn = unsafe extern "C" fn(*mut c_int, *mut c_int, CUdevice) -> CUresult;
+type CuDeviceGetUuidFn = unsafe extern "C" fn(*mut CUuuid, CUdevice) -> CUresult;
+type CuDeviceGetLuidFn = unsafe extern "C" fn(*mut c_char, *mut c_uint, CUdevice) -> CUresult;
+type CuMemGetAddressRangeFn = unsafe extern "C" fn(*mut CUdeviceptr, *mut size_t, CUdeviceptr) -> CUresult;
 
 // Function pointers struct
 pub struct NvidiaCudaFunctions {
@@ -108,6 +120,13 @@ pub struct NvidiaCudaFunctions {
     pub cuDevicePrimaryCtxRelease_v2: Option<CuDevicePrimaryCtxReleaseFn>,
     pub cuDevicePrimaryCtxGetState: Option<CuDevicePrimaryCtxGetStateFn>,
     pub cuPointerGetAttribute: Option<CuPointerGetAttributeFn>,
+    pub cuCtxGetDevice: Option<CuCtxGetDeviceFn>,
+    pub cuCtxSetLimit: Option<CuCtxSetLimitFn>,
+    pub cuCtxGetLimit: Option<CuCtxGetLimitFn>,
+    pub cuDeviceComputeCapability: Option<CuDeviceComputeCapabilityFn>,
+    pub cuDeviceGetUuid: Option<CuDeviceGetUuidFn>,
+    pub cuDeviceGetLuid: Option<CuDeviceGetLuidFn>,
+    pub cuMemGetAddressRange_v2: Option<CuMemGetAddressRangeFn>,
 }
 
 static CUDA_FUNCS: OnceLock<NvidiaCudaFunctions> = OnceLock::new();
@@ -125,11 +144,13 @@ const RTLD_GLOBAL: c_int = 0x100;
 /// Initialize the NVIDIA CUDA library
 pub fn init() -> Result<(), String> {
     let _ = CUDA_FUNCS.get_or_init(|| {
-        let lib = load_cuda_library();
+        let lib_handle = load_cuda_library();
+        let lib = lib_handle.0;
         if lib.is_null() {
             eprintln!("[hetGPU-nvidia] Failed to load libcuda.so");
             return NvidiaCudaFunctions::empty();
         }
+        let _ = CUDA_LIB.set(lib_handle);
 
         unsafe {
             NvidiaCudaFunctions {
@@ -176,6 +197,13 @@ pub fn init() -> Result<(), String> {
                 cuDevicePrimaryCtxRelease_v2: load_fn(lib, "cuDevicePrimaryCtxRelease_v2"),
                 cuDevicePrimaryCtxGetState: load_fn(lib, "cuDevicePrimaryCtxGetState"),
                 cuPointerGetAttribute: load_fn(lib, "cuPointerGetAttribute"),
+                cuCtxGetDevice: load_fn(lib, "cuCtxGetDevice"),
+                cuCtxSetLimit: load_fn(lib, "cuCtxSetLimit"),
+                cuCtxGetLimit: load_fn(lib, "cuCtxGetLimit"),
+                cuDeviceComputeCapability: load_fn(lib, "cuDeviceComputeCapability"),
+                cuDeviceGetUuid: load_fn(lib, "cuDeviceGetUuid"),
+                cuDeviceGetLuid: load_fn(lib, "cuDeviceGetLuid"),
+                cuMemGetAddressRange_v2: load_fn(lib, "cuMemGetAddressRange_v2"),
             }
         }
     });
@@ -183,7 +211,7 @@ pub fn init() -> Result<(), String> {
     Ok(())
 }
 
-fn load_cuda_library() -> *mut c_void {
+fn load_cuda_library() -> LibHandle {
     let paths = [
         b"/usr/lib/x86_64-linux-gnu/libcuda.so\0".as_ptr() as *const c_char,
         b"/usr/lib64/libcuda.so\0".as_ptr() as *const c_char,
@@ -197,11 +225,11 @@ fn load_cuda_library() -> *mut c_void {
         if !lib.is_null() {
             let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
             eprintln!("[hetGPU-nvidia] Loaded CUDA library from: {}", path_str);
-            return lib;
+            return LibHandle(lib);
         }
     }
 
-    ptr::null_mut()
+    LibHandle(ptr::null_mut())
 }
 
 unsafe fn load_fn<T>(lib: *mut c_void, name: &str) -> Option<T> {
@@ -260,6 +288,13 @@ impl NvidiaCudaFunctions {
             cuDevicePrimaryCtxRelease_v2: None,
             cuDevicePrimaryCtxGetState: None,
             cuPointerGetAttribute: None,
+            cuCtxGetDevice: None,
+            cuCtxSetLimit: None,
+            cuCtxGetLimit: None,
+            cuDeviceComputeCapability: None,
+            cuDeviceGetUuid: None,
+            cuDeviceGetLuid: None,
+            cuMemGetAddressRange_v2: None,
         }
     }
 }
@@ -271,211 +306,275 @@ pub fn get_cuda_funcs() -> Option<&'static NvidiaCudaFunctions> {
 
 // Wrapper functions that call into the real CUDA library
 
-pub unsafe fn cuInit(flags: c_uint) -> CUresult {
+pub fn cuInit(flags: c_uint) -> i32 {
+    let _ = init();
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuInit {
-            return f(flags);
+            let result = unsafe { f(flags) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999 // Not initialized error code
 }
 
-pub unsafe fn cuDeviceGetCount(count: *mut c_int) -> CUresult {
+fn cuda_result_to_int(result: CUresult) -> i32 {
+    match result {
+        CUresult::SUCCESS => 0,
+        _ => 1,  // Generic error
+    }
+}
+
+pub fn cuDeviceGetCount(count: *mut c_int) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuDeviceGetCount {
-            return f(count);
+            let result = unsafe { f(count) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuDeviceGet(device: *mut CUdevice, ordinal: c_int) -> CUresult {
+pub fn cuDeviceGet(device: *mut CUdevice, ordinal: c_int) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuDeviceGet {
-            return f(device, ordinal);
+            let result = unsafe { f(device, ordinal) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuDeviceGetName(name: *mut c_char, len: c_int, dev: CUdevice) -> CUresult {
+pub fn cuDeviceGetName(name: *mut c_char, len: c_int, dev: CUdevice) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuDeviceGetName {
-            return f(name, len, dev);
+            let result = unsafe { f(name, len, dev) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuDeviceTotalMem_v2(bytes: *mut size_t, dev: CUdevice) -> CUresult {
+pub fn cuDeviceTotalMem_v2(bytes: *mut size_t, dev: CUdevice) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuDeviceTotalMem_v2 {
-            return f(bytes, dev);
+            let result = unsafe { f(bytes, dev) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuDeviceGetAttribute(pi: *mut c_int, attrib: CUdevice_attribute, dev: CUdevice) -> CUresult {
+pub fn cuDeviceGetAttribute(pi: *mut c_int, attrib: CUdevice_attribute, dev: CUdevice) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuDeviceGetAttribute {
-            return f(pi, attrib, dev);
+            let result = unsafe { f(pi, attrib, dev) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuCtxCreate_v2(pctx: *mut CUcontext, flags: c_uint, dev: CUdevice) -> CUresult {
+pub fn cuDevicePrimaryCtxRetain(pctx: *mut CUcontext, dev: CUdevice) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuCtxCreate_v2 {
-            return f(pctx, flags, dev);
+        if let Some(f) = funcs.cuDevicePrimaryCtxRetain {
+            let result = unsafe { f(pctx, dev) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuCtxDestroy_v2(ctx: CUcontext) -> CUresult {
+pub fn cuDevicePrimaryCtxRelease_v2(dev: CUdevice) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuCtxDestroy_v2 {
-            return f(ctx);
+        if let Some(f) = funcs.cuDevicePrimaryCtxRelease_v2 {
+            let result = unsafe { f(dev) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuCtxSynchronize() -> CUresult {
+pub fn cuDevicePrimaryCtxGetState(dev: CUdevice, flags: *mut c_uint, active: *mut c_int) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuCtxSynchronize {
-            return f();
+        if let Some(f) = funcs.cuDevicePrimaryCtxGetState {
+            let result = unsafe { f(dev, flags, active) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuCtxPushCurrent_v2(ctx: CUcontext) -> CUresult {
+pub fn cuCtxGetDevice(dev: *mut CUdevice) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuCtxPushCurrent_v2 {
-            return f(ctx);
+        if let Some(f) = funcs.cuCtxGetDevice {
+            let result = unsafe { f(dev) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuCtxPopCurrent_v2(pctx: *mut CUcontext) -> CUresult {
+pub fn cuCtxSetLimit(limit: CUlimit, value: size_t) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuCtxPopCurrent_v2 {
-            return f(pctx);
+        if let Some(f) = funcs.cuCtxSetLimit {
+            let result = unsafe { f(limit, value) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuCtxGetCurrent(pctx: *mut CUcontext) -> CUresult {
+pub fn cuCtxGetLimit(pvalue: *mut size_t, limit: CUlimit) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuCtxGetCurrent {
-            return f(pctx);
+        if let Some(f) = funcs.cuCtxGetLimit {
+            let result = unsafe { f(pvalue, limit) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuCtxSetCurrent(ctx: CUcontext) -> CUresult {
+pub fn cuDeviceComputeCapability(major: *mut c_int, minor: *mut c_int, dev: CUdevice) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuCtxSetCurrent {
-            return f(ctx);
+        if let Some(f) = funcs.cuDeviceComputeCapability {
+            let result = unsafe { f(major, minor, dev) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuMemAlloc_v2(dptr: *mut CUdeviceptr, bytesize: size_t) -> CUresult {
+pub fn cuDeviceGetUuid(uuid: *mut CUuuid, dev: CUdevice) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuDeviceGetUuid {
+            let result = unsafe { f(uuid, dev) };
+            return cuda_result_to_int(result);
+        }
+    }
+    999
+}
+
+pub fn cuDeviceGetLuid(luid: *mut c_char, device_node_mask: *mut c_uint, dev: CUdevice) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuDeviceGetLuid {
+            let result = unsafe { f(luid, device_node_mask, dev) };
+            return cuda_result_to_int(result);
+        }
+    }
+    999
+}
+
+pub fn cuMemAlloc_v2(dptr: *mut CUdeviceptr, bytesize: size_t) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuMemAlloc_v2 {
-            return f(dptr, bytesize);
+            let result = unsafe { f(dptr, bytesize) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuMemFree_v2(dptr: CUdeviceptr) -> CUresult {
+pub fn cuMemFree_v2(dptr: CUdeviceptr) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuMemFree_v2 {
-            return f(dptr);
+            let result = unsafe { f(dptr) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuMemcpyHtoD_v2(dst: CUdeviceptr, src: *const c_void, bytecount: size_t) -> CUresult {
+pub fn cuMemcpyHtoD_v2(dst: CUdeviceptr, src: *const c_void, bytecount: size_t) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuMemcpyHtoD_v2 {
-            return f(dst, src, bytecount);
+            let result = unsafe { f(dst, src, bytecount) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuMemcpyDtoH_v2(dst: *mut c_void, src: CUdeviceptr, bytecount: size_t) -> CUresult {
+pub fn cuMemcpyDtoH_v2(dst: *mut c_void, src: CUdeviceptr, bytecount: size_t) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuMemcpyDtoH_v2 {
-            return f(dst, src, bytecount);
+            let result = unsafe { f(dst, src, bytecount) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuMemcpyDtoD_v2(dst: CUdeviceptr, src: CUdeviceptr, bytecount: size_t) -> CUresult {
+pub fn cuMemGetAddressRange_v2(pbase: *mut CUdeviceptr, psize: *mut size_t, dptr: CUdeviceptr) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuMemcpyDtoD_v2 {
-            return f(dst, src, bytecount);
+        if let Some(f) = funcs.cuMemGetAddressRange_v2 {
+            let result = unsafe { f(pbase, psize, dptr) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuModuleLoadData(module: *mut CUmodule, image: *const c_void) -> CUresult {
+pub fn cuMemsetD8_v2(dst: CUdeviceptr, uc: u8, n: size_t) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuMemsetD8_v2 {
+            let result = unsafe { f(dst, uc, n) };
+            return cuda_result_to_int(result);
+        }
+    }
+    999
+}
+
+pub fn cuMemsetD32_v2(dst: CUdeviceptr, ui: u32, n: size_t) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuMemsetD32_v2 {
+            let result = unsafe { f(dst, ui, n) };
+            return cuda_result_to_int(result);
+        }
+    }
+    999
+}
+
+pub fn cuModuleLoadData(module: *mut CUmodule, image: *const c_void) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuModuleLoadData {
-            return f(module, image);
+            let result = unsafe { f(module, image) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuModuleLoadDataEx(
-    module: *mut CUmodule,
-    image: *const c_void,
-    numOptions: c_uint,
-    options: *mut CUjit_option,
-    optionValues: *mut *mut c_void,
-) -> CUresult {
-    if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuModuleLoadDataEx {
-            return f(module, image, numOptions, options, optionValues);
-        }
-    }
-    CUresult::ERROR_NOT_INITIALIZED
-}
-
-pub unsafe fn cuModuleUnload(hmod: CUmodule) -> CUresult {
+pub fn cuModuleUnload(hmod: CUmodule) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuModuleUnload {
-            return f(hmod);
+            let result = unsafe { f(hmod) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuModuleGetFunction(hfunc: *mut CUfunction, hmod: CUmodule, name: *const c_char) -> CUresult {
+pub fn cuModuleGetFunction(hfunc: *mut CUfunction, hmod: CUmodule, name: *const c_char) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuModuleGetFunction {
-            return f(hfunc, hmod, name);
+            let result = unsafe { f(hfunc, hmod, name) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuLaunchKernel(
+pub fn cuFuncGetAttribute(pi: *mut c_int, attrib: CUfunction_attribute, hfunc: CUfunction) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuFuncGetAttribute {
+            let result = unsafe { f(pi, attrib, hfunc) };
+            return cuda_result_to_int(result);
+        }
+    }
+    999
+}
+
+pub fn cuLaunchKernel(
     f: CUfunction,
     gridDimX: c_uint,
     gridDimY: c_uint,
@@ -487,65 +586,62 @@ pub unsafe fn cuLaunchKernel(
     hStream: CUstream,
     kernelParams: *mut *mut c_void,
     extra: *mut *mut c_void,
-) -> CUresult {
+) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(func) = funcs.cuLaunchKernel {
-            return func(f, gridDimX, gridDimY, gridDimZ, blockDimX, blockDimY, blockDimZ, sharedMemBytes, hStream, kernelParams, extra);
+            let result = unsafe { func(f, gridDimX, gridDimY, gridDimZ, blockDimX, blockDimY, blockDimZ, sharedMemBytes, hStream, kernelParams, extra) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuStreamCreate(phStream: *mut CUstream, flags: c_uint) -> CUresult {
+pub fn cuCtxSynchronize() -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuStreamCreate {
-            return f(phStream, flags);
+        if let Some(f) = funcs.cuCtxSynchronize {
+            let result = unsafe { f() };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuStreamDestroy_v2(hStream: CUstream) -> CUresult {
+pub fn cuCtxSetCurrent(ctx: CUcontext) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuStreamDestroy_v2 {
-            return f(hStream);
+        if let Some(f) = funcs.cuCtxSetCurrent {
+            let result = unsafe { f(ctx) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuStreamSynchronize(hStream: CUstream) -> CUresult {
+pub fn cuCtxDestroy_v2(ctx: CUcontext) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuStreamSynchronize {
-            return f(hStream);
+        if let Some(f) = funcs.cuCtxDestroy_v2 {
+            let result = unsafe { f(ctx) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuDriverGetVersion(driverVersion: *mut c_int) -> CUresult {
+pub fn cuDriverGetVersion(version: *mut c_int) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuDriverGetVersion {
-            return f(driverVersion);
+            let result = unsafe { f(version) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }
 
-pub unsafe fn cuDevicePrimaryCtxRetain(pctx: *mut CUcontext, dev: CUdevice) -> CUresult {
+pub fn cuPointerGetAttribute(data: *mut c_void, attrib: CUpointer_attribute, ptr: CUdeviceptr) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuDevicePrimaryCtxRetain {
-            return f(pctx, dev);
+        if let Some(f) = funcs.cuPointerGetAttribute {
+            let result = unsafe { f(data, attrib, ptr) };
+            return cuda_result_to_int(result);
         }
     }
-    CUresult::ERROR_NOT_INITIALIZED
-}
-
-pub unsafe fn cuDevicePrimaryCtxRelease_v2(dev: CUdevice) -> CUresult {
-    if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuDevicePrimaryCtxRelease_v2 {
-            return f(dev);
-        }
-    }
-    CUresult::ERROR_NOT_INITIALIZED
+    999
 }

@@ -16,6 +16,9 @@ use ze_runtime_sys::*;
 #[cfg(feature = "tenstorrent")]
 use tt_runtime_sys::*;
 
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+use nvidia_runtime_sys;
+
 // Result conversion traits
 #[cfg(feature = "intel")]
 trait ResultExt {
@@ -613,7 +616,12 @@ pub(crate) fn set_limit(limit: hipLimit_t, value: usize) -> hipError_t {
 
 #[cfg(feature = "amd")]
 pub(crate) fn synchronize() -> hipError_t {
-    unsafe { hipDeviceSynchronize() }
+    let result = unsafe { hipDeviceSynchronize() };
+
+    // Process any pending checkpoint at this safe point
+    super::checkpoint::process_pending_checkpoint();
+
+    result
 }
 
 #[cfg(feature = "amd")]
@@ -709,6 +717,10 @@ pub(crate) fn synchronize() -> ze_result_t {
             }
         }
     }
+    drop(guard);
+
+    // Process any pending checkpoint at this safe point
+    super::checkpoint::process_pending_checkpoint();
 
     ze_result_t::ZE_RESULT_SUCCESS
 }
@@ -837,6 +849,9 @@ pub(crate) fn set_limit(_limit: c_uint, _value: usize) -> Result<(), String> {
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 pub(crate) fn synchronize() -> Result<(), String> {
+    // Process any pending checkpoint at this safe point
+    super::checkpoint::process_pending_checkpoint();
+
     Ok(())
 }
 
@@ -904,7 +919,16 @@ pub(crate) fn get_primary_tt(device_id: i32) -> Result<(&'static Context, CUcont
 // NVIDIA functions
 #[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
 pub(crate) fn synchronize() -> CUresult {
-    unsafe { nvidia_runtime_sys::cuCtxSynchronize() }
+    let result = nvidia_runtime_sys::cuCtxSynchronize();
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+
+    // Process any pending checkpoint at this safe point
+    // This is called after GPU work completes, making it safe to acquire locks and do I/O
+    super::checkpoint::process_pending_checkpoint();
+
+    Ok(())
 }
 
 #[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
@@ -922,8 +946,9 @@ pub(crate) fn set_current(raw_ctx: CUcontext) -> CUresult {
             stack.push((raw_ctx, device));
         });
         // Set the real CUDA context
-        unsafe {
-            nvidia_runtime_sys::cuCtxSetCurrent(ctx.cuda_ctx);
+        let result = nvidia_runtime_sys::cuCtxSetCurrent(ctx.cuda_ctx);
+        if result != 0 {
+            return Err(CUerror::UNKNOWN);
         }
     }
     Ok(())
@@ -993,4 +1018,32 @@ pub(crate) fn peek_current() -> Option<CUcontext> {
             stack.last().map(|(ctx, _)| *ctx)
         })
     }
+}
+
+// Additional NVIDIA context functions
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn get_device(device_out: *mut CUdevice) -> CUresult {
+    let result = nvidia_runtime_sys::cuCtxGetDevice(device_out);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn set_limit(limit: CUlimit, value: usize) -> CUresult {
+    let result = nvidia_runtime_sys::cuCtxSetLimit(limit, value);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn get_limit(pvalue: &mut usize, limit: CUlimit) -> CUresult {
+    let result = nvidia_runtime_sys::cuCtxGetLimit(pvalue, limit);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
 }

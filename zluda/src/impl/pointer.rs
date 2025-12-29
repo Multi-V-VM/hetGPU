@@ -3,6 +3,8 @@ use crate::r#impl::ZeResult;
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+use nvidia_runtime_sys;
 use std::{ffi::c_void, ptr};
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
@@ -382,4 +384,18 @@ pub(crate) unsafe fn get_attribute(
         // For other attributes, return unsupported
         _ => Err(CUerror::NOT_SUPPORTED),
     }
+}
+
+// NVIDIA backend pointer implementations - passthrough to real libcuda.so
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) unsafe fn get_attribute(
+    data: *mut c_void,
+    attribute: CUpointer_attribute,
+    ptr: CUdeviceptr,
+) -> CUresult {
+    let result = nvidia_runtime_sys::cuPointerGetAttribute(data, attribute, ptr);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
 }

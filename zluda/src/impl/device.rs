@@ -2,6 +2,8 @@ use super::context;
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+use nvidia_runtime_sys;
 use std::{ffi::c_void, mem, ptr};
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
@@ -1805,5 +1807,155 @@ pub(crate) fn primary_context_get_state(dev: i32, flags: &mut u32, active: &mut 
     *flags = 0;
     *active = 1;
 
+    Ok(())
+}
+
+// NVIDIA backend device function implementations - passthrough to real libcuda.so
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn compute_capability(major: &mut i32, minor: &mut i32, dev: i32) -> CUresult {
+    let result = nvidia_runtime_sys::cuDeviceComputeCapability(major, minor, dev);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn get(device: *mut i32, ordinal: i32) -> CUresult {
+    let result = nvidia_runtime_sys::cuDeviceGet(device, ordinal);
+    if result != 0 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn get_attribute(pi: &mut i32, attrib: CUdevice_attribute, dev: i32) -> CUresult {
+    let result = nvidia_runtime_sys::cuDeviceGetAttribute(pi, attrib, dev);
+    if result != 0 {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> CUresult {
+    let result = nvidia_runtime_sys::cuDeviceGetCount(count);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn get_name(name: *mut ::core::ffi::c_char, len: ::core::ffi::c_int, dev: i32) -> CUresult {
+    let result = nvidia_runtime_sys::cuDeviceGetName(name, len, dev);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn get_uuid(uuid: *mut cuda_types::cuda::CUuuid, dev: i32) -> CUresult {
+    let result = nvidia_runtime_sys::cuDeviceGetUuid(uuid, dev);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn get_uuid_v2(uuid: *mut cuda_types::cuda::CUuuid, dev: i32) -> CUresult {
+    get_uuid(uuid, dev)
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn get_luid(luid: *mut ::core::ffi::c_char, device_node_mask: &mut ::core::ffi::c_uint, dev: i32) -> CUresult {
+    let result = nvidia_runtime_sys::cuDeviceGetLuid(luid, device_node_mask, dev);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn total_mem_v2(bytes: *mut usize, dev: i32) -> CUresult {
+    let result = nvidia_runtime_sys::cuDeviceTotalMem_v2(bytes, dev);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn get_properties(prop: &mut CUdevprop, dev: i32) -> CUresult {
+    // CUDA doesn't have a direct cuDeviceGetProperties, so we build from attributes
+    let mut pi: i32 = 0;
+    
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK, dev);
+    prop.maxThreadsPerBlock = pi;
+    
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X, dev);
+    prop.maxThreadsDim[0] = pi;
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Y, dev);
+    prop.maxThreadsDim[1] = pi;
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Z, dev);
+    prop.maxThreadsDim[2] = pi;
+    
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X, dev);
+    prop.maxGridSize[0] = pi;
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Y, dev);
+    prop.maxGridSize[1] = pi;
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Z, dev);
+    prop.maxGridSize[2] = pi;
+    
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK, dev);
+    prop.sharedMemPerBlock = pi;
+    
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TOTAL_CONSTANT_MEMORY, dev);
+    prop.totalConstantMemory = pi;
+    
+    prop.SIMDWidth = 32;
+    
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_PITCH, dev);
+    prop.memPitch = pi;
+    
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK, dev);
+    prop.regsPerBlock = pi;
+    
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_CLOCK_RATE, dev);
+    prop.clockRate = pi;
+    
+    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT, dev);
+    prop.textureAlign = pi;
+    
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn primary_context_retain(pctx: &mut CUcontext, dev: i32) -> CUresult {
+    let result = nvidia_runtime_sys::cuDevicePrimaryCtxRetain(pctx, dev);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn primary_context_release(dev: i32) -> CUresult {
+    let result = nvidia_runtime_sys::cuDevicePrimaryCtxRelease_v2(dev);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn primary_context_get_state(dev: i32, flags: &mut u32, active: &mut i32) -> CUresult {
+    let result = nvidia_runtime_sys::cuDevicePrimaryCtxGetState(dev, flags, active);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
     Ok(())
 }

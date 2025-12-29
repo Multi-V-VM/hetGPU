@@ -4,6 +4,8 @@ use super::ZludaObject;
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+use nvidia_runtime_sys;
 use std::{ffi::CStr, ptr};
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 use tt_runtime_sys;
@@ -54,7 +56,8 @@ impl ZludaObject for Module {
     feature = "amd",
     feature = "intel",
     feature = "tenstorrent",
-    feature = "tmatmul"
+    feature = "tmatmul",
+    feature = "nvidia"
 ))]
 pub(crate) fn get_loading_mode(mode: *mut cuda_types::cuda::CUmoduleLoadingMode) -> CUresult {
     if mode.is_null() {
@@ -1189,5 +1192,194 @@ fn extract_ptx_from_offset(binary: &[u8], start: usize) -> Option<String> {
             eprintln!("[PTX Extract] Failed to decode PTX as UTF-8: {}", e);
             None
         }
+    }
+}
+
+// NVIDIA backend module implementations - pass through to real libcuda.so
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) struct Module {
+    cuda_module: cuda_types::cuda::CUmodule,
+}
+
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Send for Module {}
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Sync for Module {}
+
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl ZludaObject for Module {
+    const COOKIE: usize = 0xe9138bd040487d4a;
+
+    type CudaHandle = CUmodule;
+
+    fn drop_checked(&mut self) -> CUresult {
+        let result = nvidia_runtime_sys::cuModuleUnload(self.cuda_module);
+        if result != 0 {
+            eprintln!("[NVIDIA Backend] cuModuleUnload failed with error {}", result);
+            return Err(CUerror::UNKNOWN);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -> CUresult {
+    if image.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+
+    eprintln!("[NVIDIA Backend] Loading module data...");
+
+    // Pass through to real CUDA driver
+    let mut cuda_module = cuda_types::cuda::CUmodule(ptr::null_mut());
+    let result = nvidia_runtime_sys::cuModuleLoadData(&mut cuda_module, image);
+
+    if result != 0 {
+        eprintln!("[NVIDIA Backend] cuModuleLoadData failed with error {}", result);
+        return Err(CUerror::NO_BINARY_FOR_GPU);
+    }
+
+    eprintln!("[NVIDIA Backend] Module loaded successfully");
+
+    // Create module wrapper
+    let new_module = Module {
+        cuda_module,
+    };
+
+    *module = new_module.wrap();
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn unload(hmod: CUmodule) -> CUresult {
+    super::drop_checked::<Module>(hmod)
+}
+
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_function(
+    hfunc: &mut CUfunction,
+    hmod: &Module,
+    name: *const ::core::ffi::c_char,
+) -> CUresult {
+    if name.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+
+    let function_name = unsafe {
+        CStr::from_ptr(name)
+            .to_str()
+            .map_err(|_| CUerror::INVALID_VALUE)?
+    };
+
+    eprintln!("[NVIDIA Backend] Getting function: {}", function_name);
+
+    // Pass through to real CUDA driver
+    let mut cuda_func = cuda_types::cuda::CUfunction(ptr::null_mut());
+    let result = nvidia_runtime_sys::cuModuleGetFunction(&mut cuda_func, hmod.cuda_module, name);
+
+    if result != 0 {
+        eprintln!("[NVIDIA Backend] cuModuleGetFunction failed with error {}", result);
+        return Err(CUerror::NOT_FOUND);
+    }
+
+    eprintln!("[NVIDIA Backend] Function '{}' found", function_name);
+
+    // Create kernel wrapper
+    let kernel = NvidiaKernel {
+        cuda_function: cuda_func,
+        function_name: function_name.to_string(),
+    };
+
+    *hfunc = kernel.wrap();
+    Ok(())
+}
+
+// NVIDIA kernel structure
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) struct NvidiaKernel {
+    pub cuda_function: cuda_types::cuda::CUfunction,
+    pub function_name: String,
+}
+
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Send for NvidiaKernel {}
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Sync for NvidiaKernel {}
+
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl ZludaObject for NvidiaKernel {
+    const COOKIE: usize = 0xad74ceadb9b2d51c;
+
+    type CudaHandle = CUfunction;
+
+    fn drop_checked(&mut self) -> CUresult {
+        // CUDA functions don't need explicit cleanup - they're cleaned up with the module
+        Ok(())
     }
 }

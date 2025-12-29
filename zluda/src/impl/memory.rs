@@ -1,10 +1,12 @@
 use crate::r#impl::context;
 #[cfg(feature = "intel")]
 use crate::r#impl::ze_to_cuda_result;
-#[cfg(feature = "intel")]
+#[cfg(any(feature = "intel", feature = "nvidia"))]
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+use nvidia_runtime_sys;
 use std::ptr;
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
@@ -625,5 +627,69 @@ pub(crate) fn set_d8_v2(dst: CUdeviceptr, value: ::core::ffi::c_uchar, n: usize)
     // For Tenstorrent, implement 8-bit memory set
     // In a real implementation, this would set device memory to the specified value
     let _ = (dst, value, n); // Suppress unused warnings
+    Ok(())
+}
+
+// NVIDIA backend memory implementations - passthrough to real libcuda.so
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
+    let result = nvidia_runtime_sys::cuMemAlloc_v2(dptr, bytesize);
+    if result != 0 {
+        return Err(CUerror::OUT_OF_MEMORY);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn free_v2(dptr: CUdeviceptr) -> CUresult {
+    let result = nvidia_runtime_sys::cuMemFree_v2(dptr);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn copy_dto_h_v2(dst_host: *mut ::core::ffi::c_void, src_device: CUdeviceptr, byte_count: usize) -> CUresult {
+    let result = nvidia_runtime_sys::cuMemcpyDtoH_v2(dst_host, src_device, byte_count);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn copy_hto_d_v2(dst_device: CUdeviceptr, src_host: *const ::core::ffi::c_void, byte_count: usize) -> CUresult {
+    let result = nvidia_runtime_sys::cuMemcpyHtoD_v2(dst_device, src_host, byte_count);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn get_address_range_v2(pbase: *mut CUdeviceptr, psize: *mut usize, dptr: CUdeviceptr) -> CUresult {
+    let result = nvidia_runtime_sys::cuMemGetAddressRange_v2(pbase, psize, dptr);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn set_d8_v2(dst_device: CUdeviceptr, uc: u8, n: usize) -> CUresult {
+    let result = nvidia_runtime_sys::cuMemsetD8_v2(dst_device, uc, n);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+pub(crate) fn set_d32_v2(dst_device: CUdeviceptr, ui: u32, n: usize) -> CUresult {
+    let result = nvidia_runtime_sys::cuMemsetD32_v2(dst_device, ui, n);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
     Ok(())
 }
