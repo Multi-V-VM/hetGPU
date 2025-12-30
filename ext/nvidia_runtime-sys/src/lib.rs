@@ -162,7 +162,11 @@ pub fn init() -> Result<(), String> {
                 cuDeviceGetAttribute: load_fn(lib, "cuDeviceGetAttribute"),
                 cuCtxCreate_v2: load_fn(lib, "cuCtxCreate_v2"),
                 cuCtxDestroy_v2: load_fn(lib, "cuCtxDestroy_v2"),
-                cuCtxSynchronize: load_fn(lib, "cuCtxSynchronize"),
+                cuCtxSynchronize: {
+                    let f = load_fn(lib, "cuCtxSynchronize");
+                    eprintln!("[nvidia-sys] loaded cuCtxSynchronize: {:?}", f.is_some());
+                    f
+                },
                 cuCtxPushCurrent_v2: load_fn(lib, "cuCtxPushCurrent_v2"),
                 cuCtxPopCurrent_v2: load_fn(lib, "cuCtxPopCurrent_v2"),
                 cuCtxGetCurrent: load_fn(lib, "cuCtxGetCurrent"),
@@ -319,17 +323,26 @@ pub fn cuInit(flags: c_uint) -> i32 {
 
 fn cuda_result_to_int(result: CUresult) -> i32 {
     match result {
-        CUresult::SUCCESS => 0,
-        _ => 1,  // Generic error
+        Ok(()) => 0,
+        Err(e) => e.0.get() as i32,  // Return the actual error code
     }
 }
 
 pub fn cuDeviceGetCount(count: *mut c_int) -> i32 {
+    eprintln!("[hetGPU-nvidia] cuDeviceGetCount called");
     if let Some(funcs) = get_cuda_funcs() {
+        eprintln!("[hetGPU-nvidia] got cuda funcs");
         if let Some(f) = funcs.cuDeviceGetCount {
+            eprintln!("[hetGPU-nvidia] calling real cuDeviceGetCount");
             let result = unsafe { f(count) };
+            let count_val = unsafe { *count };
+            eprintln!("[hetGPU-nvidia] cuDeviceGetCount returned {:?}, count={}", result, count_val);
             return cuda_result_to_int(result);
+        } else {
+            eprintln!("[hetGPU-nvidia] cuDeviceGetCount function not loaded");
         }
+    } else {
+        eprintln!("[hetGPU-nvidia] CUDA funcs not initialized");
     }
     999
 }
@@ -434,6 +447,62 @@ pub fn cuCtxGetLimit(pvalue: *mut size_t, limit: CUlimit) -> i32 {
     999
 }
 
+pub fn cuCtxCreate_v2(pctx: *mut CUcontext, flags: c_uint, dev: CUdevice) -> i32 {
+    eprintln!("[hetGPU-nvidia] cuCtxCreate_v2 called: flags={}, dev={}", flags, dev);
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuCtxCreate_v2 {
+            let result = unsafe { f(pctx, flags, dev) };
+            if !pctx.is_null() {
+                let ctx_val = unsafe { (*pctx).0 };
+                eprintln!("[hetGPU-nvidia] cuCtxCreate_v2 result: {:?}, ctx={:?}", result, ctx_val);
+            } else {
+                eprintln!("[hetGPU-nvidia] cuCtxCreate_v2 result: {:?}, pctx was null", result);
+            }
+            return cuda_result_to_int(result);
+        } else {
+            eprintln!("[hetGPU-nvidia] cuCtxCreate_v2 function not loaded");
+        }
+    } else {
+        eprintln!("[hetGPU-nvidia] CUDA funcs not initialized");
+    }
+    999
+}
+
+pub fn cuCtxCreate_v3(pctx: *mut CUcontext, params: *mut c_void, num_params: c_int, flags: c_uint, dev: CUdevice) -> i32 {
+    eprintln!("[hetGPU-nvidia] cuCtxCreate_v3 called, falling back to v2");
+    cuCtxCreate_v2(pctx, flags, dev)
+}
+
+pub fn cuCtxPushCurrent_v2(ctx: CUcontext) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuCtxPushCurrent_v2 {
+            let result = unsafe { f(ctx) };
+            return cuda_result_to_int(result);
+        }
+    }
+    999
+}
+
+pub fn cuCtxPopCurrent_v2(pctx: *mut CUcontext) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuCtxPopCurrent_v2 {
+            let result = unsafe { f(pctx) };
+            return cuda_result_to_int(result);
+        }
+    }
+    999
+}
+
+pub fn cuCtxGetCurrent(pctx: *mut CUcontext) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuCtxGetCurrent {
+            let result = unsafe { f(pctx) };
+            return cuda_result_to_int(result);
+        }
+    }
+    999
+}
+
 pub fn cuDeviceComputeCapability(major: *mut c_int, minor: *mut c_int, dev: CUdevice) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuDeviceComputeCapability {
@@ -465,11 +534,25 @@ pub fn cuDeviceGetLuid(luid: *mut c_char, device_node_mask: *mut c_uint, dev: CU
 }
 
 pub fn cuMemAlloc_v2(dptr: *mut CUdeviceptr, bytesize: size_t) -> i32 {
+    eprintln!("[nvidia-sys] cuMemAlloc_v2 called: bytesize={}", bytesize);
     if let Some(funcs) = get_cuda_funcs() {
+        eprintln!("[nvidia-sys] got cuda funcs");
         if let Some(f) = funcs.cuMemAlloc_v2 {
+            eprintln!("[nvidia-sys] calling real cuMemAlloc_v2");
             let result = unsafe { f(dptr, bytesize) };
-            return cuda_result_to_int(result);
+            let int_result = cuda_result_to_int(result);
+            if int_result != 0 {
+                eprintln!("[nvidia-sys] cuMemAlloc_v2 FAILED: result={:?}, int_result={}", result, int_result);
+            } else if !dptr.is_null() {
+                let ptr_val = unsafe { *dptr };
+                eprintln!("[nvidia-sys] cuMemAlloc_v2 OK: ptr={:?}", ptr_val);
+            }
+            return int_result;
+        } else {
+            eprintln!("[nvidia-sys] cuMemAlloc_v2 function NOT LOADED");
         }
+    } else {
+        eprintln!("[nvidia-sys] CUDA funcs not initialized");
     }
     999
 }
@@ -597,11 +680,20 @@ pub fn cuLaunchKernel(
 }
 
 pub fn cuCtxSynchronize() -> i32 {
+    eprintln!("[nvidia-sys] cuCtxSynchronize called");
     if let Some(funcs) = get_cuda_funcs() {
+        eprintln!("[nvidia-sys] cuCtxSynchronize: got cuda funcs");
         if let Some(f) = funcs.cuCtxSynchronize {
+            eprintln!("[nvidia-sys] cuCtxSynchronize: calling real function");
             let result = unsafe { f() };
-            return cuda_result_to_int(result);
+            let ret = cuda_result_to_int(result);
+            eprintln!("[nvidia-sys] cuCtxSynchronize returned: {}", ret);
+            return ret;
+        } else {
+            eprintln!("[nvidia-sys] cuCtxSynchronize: function pointer is None!");
         }
+    } else {
+        eprintln!("[nvidia-sys] cuCtxSynchronize: get_cuda_funcs returned None!");
     }
     999
 }

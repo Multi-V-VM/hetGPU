@@ -1840,10 +1840,14 @@ pub(crate) fn get_attribute(pi: &mut i32, attrib: CUdevice_attribute, dev: i32) 
 
 #[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
 pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> CUresult {
+    eprintln!("[hetGPU device] get_count called");
     let result = nvidia_runtime_sys::cuDeviceGetCount(count);
+    eprintln!("[hetGPU device] nvidia_runtime_sys::cuDeviceGetCount returned {}, count={}", result, *count);
     if result != 0 {
+        eprintln!("[hetGPU device] get_count returning error");
         return Err(CUerror::UNKNOWN);
     }
+    eprintln!("[hetGPU device] get_count returning Ok, count={}", *count);
     Ok(())
 }
 

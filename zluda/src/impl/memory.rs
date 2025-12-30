@@ -633,10 +633,45 @@ pub(crate) fn set_d8_v2(dst: CUdeviceptr, value: ::core::ffi::c_uchar, n: usize)
 // NVIDIA backend memory implementations - passthrough to real libcuda.so
 #[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
 pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
-    let result = nvidia_runtime_sys::cuMemAlloc_v2(dptr, bytesize);
-    if result != 0 {
-        return Err(CUerror::OUT_OF_MEMORY);
+    eprintln!("[hetGPU memory] alloc_v2 called: bytesize={}", bytesize);
+
+    // Ensure we have a valid context by using primary context
+    // First check if there's a current context
+    let mut current_ctx: CUcontext = CUcontext(ptr::null_mut());
+    let ctx_result = nvidia_runtime_sys::cuCtxGetCurrent(&mut current_ctx);
+    eprintln!("[hetGPU memory] cuCtxGetCurrent returned {}, ctx={:?}", ctx_result, current_ctx.0);
+
+    if ctx_result != 0 || current_ctx.0.is_null() {
+        eprintln!("[hetGPU memory] No current context, trying to get primary context for device 0");
+        // Try to retain and set primary context for device 0
+        let mut pctx: CUcontext = CUcontext(ptr::null_mut());
+        let retain_result = nvidia_runtime_sys::cuDevicePrimaryCtxRetain(&mut pctx, 0);
+        eprintln!("[hetGPU memory] cuDevicePrimaryCtxRetain returned {}, ctx={:?}", retain_result, pctx.0);
+        if retain_result == 0 && !pctx.0.is_null() {
+            let set_result = nvidia_runtime_sys::cuCtxSetCurrent(pctx);
+            eprintln!("[hetGPU memory] cuCtxSetCurrent returned {}", set_result);
+        }
     }
+
+    let result = nvidia_runtime_sys::cuMemAlloc_v2(dptr, bytesize);
+    eprintln!("[hetGPU memory] cuMemAlloc_v2 returned: {}", result);
+    if result != 0 {
+        eprintln!("[hetGPU memory] cuMemAlloc_v2 FAILED with CUDA error {}", result);
+        // Convert CUDA error codes properly
+        return match result {
+            1 => Err(CUerror::INVALID_VALUE),
+            2 => Err(CUerror::OUT_OF_MEMORY),
+            201 => Err(CUerror::INVALID_CONTEXT),
+            400 => Err(CUerror::INVALID_HANDLE),
+            999 => {
+                eprintln!("[hetGPU memory] Error 999 means cuMemAlloc function not loaded!");
+                Err(CUerror::NOT_INITIALIZED)
+            },
+            _ => Err(CUerror::UNKNOWN),
+        };
+    }
+    let ptr_val = unsafe { *dptr };
+    eprintln!("[hetGPU memory] alloc_v2 success: ptr={:?}", ptr_val);
     Ok(())
 }
 

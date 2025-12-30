@@ -919,8 +919,29 @@ pub(crate) fn get_primary_tt(device_id: i32) -> Result<(&'static Context, CUcont
 // NVIDIA functions
 #[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
 pub(crate) fn synchronize() -> CUresult {
+    eprintln!("[hetGPU context] synchronize called");
+
+    // Ensure we have a valid context (thread-local) before synchronizing
+    let mut current_ctx: CUcontext = CUcontext(ptr::null_mut());
+    let ctx_result = nvidia_runtime_sys::cuCtxGetCurrent(&mut current_ctx);
+    eprintln!("[hetGPU context] cuCtxGetCurrent returned {}, ctx={:?}", ctx_result, current_ctx.0);
+
+    if ctx_result != 0 || current_ctx.0.is_null() {
+        eprintln!("[hetGPU context] No current context, getting primary context for device 0");
+        // Try to retain and set primary context for device 0
+        let mut pctx: CUcontext = CUcontext(ptr::null_mut());
+        let retain_result = nvidia_runtime_sys::cuDevicePrimaryCtxRetain(&mut pctx, 0);
+        eprintln!("[hetGPU context] cuDevicePrimaryCtxRetain returned {}, ctx={:?}", retain_result, pctx.0);
+        if retain_result == 0 && !pctx.0.is_null() {
+            let set_result = nvidia_runtime_sys::cuCtxSetCurrent(pctx);
+            eprintln!("[hetGPU context] cuCtxSetCurrent returned {}", set_result);
+        }
+    }
+
     let result = nvidia_runtime_sys::cuCtxSynchronize();
+    eprintln!("[hetGPU context] cuCtxSynchronize returned {}", result);
     if result != 0 {
+        eprintln!("[hetGPU context] cuCtxSynchronize FAILED with error {}", result);
         return Err(CUerror::UNKNOWN);
     }
 
@@ -1047,3 +1068,104 @@ pub(crate) fn get_limit(pvalue: &mut usize, limit: CUlimit) -> CUresult {
     }
     Ok(())
 }
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn create_v2(pctx: *mut CUcontext, flags: u32, dev: CUdevice) -> CUresult {
+    eprintln!("[hetGPU context] create_v2 called: flags={}, dev={:?}", flags, dev);
+
+    // Create real CUDA context
+    let mut cuda_ctx: CUcontext = CUcontext(ptr::null_mut());
+    let result = nvidia_runtime_sys::cuCtxCreate_v2(&mut cuda_ctx, flags, dev);
+
+    eprintln!("[hetGPU context] cuCtxCreate_v2 returned {}, ctx={:?}", result, cuda_ctx);
+
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+
+    // Create our context wrapper and store it
+    let ctx = Context::new(dev, cuda_ctx);
+    let boxed = Box::new(ctx);
+    let raw_ctx = CUcontext(Box::into_raw(boxed) as *mut _);
+
+    // Push to context stack
+    push(raw_ctx, dev);
+
+    unsafe {
+        *pctx = raw_ctx;
+    }
+
+    eprintln!("[hetGPU context] create_v2 success: returned ctx={:?}", raw_ctx);
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn destroy_v2(ctx: CUcontext) -> CUresult {
+    if ctx.0.is_null() {
+        return Err(CUerror::INVALID_CONTEXT);
+    }
+
+    // Get the context wrapper
+    let context: &Context = FromCuda::from_cuda(&ctx)?;
+
+    // Destroy the real CUDA context
+    let result = nvidia_runtime_sys::cuCtxDestroy_v2(context.cuda_ctx);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+
+    // Remove from context stack
+    CONTEXT_STACK.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        stack.retain(|(c, _)| c.0 != ctx.0);
+    });
+
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn push_current_v2(ctx: CUcontext) -> CUresult {
+    if ctx.0.is_null() {
+        return Err(CUerror::INVALID_CONTEXT);
+    }
+
+    let context: &Context = FromCuda::from_cuda(&ctx)?;
+
+    // Push the real CUDA context
+    let result = nvidia_runtime_sys::cuCtxPushCurrent_v2(context.cuda_ctx);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+
+    // Push to our stack
+    push(ctx, context.device);
+
+    Ok(())
+}
+
+#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+pub(crate) fn pop_current_v2(pctx: *mut CUcontext) -> CUresult {
+    // Pop from real CUDA
+    let mut cuda_ctx: CUcontext = CUcontext(ptr::null_mut());
+    let result = nvidia_runtime_sys::cuCtxPopCurrent_v2(&mut cuda_ctx);
+    if result != 0 {
+        return Err(CUerror::UNKNOWN);
+    }
+
+    // Pop from our stack
+    let popped = CONTEXT_STACK.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        stack.pop()
+    });
+
+    if let Some((ctx, _)) = popped {
+        if !pctx.is_null() {
+            unsafe { *pctx = ctx; }
+        }
+    } else if !pctx.is_null() {
+        unsafe { *pctx = CUcontext(ptr::null_mut()); }
+    }
+
+    Ok(())
+}
+

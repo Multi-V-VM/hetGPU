@@ -280,12 +280,16 @@ cuda_base::cuda_function_declarations!(
     unimplemented,
     implemented
         <= [
+            cuCtxCreate_v2,
+            cuCtxDestroy_v2,
             cuCtxGetLimit,
             cuCtxSetCurrent,
             cuCtxSetLimit,
             cuCtxSynchronize,
             cuCtxGetCurrent,
             cuCtxGetDevice,
+            cuCtxPushCurrent_v2,
+            cuCtxPopCurrent_v2,
             cuDeviceComputeCapability,
             cuDeviceGet,
             cuDeviceGetAttribute,

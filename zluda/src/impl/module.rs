@@ -121,6 +121,15 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
         .to_str()
         .map_err(|_| CUerror::INVALID_VALUE)?;
 
+    // Register PTX source for checkpoint/restore BEFORE compilation
+    // This ensures PTX is available even if compilation fails
+    let temp_handle = image as u64;
+    crate::r#impl::checkpoint::register_module_ptx(temp_handle, text);
+    crate::r#impl::hetgpu_debug!(
+        "[AMD Backend] Pre-registered PTX source for checkpointing ({} bytes)",
+        text.len()
+    );
+
     // Use the new debug-aware compilation pipeline for SASS to PTX mapping
     crate::r#impl::hetgpu_debug!(
         "ZLUDA DEBUG: Starting PTX to LLVM to PTX compilation for SASS mapping..."
@@ -153,6 +162,9 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
             let mut hip_module = unsafe { std::mem::zeroed() };
             unsafe { hipModuleLoadData(&mut hip_module, elf_module.as_ptr().cast()).unwrap() };
             *module = Module { base: hip_module }.wrap();
+
+            // Re-register with actual module handle
+            crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, text);
             Ok(())
         }
         Err(_) => {
@@ -173,6 +185,9 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
             let mut hip_module = unsafe { std::mem::zeroed() };
             unsafe { hipModuleLoadData(&mut hip_module, elf_module.as_ptr().cast()).unwrap() };
             *module = Module { base: hip_module }.wrap();
+
+            // Re-register with actual module handle
+            crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, text);
             Ok(())
         }
     }
@@ -825,6 +840,18 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
         return Err(CUerror::INVALID_VALUE);
     }
 
+    // Try to extract PTX source for checkpointing
+    let image_bytes = unsafe { std::slice::from_raw_parts(image as *const u8, 8) };
+    let is_ptx = image_bytes.starts_with(b".version") || image_bytes.starts_with(b"//");
+
+    if is_ptx {
+        // Register PTX source for checkpoint/restore
+        let c_str = unsafe { std::ffi::CStr::from_ptr(image as *const std::ffi::c_char) };
+        if let Ok(ptx_text) = c_str.to_str() {
+            crate::r#impl::checkpoint::register_module_ptx(image as u64, ptx_text);
+        }
+    }
+
     // Create a new Tenstorrent module
     let new_module = Module {
         device_id: 0, // Default device
@@ -835,6 +862,14 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     let module_box = Box::new(new_module);
     let module_ptr = Box::into_raw(module_box);
     *module = CUmodule(module_ptr as *mut _);
+
+    // Re-register with actual module handle
+    if is_ptx {
+        let c_str = unsafe { std::ffi::CStr::from_ptr(image as *const std::ffi::c_char) };
+        if let Ok(ptx_text) = c_str.to_str() {
+            crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, ptx_text);
+        }
+    }
 
     Ok(())
 }
@@ -981,6 +1016,14 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
         .to_str()
         .map_err(|_| CUerror::INVALID_VALUE)?;
 
+    // Register PTX source for checkpoint/restore BEFORE compilation
+    let temp_handle = image as u64;
+    crate::r#impl::checkpoint::register_module_ptx(temp_handle, text);
+    crate::r#impl::hetgpu_debug!(
+        "[TMatmul Backend] Pre-registered PTX source for checkpointing ({} bytes)",
+        text.len()
+    );
+
     crate::r#impl::hetgpu_debug!("[TMatmul Backend] Compiling PTX to TMatmul assembly...");
 
     // Compile PTX to TMatmul assembly
@@ -1011,6 +1054,9 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     };
 
     *module = new_module.wrap();
+
+    // Re-register with actual module handle
+    crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, text);
     Ok(())
 }
 
@@ -1260,12 +1306,45 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
 
     eprintln!("[NVIDIA Backend] Loading module data...");
 
+    // Try to extract PTX source for checkpointing
+    // Check if image starts with ".version" (indicates PTX text)
+    let image_bytes = unsafe { std::slice::from_raw_parts(image as *const u8, 8) };
+    let is_ptx = image_bytes.starts_with(b".version") || image_bytes.starts_with(b"//");
+
+    let ptx_source: Option<String> = if is_ptx {
+        // It's PTX text, extract the full string
+        let c_str = unsafe { std::ffi::CStr::from_ptr(image as *const std::ffi::c_char) };
+        match c_str.to_str() {
+            Ok(s) => {
+                eprintln!("[NVIDIA Backend] Detected PTX source ({} bytes)", s.len());
+                Some(s.to_string())
+            }
+            Err(_) => None,
+        }
+    } else {
+        eprintln!("[NVIDIA Backend] Detected CUBIN/binary module");
+        None
+    };
+
+    // IMPORTANT: Register PTX source BEFORE loading with NVIDIA driver
+    // This ensures PTX is available for checkpointing even if module loading fails
+    // (e.g., due to no context or incompatible GPU)
+    // We use image address as temporary handle, will update with real handle after loading
+    let temp_handle = image as u64;
+    if let Some(ref ptx) = ptx_source {
+        crate::r#impl::checkpoint::register_module_ptx(temp_handle, ptx);
+        eprintln!("[NVIDIA Backend] Pre-registered PTX source for checkpointing (temp handle: 0x{:x})", temp_handle);
+    }
+
     // Pass through to real CUDA driver
     let mut cuda_module = cuda_types::cuda::CUmodule(ptr::null_mut());
     let result = nvidia_runtime_sys::cuModuleLoadData(&mut cuda_module, image);
 
     if result != 0 {
         eprintln!("[NVIDIA Backend] cuModuleLoadData failed with error {}", result);
+        // Even though loading failed, PTX is still registered for checkpoint purposes
+        // This allows heterogeneous restore to another backend
+        eprintln!("[NVIDIA Backend] PTX source is still available for heterogeneous checkpoint/restore");
         return Err(CUerror::NO_BINARY_FOR_GPU);
     }
 
@@ -1277,6 +1356,14 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     };
 
     *module = new_module.wrap();
+
+    // Re-register PTX source with the actual module handle
+    // This updates the checkpoint registry with the correct handle
+    if let Some(ptx) = ptx_source {
+        crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, &ptx);
+        eprintln!("[NVIDIA Backend] Registered PTX source for checkpointing (module: 0x{:x})", module.0 as u64);
+    }
+
     Ok(())
 }
 

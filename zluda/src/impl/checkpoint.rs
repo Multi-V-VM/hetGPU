@@ -306,6 +306,16 @@ impl CheckpointManager {
 
     /// Save checkpoint for all active kernels
     pub fn save_checkpoint(&self) -> Result<PathBuf, String> {
+        self.save_checkpoint_with_execution_state(None, 0, Vec::new())
+    }
+
+    /// Save checkpoint with optional fine-grained execution state for migration
+    pub fn save_checkpoint_with_execution_state(
+        &self,
+        fine_grained_state: Option<FineGrainedExecutionState>,
+        resume_ip: u64,
+        thread_states: Vec<ThreadExecutionState>,
+    ) -> Result<PathBuf, String> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let timestamp = SystemTime::now()
@@ -316,12 +326,15 @@ impl CheckpointManager {
         let filename = format!("hetgpu_checkpoint_{}.json", timestamp);
         let filepath = self.checkpoint_dir.join(&filename);
 
-        // Create checkpoint data
+        // Create checkpoint data with fine-grained execution state
         let checkpoint_data = CheckpointData {
             version: 1,
             timestamp,
             active_kernels: self.active_kernels.values().cloned().collect(),
             ptx_sources: self.ptx_cache.clone(),
+            fine_grained_state,
+            resume_ip,
+            thread_states,
         };
 
         let json = serde_json::to_string_pretty(&checkpoint_data)
@@ -426,6 +439,11 @@ pub fn parse_ptx_instructions(ptx_source: &str) -> Vec<PtxInstructionState> {
 
         if line == "}" {
             in_kernel = false;
+            continue;
+        }
+
+        // Skip structural characters (braces, parentheses)
+        if line == "{" || line == ")" || line == "(" {
             continue;
         }
 
@@ -695,6 +713,414 @@ pub fn create_fine_grained_state(
     }
 }
 
+// =============================================================================
+// PTX Instrumentation for Instruction-Level Migration
+// =============================================================================
+
+/// Generate instrumented PTX with checkpoint/restore dispatch code
+/// Similar to WebAssembly's approach: inserts restore dispatcher that jumps to correct IP
+pub fn instrument_ptx_for_migration(
+    original_ptx: &str,
+    resume_state: Option<&ThreadExecutionState>,
+) -> String {
+    let instructions = parse_ptx_instructions(original_ptx);
+    if instructions.is_empty() {
+        return original_ptx.to_string();
+    }
+
+    let mut output = String::new();
+    let mut in_kernel_header = false;  // Inside .entry/.func but before {
+    let mut in_kernel_body = false;    // Inside { ... }
+    let mut wrote_restore_dispatch = false;
+    let mut past_reg_decls = false;
+    let mut current_ip: u64 = 0;
+
+    // Collect register declarations from original PTX
+    let mut reg_decls: Vec<String> = Vec::new();
+
+    for line in original_ptx.lines() {
+        let trimmed = line.trim();
+
+        // Track kernel entry header
+        if trimmed.contains(".entry") || trimmed.contains(".func") {
+            in_kernel_header = true;
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        }
+
+        // Detect opening brace - start of kernel body
+        if in_kernel_header && trimmed == "{" {
+            in_kernel_header = false;
+            in_kernel_body = true;
+            past_reg_decls = false;
+            wrote_restore_dispatch = false;
+            current_ip = 0;
+            reg_decls.clear();
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        }
+
+        // Skip parameter lines while in header
+        if in_kernel_header {
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        }
+
+        // Collect register declarations (must start with .reg, .local, .shared, etc.)
+        if in_kernel_body && !past_reg_decls && trimmed.starts_with(".") {
+            if trimmed.starts_with(".reg") || trimmed.starts_with(".local") ||
+               trimmed.starts_with(".shared") || trimmed.starts_with(".param") {
+                reg_decls.push(trimmed.to_string());
+            }
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        }
+
+        // First non-declaration line in kernel body - insert restore dispatcher
+        if in_kernel_body && !wrote_restore_dispatch && !past_reg_decls {
+            // Check if this is still a declaration
+            if trimmed.starts_with(".") || trimmed.is_empty() || trimmed.starts_with("//") {
+                output.push_str(line);
+                output.push('\n');
+                continue;
+            }
+
+            past_reg_decls = true;
+
+            // Insert restore dispatch code BEFORE the first instruction
+            output.push_str(&generate_restore_dispatcher(
+                &instructions,
+                resume_state,
+                &reg_decls,
+            ));
+            wrote_restore_dispatch = true;
+        }
+
+        // Track kernel exit
+        if trimmed == "}" && in_kernel_body {
+            in_kernel_body = false;
+            past_reg_decls = false;
+        }
+
+        // For instructions (not labels, not comments, not empty), add checkpoint label
+        if in_kernel_body && past_reg_decls && !trimmed.is_empty() &&
+           !trimmed.starts_with(".") && !trimmed.starts_with("//") &&
+           !trimmed.ends_with(":") && trimmed != "}" {
+            // Add checkpoint label before instruction
+            output.push_str(&format!("__checkpoint_ip_{}:\n", current_ip));
+            current_ip += 1;
+        }
+
+        output.push_str(line);
+        output.push('\n');
+    }
+
+    output
+}
+
+/// Generate restore dispatcher code that jumps to the correct instruction
+fn generate_restore_dispatcher(
+    instructions: &[PtxInstructionState],
+    resume_state: Option<&ThreadExecutionState>,
+    reg_decls: &[String],
+) -> String {
+    let mut code = String::new();
+
+    // Add migration control registers
+    code.push_str("    // === Migration Restore Dispatcher ===\n");
+    code.push_str("    .reg .pred %__restore_active;\n");
+    code.push_str("    .reg .u64 %__restore_ip;\n");
+    code.push_str("    .reg .u64 %__restore_base;\n");
+
+    // Check if we're in restore mode (via special parameter or shared memory flag)
+    code.push_str("    // Check restore mode flag\n");
+    code.push_str("    mov.u64 %__restore_ip, 0;\n");
+
+    if let Some(state) = resume_state {
+        // If we have a resume state, generate direct jump
+        code.push_str(&format!("    mov.u64 %__restore_ip, {};\n", state.instruction_offset));
+        code.push_str("    setp.ne.u64 %__restore_active, %__restore_ip, 0;\n");
+        code.push_str("    @%__restore_active bra __restore_dispatch;\n");
+        code.push_str("    bra __normal_start;\n\n");
+
+        // Generate restore dispatch switch
+        code.push_str("__restore_dispatch:\n");
+
+        // Restore register values from checkpoint state
+        code.push_str("    // Restore register state\n");
+        for (reg_name, value) in &state.registers {
+            // Check %rd before %r (since %rd starts with %r)
+            if reg_name.starts_with("%rd") {
+                code.push_str(&format!("    mov.u64 {}, {};\n", reg_name, value));
+            } else if reg_name.starts_with("%r") {
+                code.push_str(&format!("    mov.u32 {}, {};\n", reg_name, value));
+            } else if reg_name.starts_with("%fd") {
+                // Double precision float
+                code.push_str(&format!("    mov.f64 {}, 0d{:016x};\n", reg_name, value));
+            } else if reg_name.starts_with("%f") {
+                // Single precision float - need to convert from u64 bits
+                code.push_str(&format!("    mov.b32 {}, {};\n", reg_name, *value as u32));
+            } else if reg_name.starts_with("%p") {
+                // Predicate register
+                let val = if *value != 0 { 1 } else { 0 };
+                code.push_str(&format!("    setp.ne.u32 {}, {}, 0;\n", reg_name, val));
+            }
+        }
+
+        // Restore predicate registers
+        for (pred_name, value) in &state.predicates {
+            let val = if *value { 1 } else { 0 };
+            code.push_str(&format!("    setp.ne.u32 {}, {}, 0;\n", pred_name, val));
+        }
+
+        // Generate jump table based on IP
+        code.push_str("\n    // Jump to correct instruction based on IP\n");
+        for instr in instructions {
+            code.push_str(&format!(
+                "    setp.eq.u64 %__restore_active, %__restore_ip, {};\n",
+                instr.instruction_pc
+            ));
+            code.push_str(&format!(
+                "    @%__restore_active bra __checkpoint_ip_{};\n",
+                instr.instruction_pc
+            ));
+        }
+        code.push_str("    // Fallthrough to normal start if IP not found\n");
+
+    } else {
+        // No resume state - check for runtime restore flag
+        code.push_str("    // Runtime restore check (via shared memory or parameter)\n");
+        code.push_str("    // For now, always start from beginning\n");
+    }
+
+    code.push_str("\n__normal_start:\n");
+    code.push_str("    // === Normal execution starts here ===\n\n");
+
+    code
+}
+
+/// Generate PTX code to save checkpoint state at current instruction
+pub fn generate_checkpoint_save_code(
+    instruction_pc: u64,
+    registers: &[String],
+    checkpoint_buffer_ptr: &str,
+) -> String {
+    let mut code = String::new();
+
+    code.push_str(&format!("    // === Checkpoint save at IP {} ===\n", instruction_pc));
+
+    // Save instruction pointer
+    code.push_str(&format!(
+        "    st.global.u64 [{}], {};\n",
+        checkpoint_buffer_ptr, instruction_pc
+    ));
+
+    // Save registers
+    let mut offset = 8u64; // Skip IP field
+    for reg in registers {
+        if reg.starts_with("%r") && !reg.starts_with("%rd") {
+            code.push_str(&format!(
+                "    st.global.u32 [{}+{}], {};\n",
+                checkpoint_buffer_ptr, offset, reg
+            ));
+            offset += 4;
+        } else if reg.starts_with("%rd") {
+            code.push_str(&format!(
+                "    st.global.u64 [{}+{}], {};\n",
+                checkpoint_buffer_ptr, offset, reg
+            ));
+            offset += 8;
+        } else if reg.starts_with("%f") && !reg.starts_with("%fd") {
+            code.push_str(&format!(
+                "    st.global.f32 [{}+{}], {};\n",
+                checkpoint_buffer_ptr, offset, reg
+            ));
+            offset += 4;
+        } else if reg.starts_with("%fd") {
+            code.push_str(&format!(
+                "    st.global.f64 [{}+{}], {};\n",
+                checkpoint_buffer_ptr, offset, reg
+            ));
+            offset += 8;
+        }
+    }
+
+    code.push_str("    // === End checkpoint save ===\n");
+    code
+}
+
+/// Transform PTX for heterogeneous migration with full instrumentation
+pub fn transform_ptx_for_heterogeneous_migration(
+    original_ptx: &str,
+    resume_state: Option<&ThreadExecutionState>,
+    checkpoint_buffer_param: Option<&str>,
+) -> Result<String, String> {
+    let instructions = parse_ptx_instructions(original_ptx);
+    if instructions.is_empty() {
+        return Ok(original_ptx.to_string());
+    }
+
+    let mut output = String::new();
+    let mut in_kernel = false;
+    let mut kernel_header_done = false;
+    let mut current_ip: u64 = 0;
+    let mut param_section_done = false;
+
+    for line in original_ptx.lines() {
+        let trimmed = line.trim();
+
+        // Track kernel entry
+        if trimmed.contains(".entry") {
+            in_kernel = true;
+            output.push_str(line);
+            output.push('\n');
+
+            // Add checkpoint buffer parameter if specified
+            if let Some(ckpt_param) = checkpoint_buffer_param {
+                // Find the closing paren of params and add our param before it
+                // For now, assume we need to add it manually
+            }
+            continue;
+        }
+
+        // After params, before body, insert restore logic
+        if in_kernel && trimmed == "{" && !kernel_header_done {
+            output.push_str(line);
+            output.push('\n');
+
+            // Insert restore dispatcher
+            output.push_str(&generate_restore_dispatcher(&instructions, resume_state, &[]));
+            kernel_header_done = true;
+            continue;
+        }
+
+        // Track kernel exit
+        if trimmed == "}" && in_kernel {
+            in_kernel = false;
+            kernel_header_done = false;
+        }
+
+        // For each instruction, add checkpoint label
+        if in_kernel && kernel_header_done && !trimmed.is_empty()
+            && !trimmed.starts_with(".")
+            && !trimmed.starts_with("//")
+            && !trimmed.ends_with(":")
+        {
+            // Add checkpoint label
+            output.push_str(&format!("__checkpoint_ip_{}:\n", current_ip));
+            current_ip += 1;
+        }
+
+        output.push_str(line);
+        output.push('\n');
+    }
+
+    Ok(output)
+}
+
+/// Create a PTX kernel that can resume from a specific instruction
+pub fn create_resumable_ptx_kernel(
+    original_ptx: &str,
+    resume_ip: u64,
+    register_state: &HashMap<String, u64>,
+    predicate_state: &HashMap<String, bool>,
+) -> Result<String, String> {
+    let thread_state = ThreadExecutionState {
+        ptx_line: 0,
+        instruction_offset: resume_ip,
+        registers: register_state.clone(),
+        predicates: predicate_state.clone(),
+        active_mask: 0xFFFFFFFF_FFFFFFFF,
+        block_id: (0, 0, 0),
+        thread_id: (0, 0, 0),
+    };
+
+    transform_ptx_for_heterogeneous_migration(original_ptx, Some(&thread_state), None)
+}
+
+/// Thread execution state for instruction-level migration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadExecutionState {
+    /// Current PTX line number (for debugging)
+    pub ptx_line: u32,
+    /// Current instruction offset (IP) within the kernel
+    pub instruction_offset: u64,
+    /// Register values: register name -> value
+    pub registers: HashMap<String, u64>,
+    /// Predicate register values: predicate name -> value
+    pub predicates: HashMap<String, bool>,
+    /// Active mask for the warp (which threads are active)
+    pub active_mask: u64,
+    /// Block ID (x, y, z)
+    pub block_id: (u32, u32, u32),
+    /// Thread ID within block (x, y, z)
+    pub thread_id: (u32, u32, u32),
+}
+
+/// Warp execution state (32 threads)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WarpExecutionState {
+    /// Warp ID within the block
+    pub warp_id: u32,
+    /// Thread states for each thread in the warp (up to 32)
+    pub thread_states: Vec<ThreadExecutionState>,
+    /// Convergence point stack for diverged branches
+    pub convergence_stack: Vec<u64>,
+    /// Current instruction pointer for the warp
+    pub warp_ip: u64,
+}
+
+/// Block execution state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockExecutionState {
+    /// Block ID (x, y, z)
+    pub block_id: (u32, u32, u32),
+    /// Warp states within this block
+    pub warp_states: Vec<WarpExecutionState>,
+    /// Shared memory contents
+    pub shared_memory: Vec<u8>,
+    /// Block synchronization barrier count
+    pub barrier_count: u32,
+}
+
+/// Fine-grained kernel execution state for migration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FineGrainedExecutionState {
+    /// Kernel name
+    pub kernel_name: String,
+    /// Original PTX source (for recompilation)
+    pub ptx_source: String,
+    /// Block states
+    pub block_states: Vec<BlockExecutionState>,
+    /// Global memory regions that need to be preserved
+    pub memory_regions: Vec<MemoryRegionCheckpoint>,
+    /// Grid dimensions
+    pub grid_dim: (u32, u32, u32),
+    /// Block dimensions
+    pub block_dim: (u32, u32, u32),
+    /// Shared memory size per block
+    pub shared_mem_bytes: u32,
+    /// Checkpoint granularity that was used
+    pub granularity: CheckpointGranularity,
+}
+
+/// Memory region checkpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryRegionCheckpoint {
+    /// Original device address
+    pub device_addr: u64,
+    /// Size in bytes
+    pub size: u64,
+    /// Memory contents (base64 encoded for JSON)
+    pub data: String,
+    /// Memory type
+    pub mem_type: String,
+}
+
 /// Serializable checkpoint data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckpointData {
@@ -702,6 +1128,15 @@ pub struct CheckpointData {
     pub timestamp: u64,
     pub active_kernels: Vec<KernelExecutionState>,
     pub ptx_sources: HashMap<u64, String>,
+    /// Fine-grained execution state for instruction-level migration
+    #[serde(default)]
+    pub fine_grained_state: Option<FineGrainedExecutionState>,
+    /// Resume instruction pointer (0 = start from beginning)
+    #[serde(default)]
+    pub resume_ip: u64,
+    /// Thread execution states for resume
+    #[serde(default)]
+    pub thread_states: Vec<ThreadExecutionState>,
 }
 
 /// Global checkpoint manager instance
@@ -1014,25 +1449,6 @@ pub struct KernelArgRestore {
     pub data: Vec<u8>,
 }
 
-/// Thread execution state for fine-grained resume
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThreadExecutionState {
-    /// Current PTX line number
-    pub ptx_line: u32,
-    /// Current instruction offset in compiled code
-    pub instruction_offset: u64,
-    /// Register values (register name -> value)
-    pub registers: HashMap<String, u64>,
-    /// Predicate register values
-    pub predicates: HashMap<String, bool>,
-    /// Active thread mask
-    pub active_mask: u64,
-    /// Block ID that was executing
-    pub block_id: (u32, u32, u32),
-    /// Thread ID within block
-    pub thread_id: (u32, u32, u32),
-}
-
 impl GpuRestoreState {
     /// Create restore state from checkpoint
     pub fn from_checkpoint(
@@ -1192,9 +1608,34 @@ impl GpuRestorer {
             });
             eprintln!("[hetGPU] Resume point: PTX line {}, offset 0x{:x}",
                 thread_state.ptx_line, thread_state.instruction_offset);
+
+            // Step 5: Instrument PTX with restore dispatch code for instruction-level migration
+            // This generates code similar to WebAssembly's approach:
+            //   - Labels at each instruction (__checkpoint_ip_N)
+            //   - Restore dispatcher that jumps to correct IP
+            //   - Register state restoration before jump
+            if !self.state.ptx_source.is_empty() && thread_state.instruction_offset > 0 {
+                eprintln!("[hetGPU] Instrumenting PTX for instruction-level resume at IP {}...",
+                    thread_state.instruction_offset);
+
+                let instrumented_ptx = instrument_ptx_for_migration(
+                    &self.state.ptx_source,
+                    Some(thread_state),
+                );
+
+                // Log a preview of the instrumented PTX
+                let preview: String = instrumented_ptx.lines().take(30).collect::<Vec<_>>().join("\n");
+                eprintln!("[hetGPU] Instrumented PTX preview:\n{}", preview);
+
+                result.ptx_source = instrumented_ptx;
+                result.instrumented = true;
+            } else {
+                result.ptx_source = self.state.ptx_source.clone();
+            }
+        } else {
+            result.ptx_source = self.state.ptx_source.clone();
         }
 
-        result.ptx_source = self.state.ptx_source.clone();
         result.kernel_name = self.state.kernel_name.clone();
         result.grid_dim = self.state.grid_dim;
         result.block_dim = self.state.block_dim;
@@ -1256,7 +1697,9 @@ impl GpuRestorer {
 pub struct RestoreResult {
     /// Was recompilation needed?
     pub recompiled: bool,
-    /// PTX source code
+    /// Was PTX instrumented for instruction-level resume?
+    pub instrumented: bool,
+    /// PTX source code (possibly instrumented with restore dispatch)
     pub ptx_source: String,
     /// Kernel name to launch
     pub kernel_name: String,
@@ -1812,4 +2255,309 @@ pub extern "C" fn hetgpu_request_checkpoint() {
     } else {
         eprintln!("[hetGPU] Failed to acquire checkpoint manager lock");
     }
+}
+
+// =============================================================================
+// Instruction-Level Checkpoint/Restore FFI
+// =============================================================================
+
+/// C-compatible thread execution state for checkpoint
+#[repr(C)]
+pub struct CThreadState {
+    pub instruction_offset: u64,
+    pub ptx_line: u32,
+    pub block_x: u32,
+    pub block_y: u32,
+    pub block_z: u32,
+    pub thread_x: u32,
+    pub thread_y: u32,
+    pub thread_z: u32,
+    pub active_mask: u64,
+    pub num_registers: u32,
+}
+
+/// C-compatible register value
+#[repr(C)]
+pub struct CRegisterValue {
+    pub name: [std::ffi::c_char; 32],
+    pub value: u64,
+    pub reg_type: u32, // 0=u32, 1=u64, 2=f32, 3=f64, 4=pred
+}
+
+/// Save checkpoint with instruction-level state
+/// Returns 0 on success, path is written to path_buf
+#[no_mangle]
+pub extern "C" fn hetgpu_checkpoint_save_with_state(
+    instruction_offset: u64,
+    num_registers: u32,
+    registers: *const CRegisterValue,
+    num_predicates: u32,
+    predicates: *const CRegisterValue,
+    path_buf: *mut std::ffi::c_char,
+    path_buf_size: u32,
+) -> i32 {
+    // Build thread execution state from C data
+    let mut reg_map: HashMap<String, u64> = HashMap::new();
+    let mut pred_map: HashMap<String, bool> = HashMap::new();
+
+    if !registers.is_null() && num_registers > 0 {
+        for i in 0..num_registers as usize {
+            unsafe {
+                let reg = &*registers.add(i);
+                let name = std::ffi::CStr::from_ptr(reg.name.as_ptr())
+                    .to_string_lossy()
+                    .to_string();
+                if !name.is_empty() {
+                    reg_map.insert(name, reg.value);
+                }
+            }
+        }
+    }
+
+    if !predicates.is_null() && num_predicates > 0 {
+        for i in 0..num_predicates as usize {
+            unsafe {
+                let pred = &*predicates.add(i);
+                let name = std::ffi::CStr::from_ptr(pred.name.as_ptr())
+                    .to_string_lossy()
+                    .to_string();
+                if !name.is_empty() {
+                    pred_map.insert(name, pred.value != 0);
+                }
+            }
+        }
+    }
+
+    let thread_state = ThreadExecutionState {
+        ptx_line: 0,
+        instruction_offset,
+        registers: reg_map,
+        predicates: pred_map,
+        active_mask: 0xFFFFFFFF_FFFFFFFF,
+        block_id: (0, 0, 0),
+        thread_id: (0, 0, 0),
+    };
+
+    // Save checkpoint with state
+    if let Ok(manager) = get_checkpoint_manager().lock() {
+        match manager.save_checkpoint_with_execution_state(
+            None,
+            instruction_offset,
+            vec![thread_state],
+        ) {
+            Ok(path) => {
+                eprintln!("[hetGPU] Instruction-level checkpoint saved to: {:?}", path);
+
+                // Copy path to output buffer
+                if !path_buf.is_null() && path_buf_size > 0 {
+                    let path_str = path.to_string_lossy();
+                    let path_bytes = path_str.as_bytes();
+                    let copy_len = std::cmp::min(path_bytes.len(), path_buf_size as usize - 1);
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            path_bytes.as_ptr() as *const std::ffi::c_char,
+                            path_buf,
+                            copy_len,
+                        );
+                        *path_buf.add(copy_len) = 0; // Null terminate
+                    }
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("[hetGPU] Checkpoint failed: {}", e);
+                -2
+            }
+        }
+    } else {
+        -1
+    }
+}
+
+/// Get instrumented PTX for resuming at a specific instruction
+/// Returns pointer to instrumented PTX, or null on error
+#[no_mangle]
+pub extern "C" fn hetgpu_get_instrumented_ptx(
+    original_ptx: *const std::ffi::c_char,
+    resume_ip: u64,
+    num_registers: u32,
+    registers: *const CRegisterValue,
+    num_predicates: u32,
+    predicates: *const CRegisterValue,
+) -> *const std::ffi::c_char {
+    static mut INSTRUMENTED_PTX_BUFFER: Option<std::ffi::CString> = None;
+
+    if original_ptx.is_null() {
+        return std::ptr::null();
+    }
+
+    let original = unsafe {
+        match std::ffi::CStr::from_ptr(original_ptx).to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null(),
+        }
+    };
+
+    // Build register state
+    let mut reg_map: HashMap<String, u64> = HashMap::new();
+    let mut pred_map: HashMap<String, bool> = HashMap::new();
+
+    if !registers.is_null() && num_registers > 0 {
+        for i in 0..num_registers as usize {
+            unsafe {
+                let reg = &*registers.add(i);
+                let name = std::ffi::CStr::from_ptr(reg.name.as_ptr())
+                    .to_string_lossy()
+                    .to_string();
+                if !name.is_empty() {
+                    reg_map.insert(name, reg.value);
+                }
+            }
+        }
+    }
+
+    if !predicates.is_null() && num_predicates > 0 {
+        for i in 0..num_predicates as usize {
+            unsafe {
+                let pred = &*predicates.add(i);
+                let name = std::ffi::CStr::from_ptr(pred.name.as_ptr())
+                    .to_string_lossy()
+                    .to_string();
+                if !name.is_empty() {
+                    pred_map.insert(name, pred.value != 0);
+                }
+            }
+        }
+    }
+
+    let thread_state = ThreadExecutionState {
+        ptx_line: 0,
+        instruction_offset: resume_ip,
+        registers: reg_map,
+        predicates: pred_map,
+        active_mask: 0xFFFFFFFF_FFFFFFFF,
+        block_id: (0, 0, 0),
+        thread_id: (0, 0, 0),
+    };
+
+    // Generate instrumented PTX
+    let instrumented = instrument_ptx_for_migration(original, Some(&thread_state));
+
+    unsafe {
+        INSTRUMENTED_PTX_BUFFER = std::ffi::CString::new(instrumented).ok();
+        if let Some(cstr) = &INSTRUMENTED_PTX_BUFFER {
+            return cstr.as_ptr();
+        }
+    }
+
+    std::ptr::null()
+}
+
+/// Get resume IP from loaded checkpoint
+#[no_mangle]
+pub extern "C" fn hetgpu_checkpoint_get_resume_ip() -> u64 {
+    if let Ok(guard) = get_loaded_checkpoint().lock() {
+        if let Some(checkpoint) = &*guard {
+            return checkpoint.resume_ip;
+        }
+    }
+    0
+}
+
+/// Get number of saved thread states
+#[no_mangle]
+pub extern "C" fn hetgpu_checkpoint_get_thread_state_count() -> u32 {
+    if let Ok(guard) = get_loaded_checkpoint().lock() {
+        if let Some(checkpoint) = &*guard {
+            return checkpoint.thread_states.len() as u32;
+        }
+    }
+    0
+}
+
+/// Get thread state by index
+#[no_mangle]
+pub extern "C" fn hetgpu_checkpoint_get_thread_state(
+    index: u32,
+    state: *mut CThreadState,
+) -> i32 {
+    if state.is_null() {
+        return -1;
+    }
+
+    if let Ok(guard) = get_loaded_checkpoint().lock() {
+        if let Some(checkpoint) = &*guard {
+            if (index as usize) < checkpoint.thread_states.len() {
+                let ts = &checkpoint.thread_states[index as usize];
+                unsafe {
+                    (*state).instruction_offset = ts.instruction_offset;
+                    (*state).ptx_line = ts.ptx_line;
+                    (*state).block_x = ts.block_id.0;
+                    (*state).block_y = ts.block_id.1;
+                    (*state).block_z = ts.block_id.2;
+                    (*state).thread_x = ts.thread_id.0;
+                    (*state).thread_y = ts.thread_id.1;
+                    (*state).thread_z = ts.thread_id.2;
+                    (*state).active_mask = ts.active_mask;
+                    (*state).num_registers = ts.registers.len() as u32;
+                }
+                return 0;
+            }
+        }
+    }
+    -2
+}
+
+/// Get register value from thread state
+#[no_mangle]
+pub extern "C" fn hetgpu_checkpoint_get_register(
+    thread_index: u32,
+    reg_name: *const std::ffi::c_char,
+    value: *mut u64,
+) -> i32 {
+    if reg_name.is_null() || value.is_null() {
+        return -1;
+    }
+
+    let name = unsafe {
+        match std::ffi::CStr::from_ptr(reg_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return -2,
+        }
+    };
+
+    if let Ok(guard) = get_loaded_checkpoint().lock() {
+        if let Some(checkpoint) = &*guard {
+            if (thread_index as usize) < checkpoint.thread_states.len() {
+                let ts = &checkpoint.thread_states[thread_index as usize];
+                if let Some(val) = ts.registers.get(name) {
+                    unsafe {
+                        *value = *val;
+                    }
+                    return 0;
+                }
+            }
+        }
+    }
+    -3
+}
+
+/// Parse PTX and return instruction count
+#[no_mangle]
+pub extern "C" fn hetgpu_parse_ptx_instruction_count(
+    ptx: *const std::ffi::c_char,
+) -> i32 {
+    if ptx.is_null() {
+        return -1;
+    }
+
+    let ptx_str = unsafe {
+        match std::ffi::CStr::from_ptr(ptx).to_str() {
+            Ok(s) => s,
+            Err(_) => return -2,
+        }
+    };
+
+    let instructions = parse_ptx_instructions(ptx_str);
+    instructions.len() as i32
 }
