@@ -48,6 +48,10 @@ pub(super) mod pointer;
 // Checkpoint/resume support for GPU state
 pub mod checkpoint;
 
+// Record/replay support for heterogeneous GPU debugging
+pub mod replay;
+pub mod replay_ffi;
+
 #[cfg(feature = "intel")]
 pub mod ze_device;
 #[cfg(feature = "intel")]

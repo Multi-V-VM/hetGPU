@@ -672,11 +672,22 @@ pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
     }
     let ptr_val = unsafe { *dptr };
     eprintln!("[hetGPU memory] alloc_v2 success: ptr={:?}", ptr_val);
+
+    // Record allocation for replay
+    super::replay::record_allocation(
+        ptr_val.0 as u64,
+        bytesize as u64,
+        super::replay::AllocationType::Device,
+    );
+
     Ok(())
 }
 
 #[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
 pub(crate) fn free_v2(dptr: CUdeviceptr) -> CUresult {
+    // Record deallocation for replay
+    super::replay::record_deallocation(dptr.0 as u64);
+
     let result = nvidia_runtime_sys::cuMemFree_v2(dptr);
     if result != 0 {
         return Err(CUerror::UNKNOWN);
@@ -699,6 +710,10 @@ pub(crate) fn copy_hto_d_v2(dst_device: CUdeviceptr, src_host: *const ::core::ff
     if result != 0 {
         return Err(CUerror::UNKNOWN);
     }
+
+    // Mark destination memory as dirty for replay tracking
+    super::replay::record_memory_dirty(dst_device.0 as u64, byte_count as u64);
+
     Ok(())
 }
 

@@ -833,6 +833,61 @@ pub(crate) fn get_primary_ze(
     Ok(dev.primary_context())
 }
 
+// Intel context management functions (stub implementations)
+#[cfg(all(feature = "intel", not(feature = "amd")))]
+pub(crate) fn create_v2(pctx: *mut CUcontext, _flags: u32, _dev: CUdevice) -> CUresult {
+    // Create a virtual context for Intel backend
+    let ctx = Context::new(ze_device_handle_t(ptr::null_mut()));
+    let boxed = Box::new(ctx);
+    let raw_ctx = CUcontext(Box::into_raw(boxed) as *mut _);
+
+    if !pctx.is_null() {
+        unsafe { *pctx = raw_ctx; }
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "intel", not(feature = "amd")))]
+pub(crate) fn destroy_v2(ctx: CUcontext) -> CUresult {
+    if ctx.0.is_null() {
+        return Err(CUerror::INVALID_CONTEXT);
+    }
+    // Remove from context stack
+    CONTEXT_STACK.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        stack.retain(|(c, _)| c.0 != ctx.0);
+    });
+    Ok(())
+}
+
+#[cfg(all(feature = "intel", not(feature = "amd")))]
+pub(crate) fn push_current_v2(ctx: CUcontext) -> CUresult {
+    if ctx.0.is_null() {
+        return Err(CUerror::INVALID_CONTEXT);
+    }
+    let context: &Context = FromCuda::from_cuda(&ctx)?;
+    push(ctx, context.device);
+    Ok(())
+}
+
+#[cfg(all(feature = "intel", not(feature = "amd")))]
+pub(crate) fn pop_current_v2(pctx: *mut CUcontext) -> CUresult {
+    let popped = CONTEXT_STACK.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        stack.pop()
+    });
+
+    if let Some((ctx, _)) = popped {
+        if !pctx.is_null() {
+            unsafe { *pctx = ctx; }
+        }
+    } else if !pctx.is_null() {
+        unsafe { *pctx = CUcontext(ptr::null_mut()); }
+    }
+
+    Ok(())
+}
+
 // Tenstorrent functions
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 pub(crate) unsafe fn get_limit(_pvalue: *mut usize, _limit: c_uint) -> Result<(), String> {

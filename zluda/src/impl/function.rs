@@ -103,6 +103,58 @@ pub(crate) unsafe fn launch_kernel(
         f.kernel.0 as u64,
     );
 
+    // Record kernel launch for replay if recording is active
+    let replay_seq_id = if super::replay::is_recording_active() {
+        // Extract kernel arguments for recording
+        let mut args = Vec::new();
+        if !kernel_params.is_null() {
+            // Note: We don't know the exact number of arguments without kernel metadata
+            // For now, we record pointer arguments that look valid
+            for i in 0..16 {
+                let param_ptr = unsafe { *kernel_params.add(i) };
+                if param_ptr.is_null() {
+                    break;
+                }
+                // Try to detect if it's a device pointer (typical GPU memory range)
+                let value = unsafe { *(param_ptr as *const u64) };
+                let arg = if value > 0x1000 && value < 0x800000000000 {
+                    // Likely a device pointer
+                    super::replay::KernelArgument {
+                        index: i as u32,
+                        size: 8,
+                        arg_type: super::replay::ArgumentType::DevicePointer,
+                        device_addr: Some(value),
+                        scalar_data: None,
+                    }
+                } else {
+                    // Treat as scalar
+                    super::replay::KernelArgument {
+                        index: i as u32,
+                        size: 8,
+                        arg_type: super::replay::ArgumentType::Scalar,
+                        device_addr: None,
+                        scalar_data: Some(value.to_le_bytes().to_vec()),
+                    }
+                };
+                args.push(arg);
+            }
+        }
+
+        super::replay::record_kernel_pre_launch(
+            &f.name,
+            f.module_handle,
+            f.kernel.0 as u64,
+            (grid_dim_x, grid_dim_y, grid_dim_z),
+            (block_dim_x, block_dim_y, block_dim_z),
+            shared_mem_bytes,
+            stream.0 as u64,
+            args,
+        )
+    } else {
+        0
+    };
+    let kernel_start_time = std::time::Instant::now();
+
     // Detect virtual backend (no real Level Zero device available)
     let mut virtual_backend = false;
     if let Ok(gs) = crate::r#impl::driver::global_state() {
@@ -625,6 +677,13 @@ pub(crate) unsafe fn launch_kernel(
 
     // End kernel execution tracking
     super::checkpoint::end_kernel_execution(exec_id);
+
+    // Record post-launch for replay
+    if replay_seq_id > 0 && super::replay::is_recording_active() {
+        let execution_time_ns = kernel_start_time.elapsed().as_nanos() as u64;
+        super::replay::record_kernel_post_launch(replay_seq_id, execution_time_ns);
+    }
+
     ze_result_t::ZE_RESULT_SUCCESS
 }
 
