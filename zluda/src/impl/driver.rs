@@ -241,6 +241,12 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
                     map.insert(virtual_device, device_ptr);
                 });
 
+                // Also store ordinal-to-handle mapping for virtual device (ordinal 0)
+                ORDINAL_TO_ZE.with(|map| {
+                    let mut map = map.borrow_mut();
+                    map.insert(0, virtual_device);
+                });
+
                 Ok(GlobalState {
                     devices: vec![*device_box],
                 })
@@ -332,6 +338,12 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
                     let device_ptr =
                         unsafe { NonNull::new_unchecked(Box::into_raw(device_box_clone)) };
                     map.insert(device, device_ptr);
+                });
+
+                // Store ordinal-to-handle mapping for real device
+                ORDINAL_TO_ZE.with(|map| {
+                    let mut map = map.borrow_mut();
+                    map.insert(i, device);
                 });
 
                 devices_vec.push(*device_box);
@@ -571,6 +583,23 @@ pub(crate) fn device_tt(dev_id: i32) -> Result<&'static Device, CUerror> {
 #[cfg(feature = "intel")]
 thread_local! {
     static DEVICES_ZE: RefCell<HashMap<ze_device_handle_t, NonNull<Device>>> = RefCell::new(HashMap::new());
+    // Ordinal to ze_device_handle_t mapping for device lookup by index
+    static ORDINAL_TO_ZE: RefCell<HashMap<i32, ze_device_handle_t>> = RefCell::new(HashMap::new());
+}
+
+/// Get ze_device_handle_t by device ordinal (for Intel backend)
+#[cfg(feature = "intel")]
+pub(crate) fn get_ze_handle_by_ordinal(ordinal: i32) -> Result<ze_device_handle_t, CUerror> {
+    // First ensure global state is initialized
+    let _ = global_state()?;
+
+    ORDINAL_TO_ZE.with(|map| {
+        let map_ref = map.borrow();
+        map_ref
+            .get(&ordinal)
+            .copied()
+            .ok_or(CUerror::INVALID_DEVICE)
+    })
 }
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]

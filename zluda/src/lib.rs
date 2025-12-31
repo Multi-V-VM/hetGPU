@@ -49,12 +49,10 @@ pub unsafe extern "C" fn cudaGetDeviceCount(count: *mut i32) -> i32 {
     0
 }
 
-// Add this function to get device handle by index
+// Get device handle by index using the ordinal-to-handle mapping from driver.rs
 #[cfg(feature = "intel")]
 fn get_device_handle_by_index(index: usize) -> Result<ze_device_handle_t> {
-    // Implementation depends on how you access devices in your system
-    // This is a placeholder - replace with actual implementation
-    Ok(unsafe { std::mem::zeroed() })
+    crate::r#impl::driver::get_ze_handle_by_ordinal(index as i32)
 }
 
 // Fix implementation of FromCuda for ze_device_handle_t

@@ -4,61 +4,162 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-/// Register allocator for tmatmul vector registers (v0-v7)
+
+/// Number of vector registers available in hardware (v0-v7)
+const NUM_REGISTERS: usize = 8;
+
+/// Spill slot information
+#[derive(Clone, Debug)]
+struct SpillSlot {
+    /// Memory location name (e.g., "SPILL_0", "SPILL_1")
+    memory_name: String,
+    /// SSA value stored in this slot
+    ssa_value: String,
+}
+
+/// Register allocator for tmatmul vector registers (v0-v7) with spilling support
 pub struct RegisterAllocator {
     /// Maps MLIR SSA values to physical registers
     value_to_reg: HashMap<String, String>,
     /// Tracks which registers are currently in use
-    allocated_regs: [bool; 8],
+    allocated_regs: [bool; NUM_REGISTERS],
     /// Next free register to try
     next_reg: usize,
+    /// Spill slots for values that don't fit in registers
+    spill_slots: HashMap<String, SpillSlot>,
+    /// Next available spill slot index
+    next_spill_slot: usize,
+    /// Pending spill operations (to be emitted before next instruction)
+    pending_spills: Vec<(String, String)>, // (reg, memory_name)
+    /// Pending reload operations
+    pending_reloads: Vec<(String, String)>, // (memory_name, reg)
 }
 
 impl RegisterAllocator {
     pub fn new() -> Self {
         Self {
             value_to_reg: HashMap::new(),
-            allocated_regs: [false; 8],
+            allocated_regs: [false; NUM_REGISTERS],
             next_reg: 0,
+            spill_slots: HashMap::new(),
+            next_spill_slot: 0,
+            pending_spills: Vec::new(),
+            pending_reloads: Vec::new(),
         }
     }
 
-    /// Allocate a new register for an SSA value
+    /// Allocate a new register for an SSA value, with spilling if needed
     pub fn allocate(&mut self, ssa_value: &str) -> Result<String, String> {
-        // Check if already allocated
+        // Check if already allocated in register
         if let Some(reg) = self.value_to_reg.get(ssa_value) {
             return Ok(reg.clone());
         }
 
-        // Find lowest free register (prefer lower numbers for deterministic behavior)
-        for reg_idx in 0..8 {
+        // Check if spilled - need to reload
+        if let Some(slot) = self.spill_slots.get(ssa_value).cloned() {
+            // Need to reload from spill slot
+            // First, get a register (may cause another spill)
+            let reg = self.allocate_physical_register(ssa_value)?;
+            // Queue reload operation
+            self.pending_reloads.push((slot.memory_name.clone(), reg.clone()));
+            // Remove from spill slots
+            self.spill_slots.remove(ssa_value);
+            return Ok(reg);
+        }
+
+        // Fresh allocation
+        self.allocate_physical_register(ssa_value)
+    }
+
+    /// Allocate a physical register, spilling if necessary
+    fn allocate_physical_register(&mut self, ssa_value: &str) -> Result<String, String> {
+        // Find lowest free register
+        for reg_idx in 0..NUM_REGISTERS {
             if !self.allocated_regs[reg_idx] {
                 let reg_name = format!("v{}", reg_idx);
                 self.allocated_regs[reg_idx] = true;
                 self.value_to_reg
                     .insert(ssa_value.to_string(), reg_name.clone());
-                self.next_reg = (reg_idx + 1) % 8;
+                self.next_reg = (reg_idx + 1) % NUM_REGISTERS;
                 return Ok(reg_name);
             }
         }
 
-        Err("No free registers available".to_string())
+        // All registers used - need to spill one
+        // Use simple LRU-like strategy: spill the oldest allocated register
+        // Find a victim (pick the one with highest index to preserve common values in low regs)
+        let victim_idx = (self.next_reg + NUM_REGISTERS - 1) % NUM_REGISTERS;
+        let victim_reg = format!("v{}", victim_idx);
+
+        // Find which SSA value is in this register
+        let victim_ssa = self.value_to_reg
+            .iter()
+            .find(|(_, r)| **r == victim_reg)
+            .map(|(s, _)| s.clone());
+
+        if let Some(victim_ssa) = victim_ssa {
+            // Create spill slot
+            let spill_name = format!("SPILL_{}", self.next_spill_slot);
+            self.next_spill_slot += 1;
+
+            // Queue spill operation
+            self.pending_spills.push((victim_reg.clone(), spill_name.clone()));
+
+            // Record spill slot
+            self.spill_slots.insert(victim_ssa.clone(), SpillSlot {
+                memory_name: spill_name,
+                ssa_value: victim_ssa.clone(),
+            });
+
+            // Free the victim from register mapping
+            self.value_to_reg.remove(&victim_ssa);
+        }
+
+        // Now allocate the freed register for the new value
+        self.allocated_regs[victim_idx] = true;
+        self.value_to_reg
+            .insert(ssa_value.to_string(), victim_reg.clone());
+        self.next_reg = (victim_idx + 1) % NUM_REGISTERS;
+
+        Ok(victim_reg)
     }
 
     /// Free a register
     pub fn free(&mut self, ssa_value: &str) {
         if let Some(reg) = self.value_to_reg.remove(ssa_value) {
             if let Some(idx) = reg.strip_prefix('v').and_then(|s| s.parse::<usize>().ok()) {
-                if idx < 8 {
+                if idx < NUM_REGISTERS {
                     self.allocated_regs[idx] = false;
                 }
             }
         }
+        // Also remove from spill slots if present
+        self.spill_slots.remove(ssa_value);
     }
 
     /// Get register for an SSA value
     pub fn get_register(&self, ssa_value: &str) -> Option<&String> {
         self.value_to_reg.get(ssa_value)
+    }
+
+    /// Check if a value is spilled
+    pub fn is_spilled(&self, ssa_value: &str) -> bool {
+        self.spill_slots.contains_key(ssa_value)
+    }
+
+    /// Get pending spill operations and clear them
+    pub fn take_pending_spills(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.pending_spills)
+    }
+
+    /// Get pending reload operations and clear them
+    pub fn take_pending_reloads(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.pending_reloads)
+    }
+
+    /// Get number of spill slots used
+    pub fn spill_count(&self) -> usize {
+        self.next_spill_slot
     }
 }
 
@@ -320,6 +421,39 @@ impl TMatmulCodegen {
         self.mem_map.insert(symbol.to_string(), location);
     }
 
+    /// Emit pending spill instructions (save registers to memory before they're reused)
+    fn emit_pending_spills(&mut self) {
+        let spills = self.reg_allocator.take_pending_spills();
+        for (reg, mem_name) in spills {
+            self.program.add_comment(&format!("Spill {} to {}", reg, mem_name));
+            self.program.add_instruction(TMatmulInstruction::StoreVector {
+                src: reg,
+                dst: MemoryLocation::Custom(mem_name),
+            });
+        }
+    }
+
+    /// Emit pending reload instructions (restore registers from memory)
+    fn emit_pending_reloads(&mut self) {
+        let reloads = self.reg_allocator.take_pending_reloads();
+        for (mem_name, reg) in reloads {
+            self.program.add_comment(&format!("Reload {} from {}", reg, mem_name));
+            self.program.add_instruction(TMatmulInstruction::LoadVector {
+                dst: reg,
+                src: MemoryLocation::Custom(mem_name),
+            });
+        }
+    }
+
+    /// Ensure an SSA value is in a register (allocate/reload if needed)
+    /// Returns the register name
+    fn ensure_in_register(&mut self, ssa_value: &str) -> Result<String, String> {
+        let reg = self.reg_allocator.allocate(ssa_value)?;
+        // Emit any pending reloads immediately
+        self.emit_pending_reloads();
+        Ok(reg)
+    }
+
     /// Generate code for an MLIR tmatmul operation
     pub fn emit_operation(
         &mut self,
@@ -329,7 +463,10 @@ impl TMatmulCodegen {
     ) -> Result<(), String> {
         match op {
             "tmatmul.ldv" => {
+                // Emit any pending spills first
+                self.emit_pending_spills();
                 let dst = self.reg_allocator.allocate(results[0])?;
+                self.emit_pending_spills(); // Emit spills from this allocation
                 let src_mem = self
                     .mem_map
                     .get(operands[0])
@@ -339,11 +476,9 @@ impl TMatmulCodegen {
                     .add_instruction(TMatmulInstruction::LoadVector { dst, src: src_mem });
             }
             "tmatmul.sv" => {
-                let src = self
-                    .reg_allocator
-                    .get_register(operands[0])
-                    .ok_or("Source not allocated")?
-                    .clone();
+                // Get source first (may need reload)
+                let src = self.ensure_in_register(operands[0])?;
+                self.emit_pending_spills();
                 let dst_mem = self
                     .mem_map
                     .get(operands[1])
@@ -353,81 +488,78 @@ impl TMatmulCodegen {
                     .add_instruction(TMatmulInstruction::StoreVector { src, dst: dst_mem });
             }
             "tmatmul.add" => {
+                // Get operands first (may need reload), BEFORE allocating dst
+                let src1 = self.ensure_in_register(operands[0])?;
+                let src2 = self.ensure_in_register(operands[1])?;
+                self.emit_pending_spills();
+                // Now allocate dst (may spill, but we have src1/src2 names saved)
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src1 = self
-                    .reg_allocator
-                    .get_register(operands[0])
-                    .ok_or("Operand 1 not allocated")?
-                    .clone();
-                let src2 = self
-                    .reg_allocator
-                    .get_register(operands[1])
-                    .ok_or("Operand 2 not allocated")?
-                    .clone();
+                self.emit_pending_spills();
                 self.program
                     .add_instruction(TMatmulInstruction::Add { dst, src1, src2 });
             }
             "tmatmul.mul" => {
+                let src1 = self.ensure_in_register(operands[0])?;
+                let src2 = self.ensure_in_register(operands[1])?;
+                self.emit_pending_spills();
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src1 = self
-                    .reg_allocator
-                    .get_register(operands[0])
-                    .ok_or("Operand 1 not allocated")?
-                    .clone();
-                let src2 = self
-                    .reg_allocator
-                    .get_register(operands[1])
-                    .ok_or("Operand 2 not allocated")?
-                    .clone();
+                self.emit_pending_spills();
                 self.program
                     .add_instruction(TMatmulInstruction::Mul { dst, src1, src2 });
             }
-            "tmatmul.sig" => {
+            "tmatmul.sub" => {
+                let src1 = self.ensure_in_register(operands[0])?;
+                let src2 = self.ensure_in_register(operands[1])?;
+                self.emit_pending_spills();
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src = self
-                    .reg_allocator
-                    .get_register(operands[0])
-                    .ok_or("Source not allocated")?
-                    .clone();
+                self.emit_pending_spills();
+                self.program
+                    .add_instruction(TMatmulInstruction::Sub { dst, src1, src2 });
+            }
+            "tmatmul.div" => {
+                let src1 = self.ensure_in_register(operands[0])?;
+                let src2 = self.ensure_in_register(operands[1])?;
+                self.emit_pending_spills();
+                let dst = self.reg_allocator.allocate(results[0])?;
+                self.emit_pending_spills();
+                self.program
+                    .add_instruction(TMatmulInstruction::Div { dst, src1, src2 });
+            }
+            "tmatmul.sig" => {
+                let src = self.ensure_in_register(operands[0])?;
+                self.emit_pending_spills();
+                let dst = self.reg_allocator.allocate(results[0])?;
+                self.emit_pending_spills();
                 self.program
                     .add_instruction(TMatmulInstruction::Sigmoid { dst, src });
             }
             "tmatmul.csig" => {
+                let src = self.ensure_in_register(operands[0])?;
+                self.emit_pending_spills();
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src = self
-                    .reg_allocator
-                    .get_register(operands[0])
-                    .ok_or("Source not allocated")?
-                    .clone();
+                self.emit_pending_spills();
                 self.program
                     .add_instruction(TMatmulInstruction::ComplementSigmoid { dst, src });
             }
             "tmatmul.silu" => {
+                let src = self.ensure_in_register(operands[0])?;
+                self.emit_pending_spills();
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src = self
-                    .reg_allocator
-                    .get_register(operands[0])
-                    .ok_or("Source not allocated")?
-                    .clone();
+                self.emit_pending_spills();
                 self.program
                     .add_instruction(TMatmulInstruction::SiLU { dst, src });
             }
             "tmatmul.norm" => {
+                let src = self.ensure_in_register(operands[0])?;
+                self.emit_pending_spills();
                 let dst = self.reg_allocator.allocate(results[0])?;
-                let src = self
-                    .reg_allocator
-                    .get_register(operands[0])
-                    .ok_or("Source not allocated")?
-                    .clone();
+                self.emit_pending_spills();
                 self.program
                     .add_instruction(TMatmulInstruction::Norm { dst, src });
             }
             "tmatmul.tmatmul_import" => {
-                let src = self
-                    .reg_allocator
-                    .get_register(operands[0])
-                    .ok_or("Source not allocated")?
-                    .clone();
+                let src = self.ensure_in_register(operands[0])?;
+                self.emit_pending_spills();
                 self.program
                     .add_instruction(TMatmulInstruction::TMatmulImport { src });
             }
@@ -441,23 +573,23 @@ impl TMatmulCodegen {
                     .add_instruction(TMatmulInstruction::TMatmulGo { weights });
             }
             "tmatmul.tmatmul_export" => {
+                self.emit_pending_spills();
                 let dst = self.reg_allocator.allocate(results[0])?;
+                self.emit_pending_spills();
                 self.program
                     .add_instruction(TMatmulInstruction::TMatmulExport { dst });
             }
             "tmatmul.matmul" => {
                 // Combined operation: import -> go -> export
-                let input_reg = self
-                    .reg_allocator
-                    .get_register(operands[0])
-                    .ok_or("Input not allocated")?
-                    .clone();
+                let input_reg = self.ensure_in_register(operands[0])?;
+                self.emit_pending_spills();
                 let weights = self
                     .mem_map
                     .get(operands[1])
                     .cloned()
                     .unwrap_or(MemoryLocation::Custom(operands[1].to_string()));
                 let output_reg = self.reg_allocator.allocate(results[0])?;
+                self.emit_pending_spills();
 
                 self.program
                     .add_instruction(TMatmulInstruction::TMatmulImport { src: input_reg });
