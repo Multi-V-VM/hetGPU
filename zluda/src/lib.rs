@@ -34,17 +34,26 @@ pub unsafe extern "C" fn cudaDriverGetVersion(driver_version: *mut i32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn cudaGetDeviceCount(count: *mut i32) -> i32 {
+    eprintln!("[hetGPU] cudaGetDeviceCount called");
     if count.is_null() {
+        eprintln!("[hetGPU] cudaGetDeviceCount: count is null");
         return 1; // cudaErrorInvalidValue
     }
 
-    if crate::r#impl::driver::init(0).is_err() {
-        *count = 0;
-        return 0;
+    match crate::r#impl::driver::init(0) {
+        Ok(_) => eprintln!("[hetGPU] cudaGetDeviceCount: init succeeded"),
+        Err(e) => {
+            eprintln!("[hetGPU] cudaGetDeviceCount: init failed with {:?}", e);
+            *count = 0;
+            return 0;
+        }
     }
 
     *count = crate::r#impl::driver::global_state()
-        .map(|state| state.devices.len() as i32)
+        .map(|state| {
+            eprintln!("[hetGPU] cudaGetDeviceCount: {} devices", state.devices.len());
+            state.devices.len() as i32
+        })
         .unwrap_or(0);
     0
 }
@@ -71,9 +80,8 @@ macro_rules! unimplemented {
             #[allow(improper_ctypes)]
             #[allow(improper_ctypes_definitions)]
             pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
-                if std::env::var("HETGPU_DEBUG_UNIMPL").ok().as_deref() == Some("1") {
-                    eprintln!("[hetGPU] Unimplemented CUDA call: {}", stringify!($fn_name));
-                }
+                // Always log unimplemented calls to help debug initialization issues
+                eprintln!("[hetGPU] Unimplemented CUDA call: {}", stringify!($fn_name));
                 crate::r#impl::unimplemented()
             }
         )*
@@ -102,8 +110,22 @@ macro_rules! implemented {
             #[allow(improper_ctypes)]
             #[allow(improper_ctypes_definitions)]
             pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
-                let backend_ret = cuda_base::cuda_normalize_fn!( crate::r#impl::$fn_name )($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
-                crate::r#impl::into_cu_result(backend_ret)
+                // Debug log for all implemented function calls
+                eprintln!("[hetGPU] {} called", stringify!($fn_name));
+
+                // Convert arguments with error handling
+                let result = (|| -> std::result::Result<_, CUerror> {
+                    let backend_ret = cuda_base::cuda_normalize_fn!( crate::r#impl::$fn_name )($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
+                    Ok(crate::r#impl::into_cu_result(backend_ret))
+                })();
+
+                match result {
+                    Ok(r) => r,
+                    Err(e) => {
+                        eprintln!("[hetGPU] {} failed with conversion error: {:?}", stringify!($fn_name), e);
+                        Err(e)
+                    }
+                }
             }
         )*
     };

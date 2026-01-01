@@ -1166,34 +1166,319 @@ impl<'a> super::FromCuda<'a, CUfunction> for &'a TMatmulKernel {
 fn try_extract_ptx_from_cubin(binary: &[u8]) -> Option<String> {
     // Check for ELF magic
     if binary.len() < 4 || !(binary[0] == 0x7f && binary[1] == b'E' && binary[2] == b'L' && binary[3] == b'F') {
-        eprintln!("[PTX Extract] Not an ELF file");
+        eprintln!("[PTX Extract] Not an ELF file (magic: {:02x} {:02x} {:02x} {:02x})",
+                 binary.get(0).copied().unwrap_or(0),
+                 binary.get(1).copied().unwrap_or(0),
+                 binary.get(2).copied().unwrap_or(0),
+                 binary.get(3).copied().unwrap_or(0));
         return None;
     }
 
-    eprintln!("[PTX Extract] ELF file detected, searching for embedded PTX...");
+    eprintln!("[PTX Extract] ELF file detected (size: {} bytes), searching for embedded PTX...", binary.len());
 
-    // Search for common PTX section markers in the binary
-    let ptx_markers: &[&[u8]] = &[
-        b".nv.info.ptx",
-        b".ptx",
-        b".version ",  // PTX version directive
-    ];
+    // First try to parse ELF properly to find .nv_fatbin section (contains compressed PTX)
+    if let Some(ptx) = try_extract_ptx_from_elf_sections(binary) {
+        return Some(ptx);
+    }
 
-    for marker in ptx_markers {
-        if let Some(pos) = find_bytes(binary, marker) {
-            eprintln!("[PTX Extract] Found marker {:?} at offset {}",
-                     std::str::from_utf8(marker).unwrap_or("???"), pos);
+    // Fallback: Search for raw PTX markers
+    eprintln!("[PTX Extract] ELF section parsing didn't find PTX, trying raw search...");
 
-            // Try to find PTX text near this marker
-            if let Some(ptx_start) = find_ptx_start(binary, pos.saturating_sub(10000)) {
-                if let Some(ptx) = extract_ptx_from_offset(binary, ptx_start) {
+    // Search for actual PTX content (starts with ".version X.Y")
+    // PTX always starts with .version directive followed by a number
+    let version_pattern = b".version ";
+    let mut all_version_positions = Vec::new();
+
+    for i in 0..binary.len().saturating_sub(20) {
+        if binary[i..].starts_with(version_pattern) {
+            // Check if followed by a digit (version number like "7.0")
+            let next_char = binary.get(i + version_pattern.len()).copied().unwrap_or(0);
+            if next_char.is_ascii_digit() {
+                all_version_positions.push(i);
+                eprintln!("[PTX Extract] Found potential PTX at offset {} (next bytes: {:?})",
+                         i, &binary[i..binary.len().min(i + 30)].iter()
+                             .map(|&b| if b.is_ascii_graphic() || b == b' ' || b == b'\n' { b as char } else { '.' })
+                             .collect::<String>());
+            }
+        }
+    }
+
+    eprintln!("[PTX Extract] Found {} potential PTX start positions", all_version_positions.len());
+
+    // Try each position
+    for &pos in &all_version_positions {
+        if let Some(ptx) = extract_ptx_from_offset_improved(binary, pos) {
+            if ptx.len() >= 100 && ptx.contains(".target") {
+                eprintln!("[PTX Extract] Valid PTX found at offset {} ({} bytes)", pos, ptx.len());
+                return Some(ptx);
+            } else {
+                eprintln!("[PTX Extract] Extracted {} bytes from offset {} but doesn't look like valid PTX", ptx.len(), pos);
+            }
+        }
+    }
+
+    eprintln!("[PTX Extract] No valid PTX found in CUBIN");
+    eprintln!("[PTX Extract] Note: PyTorch CUBINs often don't contain embedded PTX");
+    eprintln!("[PTX Extract] The cuobjdump fallback in cudart_shim.c should handle this");
+    None
+}
+
+#[cfg(feature = "intel")]
+fn try_extract_ptx_from_elf_sections(binary: &[u8]) -> Option<String> {
+    // Parse ELF header to find sections
+    if binary.len() < 64 {
+        return None;
+    }
+
+    // Check if 64-bit ELF (class byte at offset 4)
+    let is_64bit = binary[4] == 2;
+    eprintln!("[PTX Extract] ELF class: {}", if is_64bit { "64-bit" } else { "32-bit" });
+
+    if !is_64bit {
+        eprintln!("[PTX Extract] 32-bit ELF not supported for PTX extraction");
+        return None;
+    }
+
+    // For 64-bit ELF:
+    // e_shoff (section header offset) is at bytes 40-47
+    // e_shentsize (section header entry size) is at bytes 58-59
+    // e_shnum (number of section headers) is at bytes 60-61
+    // e_shstrndx (section name string table index) is at bytes 62-63
+
+    let e_shoff = u64::from_le_bytes([
+        binary[40], binary[41], binary[42], binary[43],
+        binary[44], binary[45], binary[46], binary[47]
+    ]) as usize;
+    let e_shentsize = u16::from_le_bytes([binary[58], binary[59]]) as usize;
+    let e_shnum = u16::from_le_bytes([binary[60], binary[61]]) as usize;
+    let e_shstrndx = u16::from_le_bytes([binary[62], binary[63]]) as usize;
+
+    eprintln!("[PTX Extract] ELF: shoff={}, shentsize={}, shnum={}, shstrndx={}",
+             e_shoff, e_shentsize, e_shnum, e_shstrndx);
+
+    if e_shoff == 0 || e_shnum == 0 || e_shoff >= binary.len() {
+        eprintln!("[PTX Extract] Invalid section headers");
+        return None;
+    }
+
+    // Get section name string table
+    if e_shstrndx >= e_shnum {
+        eprintln!("[PTX Extract] Invalid string table index");
+        return None;
+    }
+
+    let strtab_offset = e_shoff + e_shstrndx * e_shentsize;
+    if strtab_offset + 64 > binary.len() {
+        return None;
+    }
+
+    // For 64-bit: sh_offset is at bytes 24-31, sh_size is at 32-39
+    let strtab_sh_offset = u64::from_le_bytes([
+        binary[strtab_offset + 24], binary[strtab_offset + 25],
+        binary[strtab_offset + 26], binary[strtab_offset + 27],
+        binary[strtab_offset + 28], binary[strtab_offset + 29],
+        binary[strtab_offset + 30], binary[strtab_offset + 31]
+    ]) as usize;
+
+    eprintln!("[PTX Extract] String table at offset {}", strtab_sh_offset);
+
+    // Now search for interesting sections
+    let interesting_sections = [".nv_fatbin", ".nv.fatbin", ".nv.module.ptx", ".ptx"];
+
+    for i in 0..e_shnum {
+        let sh_offset = e_shoff + i * e_shentsize;
+        if sh_offset + 64 > binary.len() {
+            continue;
+        }
+
+        // sh_name is at bytes 0-3 (offset into string table)
+        let sh_name_offset = u32::from_le_bytes([
+            binary[sh_offset], binary[sh_offset + 1],
+            binary[sh_offset + 2], binary[sh_offset + 3]
+        ]) as usize;
+
+        // Get section name
+        let name_start = strtab_sh_offset + sh_name_offset;
+        if name_start >= binary.len() {
+            continue;
+        }
+
+        let name_end = binary[name_start..].iter()
+            .position(|&b| b == 0)
+            .map(|p| name_start + p)
+            .unwrap_or(binary.len().min(name_start + 64));
+
+        let section_name = std::str::from_utf8(&binary[name_start..name_end]).unwrap_or("");
+
+        // sh_offset and sh_size for 64-bit
+        let section_offset = u64::from_le_bytes([
+            binary[sh_offset + 24], binary[sh_offset + 25],
+            binary[sh_offset + 26], binary[sh_offset + 27],
+            binary[sh_offset + 28], binary[sh_offset + 29],
+            binary[sh_offset + 30], binary[sh_offset + 31]
+        ]) as usize;
+        let section_size = u64::from_le_bytes([
+            binary[sh_offset + 32], binary[sh_offset + 33],
+            binary[sh_offset + 34], binary[sh_offset + 35],
+            binary[sh_offset + 36], binary[sh_offset + 37],
+            binary[sh_offset + 38], binary[sh_offset + 39]
+        ]) as usize;
+
+        if interesting_sections.contains(&section_name) || section_name.contains("ptx") || section_name.contains("fatbin") {
+            eprintln!("[PTX Extract] Found interesting section '{}' at offset {}, size {}",
+                     section_name, section_offset, section_size);
+
+            if section_offset > 0 && section_size > 0 && section_offset + section_size <= binary.len() {
+                let section_data = &binary[section_offset..section_offset + section_size];
+
+                // Try to extract PTX from this section
+                if let Some(ptx) = try_extract_ptx_from_section(section_data, section_name) {
                     return Some(ptx);
                 }
             }
         }
     }
 
-    eprintln!("[PTX Extract] No PTX found in CUBIN");
+    None
+}
+
+#[cfg(feature = "intel")]
+fn try_extract_ptx_from_section(data: &[u8], section_name: &str) -> Option<String> {
+    eprintln!("[PTX Extract] Analyzing section '{}' ({} bytes)", section_name, data.len());
+
+    if data.len() < 8 {
+        return None;
+    }
+
+    // Check for fatbin magic (0xBA55ED50)
+    if data.len() >= 4 {
+        let magic = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+        if magic == 0xBA55ED50 {
+            eprintln!("[PTX Extract] Found fatbin magic in section, parsing fatbin...");
+            return try_extract_ptx_from_fatbin(data);
+        }
+    }
+
+    // Check for compressed data (zlib magic: 0x78)
+    if data[0] == 0x78 && (data[1] == 0x01 || data[1] == 0x5e || data[1] == 0x9c || data[1] == 0xda) {
+        eprintln!("[PTX Extract] Found zlib compressed data, attempting decompression...");
+        return try_decompress_zlib(data);
+    }
+
+    // Check if it's raw PTX text
+    if data.starts_with(b".version ") || data.starts_with(b"//") {
+        if let Ok(ptx) = std::str::from_utf8(data) {
+            eprintln!("[PTX Extract] Section contains raw PTX text");
+            return Some(ptx.trim_end_matches('\0').to_string());
+        }
+    }
+
+    // Search for PTX within the section
+    if let Some(pos) = data.windows(9).position(|w| w.starts_with(b".version ") && w[9..].first().map(|b| b.is_ascii_digit()).unwrap_or(false)) {
+        if let Some(ptx) = extract_ptx_from_offset_improved(data, pos) {
+            if ptx.len() >= 100 {
+                return Some(ptx);
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(feature = "intel")]
+fn try_extract_ptx_from_fatbin(data: &[u8]) -> Option<String> {
+    // Fatbin structure:
+    // Header: magic (4), version (2), header_size (2), fat_size (8)
+    // Followed by file entries
+
+    if data.len() < 16 {
+        return None;
+    }
+
+    let header_size = u16::from_le_bytes([data[6], data[7]]) as usize;
+
+    eprintln!("[PTX Extract] Fatbin header_size: {}", header_size);
+
+    if header_size >= data.len() {
+        return None;
+    }
+
+    let mut offset = header_size;
+
+    while offset + 24 < data.len() {
+        // File entry header
+        let kind = u16::from_le_bytes([data[offset], data[offset + 1]]);
+        let entry_header_size = u16::from_le_bytes([data[offset + 4], data[offset + 5]]) as usize;
+        let payload_size = u64::from_le_bytes([
+            data[offset + 8], data[offset + 9], data[offset + 10], data[offset + 11],
+            data[offset + 12], data[offset + 13], data[offset + 14], data[offset + 15]
+        ]) as usize;
+        let uncompressed_size = u64::from_le_bytes([
+            data[offset + 16], data[offset + 17], data[offset + 18], data[offset + 19],
+            data[offset + 20], data[offset + 21], data[offset + 22], data[offset + 23]
+        ]) as usize;
+
+        eprintln!("[PTX Extract] Fatbin entry: kind=0x{:04x}, header={}, payload={}, uncompressed={}",
+                 kind, entry_header_size, payload_size, uncompressed_size);
+
+        // kind 0x01 = PTX, 0x02 = CUBIN/ELF
+        if kind == 0x01 {
+            let payload_start = offset + entry_header_size;
+            if payload_start + payload_size <= data.len() {
+                let payload = &data[payload_start..payload_start + payload_size];
+
+                // Check if compressed
+                if uncompressed_size > payload_size && payload.len() >= 2 {
+                    if payload[0] == 0x78 {
+                        eprintln!("[PTX Extract] PTX entry is zlib compressed");
+                        if let Some(ptx) = try_decompress_zlib(payload) {
+                            return Some(ptx);
+                        }
+                    }
+                }
+
+                // Try as raw PTX
+                if let Ok(ptx) = std::str::from_utf8(payload) {
+                    let ptx = ptx.trim_end_matches('\0');
+                    if ptx.len() >= 50 && ptx.contains(".version") {
+                        return Some(ptx.to_string());
+                    }
+                }
+            }
+        }
+
+        // Move to next entry (aligned)
+        let entry_total = entry_header_size + payload_size;
+        let aligned = (entry_total + 7) & !7;
+        offset += aligned;
+
+        if offset == 0 || aligned == 0 {
+            break;
+        }
+    }
+
+    None
+}
+
+#[cfg(feature = "intel")]
+fn try_decompress_zlib(data: &[u8]) -> Option<String> {
+    use std::io::Read;
+
+    // Try with flate2 if available, otherwise manual inflate
+    #[cfg(feature = "flate2")]
+    {
+        use flate2::read::ZlibDecoder;
+        let mut decoder = ZlibDecoder::new(data);
+        let mut result = String::new();
+        if decoder.read_to_string(&mut result).is_ok() && result.contains(".version") {
+            eprintln!("[PTX Extract] Successfully decompressed {} bytes of PTX", result.len());
+            return Some(result);
+        }
+    }
+
+    // Fallback: try to use system zlib via C
+    eprintln!("[PTX Extract] zlib decompression not available (compile with flate2 feature)");
+    eprintln!("[PTX Extract] Compressed data starts with: {:02x} {:02x}", data[0], data[1]);
     None
 }
 
@@ -1214,6 +1499,119 @@ fn find_ptx_start(binary: &[u8], start_offset: usize) -> Option<usize> {
     None
 }
 
+// Improved PTX extraction that handles edge cases better
+#[cfg(feature = "intel")]
+fn extract_ptx_from_offset_improved(binary: &[u8], start: usize) -> Option<String> {
+    // PTX should contain certain key elements
+    // Look for the end of PTX by finding where valid PTX structure ends
+
+    let mut end = start;
+    let mut consecutive_nulls: usize = 0;
+    let mut last_valid_end = start;
+    let mut found_target = false;
+    let mut found_entry = false;
+    let mut brace_depth: usize = 0;
+
+    while end < binary.len() && end < start + 500_000 {
+        let byte = binary[end];
+
+        // Track null bytes - PTX may have occasional nulls but not many consecutive
+        if byte == 0 {
+            consecutive_nulls += 1;
+            if consecutive_nulls > 3 {
+                // More than 3 consecutive nulls - probably end of PTX
+                break;
+            }
+        } else {
+            consecutive_nulls = 0;
+        }
+
+        // Track braces for function bodies
+        if byte == b'{' {
+            brace_depth += 1;
+        } else if byte == b'}' {
+            brace_depth = brace_depth.saturating_sub(1);
+            if found_entry && brace_depth == 0 {
+                // Found complete function - update valid end
+                last_valid_end = end + 1;
+            }
+        }
+
+        // Check for key PTX markers
+        if end + 8 < binary.len() {
+            let slice = &binary[end..end + 8];
+            if slice.starts_with(b".target ") {
+                found_target = true;
+            }
+            if slice.starts_with(b".entry ") || slice.starts_with(b".func ") {
+                found_entry = true;
+            }
+        }
+
+        // Check for binary data in sliding window
+        if end > start + 50 {
+            let window_start = end.saturating_sub(50);
+            let window = &binary[window_start..end];
+            let binary_count = window.iter().filter(|&&b| {
+                b > 127 || (b < 32 && b != b'\n' && b != b'\r' && b != b'\t' && b != 0)
+            }).count();
+
+            // If more than 30% is binary, we've probably left PTX territory
+            if binary_count > window.len() * 3 / 10 {
+                eprintln!("[PTX Extract] Binary data detected at offset {}, stopping extraction", end);
+                break;
+            }
+        }
+
+        // Update valid end if we're in valid PTX territory
+        if byte.is_ascii_graphic() || byte == b' ' || byte == b'\n' || byte == b'\r' || byte == b'\t' {
+            if found_target {
+                last_valid_end = end + 1;
+            }
+        }
+
+        end += 1;
+    }
+
+    // Use the last valid position if we found PTX structure
+    if found_target && last_valid_end > start {
+        end = last_valid_end;
+    }
+
+    if end <= start {
+        eprintln!("[PTX Extract] No valid PTX content found at offset {}", start);
+        return None;
+    }
+
+    // Extract and clean up PTX
+    let ptx_bytes = &binary[start..end];
+
+    // Filter out null bytes and invalid characters
+    let cleaned: Vec<u8> = ptx_bytes.iter()
+        .copied()
+        .filter(|&b| b != 0 && (b.is_ascii_graphic() || b == b' ' || b == b'\n' || b == b'\r' || b == b'\t'))
+        .collect();
+
+    match String::from_utf8(cleaned) {
+        Ok(ptx) => {
+            let trimmed = ptx.trim();
+            if trimmed.len() < 50 {
+                eprintln!("[PTX Extract] PTX too short ({} bytes) after cleaning", trimmed.len());
+                return None;
+            }
+            eprintln!("[PTX Extract] Extracted {} bytes of PTX (cleaned from {} raw bytes)",
+                     trimmed.len(), end - start);
+            eprintln!("[PTX Extract] PTX starts with: {}...", &trimmed[..trimmed.len().min(100)]);
+            Some(trimmed.to_string())
+        },
+        Err(e) => {
+            eprintln!("[PTX Extract] Failed to decode PTX as UTF-8: {}", e);
+            None
+        }
+    }
+}
+
+// Legacy extraction function (kept for reference)
 #[cfg(feature = "intel")]
 fn extract_ptx_from_offset(binary: &[u8], start: usize) -> Option<String> {
     let mut end = start;

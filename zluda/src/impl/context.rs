@@ -732,7 +732,9 @@ pub(crate) fn from_cuda_to(ctx: &CUcontext) -> Result<&Context, CUerror> {
 
 #[cfg(all(feature = "intel", not(feature = "amd")))]
 pub(crate) fn set_current(raw_ctx: CUcontext) -> CUresult {
+    eprintln!("[hetGPU] cuCtxSetCurrent called with ctx={:?}", raw_ctx);
     let _new_device = if raw_ctx.0 == ptr::null_mut() {
+        eprintln!("[hetGPU] cuCtxSetCurrent: popping null context");
         CONTEXT_STACK.with(|stack| {
             let mut stack = stack.borrow_mut();
             if let Some((_, _)) = stack.pop() {
@@ -748,6 +750,7 @@ pub(crate) fn set_current(raw_ctx: CUcontext) -> CUresult {
         });
     };
 
+    eprintln!("[hetGPU] cuCtxSetCurrent: success");
     Ok(())
 }
 
@@ -799,7 +802,20 @@ pub(crate) fn get_device(device_out: *mut CUdevice) -> CUresult {
 
     let current = match peek_current() {
         Some(ctx) => ctx,
-        None => return Err(CUerror::INVALID_CONTEXT),
+        None => {
+            // No current context - auto-create primary context for device 0
+            eprintln!("[hetGPU] cuCtxGetDevice: no current context, auto-creating for device 0");
+            let dev = super::driver::device(0)?;
+            let (_, raw_ctx) = dev.primary_context();
+            // Push it as current
+            if let Err(e) = set_current(raw_ctx) {
+                eprintln!("[hetGPU] cuCtxGetDevice: failed to set current context: {:?}", e);
+                return Err(e);
+            }
+            // Now return device 0
+            unsafe { *device_out = 0 };
+            return Ok(());
+        }
     };
 
     let ctx_ref: &Context = FromCuda::from_cuda(&current)?;

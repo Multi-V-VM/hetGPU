@@ -50,6 +50,7 @@ libcudart.so.12 {
     cudaHostUnregister;
     cudaHostGetDevicePointer;
     cudaDeviceGetPCIBusId;
+    cudaDeviceGetByPCIBusId;
     cudaPointerGetAttributes;
     cudaIpcGetEventHandle;
     cudaIpcOpenEventHandle;
@@ -110,6 +111,7 @@ libcudart.so.12 {
     cudaFree;
     cudaMemcpy;
     cudaMemcpyAsync;
+    cudaMemcpyBatchAsync;
     cudaMemcpyPeerAsync;
     cudaMemcpyToSymbol;
     cudaMemcpyToSymbolAsync;

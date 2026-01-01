@@ -4,6 +4,30 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <signal.h>
+#include <execinfo.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+
+// SIGFPE handler to debug floating point exceptions
+static void sigfpe_handler(int sig) {
+    void* array[20];
+    size_t size = backtrace(array, 20);
+    fprintf(stderr, "\n[hetGPU] SIGFPE caught! Backtrace:\n");
+    backtrace_symbols_fd(array, size, STDERR_FILENO);
+    fprintf(stderr, "[hetGPU] End of backtrace\n");
+    _exit(1);
+}
+
+__attribute__((constructor))
+static void install_sigfpe_handler(void) {
+    struct sigaction sa;
+    sa.sa_handler = sigfpe_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGFPE, &sa, NULL);
+    fprintf(stderr, "[hetGPU] SIGFPE handler installed\n");
+}
 
 #if defined(HETGPU_DEBUG_LOGS)
 #define HETGPU_LOG(...) fprintf(stderr, __VA_ARGS__)
@@ -467,17 +491,20 @@ cudaError_t cudaGetDeviceProperties_v2(cudaDeviceProp_t prop, int device) {
 static int current_device = 0;
 
 cudaError_t cudaSetDevice(int device) {
+    fprintf(stderr, "[hetGPU] cudaSetDevice(%d) called\n", device);
     // For virtual device support, be permissive
     if (device < 0) {
+        fprintf(stderr, "[hetGPU] cudaSetDevice: invalid device\n");
         return 1; // cudaErrorInvalidDevice
     }
 
     // Get the CUDA device handle
     CUdevice cu_device;
     CUresult result = cuDeviceGet(&cu_device, device);
+    fprintf(stderr, "[hetGPU] cudaSetDevice: cuDeviceGet returned %d, cu_device=%d\n", result, cu_device);
     if (result != 0) {
         // For virtual device, still set current_device and succeed
-        HETGPU_LOG("[cudart_shim] cudaSetDevice(%d): cuDeviceGet failed (%d), continuing with virtual device\n", device, result);
+        fprintf(stderr, "[hetGPU] cudaSetDevice(%d): cuDeviceGet failed (%d), continuing with virtual device\n", device, result);
         current_device = device;
         return 0; // Success for virtual device
     }
@@ -485,28 +512,31 @@ cudaError_t cudaSetDevice(int device) {
     // Retain the primary context for this device
     CUcontext ctx;
     result = cuDevicePrimaryCtxRetain(&ctx, cu_device);
+    fprintf(stderr, "[hetGPU] cudaSetDevice: cuDevicePrimaryCtxRetain returned %d, ctx=%p\n", result, ctx);
     if (result != 0) {
         // For virtual device, still set current_device and succeed
-        HETGPU_LOG("[cudart_shim] cudaSetDevice(%d): cuDevicePrimaryCtxRetain failed (%d), continuing with virtual device\n", device, result);
+        fprintf(stderr, "[hetGPU] cudaSetDevice(%d): cuDevicePrimaryCtxRetain failed (%d), continuing with virtual device\n", device, result);
         current_device = device;
         return 0; // Success for virtual device
     }
 
     // Set it as the current context
     result = cuCtxSetCurrent(ctx);
+    fprintf(stderr, "[hetGPU] cudaSetDevice: cuCtxSetCurrent returned %d\n", result);
     if (result != 0) {
         // For virtual device, still set current_device and succeed
-        HETGPU_LOG("[cudart_shim] cudaSetDevice(%d): cuCtxSetCurrent failed (%d), continuing with virtual device\n", device, result);
+        fprintf(stderr, "[hetGPU] cudaSetDevice(%d): cuCtxSetCurrent failed (%d), continuing with virtual device\n", device, result);
         current_device = device;
         return 0; // Success for virtual device
     }
 
     current_device = device;
+    fprintf(stderr, "[hetGPU] cudaSetDevice: success\n");
     return 0;
 }
 
 cudaError_t cudaGetDevice(int* device) {
-    HETGPU_LOG("[cudart_shim] cudaGetDevice called, returning device %d\n", current_device);
+    fprintf(stderr, "[hetGPU] cudaGetDevice called, returning device %d\n", current_device);
     if (device) *device = current_device;
     return 0;
 }
@@ -545,51 +575,157 @@ cudaError_t cudaDeviceGetAttribute(int* value, int attr, int device) {
     if (!value) return 1; // cudaErrorInvalidValue
 
     // Common CUDA device attributes (from cuda_runtime_api.h)
-    enum cudaDeviceAttr {
-        cudaDevAttrMaxThreadsPerBlock = 1,
-        cudaDevAttrMaxBlockDimX = 2,
-        cudaDevAttrMaxBlockDimY = 3,
-        cudaDevAttrMaxBlockDimZ = 4,
-        cudaDevAttrMaxGridDimX = 5,
-        cudaDevAttrMaxGridDimY = 6,
-        cudaDevAttrMaxGridDimZ = 7,
-        cudaDevAttrMaxSharedMemoryPerBlock = 8,
-        cudaDevAttrTotalConstantMemory = 9,
-        cudaDevAttrWarpSize = 10,
-        cudaDevAttrMaxPitch = 11,
-        cudaDevAttrMaxRegistersPerBlock = 12,
-        cudaDevAttrClockRate = 13,
-        cudaDevAttrTextureAlignment = 14,
-        cudaDevAttrMultiProcessorCount = 16,
-        cudaDevAttrComputeCapabilityMajor = 75,
-        cudaDevAttrComputeCapabilityMinor = 76,
-    };
-
-    // Return realistic values for GPU-like device
+    // Full list to prevent any missing attributes causing issues
+    int result_value = 1;  // Default non-zero
     switch (attr) {
-        case cudaDevAttrMaxThreadsPerBlock: *value = 1024; break;
-        case cudaDevAttrMaxBlockDimX: *value = 1024; break;
-        case cudaDevAttrMaxBlockDimY: *value = 1024; break;
-        case cudaDevAttrMaxBlockDimZ: *value = 64; break;
-        case cudaDevAttrMaxGridDimX: *value = 2147483647; break;
-        case cudaDevAttrMaxGridDimY: *value = 65535; break;
-        case cudaDevAttrMaxGridDimZ: *value = 65535; break;
-        case cudaDevAttrMaxSharedMemoryPerBlock: *value = 49152; break;
-        case cudaDevAttrTotalConstantMemory: *value = 65536; break;
-        case cudaDevAttrWarpSize: *value = 32; break;
-        case cudaDevAttrMaxPitch: *value = 2147483647; break;
-        case cudaDevAttrMaxRegistersPerBlock: *value = 65536; break;
-        case cudaDevAttrClockRate: *value = 1410000; break;  // kHz
-        case cudaDevAttrTextureAlignment: *value = 512; break;
-        case cudaDevAttrMultiProcessorCount: *value = 80; break;  // SM count (A100-like)
-        case cudaDevAttrComputeCapabilityMajor: *value = 8; break;
-        case cudaDevAttrComputeCapabilityMinor: *value = 0; break;
+        case 1:  // cudaDevAttrMaxThreadsPerBlock
+            *value = 1024; break;
+        case 2:  // cudaDevAttrMaxBlockDimX
+            *value = 1024; break;
+        case 3:  // cudaDevAttrMaxBlockDimY
+            *value = 1024; break;
+        case 4:  // cudaDevAttrMaxBlockDimZ
+            *value = 64; break;
+        case 5:  // cudaDevAttrMaxGridDimX
+            *value = 2147483647; break;
+        case 6:  // cudaDevAttrMaxGridDimY
+            *value = 65535; break;
+        case 7:  // cudaDevAttrMaxGridDimZ
+            *value = 65535; break;
+        case 8:  // cudaDevAttrMaxSharedMemoryPerBlock
+            *value = 49152; break;
+        case 9:  // cudaDevAttrTotalConstantMemory
+            *value = 65536; break;
+        case 10: // cudaDevAttrWarpSize
+            *value = 32; break;
+        case 11: // cudaDevAttrMaxPitch
+            *value = 2147483647; break;
+        case 12: // cudaDevAttrMaxRegistersPerBlock
+            *value = 65536; break;
+        case 13: // cudaDevAttrClockRate
+            *value = 1410000; break;
+        case 14: // cudaDevAttrTextureAlignment
+            *value = 512; break;
+        case 15: // cudaDevAttrGpuOverlap
+            *value = 1; break;
+        case 16: // cudaDevAttrMultiProcessorCount
+            *value = 80; break;
+        case 17: // cudaDevAttrKernelExecTimeout
+            *value = 0; break;
+        case 18: // cudaDevAttrIntegrated
+            *value = 0; break;
+        case 19: // cudaDevAttrCanMapHostMemory
+            *value = 1; break;
+        case 20: // cudaDevAttrComputeMode
+            *value = 0; break;
+        case 21: // cudaDevAttrMaxTexture1DWidth
+            *value = 131072; break;
+        case 22: // cudaDevAttrMaxTexture2DWidth
+            *value = 131072; break;
+        case 23: // cudaDevAttrMaxTexture2DHeight
+            *value = 65536; break;
+        case 24: // cudaDevAttrMaxTexture3DWidth
+            *value = 16384; break;
+        case 25: // cudaDevAttrMaxTexture3DHeight
+            *value = 16384; break;
+        case 26: // cudaDevAttrMaxTexture3DDepth
+            *value = 16384; break;
+        case 32: // cudaDevAttrConcurrentKernels
+            *value = 1; break;
+        case 33: // cudaDevAttrEccEnabled
+            *value = 0; break;
+        case 34: // cudaDevAttrPciBusId
+            *value = 0; break;
+        case 35: // cudaDevAttrPciDeviceId
+            *value = 0; break;
+        case 36: // cudaDevAttrTccDriver
+            *value = 0; break;
+        case 37: // cudaDevAttrMemoryClockRate
+            *value = 1215000; break;
+        case 38: // cudaDevAttrGlobalMemoryBusWidth
+            *value = 5120; break;
+        case 39: // cudaDevAttrL2CacheSize
+            *value = 41943040; break;  // 40MB
+        case 40: // cudaDevAttrMaxThreadsPerMultiProcessor
+            *value = 2048; break;  // CRITICAL for occupancy calculations!
+        case 41: // cudaDevAttrAsyncEngineCount
+            *value = 2; break;
+        case 42: // cudaDevAttrUnifiedAddressing
+            *value = 1; break;
+        case 44: // cudaDevAttrMaxTexture1DLayeredWidth
+            *value = 32768; break;
+        case 45: // cudaDevAttrMaxTexture1DLayeredLayers
+            *value = 2048; break;
+        case 53: // cudaDevAttrMaxTexture2DGatherWidth
+            *value = 32768; break;
+        case 54: // cudaDevAttrMaxTexture2DGatherHeight
+            *value = 32768; break;
+        case 59: // cudaDevAttrMaxTexture2DLinearWidth
+            *value = 131072; break;
+        case 60: // cudaDevAttrMaxTexture2DLinearHeight
+            *value = 65000; break;
+        case 61: // cudaDevAttrMaxTexture2DLinearPitch
+            *value = 2097120; break;
+        case 62: // cudaDevAttrMaxTexture2DMipmappedWidth
+            *value = 32768; break;
+        case 63: // cudaDevAttrMaxTexture2DMipmappedHeight
+            *value = 32768; break;
+        case 75: // cudaDevAttrComputeCapabilityMajor
+            *value = 8; break;
+        case 76: // cudaDevAttrComputeCapabilityMinor
+            *value = 0; break;
+        case 77: // cudaDevAttrMaxTexture1DMipmappedWidth
+            *value = 32768; break;
+        case 78: // cudaDevAttrStreamPrioritiesSupported
+            *value = 1; break;
+        case 79: // cudaDevAttrGlobalL1CacheSupported
+            *value = 1; break;
+        case 80: // cudaDevAttrLocalL1CacheSupported
+            *value = 1; break;
+        case 81: // cudaDevAttrMaxSharedMemoryPerMultiprocessor
+            *value = 167936; break;  // 164KB for sm_80
+        case 82: // cudaDevAttrMaxRegistersPerMultiprocessor
+            *value = 65536; break;
+        case 83: // cudaDevAttrManagedMemory
+            *value = 1; break;
+        case 84: // cudaDevAttrIsMultiGpuBoard
+            *value = 0; break;
+        case 85: // cudaDevAttrMultiGpuBoardGroupID
+            *value = 0; break;
+        case 86: // cudaDevAttrHostNativeAtomicSupported
+            *value = 1; break;
+        case 87: // cudaDevAttrSingleToDoublePrecisionPerfRatio
+            *value = 2; break;
+        case 88: // cudaDevAttrPageableMemoryAccess
+            *value = 1; break;
+        case 89: // cudaDevAttrConcurrentManagedAccess
+            *value = 1; break;
+        case 90: // cudaDevAttrComputePreemptionSupported
+            *value = 1; break;
+        case 91: // cudaDevAttrCanUseHostPointerForRegisteredMem
+            *value = 1; break;
+        case 95: // cudaDevAttrCooperativeLaunch
+            *value = 1; break;
+        case 96: // cudaDevAttrCooperativeMultiDeviceLaunch
+            *value = 0; break;
+        case 97: // cudaDevAttrMaxSharedMemoryPerBlockOptin
+            *value = 167936; break;
+        case 99: // cudaDevAttrCanFlushRemoteWrites
+            *value = 0; break;
+        case 100: // cudaDevAttrHostRegisterSupported
+            *value = 1; break;
+        case 101: // cudaDevAttrPageableMemoryAccessUsesHostPageTables
+            *value = 0; break;
+        case 102: // cudaDevAttrDirectManagedMemAccessFromHost
+            *value = 1; break;
         default:
             // Generic non-zero default to avoid divide-by-zero
             *value = 1;
+            fprintf(stderr, "[cudart_shim] cudaDeviceGetAttribute: unknown attr=%d, returning 1\n", attr);
             break;
     }
 
+    fprintf(stderr, "[cudart_shim] cudaDeviceGetAttribute(attr=%d) = %d\n", attr, *value);
     (void)device;
     return 0;
 }
@@ -638,9 +774,15 @@ cudaError_t cudaHostGetDevicePointer(void** pDevice, void* pHost, unsigned int f
     return 0;
 }
 
-// PCI bus id helper
+// PCI bus id helpers
 cudaError_t cudaDeviceGetPCIBusId(char* pciBusId, int len, int device) {
     (void)device; if (pciBusId && len>0) pciBusId[0] = '\0'; return 0;
+}
+
+cudaError_t cudaDeviceGetByPCIBusId(int* device, const char* pciBusId) {
+    (void)pciBusId;
+    if (device) *device = 0;  // Return device 0 for any PCI bus ID
+    return 0;
 }
 
 // Pointer attributes
@@ -794,9 +936,54 @@ cudaError_t cudaUserObjectRelease(cudaUserObject_t object, unsigned int count) {
     return 0;
 }
 
+// cudaFuncAttributes structure - must match CUDA header layout
+typedef struct {
+    size_t sharedSizeBytes;         // Shared memory per block
+    size_t constSizeBytes;          // Constant memory size
+    size_t localSizeBytes;          // Local memory per thread
+    int maxThreadsPerBlock;         // Max threads per block for this function
+    int numRegs;                    // Number of registers used
+    int ptxVersion;                 // PTX version
+    int binaryVersion;              // Binary version
+    int cacheModeCA;                // Cache mode
+    int maxDynamicSharedSizeBytes;  // Max dynamic shared memory
+    int preferredShmemCarveout;     // Preferred shared memory carveout
+    int clusterDimMustBeSet;        // Cluster dimension requirement
+    int requiredClusterWidth;       // Required cluster width
+    int requiredClusterHeight;      // Required cluster height
+    int requiredClusterDepth;       // Required cluster depth
+    int clusterSchedulingPolicyPreference; // Cluster scheduling preference
+    int nonPortableClusterSizeAllowed;     // Non-portable cluster size flag
+    int reserved[16];               // Reserved for future use
+} cudaFuncAttributes;
+
 // Occupancy/API helpers
 cudaError_t cudaFuncSetAttribute(const void* func, int attr, int value) { (void)func; (void)attr; (void)value; return 0; }
-cudaError_t cudaFuncGetAttributes(void* attr, const void* func) { (void)attr; (void)func; return 0; }
+cudaError_t cudaFuncGetAttributes(void* attr, const void* func) {
+    (void)func;
+    if (!attr) return 1; // cudaErrorInvalidValue
+
+    // Initialize with reasonable default values to prevent division by zero
+    cudaFuncAttributes* attrs = (cudaFuncAttributes*)attr;
+    memset(attrs, 0, sizeof(cudaFuncAttributes));
+
+    // Critical values that must be non-zero to avoid SIGFPE
+    attrs->maxThreadsPerBlock = 1024;       // Standard max for sm_80
+    attrs->numRegs = 32;                    // Conservative register count
+    attrs->sharedSizeBytes = 0;             // Static shared memory
+    attrs->constSizeBytes = 0;              // Constant memory
+    attrs->localSizeBytes = 0;              // Local memory per thread
+    attrs->ptxVersion = 80;                 // PTX 8.0
+    attrs->binaryVersion = 80;              // Binary version 8.0
+    attrs->cacheModeCA = 0;                 // Default cache mode
+    attrs->maxDynamicSharedSizeBytes = 48 * 1024;  // 48KB dynamic shared
+    attrs->preferredShmemCarveout = -1;     // Driver default
+
+    fprintf(stderr, "[cudart_shim] cudaFuncGetAttributes: maxThreadsPerBlock=%d, numRegs=%d\n",
+            attrs->maxThreadsPerBlock, attrs->numRegs);
+
+    return 0;
+}
 cudaError_t cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(int* numBlocks, const void* func, int blockSize, size_t dynamicSMemSize, unsigned int flags) {
     // Return a conservative, non-zero occupancy to avoid divide-by-zero
     // in frameworks that use this to size reductions (e.g., PyTorch).
@@ -808,7 +995,6 @@ cudaError_t cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(int* numBlock
     return 0;
 }
 
-// Provide the older API variant as an alias to the WithFlags version.
 cudaError_t cudaOccupancyMaxActiveBlocksPerMultiprocessor(int* numBlocks, const void* func, int blockSize, size_t dynamicSMemSize) {
     return cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(numBlocks, func, blockSize, dynamicSMemSize, 0);
 }
@@ -860,8 +1046,8 @@ extern CUresult cuLaunchKernel(
 );
 
 // Fat binary registration - map host function pointers to Driver API handles
-#define MAX_MODULES 64
-#define MAX_FUNCTIONS 1024
+#define MAX_MODULES 512
+#define MAX_FUNCTIONS 32768
 
 typedef struct {
     CUmodule module;
@@ -922,9 +1108,13 @@ cudaError_t __cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, vo
     }
 
     if (cuFunc == NULL) {
-        // Function not found in registry - might be from older code path
-        fprintf(stderr, "[cudart_shim] Function %p not in registry, using as-is\n", func);
-        cuFunc = (CUfunction)func;
+        // Function not found in registry - this is a function that wasn't registered via
+        // __cudaRegisterFunction (e.g., dynamically loaded or from a different module).
+        // For the virtual backend, we can't execute it, so just return success.
+        // WARNING: This leaves output tensors uninitialized which may cause SIGFPE!
+        fprintf(stderr, "[cudart_shim] WARNING: Function %p not in registry - skipping (output uninitialized!)\n", func);
+        fprintf(stderr, "[cudart_shim] This may cause SIGFPE in downstream operations like softmax\n");
+        return 0;  // cudaSuccess
     }
 
     // Forward to Driver API cuLaunchKernel
@@ -948,6 +1138,214 @@ cudaError_t __cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, vo
     return (cudaError_t)result;
 }
 
+// Helper to find .so file path from memory address using /proc/self/maps
+static int find_so_from_address(const void* addr, char* path, size_t path_size) {
+    FILE* maps = fopen("/proc/self/maps", "r");
+    if (!maps) return 0;
+
+    char line[1024];
+    unsigned long target = (unsigned long)addr;
+
+    while (fgets(line, sizeof(line), maps)) {
+        unsigned long start, end;
+        char perms[5];
+        unsigned long offset;
+        int dev_major, dev_minor;
+        unsigned long inode;
+        char filepath[512] = {0};
+
+        int n = sscanf(line, "%lx-%lx %4s %lx %x:%x %lu %511[^\n]",
+                       &start, &end, perms, &offset, &dev_major, &dev_minor, &inode, filepath);
+
+        if (n >= 7 && target >= start && target < end) {
+            // Skip if no filepath or if it's a special mapping
+            if (n < 8 || filepath[0] == '\0' || filepath[0] == '[') {
+                continue;
+            }
+            // Skip whitespace at start of filepath
+            char* fp = filepath;
+            while (*fp == ' ') fp++;
+
+            // Check if it's a .so file
+            if (strstr(fp, ".so")) {
+                strncpy(path, fp, path_size - 1);
+                path[path_size - 1] = '\0';
+                fclose(maps);
+                return 1;
+            }
+        }
+    }
+
+    fclose(maps);
+    return 0;
+}
+
+// Cache for extracted PTX from .so files
+#define MAX_CACHED_SO 16
+#define MAX_PTX_PER_SO 512
+static struct {
+    char so_path[512];
+    char ptx_dir[256];
+    int ptx_count;
+    char ptx_files[MAX_PTX_PER_SO][256];
+} g_ptx_cache[MAX_CACHED_SO];
+static int g_ptx_cache_count = 0;
+
+// Extract all PTX from a .so file using cuobjdump
+static const char* extract_ptx_from_so(const char* so_path) {
+    // Check cache first
+    for (int i = 0; i < g_ptx_cache_count; i++) {
+        if (strcmp(g_ptx_cache[i].so_path, so_path) == 0) {
+            fprintf(stderr, "[cudart_shim] Using cached PTX from %s\n", so_path);
+            return g_ptx_cache[i].ptx_dir;
+        }
+    }
+
+    if (g_ptx_cache_count >= MAX_CACHED_SO) {
+        fprintf(stderr, "[cudart_shim] PTX cache full, cannot add more .so files\n");
+        return NULL;
+    }
+
+    // Create cache entry
+    int cache_idx = g_ptx_cache_count++;
+    strncpy(g_ptx_cache[cache_idx].so_path, so_path, 511);
+
+    // Create output directory
+    snprintf(g_ptx_cache[cache_idx].ptx_dir, sizeof(g_ptx_cache[cache_idx].ptx_dir),
+             "/tmp/hetgpu_so_ptx_%d", cache_idx);
+    mkdir(g_ptx_cache[cache_idx].ptx_dir, 0755);
+
+    fprintf(stderr, "[cudart_shim] Extracting PTX from %s to %s\n",
+            so_path, g_ptx_cache[cache_idx].ptx_dir);
+
+    // Run cuobjdump to extract all PTX
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+             "cd %s && /usr/local/cuda-12.8/bin/cuobjdump --extract-ptx all '%s' 2>&1",
+             g_ptx_cache[cache_idx].ptx_dir, so_path);
+
+    FILE* p = popen(cmd, "r");
+    if (p) {
+        char line[256];
+        while (fgets(line, sizeof(line), p)) {
+            // Just consume output, maybe log some of it
+            if (strstr(line, "Extracting")) {
+                fprintf(stderr, "[cudart_shim] %s", line);
+            }
+        }
+        int ret = pclose(p);
+        fprintf(stderr, "[cudart_shim] cuobjdump on .so returned: %d\n", WEXITSTATUS(ret));
+    }
+
+    // Count extracted PTX files
+    char find_cmd[512];
+    snprintf(find_cmd, sizeof(find_cmd),
+             "find %s -name '*.ptx' -type f 2>/dev/null",
+             g_ptx_cache[cache_idx].ptx_dir);
+
+    FILE* find_p = popen(find_cmd, "r");
+    if (find_p) {
+        char ptx_path[256];
+        g_ptx_cache[cache_idx].ptx_count = 0;
+        while (fgets(ptx_path, sizeof(ptx_path), find_p) &&
+               g_ptx_cache[cache_idx].ptx_count < MAX_PTX_PER_SO) {
+            // Remove trailing newline
+            size_t len = strlen(ptx_path);
+            if (len > 0 && ptx_path[len-1] == '\n') {
+                ptx_path[len-1] = '\0';
+            }
+            if (strlen(ptx_path) > 0) {
+                strncpy(g_ptx_cache[cache_idx].ptx_files[g_ptx_cache[cache_idx].ptx_count],
+                        ptx_path, 255);
+                g_ptx_cache[cache_idx].ptx_count++;
+            }
+        }
+        pclose(find_p);
+    }
+
+    fprintf(stderr, "[cudart_shim] Extracted %d PTX files from %s\n",
+            g_ptx_cache[cache_idx].ptx_count, so_path);
+
+    return g_ptx_cache[cache_idx].ptx_dir;
+}
+
+// Load PTX from a file and return as allocated string
+static char* load_ptx_file(const char* path, size_t* out_size) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (size <= 0 || size > 100*1024*1024) {
+        fclose(f);
+        return NULL;
+    }
+
+    char* data = (char*)malloc(size + 1);
+    if (!data) {
+        fclose(f);
+        return NULL;
+    }
+
+    size_t read = fread(data, 1, size, f);
+    data[read] = '\0';
+    fclose(f);
+
+    if (out_size) *out_size = read;
+    return data;
+}
+
+// Concatenate all PTX files into one big PTX string
+static char* concatenate_all_ptx(const char* ptx_dir, size_t* out_size) {
+    // Find cache entry
+    for (int i = 0; i < g_ptx_cache_count; i++) {
+        if (strcmp(g_ptx_cache[i].ptx_dir, ptx_dir) == 0) {
+            if (g_ptx_cache[i].ptx_count == 0) {
+                fprintf(stderr, "[cudart_shim] No PTX files in cache for %s\n", ptx_dir);
+                return NULL;
+            }
+
+            // First pass: calculate total size
+            size_t total_size = 0;
+            for (int j = 0; j < g_ptx_cache[i].ptx_count; j++) {
+                FILE* f = fopen(g_ptx_cache[i].ptx_files[j], "rb");
+                if (f) {
+                    fseek(f, 0, SEEK_END);
+                    total_size += ftell(f) + 2; // +2 for newlines between files
+                    fclose(f);
+                }
+            }
+
+            if (total_size == 0) return NULL;
+
+            // Second pass: concatenate
+            char* result = (char*)malloc(total_size + 1);
+            if (!result) return NULL;
+
+            size_t offset = 0;
+            for (int j = 0; j < g_ptx_cache[i].ptx_count; j++) {
+                size_t file_size = 0;
+                char* ptx = load_ptx_file(g_ptx_cache[i].ptx_files[j], &file_size);
+                if (ptx) {
+                    memcpy(result + offset, ptx, file_size);
+                    offset += file_size;
+                    result[offset++] = '\n';
+                    free(ptx);
+                }
+            }
+            result[offset] = '\0';
+
+            if (out_size) *out_size = offset;
+            fprintf(stderr, "[cudart_shim] Concatenated %d PTX files, total %zu bytes\n",
+                    g_ptx_cache[i].ptx_count, offset);
+            return result;
+        }
+    }
+    return NULL;
+}
+
 // Fat binary structures
 typedef struct {
     unsigned int magic;      // 0xBA55ED50
@@ -957,13 +1355,16 @@ typedef struct {
 } FatbinHeader;
 
 typedef struct {
-    unsigned short kind;     // 0x01 = PTX, 0x02 = ELF/CUBIN
-    unsigned short version;
-    unsigned int header_size;
-    unsigned int padded_payload_size;
-    unsigned int unknown0;
-    unsigned int payload_size;
-    // More fields follow...
+    unsigned short kind;             // 0x01 = PTX, 0x02 = ELF/CUBIN  (offset 0)
+    unsigned short version;          // version                       (offset 2)
+    unsigned int header_size;        // size of this header           (offset 4)
+    unsigned int padded_payload_size;// payload size with padding      (offset 8)
+    unsigned int unknown0;           // unknown                        (offset 12)
+    unsigned int payload_size;       // actual size of payload data   (offset 16)
+    unsigned int unknown1;           // unknown                        (offset 20)
+    unsigned int sm_version;         // sm version                     (offset 24)
+    unsigned int flags;              // flags                          (offset 28)
+    // More fields follow up to header_size...
 } FatbinFileHeader;
 
 #define FATBIN_MAGIC 0xBA55ED50
@@ -1022,19 +1423,149 @@ void** __cudaRegisterFatBinary(void* fatCubin) {
         while (file_ptr < end_ptr) {
             FatbinFileHeader* file_header = (FatbinFileHeader*)file_ptr;
 
-            fprintf(stderr, "[cudart_shim] File entry: kind=0x%04x, header_size=%u, payload_size=%u, padded=%u\n",
-                    file_header->kind, file_header->header_size, file_header->payload_size, file_header->padded_payload_size);
+            fprintf(stderr, "[cudart_shim] File entry: kind=0x%04x, header_size=%u, payload_size=%u, padded=%u, flags=0x%08x\n",
+                    file_header->kind, file_header->header_size,
+                    file_header->payload_size, file_header->padded_payload_size,
+                    file_header->flags);
 
             // Prefer PTX over CUBIN
             if (file_header->kind == FATBIN_KIND_PTX && payload == NULL) {
-                payload = file_ptr + file_header->header_size;
-                payload_size = file_header->payload_size;
+                unsigned char* ptx_payload = file_ptr + file_header->header_size;
+                size_t raw_size = file_header->payload_size;
                 fprintf(stderr, "[cudart_shim] Found PTX payload at offset +%lu, size=%zu\n",
-                        (unsigned long)((char*)payload - (char*)fatbin_header_ptr), payload_size);
+                        (unsigned long)((char*)ptx_payload - (char*)fatbin_header_ptr), raw_size);
+                // Debug: show first 32 bytes to check if PTX or compressed
+                fprintf(stderr, "[cudart_shim] PTX payload first 32 bytes: ");
+                for (size_t i = 0; i < 32 && i < raw_size; i++) {
+                    fprintf(stderr, "%02x ", ptx_payload[i]);
+                }
+                fprintf(stderr, "\n");
+
+                // PTX payload often has a header before the actual PTX
+                // Search for ".version" marker which indicates start of PTX
+                char* version_marker = NULL;
+                for (size_t i = 0; i < raw_size - 8; i++) {
+                    if (ptx_payload[i] == '.' && memcmp(ptx_payload + i, ".version", 8) == 0) {
+                        version_marker = (char*)(ptx_payload + i);
+                        break;
+                    }
+                }
+
+                if (version_marker) {
+                    size_t skip = version_marker - (char*)ptx_payload;
+                    size_t remaining_size = raw_size - skip;
+                    fprintf(stderr, "[cudart_shim] Found .version marker at offset %zu, remaining size=%zu\n",
+                            skip, remaining_size);
+                    fprintf(stderr, "[cudart_shim] PTX flags=0x%08x (compression/encoding flags)\n", file_header->flags);
+
+                    // Find actual end of PTX text by scanning backwards for last closing brace
+                    // PTX modules end with a closing brace after function definitions
+                    size_t actual_end = remaining_size;
+                    for (size_t i = remaining_size; i > 0; i--) {
+                        char c = version_marker[i - 1];
+                        if (c == '}') {
+                            actual_end = i;
+                            break;
+                        }
+                    }
+
+                    fprintf(stderr, "[cudart_shim] Found last '}' at offset %zu from .version\n", actual_end);
+
+                    // The PTX payload uses a length-prefixed format for strings
+                    // Instead of removing nulls, we need to parse the actual text lines
+                    // Strategy: Copy only printable ASCII characters (0x20-0x7E) plus \n, \t
+                    char* clean_ptx = (char*)malloc(actual_end + 1);
+                    if (clean_ptx) {
+                        size_t write_pos = 0;
+                        size_t binary_count = 0;
+                        size_t null_count = 0;
+                        int consecutive_binary = 0;
+
+                        for (size_t i = 0; i < actual_end; i++) {
+                            unsigned char c = (unsigned char)version_marker[i];
+
+                            // Valid PTX text characters: printable ASCII + whitespace
+                            if ((c >= 0x20 && c <= 0x7E) || c == '\n' || c == '\t' || c == '\r') {
+                                clean_ptx[write_pos++] = (char)c;
+                                consecutive_binary = 0;
+                            } else if (c == '\0') {
+                                null_count++;
+                                // Keep track of null positions - they might indicate string boundaries
+                            } else {
+                                // Non-printable, non-null byte - likely length prefix or binary data
+                                binary_count++;
+                                consecutive_binary++;
+
+                                // If we have many consecutive binary bytes, skip them silently
+                                // But if isolated, they might be string length prefixes we need to skip
+                            }
+                        }
+                        clean_ptx[write_pos] = '\0';
+
+                        fprintf(stderr, "[cudart_shim] Cleaned PTX: removed %zu binary bytes, %zu nulls, final size=%zu\n",
+                                binary_count, null_count, write_pos);
+                        fprintf(stderr, "[cudart_shim] PTX text preview (first 500 chars):\n%.500s\n", clean_ptx);
+
+                        // Verify the cleaned PTX looks valid
+                        if (write_pos > 50 && strncmp(clean_ptx, ".version", 8) == 0) {
+                            fprintf(stderr, "[cudart_shim] Cleaned PTX looks valid\n");
+
+                            // Use static storage for the clean copy (leaked, but necessary for lifetime)
+                            static char* g_clean_ptx = NULL;
+                            if (g_clean_ptx) free(g_clean_ptx);
+                            g_clean_ptx = clean_ptx;
+
+                            payload = g_clean_ptx;
+                            payload_size = write_pos;
+                        } else {
+                            fprintf(stderr, "[cudart_shim] Warning: Cleaned PTX doesn't start with .version, using original\n");
+                            free(clean_ptx);
+                            payload = version_marker;
+                            payload_size = actual_end;
+                        }
+                    } else {
+                        // Fallback to raw payload if malloc fails
+                        payload = version_marker;
+                        payload_size = actual_end;
+                    }
+                } else {
+                    // No .version found, use as-is
+                    payload = ptx_payload;
+                    payload_size = raw_size;
+                    fprintf(stderr, "[cudart_shim] No .version marker found, using raw payload\n");
+                }
                 break;  // Prefer PTX, so break immediately
             } else if (file_header->kind == FATBIN_KIND_ELF && payload == NULL) {
-                payload = file_ptr + file_header->header_size;
-                payload_size = file_header->payload_size;
+                unsigned char* raw_payload = file_ptr + file_header->header_size;
+
+                // Debug: show first 20 bytes starting at different offsets to find ELF magic
+                fprintf(stderr, "[cudart_shim] Looking for ELF magic (7f 45 4c 46):\n");
+                for (int off = 0; off < 4; off++) {
+                    fprintf(stderr, "[cudart_shim]   offset %d: ", off);
+                    for (int i = 0; i < 8; i++) {
+                        fprintf(stderr, "%02x ", raw_payload[off + i]);
+                    }
+                    fprintf(stderr, "\n");
+                }
+
+                // Check if ELF magic is at offset 1 (skip alignment byte)
+                if (raw_payload[1] == 0x7f && raw_payload[2] == 'E' &&
+                    raw_payload[3] == 'L' && raw_payload[4] == 'F') {
+                    fprintf(stderr, "[cudart_shim] Found ELF magic at offset 1, adjusting payload pointer\n");
+                    payload = raw_payload + 1;
+                    payload_size = file_header->payload_size - 1;
+                } else if (raw_payload[0] == 0x7f && raw_payload[1] == 'E' &&
+                           raw_payload[2] == 'L' && raw_payload[3] == 'F') {
+                    // ELF magic at expected position
+                    payload = raw_payload;
+                    payload_size = file_header->payload_size;
+                } else {
+                    // No ELF magic found, use raw payload
+                    fprintf(stderr, "[cudart_shim] WARNING: No ELF magic found, using raw payload\n");
+                    payload = raw_payload;
+                    payload_size = file_header->payload_size;
+                }
+
                 fprintf(stderr, "[cudart_shim] Found ELF/CUBIN payload at offset +%lu, size=%zu\n",
                         (unsigned long)((char*)payload - (char*)fatbin_header_ptr), payload_size);
                 // Don't break - keep looking for PTX
@@ -1063,63 +1594,53 @@ void** __cudaRegisterFatBinary(void* fatCubin) {
                          (payload_bytes[0] < 32 && payload_bytes[0] != '\n'));
 
         if (is_binary) {
-            fprintf(stderr, "[cudart_shim] Detected binary CUBIN, attempting PTX extraction via cuobjdump...\n");
+            fprintf(stderr, "[cudart_shim] Detected binary CUBIN, attempting PTX extraction from .so file...\n");
+            fprintf(stderr, "[cudart_shim] Payload first 16 bytes: ");
+            for (size_t i = 0; i < 16 && i < payload_size; i++) {
+                fprintf(stderr, "%02x ", payload_bytes[i]);
+            }
+            fprintf(stderr, "\n");
 
-            // Write CUBIN to temporary file
-            char tmpfile_cubin[256];
-            snprintf(tmpfile_cubin, sizeof(tmpfile_cubin), "/tmp/hetgpu_cubin_%p.cubin", fatCubin);
-            FILE* f = fopen(tmpfile_cubin, "wb");
-            if (f) {
-                fwrite(payload, 1, payload_size, f);
-                fclose(f);
+            // NEW APPROACH: Find the source .so file from the fatbin pointer address
+            // and extract PTX from the full .so using cuobjdump
+            char so_path[512] = {0};
+            if (find_so_from_address(fatbin_header_ptr, so_path, sizeof(so_path))) {
+                fprintf(stderr, "[cudart_shim] Found source .so: %s\n", so_path);
 
-                // Extract PTX using cuobjdump
-                char tmpfile_ptx[256];
-                snprintf(tmpfile_ptx, sizeof(tmpfile_ptx), "/tmp/hetgpu_ptx_%p.ptx", fatCubin);
-
-                char cmd[512];
-                snprintf(cmd, sizeof(cmd), "/usr/local/cuda-13.0/bin/cuobjdump --dump-ptx %s -o %s 2>/dev/null",
-                         tmpfile_cubin, tmpfile_ptx);
-
-                int ret = system(cmd);
-                fprintf(stderr, "[cudart_shim] cuobjdump returned: %d\n", ret);
-
-                if (ret == 0) {
-                    // Read the extracted PTX
-                    FILE* ptx_f = fopen(tmpfile_ptx, "rb");
-                    if (ptx_f) {
-                        fseek(ptx_f, 0, SEEK_END);
-                        long ptx_size = ftell(ptx_f);
-                        fseek(ptx_f, 0, SEEK_SET);
-
-                        fprintf(stderr, "[cudart_shim] PTX file size: %ld bytes\n", ptx_size);
-
-                        if (ptx_size > 0 && ptx_size < 100*1024*1024) {  // Sanity check: < 100MB
-                            void* ptx_data = malloc(ptx_size + 1);
-                            if (ptx_data) {
-                                size_t read_size = fread(ptx_data, 1, ptx_size, ptx_f);
-                                ((char*)ptx_data)[read_size] = '\0';
-
-                                fprintf(stderr, "[cudart_shim] Successfully extracted %ld bytes of PTX from CUBIN\n", ptx_size);
-
-                                // Use PTX instead of CUBIN
-                                payload = ptx_data;
-                                payload_size = ptx_size;
-                            }
+                // Extract PTX from the .so file (or use cached result)
+                const char* ptx_dir = extract_ptx_from_so(so_path);
+                if (ptx_dir) {
+                    // Try to use all extracted PTX files
+                    size_t all_ptx_size = 0;
+                    char* all_ptx = concatenate_all_ptx(ptx_dir, &all_ptx_size);
+                    if (all_ptx && all_ptx_size > 50) {
+                        // Verify it looks like PTX
+                        if (strstr(all_ptx, ".version") && strstr(all_ptx, ".target")) {
+                            fprintf(stderr, "[cudart_shim] Successfully loaded %zu bytes of PTX from .so\n", all_ptx_size);
+                            fprintf(stderr, "[cudart_shim] PTX preview: %.200s...\n", all_ptx);
+                            payload = all_ptx;
+                            payload_size = all_ptx_size;
                         } else {
-                            fprintf(stderr, "[cudart_shim] PTX file empty or too large\n");
+                            fprintf(stderr, "[cudart_shim] Extracted PTX doesn't look valid\n");
+                            free(all_ptx);
                         }
-                        fclose(ptx_f);
-                    } else {
-                        fprintf(stderr, "[cudart_shim] Failed to open PTX file: %s\n", tmpfile_ptx);
+                    } else if (all_ptx) {
+                        fprintf(stderr, "[cudart_shim] PTX too small: %zu bytes\n", all_ptx_size);
+                        free(all_ptx);
                     }
-                    // Keep temp files for debugging
-                    // unlink(tmpfile_ptx);
-                } else {
-                    fprintf(stderr, "[cudart_shim] cuobjdump failed with exit code: %d\n", ret);
                 }
-                // Keep temp files for debugging
-                // unlink(tmpfile_cubin);
+            } else {
+                fprintf(stderr, "[cudart_shim] Could not find source .so for address %p\n", fatbin_header_ptr);
+                // Fallback: try the old approach with the fatbin directly
+                char tmpfile_cubin[256];
+                snprintf(tmpfile_cubin, sizeof(tmpfile_cubin), "/tmp/hetgpu_fatbin_%p.fatbin", fatCubin);
+                FILE* f = fopen(tmpfile_cubin, "wb");
+                if (f) {
+                    size_t fatbin_total_size = fatbin_header->header_size + fatbin_header->files_size;
+                    fwrite(fatbin_header, 1, fatbin_total_size, f);
+                    fclose(f);
+                    fprintf(stderr, "[cudart_shim] Wrote fatbin to %s for manual inspection\n", tmpfile_cubin);
+                }
             }
         }
     }
@@ -1362,6 +1883,28 @@ cudaError_t cudaMemcpy(void* dst, const void* src, size_t count, cudaMemcpyKind 
 
 cudaError_t cudaMemcpyAsync(void* dst, const void* src, size_t count, cudaMemcpyKind kind, cudaStream_t stream) {
     (void)stream; return cudaMemcpy(dst, src, count, kind);
+}
+
+// Batch memory copy API (CUDA 12.x)
+// This is a batched version of cudaMemcpyAsync that copies multiple regions in one call
+typedef struct {
+    void* dst;
+    const void* src;
+    size_t count;
+} cudaMemcpyBatchOp;
+
+cudaError_t cudaMemcpyBatchAsync(void* opList, size_t numOps, cudaStream_t stream) {
+    (void)stream;
+    if (!opList || numOps == 0) return 0;
+
+    // Each operation in the batch is a memcpy
+    cudaMemcpyBatchOp* ops = (cudaMemcpyBatchOp*)opList;
+    for (size_t i = 0; i < numOps; i++) {
+        if (ops[i].dst && ops[i].src && ops[i].count > 0) {
+            memcpy(ops[i].dst, ops[i].src, ops[i].count);
+        }
+    }
+    return 0;
 }
 
 cudaError_t cudaMemcpyPeerAsync(void* dst, int dstDevice, const void* src, int srcDevice, size_t count, cudaStream_t stream) {

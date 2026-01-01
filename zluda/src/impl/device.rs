@@ -50,12 +50,15 @@ pub(crate) fn get(device: *mut hipDevice_t, ordinal: i32) -> hipError_t {
 
 #[cfg(feature = "intel")]
 pub(crate) fn get(device: *mut i32, ordinal: i32) -> CUresult {
+    eprintln!("[hetGPU] cuDeviceGet called with ordinal={}", ordinal);
     // Use global_state to get device (supports virtual device fallback)
     let devices = super::driver::global_state()?;
     if ordinal < 0 || ordinal >= devices.devices.len() as i32 {
+        eprintln!("[hetGPU] cuDeviceGet: INVALID_DEVICE (ordinal out of range)");
         return Err(CUerror::INVALID_DEVICE);
     }
     unsafe { *device = ordinal };
+    eprintln!("[hetGPU] cuDeviceGet: success, device={}", ordinal);
     Ok(())
 }
 
@@ -1027,13 +1030,16 @@ pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> hipError_t {
 
 #[cfg(feature = "intel")]
 pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> ze_result_t {
+    eprintln!("[hetGPU] cuDeviceGetCount (driver API) called");
     // Use global_state to get device count (this creates virtual device if needed)
     match super::driver::global_state() {
         Ok(state) => {
             *count = state.devices.len() as ::core::ffi::c_int;
+            eprintln!("[hetGPU] cuDeviceGetCount: success, count={}", *count);
             ze_result_t::ZE_RESULT_SUCCESS
         }
-        Err(_) => {
+        Err(e) => {
+            eprintln!("[hetGPU] cuDeviceGetCount: failed with {:?}", e);
             *count = 0;
             ze_result_t::ZE_RESULT_ERROR_DEVICE_LOST
         }
@@ -1063,6 +1069,7 @@ pub(crate) fn primary_context_retain(
     pctx: &mut CUcontext,
     dev: i32,
 ) -> Result<(), CUerror> {
+    eprintln!("[hetGPU] cuDevicePrimaryCtxRetain called with dev={}", dev);
     // Get device from global state using ordinal
     let device_obj = super::driver::device(dev)?;
     let (ctx, raw_ctx) = device_obj.primary_context();
@@ -1071,6 +1078,7 @@ pub(crate) fn primary_context_retain(
         mutable_ctx.ref_count += 1;
     }
     *pctx = raw_ctx;
+    eprintln!("[hetGPU] cuDevicePrimaryCtxRetain: success, ctx={:?}", raw_ctx);
     Ok(())
 }
 

@@ -438,10 +438,13 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
 
 #[cfg(feature = "intel")]
 pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
+    eprintln!("[hetGPU] cuInit called with flags={}", flags);
     unsafe {
         // Initialize Level Zero when available; fall back to virtual device otherwise
         match zeInit(0) {
-            ze_result_t::ZE_RESULT_SUCCESS => {}
+            ze_result_t::ZE_RESULT_SUCCESS => {
+                eprintln!("[hetGPU] cuInit: Level Zero init succeeded");
+            }
             err => {
                 eprintln!(
                     "[hetGPU] Level Zero init failed with {:?} - continuing with virtual backend",
@@ -454,7 +457,13 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
         let _ = flags;
     }
 
-    global_state()?;
+    match global_state() {
+        Ok(_) => eprintln!("[hetGPU] cuInit: global_state succeeded"),
+        Err(e) => {
+            eprintln!("[hetGPU] cuInit: global_state failed with {:?}", e);
+            return Err(e);
+        }
+    }
 
     // Install checkpoint signal handler if enabled
     if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
@@ -463,6 +472,7 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
         }
     }
 
+    eprintln!("[hetGPU] cuInit: returning success");
     Ok(())
 }
 
@@ -540,8 +550,10 @@ pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
 
 #[cfg(feature = "intel")]
 pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
+    eprintln!("[hetGPU] cuDriverGetVersion called");
     // Return the CUDA version same as AMD implementation
     *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
+    eprintln!("[hetGPU] cuDriverGetVersion: returning version {}", *version);
     Ok(())
 }
 
@@ -590,16 +602,11 @@ thread_local! {
 /// Get ze_device_handle_t by device ordinal (for Intel backend)
 #[cfg(feature = "intel")]
 pub(crate) fn get_ze_handle_by_ordinal(ordinal: i32) -> Result<ze_device_handle_t, CUerror> {
-    // First ensure global state is initialized
-    let _ = global_state()?;
-
-    ORDINAL_TO_ZE.with(|map| {
-        let map_ref = map.borrow();
-        map_ref
-            .get(&ordinal)
-            .copied()
-            .ok_or(CUerror::INVALID_DEVICE)
-    })
+    // Get device from global state and extract the ze_device_handle_t from its context
+    // This avoids thread-local storage issues
+    let dev = device(ordinal)?;
+    let (ctx, _) = dev.primary_context();
+    Ok(ctx.device)
 }
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]

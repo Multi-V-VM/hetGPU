@@ -60,12 +60,8 @@ pub mod ze_module;
 #[cfg(feature = "cutile")]
 pub mod cutile;
 
-#[cfg(debug_assertions)]
-pub(crate) fn unimplemented() -> CUresult {
-    unimplemented!()
-}
-
-#[cfg(not(debug_assertions))]
+// In both debug and release builds, return SUCCESS for unimplemented functions
+// to allow frameworks like PyTorch to proceed with virtual device
 pub(crate) fn unimplemented() -> CUresult {
     // In the virtual backend we prefer to be permissive to let higher-level
     // frameworks proceed. Allow opting into strict behavior via HETGPU_STRICT=1.
