@@ -1429,6 +1429,111 @@ impl SassPtxMapper {
 
         output
     }
+
+    /// Load mappings from natively parsed CUBIN data
+    ///
+    /// This method integrates with the native CUBIN parser in the sass module,
+    /// enabling debug info extraction without relying on external tools like cuobjdump.
+    pub fn load_from_parsed_cubin(&mut self, parsed: &crate::sass::ParsedCubin) {
+        // Import debug line mappings from DWARF
+        for (addr, debug_info) in &parsed.debug_lines {
+            let ptx_loc = PtxSourceLocation {
+                file: debug_info.file.clone(),
+                line: debug_info.line,
+                column: debug_info.column,
+                instruction_offset: *addr as usize,
+            };
+
+            self.sass_to_ptx.insert(*addr, ptx_loc);
+
+            let key = format!("{}:{}", debug_info.file, debug_info.line);
+            self.ptx_to_sass
+                .entry(key)
+                .or_insert_with(Vec::new)
+                .push(*addr);
+        }
+
+        // Build function ranges from kernels
+        for kernel in &parsed.kernels {
+            let end_addr = kernel.address + kernel.size as u64;
+            self.function_ranges.insert(kernel.name.clone(), (kernel.address, end_addr));
+        }
+    }
+
+    /// Load mappings from enhanced SASS instructions
+    ///
+    /// This method takes disassembled and enhanced SASS instructions and builds
+    /// the bidirectional mapping table.
+    pub fn load_from_enhanced_instructions(
+        &mut self,
+        kernel_name: &str,
+        instructions: &[crate::sass::EnhancedSassInstruction],
+    ) {
+        for inst in instructions {
+            if let (Some(file), Some(line)) = (&inst.ptx_file, inst.ptx_line) {
+                let ptx_loc = PtxSourceLocation {
+                    file: file.clone(),
+                    line,
+                    column: inst.ptx_column.unwrap_or(0),
+                    instruction_offset: inst.address as usize,
+                };
+
+                self.sass_to_ptx.insert(inst.address, ptx_loc);
+
+                let key = format!("{}:{}", file, line);
+                self.ptx_to_sass
+                    .entry(key)
+                    .or_insert_with(Vec::new)
+                    .push(inst.address);
+
+                // Create detailed line mapping
+                let sass_inst = SassInstruction {
+                    opcode: inst.opcode.clone(),
+                    instruction: inst.instruction_text.clone(),
+                    address: inst.address,
+                    predicate: inst.predicate.as_ref().map(|p| format!("{:?}", p)),
+                    dest_operands: inst.dest_operands.iter().map(|r| format!("{:?}", r)).collect(),
+                    src_operands: inst.src_operands.iter().map(|r| format!("{:?}", r)).collect(),
+                    control_codes: inst.modifiers.clone(),
+                    stall_count: Some(inst.control_codes.stall_count),
+                    wait_barrier: Some(inst.control_codes.wait_barrier_mask),
+                    read_barrier: Some(inst.control_codes.read_barrier),
+                    write_barrier: Some(inst.control_codes.write_barrier),
+                };
+
+                self.line_mappings.push(SassLineMapping {
+                    sass_address: inst.address,
+                    sass_offset: format!("0x{:04x}", inst.address),
+                    sass_instruction: sass_inst,
+                    ptx_file: file.clone(),
+                    ptx_line: line,
+                    ptx_column: inst.ptx_column.unwrap_or(0),
+                    function_name: Some(kernel_name.to_string()),
+                });
+            }
+        }
+
+        // Update function range
+        if let (Some(first), Some(last)) = (instructions.first(), instructions.last()) {
+            let start = first.address;
+            let end = last.address + last.size as u64;
+            self.function_ranges.insert(kernel_name.to_string(), (start, end));
+        }
+    }
+
+    /// Get instruction details at a SASS address
+    pub fn get_instruction_at(&self, sass_addr: u64) -> Option<&SassLineMapping> {
+        self.line_mappings.iter().find(|m| m.sass_address == sass_addr)
+    }
+
+    /// Find all SASS addresses within a function
+    pub fn get_function_addresses(&self, function_name: &str) -> Vec<u64> {
+        self.line_mappings
+            .iter()
+            .filter(|m| m.function_name.as_deref() == Some(function_name))
+            .map(|m| m.sass_address)
+            .collect()
+    }
 }
 
 impl Default for SassPtxMapper {
@@ -1571,6 +1676,97 @@ impl CubinDebugInfo {
         Ok(())
     }
 
+    /// Parse CUBIN file using native parser (no external tools required)
+    ///
+    /// This method uses the built-in CUBIN/ELF parser and DWARF extractor
+    /// to parse debug information directly from the binary.
+    pub fn parse_cubin_native(&mut self, cubin_data: &[u8], ptx_source: Option<String>) -> Result<(), String> {
+        if let Some(source) = ptx_source {
+            self.mapper.ptx_source = Some(source);
+        }
+
+        // Parse CUBIN structure
+        let parsed = crate::sass::CubinParser::new(cubin_data.to_vec())
+            .parse()
+            .map_err(|e| format!("Native CUBIN parse error: {:?}", e))?;
+
+        // Load debug line mappings
+        self.mapper.load_from_parsed_cubin(&parsed);
+
+        // Build symbol table from parsed kernels
+        for kernel in &parsed.kernels {
+            self.symbols.push(CubinSymbol {
+                name: kernel.name.clone(),
+                address: kernel.address,
+                size: kernel.size as u64,
+                symbol_type: CubinSymbolType::Function,
+            });
+        }
+
+        // Disassemble each kernel and load enhanced instructions
+        for kernel in &parsed.kernels {
+            if let Ok(disasm) = crate::sass::SassDisassembler::new(kernel.sm_version) {
+                let mut instructions = disasm.disassemble(&kernel.code, kernel.address);
+
+                // Apply debug line info
+                for inst in &mut instructions {
+                    if let Some(debug_info) = parsed.debug_lines.get(&inst.address) {
+                        inst.ptx_file = Some(debug_info.file.clone());
+                        inst.ptx_line = Some(debug_info.line);
+                        inst.ptx_column = Some(debug_info.column);
+                    }
+                    inst.function_name = Some(kernel.name.clone());
+                }
+
+                // Analyze control flow
+                crate::sass::ControlFlowAnalyzer::find_basic_blocks(&mut instructions);
+                crate::sass::ControlFlowAnalyzer::analyze_data_flow(&mut instructions);
+
+                // Load into mapper
+                self.mapper.load_from_enhanced_instructions(&kernel.name, &instructions);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Parse CUBIN from file path using native parser
+    pub fn parse_cubin_file_native(&mut self, cubin_path: &str, ptx_source: Option<String>) -> Result<(), String> {
+        let cubin_data = std::fs::read(cubin_path)
+            .map_err(|e| format!("Failed to read CUBIN file: {}", e))?;
+
+        self.mapper.cubin_path = Some(cubin_path.to_string());
+        self.parse_cubin_native(&cubin_data, ptx_source)
+    }
+
+    /// Parse cuobjdump text output and enhance with semantic analysis
+    pub fn parse_cuobjdump_enhanced(&mut self, output: &str, ptx_source: Option<String>) -> Result<(), String> {
+        if let Some(source) = ptx_source {
+            self.mapper.ptx_source = Some(source);
+        }
+
+        // Parse cuobjdump output to enhanced instructions
+        let instructions = crate::sass::TextDisassemblyParser::parse_cuobjdump_output(output);
+
+        // Group by function
+        let mut by_function: std::collections::HashMap<String, Vec<crate::sass::EnhancedSassInstruction>> =
+            std::collections::HashMap::new();
+
+        for inst in instructions {
+            let func = inst.function_name.clone().unwrap_or_else(|| "unknown".to_string());
+            by_function.entry(func).or_default().push(inst);
+        }
+
+        // Load each function's instructions
+        for (func_name, mut insts) in by_function {
+            crate::sass::ControlFlowAnalyzer::find_basic_blocks(&mut insts);
+            crate::sass::ControlFlowAnalyzer::analyze_data_flow(&mut insts);
+            self.mapper.load_from_enhanced_instructions(&func_name, &insts);
+        }
+
+        Ok(())
+    }
+
     /// Get the SASS-PTX mapper
     pub fn get_mapper(&self) -> &SassPtxMapper {
         &self.mapper
@@ -1579,6 +1775,19 @@ impl CubinDebugInfo {
     /// Get mutable reference to mapper
     pub fn get_mapper_mut(&mut self) -> &mut SassPtxMapper {
         &mut self.mapper
+    }
+
+    /// Get parsed symbols
+    pub fn get_symbols(&self) -> &[CubinSymbol] {
+        &self.symbols
+    }
+
+    /// Get functions (symbols with Function type)
+    pub fn get_functions(&self) -> Vec<&CubinSymbol> {
+        self.symbols
+            .iter()
+            .filter(|s| matches!(s.symbol_type, CubinSymbolType::Function))
+            .collect()
     }
 }
 
@@ -1727,6 +1936,33 @@ impl HetGpuDebugInterface {
     #[cfg(not(unix))]
     pub fn load_from_cubin(&mut self, _cubin_path: &str, _ptx_source: Option<String>) -> Result<(), String> {
         Err("CUBIN loading only supported on Unix systems".to_string())
+    }
+
+    /// Load mappings from CUBIN file using native parser (no cuobjdump required)
+    ///
+    /// This method uses the built-in CUBIN/ELF parser, DWARF extractor, and SASS
+    /// disassembler to build mappings without external tool dependencies.
+    pub fn load_from_cubin_native(&mut self, cubin_path: &str, ptx_source: Option<String>) -> Result<(), String> {
+        let mut debug_info = CubinDebugInfo::new();
+        debug_info.parse_cubin_file_native(cubin_path, ptx_source)?;
+        self.mapper = debug_info.mapper;
+        Ok(())
+    }
+
+    /// Load mappings from CUBIN data bytes using native parser
+    pub fn load_from_cubin_data(&mut self, cubin_data: &[u8], ptx_source: Option<String>) -> Result<(), String> {
+        let mut debug_info = CubinDebugInfo::new();
+        debug_info.parse_cubin_native(cubin_data, ptx_source)?;
+        self.mapper = debug_info.mapper;
+        Ok(())
+    }
+
+    /// Load mappings from cuobjdump output with enhanced semantic analysis
+    pub fn load_from_cuobjdump_enhanced(&mut self, output: &str, ptx_source: Option<String>) -> Result<(), String> {
+        let mut debug_info = CubinDebugInfo::new();
+        debug_info.parse_cuobjdump_enhanced(output, ptx_source)?;
+        self.mapper = debug_info.mapper;
+        Ok(())
     }
 
     /// Set breakpoint at PTX line

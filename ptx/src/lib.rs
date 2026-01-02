@@ -5,6 +5,7 @@ pub mod checkpoint_integration;
 pub mod debug;
 pub mod dwarf_validation;
 pub mod pass;
+pub mod sass;
 pub mod state_recovery;
 #[cfg(test)]
 mod test;
@@ -68,6 +69,55 @@ pub use state_recovery::{
     MemorySnapshot,
     Breakpoint,
     CallFrame,
+};
+
+// Export enhanced SASS analysis types
+pub use sass::{
+    // Enhanced SASS instruction with full semantics
+    EnhancedSassInstruction,
+    SassOpcodeClass,
+    SassMemorySpace,
+    SassDataType,
+    SassRegister,
+    SassOperand,
+    SassControlCodes,
+    PtxTemplate,
+    PtxEquivalent,
+    MappingConfidence,
+    // CUBIN parser
+    CubinParser,
+    CubinParserBuilder,
+    ParsedCubin,
+    CubinKernel,
+    CubinConstant,
+    CubinSection,
+    CubinParseError,
+    // DWARF parser
+    DwarfParser,
+    ParsedDebugInfo,
+    DebugFunctionInfo,
+    DebugVariableInfo,
+    VariableLocationExpr,
+    CompilationUnitInfo,
+    DwarfParseError,
+    // SASS disassembler
+    SassDisassembler,
+    SmVersion,
+    TextDisassemblyParser,
+    ControlFlowAnalyzer,
+    DisassemblerError,
+    // SASS → LLVM inlining
+    SassInliner,
+    SassInlineConfig,
+    SassInlineStrategy,
+    SassKernelBuilder,
+    SassMetadataExtractor,
+    InlineStats,
+    // Helper functions
+    classify_opcode,
+    get_ptx_template,
+    get_memory_space,
+    is_cubin,
 };
 
 use std::collections::HashMap;
@@ -166,4 +216,238 @@ pub fn create_hetgpu_debug_interface(
 /// TODO: Implement proper LLVM to SPIRV conversion
 pub fn llvm_to_spirv_robust(_llvm_ir: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     Err("llvm_to_spirv_robust not implemented".into())
+}
+
+// ============================================================================
+// Native CUBIN/SASS Analysis Functions
+// ============================================================================
+
+/// Parse a CUBIN file and extract kernels, debug info, and SASS code
+///
+/// This function provides native CUBIN parsing without requiring cuobjdump.
+///
+/// Example usage:
+/// ```ignore
+/// let cubin_data = std::fs::read("kernel.cubin")?;
+/// let parsed = parse_cubin_native(&cubin_data)?;
+///
+/// for kernel in &parsed.kernels {
+///     println!("Kernel: {} ({} bytes, {} registers)",
+///         kernel.name, kernel.size, kernel.num_registers);
+/// }
+/// ```
+pub fn parse_cubin_native(cubin_data: &[u8]) -> Result<sass::ParsedCubin, sass::CubinParseError> {
+    let parser = sass::CubinParser::new(cubin_data.to_vec());
+    parser.parse()
+}
+
+/// Disassemble SASS code from a kernel
+///
+/// Example usage:
+/// ```ignore
+/// let parsed = parse_cubin_native(&cubin_data)?;
+/// let kernel = &parsed.kernels[0];
+/// let instructions = disassemble_sass(&kernel.code, kernel.sm_version, kernel.address)?;
+///
+/// for inst in &instructions {
+///     println!("{}", inst);
+///     if let Some(ptx) = inst.generate_ptx() {
+///         println!("  -> {}", ptx);
+///     }
+/// }
+/// ```
+pub fn disassemble_sass(
+    code: &[u8],
+    sm_version: u32,
+    base_address: u64,
+) -> Result<Vec<sass::EnhancedSassInstruction>, sass::DisassemblerError> {
+    let disasm = sass::SassDisassembler::new(sm_version)?;
+    Ok(disasm.disassemble(code, base_address))
+}
+
+/// Parse cuobjdump text output into enhanced SASS instructions
+///
+/// This is a convenience wrapper around TextDisassemblyParser.
+pub fn parse_cuobjdump_to_enhanced(output: &str) -> Vec<sass::EnhancedSassInstruction> {
+    sass::TextDisassemblyParser::parse_cuobjdump_output(output)
+}
+
+/// Create an enhanced SASS-PTX mapper from CUBIN file
+///
+/// This combines native CUBIN parsing with DWARF debug info extraction
+/// to create a high-precision SASS ↔ PTX mapping.
+///
+/// Example usage:
+/// ```ignore
+/// let cubin_data = std::fs::read("kernel.cubin")?;
+/// let mapper = create_enhanced_sass_mapper(&cubin_data, Some(ptx_source))?;
+///
+/// // Get all instructions for a kernel with PTX source context
+/// for inst in mapper.get_kernel_instructions("my_kernel") {
+///     println!("{:04x}: {} -> {}:{}",
+///         inst.address, inst.opcode,
+///         inst.ptx_file.as_deref().unwrap_or("?"),
+///         inst.ptx_line.unwrap_or(0));
+/// }
+/// ```
+pub fn create_enhanced_sass_mapper(
+    cubin_data: &[u8],
+    ptx_source: Option<String>,
+) -> Result<EnhancedSassMapper, Box<dyn std::error::Error>> {
+    let mut mapper = EnhancedSassMapper::new();
+    mapper.load_cubin(cubin_data)?;
+    if let Some(src) = ptx_source {
+        mapper.set_ptx_source(src);
+    }
+    Ok(mapper)
+}
+
+/// Enhanced SASS-PTX mapper with native parsing
+pub struct EnhancedSassMapper {
+    /// Parsed CUBIN data
+    parsed_cubin: Option<sass::ParsedCubin>,
+    /// Disassembled instructions per kernel
+    kernel_instructions: HashMap<String, Vec<sass::EnhancedSassInstruction>>,
+    /// PTX source
+    ptx_source: Option<String>,
+    /// SASS address to instruction index
+    address_index: HashMap<u64, (String, usize)>,
+}
+
+impl EnhancedSassMapper {
+    pub fn new() -> Self {
+        Self {
+            parsed_cubin: None,
+            kernel_instructions: HashMap::new(),
+            ptx_source: None,
+            address_index: HashMap::new(),
+        }
+    }
+
+    /// Load and parse CUBIN data
+    pub fn load_cubin(&mut self, cubin_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+        // Parse CUBIN structure
+        let parsed = parse_cubin_native(cubin_data)?;
+
+        // Disassemble each kernel
+        for kernel in &parsed.kernels {
+            let disasm = sass::SassDisassembler::new(kernel.sm_version)?;
+            let mut instructions = disasm.disassemble(&kernel.code, kernel.address);
+
+            // Apply debug line mappings if available
+            for inst in &mut instructions {
+                if let Some(debug_info) = parsed.debug_lines.get(&inst.address) {
+                    inst.ptx_file = Some(debug_info.file.clone());
+                    inst.ptx_line = Some(debug_info.line);
+                    inst.ptx_column = Some(debug_info.column);
+                }
+                inst.function_name = Some(kernel.name.clone());
+            }
+
+            // Analyze control flow and data dependencies
+            sass::ControlFlowAnalyzer::find_basic_blocks(&mut instructions);
+            sass::ControlFlowAnalyzer::analyze_data_flow(&mut instructions);
+
+            // Build address index
+            for (idx, inst) in instructions.iter().enumerate() {
+                self.address_index.insert(inst.address, (kernel.name.clone(), idx));
+            }
+
+            self.kernel_instructions.insert(kernel.name.clone(), instructions);
+        }
+
+        self.parsed_cubin = Some(parsed);
+        Ok(())
+    }
+
+    /// Set PTX source for context retrieval
+    pub fn set_ptx_source(&mut self, source: String) {
+        self.ptx_source = Some(source);
+    }
+
+    /// Get instructions for a kernel
+    pub fn get_kernel_instructions(&self, kernel_name: &str) -> &[sass::EnhancedSassInstruction] {
+        self.kernel_instructions
+            .get(kernel_name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Look up instruction by SASS address
+    pub fn get_instruction_at(&self, address: u64) -> Option<&sass::EnhancedSassInstruction> {
+        let (kernel, idx) = self.address_index.get(&address)?;
+        self.kernel_instructions.get(kernel)?.get(*idx)
+    }
+
+    /// Get PTX source line content
+    pub fn get_ptx_line(&self, line: u32) -> Option<&str> {
+        self.ptx_source.as_ref().and_then(|source| {
+            source.lines().nth((line.saturating_sub(1)) as usize)
+        })
+    }
+
+    /// Get all kernel names
+    pub fn get_kernel_names(&self) -> Vec<&str> {
+        self.kernel_instructions.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// Get parsed CUBIN info
+    pub fn get_cubin_info(&self) -> Option<&sass::ParsedCubin> {
+        self.parsed_cubin.as_ref()
+    }
+
+    /// Find instructions at a PTX line
+    pub fn find_instructions_at_ptx_line(&self, file: &str, line: u32) -> Vec<&sass::EnhancedSassInstruction> {
+        let mut results = Vec::new();
+        for instructions in self.kernel_instructions.values() {
+            for inst in instructions {
+                if inst.ptx_line == Some(line) {
+                    if let Some(ref f) = inst.ptx_file {
+                        if f.contains(file) || file.contains(f) {
+                            results.push(inst);
+                        }
+                    }
+                }
+            }
+        }
+        results
+    }
+
+    /// Generate PTX reconstruction for all instructions
+    pub fn generate_ptx_reconstruction(&self, kernel_name: &str) -> String {
+        let mut output = String::new();
+        let instructions = self.get_kernel_instructions(kernel_name);
+
+        output.push_str(&format!("// PTX reconstruction for kernel: {}\n", kernel_name));
+        output.push_str("// Generated from SASS analysis\n\n");
+
+        let mut current_line = 0u32;
+        for inst in instructions {
+            // Add source context comment
+            if let Some(line) = inst.ptx_line {
+                if line != current_line {
+                    current_line = line;
+                    if let Some(src_line) = self.get_ptx_line(line) {
+                        output.push_str(&format!("\n// Line {}: {}\n", line, src_line.trim()));
+                    }
+                }
+            }
+
+            // Add SASS instruction as comment
+            output.push_str(&format!("// SASS {:04x}: {}\n", inst.address, inst.opcode));
+
+            // Add PTX equivalent if available
+            if let Some(ptx) = inst.generate_ptx() {
+                output.push_str(&format!("    {}\n", ptx));
+            }
+        }
+
+        output
+    }
+}
+
+impl Default for EnhancedSassMapper {
+    fn default() -> Self {
+        Self::new()
+    }
 }
