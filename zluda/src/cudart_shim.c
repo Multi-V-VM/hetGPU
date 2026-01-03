@@ -1297,8 +1297,12 @@ static char* load_ptx_file(const char* path, size_t* out_size) {
     return data;
 }
 
-// Concatenate all PTX files into one big PTX string
-static char* concatenate_all_ptx(const char* ptx_dir, size_t* out_size) {
+// Track which PTX file index we're on for round-robin loading
+static int g_ptx_file_index = 0;
+
+// Find a specific PTX file that matches a pattern (or get next one in sequence)
+// Returns allocated PTX string, caller must free
+static char* find_matching_ptx(const char* ptx_dir, const char* pattern, size_t* out_size) {
     // Find cache entry
     for (int i = 0; i < g_ptx_cache_count; i++) {
         if (strcmp(g_ptx_cache[i].ptx_dir, ptx_dir) == 0) {
@@ -1307,42 +1311,37 @@ static char* concatenate_all_ptx(const char* ptx_dir, size_t* out_size) {
                 return NULL;
             }
 
-            // First pass: calculate total size
-            size_t total_size = 0;
-            for (int j = 0; j < g_ptx_cache[i].ptx_count; j++) {
-                FILE* f = fopen(g_ptx_cache[i].ptx_files[j], "rb");
-                if (f) {
-                    fseek(f, 0, SEEK_END);
-                    total_size += ftell(f) + 2; // +2 for newlines between files
-                    fclose(f);
+            // If pattern provided, try to find matching file
+            if (pattern && strlen(pattern) > 0) {
+                for (int j = 0; j < g_ptx_cache[i].ptx_count; j++) {
+                    if (strstr(g_ptx_cache[i].ptx_files[j], pattern)) {
+                        fprintf(stderr, "[cudart_shim] Found matching PTX file: %s\n",
+                                g_ptx_cache[i].ptx_files[j]);
+                        return load_ptx_file(g_ptx_cache[i].ptx_files[j], out_size);
+                    }
                 }
             }
 
-            if (total_size == 0) return NULL;
+            // No pattern match, use round-robin to get next PTX file
+            // This distributes modules across different PTX files
+            int idx = g_ptx_file_index % g_ptx_cache[i].ptx_count;
+            g_ptx_file_index++;
 
-            // Second pass: concatenate
-            char* result = (char*)malloc(total_size + 1);
-            if (!result) return NULL;
-
-            size_t offset = 0;
-            for (int j = 0; j < g_ptx_cache[i].ptx_count; j++) {
-                size_t file_size = 0;
-                char* ptx = load_ptx_file(g_ptx_cache[i].ptx_files[j], &file_size);
-                if (ptx) {
-                    memcpy(result + offset, ptx, file_size);
-                    offset += file_size;
-                    result[offset++] = '\n';
-                    free(ptx);
-                }
-            }
-            result[offset] = '\0';
-
-            if (out_size) *out_size = offset;
-            fprintf(stderr, "[cudart_shim] Concatenated %d PTX files, total %zu bytes\n",
-                    g_ptx_cache[i].ptx_count, offset);
-            return result;
+            fprintf(stderr, "[cudart_shim] Using PTX file %d/%d: %s\n",
+                    idx + 1, g_ptx_cache[i].ptx_count,
+                    g_ptx_cache[i].ptx_files[idx]);
+            return load_ptx_file(g_ptx_cache[i].ptx_files[idx], out_size);
         }
     }
+    return NULL;
+}
+
+// Concatenate all PTX files into one big PTX string (DISABLED - too slow for large libs)
+// Use find_matching_ptx instead for targeted loading
+static char* concatenate_all_ptx(const char* ptx_dir, size_t* out_size) {
+    (void)ptx_dir;
+    (void)out_size;
+    fprintf(stderr, "[cudart_shim] WARNING: concatenate_all_ptx disabled (too slow), use find_matching_ptx\n");
     return NULL;
 }
 
@@ -1610,23 +1609,24 @@ void** __cudaRegisterFatBinary(void* fatCubin) {
                 // Extract PTX from the .so file (or use cached result)
                 const char* ptx_dir = extract_ptx_from_so(so_path);
                 if (ptx_dir) {
-                    // Try to use all extracted PTX files
-                    size_t all_ptx_size = 0;
-                    char* all_ptx = concatenate_all_ptx(ptx_dir, &all_ptx_size);
-                    if (all_ptx && all_ptx_size > 50) {
+                    // Load a single PTX file (round-robin through available files)
+                    // This is MUCH faster than concatenating all 399+ PTX files
+                    size_t ptx_size = 0;
+                    char* ptx_data = find_matching_ptx(ptx_dir, NULL, &ptx_size);
+                    if (ptx_data && ptx_size > 50) {
                         // Verify it looks like PTX
-                        if (strstr(all_ptx, ".version") && strstr(all_ptx, ".target")) {
-                            fprintf(stderr, "[cudart_shim] Successfully loaded %zu bytes of PTX from .so\n", all_ptx_size);
-                            fprintf(stderr, "[cudart_shim] PTX preview: %.200s...\n", all_ptx);
-                            payload = all_ptx;
-                            payload_size = all_ptx_size;
+                        if (strstr(ptx_data, ".version") && strstr(ptx_data, ".target")) {
+                            fprintf(stderr, "[cudart_shim] Successfully loaded %zu bytes of PTX from .so\n", ptx_size);
+                            fprintf(stderr, "[cudart_shim] PTX preview: %.200s...\n", ptx_data);
+                            payload = ptx_data;
+                            payload_size = ptx_size;
                         } else {
                             fprintf(stderr, "[cudart_shim] Extracted PTX doesn't look valid\n");
-                            free(all_ptx);
+                            free(ptx_data);
                         }
-                    } else if (all_ptx) {
-                        fprintf(stderr, "[cudart_shim] PTX too small: %zu bytes\n", all_ptx_size);
-                        free(all_ptx);
+                    } else if (ptx_data) {
+                        fprintf(stderr, "[cudart_shim] PTX too small: %zu bytes\n", ptx_size);
+                        free(ptx_data);
                     }
                 }
             } else {
