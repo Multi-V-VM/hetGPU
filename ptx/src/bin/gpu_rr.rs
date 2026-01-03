@@ -21,15 +21,16 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
-use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::io::{self, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 use ptx::sass::{
-    CubinParser, EnhancedSassInstruction, SassDisassembler, SassInlineConfig,
-    SassInlineStrategy, SassKernelBuilder, TextDisassemblyParser, SassOpcodeClass,
+    CubinParser, EnhancedSassInstruction, SassDisassembler,
+    TextDisassemblyParser, SassOpcodeClass,
+    PtxRecoveryEngine, PtxReconstructor,
 };
 
 // ============================================================================
@@ -481,6 +482,7 @@ pub struct GpuRecorder {
     /// Current sequence number
     sequence: u64,
     /// Recording configuration
+    #[allow(dead_code)]
     config: RecordingConfig,
     /// Current kernel being recorded
     current_kernel: Option<KernelRecording>,
@@ -757,6 +759,7 @@ pub struct GpuReplayer {
     /// Current register state
     register_state: RegisterState,
     /// Replay mode
+    #[allow(dead_code)]
     mode: ReplayMode,
 }
 
@@ -1059,11 +1062,12 @@ impl GpuReplayer {
         &self.position
     }
 
+    #[allow(dead_code)]
     fn check_breakpoint(&self, bp_type: &BreakpointType, record: &InstructionRecord) -> bool {
         match bp_type {
             BreakpointType::Address(addr) => record.address == *addr,
             BreakpointType::Sequence(seq) => record.sequence == *seq,
-            BreakpointType::MemoryAccess { address, size } => {
+            BreakpointType::MemoryAccess { address, size: _ } => {
                 if let Some(ref access) = record.memory_access {
                     access.address <= *address && *address < access.address + access.size as u64
                 } else {
@@ -1100,7 +1104,7 @@ pub struct AnalysisReport {
 }
 
 /// Summary statistics
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct AnalysisSummary {
     pub total_kernels: usize,
     pub total_instructions: u64,
@@ -1429,6 +1433,11 @@ enum Command {
     Info {
         input: PathBuf,
     },
+    Ptx {
+        input: PathBuf,
+        output: Option<PathBuf>,
+        address: Option<u64>,
+    },
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -1467,6 +1476,7 @@ fn parse_args() -> Result<Args, String> {
         "replay" => parse_replay_command(&argv[1..])?,
         "analyze" => parse_analyze_command(&argv[1..])?,
         "info" => parse_info_command(&argv[1..])?,
+        "ptx" => parse_ptx_command(&argv[1..])?,
         other => return Err(format!("Unknown command: {}", other)),
     };
 
@@ -1598,6 +1608,52 @@ fn parse_info_command(args: &[String]) -> Result<Command, String> {
     Ok(Command::Info { input: PathBuf::from(&args[0]) })
 }
 
+fn parse_ptx_command(args: &[String]) -> Result<Command, String> {
+    let mut input = PathBuf::new();
+    let mut output = None;
+    let mut address = None;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" | "--output" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--output requires an argument".to_string());
+                }
+                output = Some(PathBuf::from(&args[i]));
+            }
+            "-a" | "--address" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--address requires an argument".to_string());
+                }
+                let addr = if args[i].starts_with("0x") {
+                    u64::from_str_radix(&args[i][2..], 16).map_err(|_| "Invalid address")?
+                } else {
+                    args[i].parse().map_err(|_| "Invalid address")?
+                };
+                address = Some(addr);
+            }
+            arg if arg.starts_with('-') => {
+                return Err(format!("Unknown option: {}", arg));
+            }
+            _ => {
+                if input.as_os_str().is_empty() {
+                    input = PathBuf::from(&args[i]);
+                }
+            }
+        }
+        i += 1;
+    }
+
+    if input.as_os_str().is_empty() {
+        return Err("Input file required".to_string());
+    }
+
+    Ok(Command::Ptx { input, output, address })
+}
+
 fn print_help() {
     println!(r#"GPU Record and Replay (gpu_rr) - rr-style debugging for GPU kernels
 
@@ -1609,6 +1665,7 @@ COMMANDS:
     replay      Replay a recorded session
     analyze     Analyze a recording
     info        Show recording information
+    ptx         Recover/reconstruct PTX from SASS using debug info
 
 OPTIONS:
     -v, --verbose    Verbose output
@@ -1628,6 +1685,10 @@ ANALYZE OPTIONS:
     -o, --output <file>       Output report file (JSON)
     --no-hotspots             Don't analyze hotspots
 
+PTX OPTIONS:
+    -o, --output <file>       Output PTX file
+    -a, --address <addr>      Show PTX for specific SASS address
+
 EXAMPLES:
     # Record kernel execution from CUBIN
     gpu_rr record kernel.cubin -o trace.gpur
@@ -1640,6 +1701,12 @@ EXAMPLES:
 
     # Show recording info
     gpu_rr info trace.gpur
+
+    # Recover PTX from CUBIN (uses debug info)
+    gpu_rr ptx kernel.cubin -o recovered.ptx
+
+    # Reconstruct PTX from text SASS
+    gpu_rr ptx cuobjdump_output.txt -o reconstructed.ptx
 "#);
 }
 
@@ -1669,6 +1736,9 @@ fn run() -> Result<(), String> {
         Command::Info { input } => {
             run_info(&input, args.verbose)
         }
+        Command::Ptx { input, output, address } => {
+            run_ptx(&input, output.as_ref(), address, args.verbose)
+        }
     }
 }
 
@@ -1681,9 +1751,9 @@ fn run_record(input: &str, output: &PathBuf, config: RecordingConfig, verbose: b
     // Load CUBIN or SASS text
     let content = fs::read(input).map_err(|e| format!("Failed to read input: {}", e))?;
 
-    let (instructions, kernel_name) = if content.starts_with(&[0x7f, b'E', b'L', b'F']) {
+    let (instructions, kernel_name): (Vec<EnhancedSassInstruction>, String) = if content.starts_with(&[0x7f, b'E', b'L', b'F']) {
         // ELF/CUBIN file
-        let parser = CubinParser::new(&content).map_err(|e| format!("Failed to parse CUBIN: {}", e))?;
+        let parser = CubinParser::new(content);
         let cubin = parser.parse().map_err(|e| format!("Failed to parse CUBIN: {}", e))?;
 
         if cubin.kernels.is_empty() {
@@ -1691,20 +1761,24 @@ fn run_record(input: &str, output: &PathBuf, config: RecordingConfig, verbose: b
         }
 
         let kernel = &cubin.kernels[0];
-        let disasm = SassDisassembler::new(cubin.arch);
-        let instructions = disasm.disassemble_kernel(kernel).map_err(|e| format!("Disassembly failed: {}", e))?;
-        (instructions, kernel.name.clone().unwrap_or_else(|| "kernel".to_string()))
+        let disasm = SassDisassembler::new(cubin.sm_version).map_err(|e| format!("Disassembler error: {}", e))?;
+        let instructions = disasm.disassemble(&kernel.code, kernel.address);
+        (instructions, kernel.name.clone())
     } else {
         // Text SASS (cuobjdump output)
         let text = String::from_utf8_lossy(&content);
-        let parser = TextDisassemblyParser::new();
-        let functions = parser.parse(&text).map_err(|e| format!("Parse failed: {}", e))?;
+        let instructions = TextDisassemblyParser::parse_cuobjdump_output(&text);
 
-        if functions.is_empty() {
-            return Err("No functions found in input".to_string());
+        if instructions.is_empty() {
+            return Err("No instructions found in input".to_string());
         }
 
-        (functions[0].1.clone(), functions[0].0.clone())
+        // Get function name from first instruction
+        let kernel_name = instructions.first()
+            .and_then(|i| i.function_name.clone())
+            .unwrap_or_else(|| "kernel".to_string());
+
+        (instructions, kernel_name)
     };
 
     if verbose {
@@ -1720,7 +1794,7 @@ fn run_record(input: &str, output: &PathBuf, config: RecordingConfig, verbose: b
 
     // Simulate execution by recording each instruction
     for (i, inst) in instructions.iter().enumerate() {
-        let mut regs_before = RegisterState::new();
+        let regs_before = RegisterState::new();
         let mut regs_after = RegisterState::new();
 
         // Simulate register state changes
@@ -1998,6 +2072,151 @@ fn run_info(input: &PathBuf, _verbose: bool) -> Result<(), String> {
 
     println!("Memory Snapshots: {}", recording.memory_snapshots.len());
     println!("Timeline Events: {}", recording.timeline.events.len());
+
+    Ok(())
+}
+
+fn run_ptx(input: &PathBuf, output: Option<&PathBuf>, address: Option<u64>, verbose: bool) -> Result<(), String> {
+    if verbose {
+        eprintln!("Recovering PTX from: {:?}", input);
+    }
+
+    // Load CUBIN or text SASS
+    let content = fs::read(input).map_err(|e| format!("Failed to read input: {}", e))?;
+
+    if content.starts_with(&[0x7f, b'E', b'L', b'F']) {
+        // CUBIN file - use PTX recovery engine
+        let mut engine = PtxRecoveryEngine::new(content)
+            .map_err(|e| format!("Failed to create recovery engine: {}", e))?;
+
+        let result = engine.recover_all()
+            .map_err(|e| format!("Failed to recover PTX: {}", e))?;
+
+        if let Some(addr) = address {
+            // Show PTX for specific address
+            if let Some(line_info) = engine.get_ptx_for_sass(addr) {
+                println!("=== PTX for SASS address 0x{:x} ===", addr);
+                println!("File: {}", line_info.file);
+                println!("Line: {}", line_info.line);
+                println!("Column: {}", line_info.column);
+                println!("Statement: {}", line_info.is_statement);
+            } else {
+                println!("No debug info for address 0x{:x}", addr);
+            }
+        } else {
+            // Print full recovery result
+            println!("=== PTX Recovery Report ===\n");
+            println!("{}", result.ptx_header);
+
+            for func in &result.functions {
+                println!("\n// Function: {}", func.name);
+                if let Some(ref linkage) = func.linkage_name {
+                    println!("// Linkage name: {}", linkage);
+                }
+                println!("// SASS range: 0x{:x} - 0x{:x}\n", func.start_address, func.end_address);
+
+                // Print PTX lines with SASS mapping
+                if !func.ptx_lines.is_empty() {
+                    println!("// === Original PTX Source ===");
+                    for (line_num, ptx_line) in &func.ptx_lines {
+                        println!("/* {} */ {}", line_num, ptx_line.source);
+                    }
+                }
+
+                // Print reconstructed PTX
+                if let Some(ref reconstructed) = func.reconstructed_ptx {
+                    println!("\n// === Reconstructed PTX ===");
+                    println!("{}", reconstructed);
+                }
+            }
+
+            // Print statistics
+            println!("\n=== Recovery Statistics ===");
+            println!("Total SASS instructions: {}", result.stats.total_sass_instructions);
+            println!("Mapped to PTX: {}", result.stats.mapped_instructions);
+            println!("Unmapped: {}", result.stats.unmapped_instructions);
+
+            if let Some(ref debug_info) = result.debug_info {
+                println!("\n=== Debug Info ===");
+                println!("Functions: {}", debug_info.functions.len());
+                println!("Line mappings: {}", debug_info.line_mappings.len());
+                println!("Source files: {:?}", result.source_files);
+            }
+        }
+
+        // Save output if requested
+        if let Some(out_path) = output {
+            let mut out_content = result.ptx_header.clone();
+            for func in &result.functions {
+                if let Some(ref reconstructed) = func.reconstructed_ptx {
+                    out_content.push_str("\n");
+                    out_content.push_str(reconstructed);
+                }
+            }
+            fs::write(out_path, out_content)
+                .map_err(|e| format!("Failed to write output: {}", e))?;
+            println!("\nRecovered PTX written to {:?}", out_path);
+        }
+    } else {
+        // Text SASS - use reconstructor
+        let text = String::from_utf8_lossy(&content);
+        let instructions = TextDisassemblyParser::parse_cuobjdump_output(&text);
+
+        if instructions.is_empty() {
+            return Err("No instructions found in input".to_string());
+        }
+
+        let kernel_name = instructions.first()
+            .and_then(|i| i.function_name.clone())
+            .unwrap_or_else(|| "kernel".to_string());
+
+        println!("=== PTX Reconstruction for {} ===\n", kernel_name);
+
+        // Use SM 75 as default
+        let mut reconstructor = PtxReconstructor::new(75);
+
+        // Print header
+        println!(".version 7.0");
+        println!(".target sm_75");
+        println!(".address_size 64\n");
+
+        println!(".visible .entry {} ()", kernel_name);
+        println!("{{");
+        println!("    .reg .b32 %r<256>;");
+        println!("    .reg .pred %p<8>;\n");
+
+        for inst in &instructions {
+            let ptx = reconstructor.reconstruct_instruction(inst);
+            println!("    // 0x{:04x}: {} {:?}", inst.address, inst.opcode,
+                inst.src_operands.iter().take(3).collect::<Vec<_>>());
+            println!("    {}", ptx);
+        }
+
+        println!("}}");
+
+        // Save output if requested
+        if let Some(out_path) = output {
+            let mut out_content = String::new();
+            out_content.push_str(".version 7.0\n");
+            out_content.push_str(".target sm_75\n");
+            out_content.push_str(".address_size 64\n\n");
+            out_content.push_str(&format!(".visible .entry {} ()\n{{\n", kernel_name));
+            out_content.push_str("    .reg .b32 %r<256>;\n");
+            out_content.push_str("    .reg .pred %p<8>;\n\n");
+
+            let mut reconstructor = PtxReconstructor::new(75);
+            for inst in &instructions {
+                let ptx = reconstructor.reconstruct_instruction(inst);
+                out_content.push_str(&format!("    // 0x{:04x}: {}\n", inst.address, inst.opcode));
+                out_content.push_str(&format!("    {}\n", ptx));
+            }
+            out_content.push_str("}\n");
+
+            fs::write(out_path, out_content)
+                .map_err(|e| format!("Failed to write output: {}", e))?;
+            println!("\nRecovered PTX written to {:?}", out_path);
+        }
+    }
 
     Ok(())
 }

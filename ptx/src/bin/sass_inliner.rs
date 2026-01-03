@@ -34,7 +34,7 @@ use llvm_zluda::{
 use ptx::sass::{
     CubinParser, ControlFlowAnalyzer, EnhancedSassInstruction, SassDisassembler,
     SassInlineConfig, SassInlineStrategy, SassInliner, SassKernelBuilder,
-    TextDisassemblyParser,
+    TextDisassemblyParser, PtxRecoveryEngine, PtxReconstructor,
 };
 
 /// CLI arguments
@@ -63,6 +63,10 @@ struct Args {
     verbose: bool,
     /// PTX source file (for mapping)
     ptx_source: Option<PathBuf>,
+    /// Recover PTX from SASS using debug info
+    recover_ptx: bool,
+    /// Output file for recovered PTX
+    ptx_output: Option<PathBuf>,
 }
 
 impl Default for Args {
@@ -80,6 +84,8 @@ impl Default for Args {
             verify: true,
             verbose: false,
             ptx_source: None,
+            recover_ptx: false,
+            ptx_output: None,
         }
     }
 }
@@ -151,6 +157,16 @@ fn parse_args() -> Result<Args, String> {
                     return Err("--ptx requires an argument".to_string());
                 }
                 args.ptx_source = Some(PathBuf::from(&argv[i]));
+            }
+            "--recover-ptx" => {
+                args.recover_ptx = true;
+            }
+            "--ptx-output" => {
+                i += 1;
+                if i >= argv.len() {
+                    return Err("--ptx-output requires an argument".to_string());
+                }
+                args.ptx_output = Some(PathBuf::from(&argv[i]));
             }
             "-" => {
                 // '-' is a valid input meaning stdin
@@ -260,6 +276,80 @@ fn run() -> Result<(), String> {
     // Dump SASS if requested
     if args.dump_sass {
         dump_sass_instructions(&instructions);
+        return Ok(());
+    }
+
+    // Recover PTX if requested
+    if args.recover_ptx {
+        if args.verbose {
+            eprintln!("Recovering PTX from SASS...");
+        }
+
+        // Check if we have a CUBIN for full recovery or need reconstruction
+        if !args.stdin && fs::metadata(&args.input).is_ok() {
+            // Try full PTX recovery from CUBIN with debug info
+            let cubin_data = fs::read(&args.input)
+                .map_err(|e| format!("Failed to read CUBIN for PTX recovery: {}", e))?;
+
+            if cubin_data.starts_with(&[0x7f, b'E', b'L', b'F']) {
+                let mut engine = PtxRecoveryEngine::new(cubin_data)
+                    .map_err(|e| format!("Failed to create PTX recovery engine: {}", e))?;
+
+                // Add PTX source if provided
+                if let Some(ref ptx_path) = args.ptx_source {
+                    engine.add_ptx_source(ptx_path)
+                        .map_err(|e| format!("Failed to add PTX source: {}", e))?;
+                }
+
+                let result = engine.recover_all()
+                    .map_err(|e| format!("Failed to recover PTX: {}", e))?;
+
+                // Output recovered PTX
+                let mut ptx_content = result.ptx_header.clone();
+                for func in &result.functions {
+                    if let Some(ref reconstructed) = func.reconstructed_ptx {
+                        ptx_content.push_str("\n");
+                        ptx_content.push_str(reconstructed);
+                    }
+                }
+
+                if let Some(ref ptx_out) = args.ptx_output {
+                    fs::write(ptx_out, &ptx_content)
+                        .map_err(|e| format!("Failed to write PTX output: {}", e))?;
+                    eprintln!("Recovered PTX written to {:?}", ptx_out);
+                    eprintln!("  Functions: {}", result.functions.len());
+                    eprintln!("  Total SASS instructions: {}", result.stats.total_sass_instructions);
+                    eprintln!("  Mapped to PTX: {}", result.stats.mapped_instructions);
+                } else {
+                    println!("{}", ptx_content);
+                }
+
+                return Ok(());
+            }
+        }
+
+        // Fallback: reconstruct PTX from SASS semantics
+        let mut reconstructor = PtxReconstructor::new(args.target_sm);
+        let mut ptx_content = format!(".version 7.0\n.target sm_{}\n.address_size 64\n\n", args.target_sm);
+        ptx_content.push_str(&format!(".visible .entry {} ()\n{{\n", kernel_name));
+        ptx_content.push_str("    .reg .b32 %r<256>;\n");
+        ptx_content.push_str("    .reg .pred %p<8>;\n\n");
+
+        for inst in &instructions {
+            let ptx = reconstructor.reconstruct_instruction(inst);
+            ptx_content.push_str(&format!("    // 0x{:04x}: {}\n", inst.address, inst.opcode));
+            ptx_content.push_str(&format!("    {}\n", ptx));
+        }
+        ptx_content.push_str("}\n");
+
+        if let Some(ref ptx_out) = args.ptx_output {
+            fs::write(ptx_out, &ptx_content)
+                .map_err(|e| format!("Failed to write PTX output: {}", e))?;
+            eprintln!("Reconstructed PTX written to {:?}", ptx_out);
+        } else {
+            println!("{}", ptx_content);
+        }
+
         return Ok(());
     }
 
