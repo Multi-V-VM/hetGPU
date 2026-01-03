@@ -6,10 +6,18 @@ use std::process::Command;
 const COMPONENTS: &[&'static str] = &[
     "LLVMCore",
     "LLVMBitWriter",
-    #[cfg(debug_assertions)]
     "LLVMAnalysis", // for module verify
-    #[cfg(debug_assertions)]
     "LLVMBitReader",
+    // X86 target support
+    "LLVMX86CodeGen",
+    "LLVMX86AsmParser",
+    "LLVMX86Desc",
+    "LLVMX86Disassembler",
+    "LLVMX86Info",
+    // NVPTX target support
+    "LLVMNVPTXCodeGen",
+    "LLVMNVPTXDesc",
+    "LLVMNVPTXInfo",
 ];
 
 fn main() {

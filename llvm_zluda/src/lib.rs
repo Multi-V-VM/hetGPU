@@ -110,4 +110,71 @@ extern "C" {
         Ordering: LLVMAtomicOrdering,
         Scope: *const i8,
     );
+
+    // LLVM Target initialization functions (for standalone binaries)
+    pub fn LLVMInitializeX86TargetInfo();
+    pub fn LLVMInitializeX86Target();
+    pub fn LLVMInitializeX86TargetMC();
+    pub fn LLVMInitializeX86AsmPrinter();
+    pub fn LLVMInitializeX86AsmParser();
+
+    pub fn LLVMInitializeNVPTXTargetInfo();
+    pub fn LLVMInitializeNVPTXTarget();
+    pub fn LLVMInitializeNVPTXTargetMC();
+    pub fn LLVMInitializeNVPTXAsmPrinter();
+    // Note: NVPTX doesn't have AsmParser
+
+    // LLVM Bitcode writing
+    pub fn LLVMWriteBitcodeToMemoryBuffer(M: LLVMModuleRef) -> LLVMMemoryBufferRef;
+
+    // LLVM Module verification
+    pub fn LLVMVerifyModule(
+        M: LLVMModuleRef,
+        Action: LLVMVerifierFailureAction,
+        OutMessage: *mut *mut ::std::os::raw::c_char,
+    ) -> LLVMBool;
+
+    // Value type checking
+    pub fn LLVMIsAInstruction(Val: LLVMValueRef) -> LLVMValueRef;
+    pub fn LLVMIsAConstant(Val: LLVMValueRef) -> LLVMValueRef;
+}
+
+/// Verifier failure actions
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LLVMVerifierFailureAction {
+    LLVMAbortProcessAction = 0,
+    LLVMPrintMessageAction = 1,
+    LLVMReturnStatusAction = 2,
+}
+
+/// Initialize all available targets for code generation
+#[inline]
+pub unsafe fn LLVM_InitializeAllTargetInfos() {
+    LLVMInitializeX86TargetInfo();
+    LLVMInitializeNVPTXTargetInfo();
+}
+
+#[inline]
+pub unsafe fn LLVM_InitializeAllTargets() {
+    LLVMInitializeX86Target();
+    LLVMInitializeNVPTXTarget();
+}
+
+#[inline]
+pub unsafe fn LLVM_InitializeAllTargetMCs() {
+    LLVMInitializeX86TargetMC();
+    LLVMInitializeNVPTXTargetMC();
+}
+
+#[inline]
+pub unsafe fn LLVM_InitializeAllAsmPrinters() {
+    LLVMInitializeX86AsmPrinter();
+    LLVMInitializeNVPTXAsmPrinter();
+}
+
+#[inline]
+pub unsafe fn LLVM_InitializeAllAsmParsers() {
+    LLVMInitializeX86AsmParser();
+    // NVPTX doesn't have AsmParser
 }

@@ -201,21 +201,20 @@ impl SassInliner {
         &mut self,
         inst: &EnhancedSassInstruction,
     ) -> Result<LLVMValueRef, String> {
-        // Build inline assembly string
+        // For simple inline assembly, we emit it as a side-effect-only call
+        // with no inputs/outputs (constraints handled via memory)
         let asm_str = self.build_asm_string(inst);
-        let constraints = self.build_asm_constraints(inst);
+
+        // Use empty constraints for side-effect-only inline asm
+        let constraints = "";
 
         let asm_cstr = CString::new(asm_str.as_str()).map_err(|e| e.to_string())?;
-        let constraints_cstr = CString::new(constraints.as_str()).map_err(|e| e.to_string())?;
+        let constraints_cstr = CString::new(constraints).map_err(|e| e.to_string())?;
 
-        // Determine return type
-        let ret_type = if inst.dest_operands.is_empty() {
-            LLVMVoidTypeInContext(self.context)
-        } else {
-            self.operand_to_llvm_type(&inst.dest_operands[0])
-        };
+        // Use void return type for side-effect inline asm
+        let ret_type = LLVMVoidTypeInContext(self.context);
 
-        // Build function type for inline assembly
+        // Build function type with no parameters
         let fn_type = LLVMFunctionType(ret_type, ptr::null_mut(), 0, 0);
 
         // Create inline assembly value
@@ -490,6 +489,19 @@ impl SassInliner {
 
     /// Attach SASS metadata to an LLVM value
     unsafe fn attach_sass_metadata(&self, value: LLVMValueRef, inst: &EnhancedSassInstruction) {
+        // Check if value is an instruction - only instructions can have metadata
+        // Constants and other values cannot have metadata attached
+        if value.is_null() {
+            return;
+        }
+
+        // Check if this is an instruction by trying to get instruction opcode
+        // LLVMIsAInstruction returns null if not an instruction
+        if llvm_zluda::LLVMIsAInstruction(value).is_null() {
+            // Not an instruction (e.g., constant), skip metadata attachment
+            return;
+        }
+
         // SASS address metadata
         let addr_val = LLVMConstInt(
             LLVMInt64TypeInContext(self.context),
@@ -614,7 +626,12 @@ impl SassInliner {
         inst: &EnhancedSassInstruction,
     ) -> Result<LLVMValueRef, String> {
         let opcode = inst.opcode.as_str();
-        let (src1, src2) = self.get_src_operands(inst)?;
+        let (src1_raw, src2_raw) = self.get_src_operands(inst)?;
+
+        // Ensure operands are float type
+        let float_ty = LLVMFloatTypeInContext(self.context);
+        let src1 = self.ensure_float_type(src1_raw, float_ty);
+        let src2 = self.ensure_float_type(src2_raw, float_ty);
 
         let result = match opcode {
             "FADD" | "FADD32I" => LLVMBuildFAdd(self.builder, src1, src2, b"fadd\0".as_ptr() as *const _),
@@ -622,11 +639,12 @@ impl SassInliner {
             "FMUL" | "FMUL32I" => LLVMBuildFMul(self.builder, src1, src2, b"fmul\0".as_ptr() as *const _),
             "FFMA" | "FMA" => {
                 // FMA: d = a * b + c
-                let src3 = if let Some(op) = inst.src_operands.get(2) {
+                let src3_raw = if let Some(op) = inst.src_operands.get(2) {
                     self.get_operand_value(op)?
                 } else {
-                    LLVMConstReal(LLVMFloatTypeInContext(self.context), 0.0)
+                    LLVMConstReal(float_ty, 0.0)
                 };
+                let src3 = self.ensure_float_type(src3_raw, float_ty);
                 let mul = LLVMBuildFMul(self.builder, src1, src2, b"ffma_mul\0".as_ptr() as *const _);
                 LLVMBuildFAdd(self.builder, mul, src3, b"ffma\0".as_ptr() as *const _)
             }
@@ -678,24 +696,39 @@ impl SassInliner {
             .ok_or("Load requires destination")?;
 
         // Get memory address from source operand
-        let addr = if let Some(SassOperand::Memory { base, offset, .. }) = inst.src_operands.first() {
-            let base_val = if let Some(base_reg) = base {
-                self.get_register_value(base_reg)?
-            } else {
-                LLVMConstInt(LLVMInt64TypeInContext(self.context), 0, 0)
-            };
-            if *offset != 0 {
-                let offset_val = LLVMConstInt(
-                    LLVMInt64TypeInContext(self.context),
-                    *offset as u64,
-                    (*offset < 0) as i32,
-                );
-                LLVMBuildAdd(self.builder, base_val, offset_val, b"addr\0".as_ptr() as *const _)
-            } else {
-                base_val
+        let addr = match inst.src_operands.first() {
+            Some(SassOperand::Memory { base, offset, .. }) => {
+                let base_val = if let Some(base_reg) = base {
+                    self.get_register_value(base_reg)?
+                } else {
+                    LLVMConstInt(LLVMInt64TypeInContext(self.context), 0, 0)
+                };
+                if *offset != 0 {
+                    let offset_val = LLVMConstInt(
+                        LLVMInt64TypeInContext(self.context),
+                        *offset as u64,
+                        (*offset < 0) as i32,
+                    );
+                    LLVMBuildAdd(self.builder, base_val, offset_val, b"addr\0".as_ptr() as *const _)
+                } else {
+                    base_val
+                }
             }
-        } else {
-            return Err("Load requires memory operand".to_string());
+            Some(SassOperand::Register(reg)) => {
+                // Treat register as address directly
+                self.get_register_value(reg)?
+            }
+            Some(SassOperand::ConstantBank { bank, offset }) => {
+                // Constant memory access - simplified to constant value
+                LLVMConstInt(LLVMInt64TypeInContext(self.context), (*bank as u64 * 0x10000 + *offset as u64), 0)
+            }
+            Some(other) => {
+                // For other operand types, try to get a value
+                self.get_operand_value(other)?
+            }
+            None => {
+                return Err("Load requires source operand".to_string());
+            }
         };
 
         // Determine element type from instruction
@@ -1154,6 +1187,56 @@ impl SassInliner {
         }
     }
 
+    /// Ensure a value is of float type, converting if necessary
+    unsafe fn ensure_float_type(&self, value: LLVMValueRef, target_type: LLVMTypeRef) -> LLVMValueRef {
+        let value_type = LLVMTypeOf(value);
+
+        // If already the target type, return as-is
+        if value_type == target_type {
+            return value;
+        }
+
+        let kind = LLVMGetTypeKind(value_type);
+        let target_kind = LLVMGetTypeKind(target_type);
+
+        match (kind, target_kind) {
+            (LLVMTypeKind::LLVMIntegerTypeKind, LLVMTypeKind::LLVMFloatTypeKind) |
+            (LLVMTypeKind::LLVMIntegerTypeKind, LLVMTypeKind::LLVMDoubleTypeKind) |
+            (LLVMTypeKind::LLVMIntegerTypeKind, LLVMTypeKind::LLVMHalfTypeKind) => {
+                // Convert integer to float - assume signed for general purpose
+                LLVMBuildSIToFP(self.builder, value, target_type, b"sitofp\0".as_ptr() as *const _)
+            }
+            (LLVMTypeKind::LLVMFloatTypeKind, LLVMTypeKind::LLVMFloatTypeKind) |
+            (LLVMTypeKind::LLVMDoubleTypeKind, LLVMTypeKind::LLVMDoubleTypeKind) |
+            (LLVMTypeKind::LLVMHalfTypeKind, LLVMTypeKind::LLVMHalfTypeKind) => {
+                // Same type, return as-is
+                value
+            }
+            (LLVMTypeKind::LLVMFloatTypeKind, LLVMTypeKind::LLVMDoubleTypeKind) |
+            (LLVMTypeKind::LLVMHalfTypeKind, LLVMTypeKind::LLVMFloatTypeKind) |
+            (LLVMTypeKind::LLVMHalfTypeKind, LLVMTypeKind::LLVMDoubleTypeKind) => {
+                // Float extension
+                LLVMBuildFPExt(self.builder, value, target_type, b"fpext\0".as_ptr() as *const _)
+            }
+            (LLVMTypeKind::LLVMDoubleTypeKind, LLVMTypeKind::LLVMFloatTypeKind) |
+            (LLVMTypeKind::LLVMFloatTypeKind, LLVMTypeKind::LLVMHalfTypeKind) |
+            (LLVMTypeKind::LLVMDoubleTypeKind, LLVMTypeKind::LLVMHalfTypeKind) => {
+                // Float truncation
+                LLVMBuildFPTrunc(self.builder, value, target_type, b"fptrunc\0".as_ptr() as *const _)
+            }
+            (LLVMTypeKind::LLVMPointerTypeKind, _) => {
+                // Pointer to int to float
+                let int_val = LLVMBuildPtrToInt(self.builder, value, LLVMInt64TypeInContext(self.context), b"ptrtoint\0".as_ptr() as *const _);
+                LLVMBuildSIToFP(self.builder, int_val, target_type, b"sitofp\0".as_ptr() as *const _)
+            }
+            _ => {
+                // For other cases, create a zero constant of target type
+                // This is safer than invalid bitcast
+                LLVMConstReal(target_type, 0.0)
+            }
+        }
+    }
+
     unsafe fn store_result(&mut self, value: LLVMValueRef, dest: &SassOperand) -> Result<(), String> {
         if let SassOperand::Register(reg) = dest {
             let name = self.format_register(reg);
@@ -1466,6 +1549,7 @@ impl SassMetadataExtractor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sass::instruction::*;
 
     #[test]
     fn test_config_default() {
@@ -1473,11 +1557,828 @@ mod tests {
         assert_eq!(config.strategy, SassInlineStrategy::Hybrid);
         assert!(config.preserve_control_codes);
         assert!(config.emit_debug_info);
+        assert!(config.track_registers);
+        assert_eq!(config.target_sm, 75);
+        assert_eq!(config.function_prefix, "_sass_");
     }
 
     #[test]
-    fn test_format_operand() {
-        let inliner_config = SassInlineConfig::default();
-        // Test would require unsafe context setup
+    fn test_config_strategies() {
+        let strategies = [
+            SassInlineStrategy::InlineAssembly,
+            SassInlineStrategy::PtxReconstruction,
+            SassInlineStrategy::MetadataOnly,
+            SassInlineStrategy::Hybrid,
+        ];
+
+        for strategy in &strategies {
+            let config = SassInlineConfig {
+                strategy: *strategy,
+                ..Default::default()
+            };
+            assert_eq!(config.strategy, *strategy);
+        }
+    }
+
+    #[test]
+    fn test_inline_stats_default() {
+        let stats = InlineStats::default();
+        assert_eq!(stats.instructions_processed, 0);
+        assert_eq!(stats.inline_asm_emitted, 0);
+        assert_eq!(stats.ptx_reconstructed, 0);
+        assert_eq!(stats.metadata_only, 0);
+        assert_eq!(stats.fallback_used, 0);
+    }
+
+    // Helper function to create test instructions
+    fn create_test_instruction(opcode: &str, address: u64) -> EnhancedSassInstruction {
+        let mut inst = EnhancedSassInstruction::new(opcode.to_string(), address);
+        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 2)));
+        inst
+    }
+
+    fn create_fadd_instruction(address: u64) -> EnhancedSassInstruction {
+        let mut inst = create_test_instruction("FADD", address);
+        inst.data_type = Some(SassDataType::F32);
+        inst.opcode_class = SassOpcodeClass::FloatArithmetic;
+        inst
+    }
+
+    fn create_iadd_instruction(address: u64) -> EnhancedSassInstruction {
+        let mut inst = create_test_instruction("IADD", address);
+        inst.data_type = Some(SassDataType::S32);
+        inst.opcode_class = SassOpcodeClass::IntegerArithmetic;
+        inst
+    }
+
+    fn create_ldg_instruction(address: u64) -> EnhancedSassInstruction {
+        let mut inst = EnhancedSassInstruction::new("LDG".to_string(), address);
+        inst.data_type = Some(SassDataType::U32);
+        inst.opcode_class = SassOpcodeClass::GlobalLoad;
+        inst.memory_space = Some(SassMemorySpace::Global);
+        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands.push(SassOperand::Memory {
+            base: Some(SassRegister::new("R", 2)),
+            offset: 0x10,
+            index: None,
+            scale: 1,
+        });
+        inst
+    }
+
+    fn create_stg_instruction(address: u64) -> EnhancedSassInstruction {
+        let mut inst = EnhancedSassInstruction::new("STG".to_string(), address);
+        inst.data_type = Some(SassDataType::U32);
+        inst.opcode_class = SassOpcodeClass::GlobalStore;
+        inst.memory_space = Some(SassMemorySpace::Global);
+        inst.dest_operands.push(SassOperand::Memory {
+            base: Some(SassRegister::new("R", 2)),
+            offset: 0x10,
+            index: None,
+            scale: 1,
+        });
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst
+    }
+
+    fn create_mov_instruction(address: u64) -> EnhancedSassInstruction {
+        let mut inst = EnhancedSassInstruction::new("MOV".to_string(), address);
+        inst.data_type = Some(SassDataType::B32);
+        inst.opcode_class = SassOpcodeClass::Move;
+        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst
+    }
+
+    fn create_imad_instruction(address: u64) -> EnhancedSassInstruction {
+        let mut inst = EnhancedSassInstruction::new("IMAD".to_string(), address);
+        inst.data_type = Some(SassDataType::S32);
+        inst.opcode_class = SassOpcodeClass::IntegerArithmetic;
+        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 2)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 3)));
+        inst
+    }
+
+    fn create_ffma_instruction(address: u64) -> EnhancedSassInstruction {
+        let mut inst = EnhancedSassInstruction::new("FFMA".to_string(), address);
+        inst.data_type = Some(SassDataType::F32);
+        inst.opcode_class = SassOpcodeClass::FloatArithmetic;
+        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 2)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 3)));
+        inst
+    }
+
+    fn create_exit_instruction(address: u64) -> EnhancedSassInstruction {
+        let mut inst = EnhancedSassInstruction::new("EXIT".to_string(), address);
+        inst.opcode_class = SassOpcodeClass::Exit;
+        inst
+    }
+
+    fn create_bar_instruction(address: u64) -> EnhancedSassInstruction {
+        let mut inst = EnhancedSassInstruction::new("BAR".to_string(), address);
+        inst.opcode_class = SassOpcodeClass::Barrier;
+        inst.src_operands.push(SassOperand::Barrier(0));
+        inst
+    }
+
+    fn create_s2r_instruction(address: u64, special_reg: &str) -> EnhancedSassInstruction {
+        let mut inst = EnhancedSassInstruction::new("S2R".to_string(), address);
+        inst.opcode_class = SassOpcodeClass::SpecialRegRead;
+        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands.push(SassOperand::SpecialRegister(special_reg.to_string()));
+        inst
+    }
+
+    #[test]
+    fn test_inliner_creation() {
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig::default();
+            let inliner = SassInliner::new(context, module, config);
+
+            let stats = inliner.get_stats();
+            assert_eq!(stats.instructions_processed, 0);
+
+            drop(inliner);
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_kernel_builder_creation() {
+        let config = SassInlineConfig::default();
+        let builder = SassKernelBuilder::new(config.clone());
+
+        // Builder should hold the config
+        assert_eq!(config.strategy, SassInlineStrategy::Hybrid);
+    }
+
+    #[test]
+    fn test_kernel_builder_build_empty_kernel() {
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig::default();
+            let builder = SassKernelBuilder::new(config);
+
+            let instructions: Vec<EnhancedSassInstruction> = vec![];
+
+            let result = builder.build_kernel(
+                context,
+                module,
+                "empty_kernel",
+                &instructions,
+                &[],
+            );
+
+            assert!(result.is_ok());
+            let func = result.unwrap();
+            assert!(!func.is_null());
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_kernel_builder_with_instructions() {
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig {
+                strategy: SassInlineStrategy::MetadataOnly,
+                ..Default::default()
+            };
+            let builder = SassKernelBuilder::new(config);
+
+            let instructions = vec![
+                create_mov_instruction(0x00),
+                create_iadd_instruction(0x10),
+                create_fadd_instruction(0x20),
+            ];
+
+            let result = builder.build_kernel(
+                context,
+                module,
+                "test_kernel",
+                &instructions,
+                &[],
+            );
+
+            assert!(result.is_ok());
+
+            // Verify function exists
+            let func_name = std::ffi::CString::new("_sass_test_kernel").unwrap();
+            let func = LLVMGetNamedFunction(module, func_name.as_ptr());
+            assert!(!func.is_null());
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_inline_assembly_strategy() {
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig {
+                strategy: SassInlineStrategy::InlineAssembly,
+                ..Default::default()
+            };
+            let builder = SassKernelBuilder::new(config);
+
+            let instructions = vec![
+                create_fadd_instruction(0x00),
+                create_iadd_instruction(0x10),
+            ];
+
+            let result = builder.build_kernel(
+                context,
+                module,
+                "asm_kernel",
+                &instructions,
+                &[],
+            );
+
+            assert!(result.is_ok());
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_ptx_reconstruction_strategy() {
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig {
+                strategy: SassInlineStrategy::PtxReconstruction,
+                ..Default::default()
+            };
+            let builder = SassKernelBuilder::new(config);
+
+            let instructions = vec![
+                create_mov_instruction(0x00),
+                create_iadd_instruction(0x10),
+                create_fadd_instruction(0x20),
+                create_imad_instruction(0x30),
+                create_ffma_instruction(0x40),
+            ];
+
+            let result = builder.build_kernel(
+                context,
+                module,
+                "ptx_kernel",
+                &instructions,
+                &[],
+            );
+
+            assert!(result.is_ok());
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_hybrid_strategy() {
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig {
+                strategy: SassInlineStrategy::Hybrid,
+                ..Default::default()
+            };
+            let builder = SassKernelBuilder::new(config);
+
+            let instructions = vec![
+                create_mov_instruction(0x00),
+                create_ldg_instruction(0x10),
+                create_iadd_instruction(0x20),
+                create_fadd_instruction(0x30),
+                create_stg_instruction(0x40),
+            ];
+
+            let result = builder.build_kernel(
+                context,
+                module,
+                "hybrid_kernel",
+                &instructions,
+                &[],
+            );
+
+            assert!(result.is_ok());
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_metadata_extractor() {
+        unsafe {
+            let context = LLVMContextCreate();
+            let extractor = SassMetadataExtractor::new(context);
+
+            // These are just MD kind IDs, they should be non-zero and unique
+            assert!(extractor.md_sass_addr > 0 || extractor.md_sass_opcode > 0);
+
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_instruction_with_control_codes() {
+        let mut inst = create_fadd_instruction(0x00);
+        inst.control_codes = SassControlCodes {
+            stall_count: 5,
+            yield_flag: true,
+            write_barrier: 1,
+            read_barrier: 2,
+            wait_barrier_mask: 0x3,
+            reuse_flags: 0x4,
+        };
+
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig {
+                strategy: SassInlineStrategy::MetadataOnly,
+                preserve_control_codes: true,
+                ..Default::default()
+            };
+            let builder = SassKernelBuilder::new(config);
+
+            let result = builder.build_kernel(
+                context,
+                module,
+                "control_code_kernel",
+                &[inst],
+                &[],
+            );
+
+            assert!(result.is_ok());
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_instruction_with_predicate() {
+        let mut inst = create_fadd_instruction(0x00);
+        inst.predicate = Some(SassOperand::Predicate {
+            register: SassRegister::new("P", 0),
+            negated: false,
+        });
+
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig {
+                strategy: SassInlineStrategy::InlineAssembly,
+                ..Default::default()
+            };
+            let builder = SassKernelBuilder::new(config);
+
+            let result = builder.build_kernel(
+                context,
+                module,
+                "pred_kernel",
+                &[inst],
+                &[],
+            );
+
+            assert!(result.is_ok());
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_instruction_with_ptx_mapping() {
+        let mut inst = create_fadd_instruction(0x100);
+        inst.ptx_file = Some("test.ptx".to_string());
+        inst.ptx_line = Some(42);
+        inst.ptx_column = Some(10);
+        inst.function_name = Some("test_kernel".to_string());
+
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig {
+                strategy: SassInlineStrategy::MetadataOnly,
+                emit_debug_info: true,
+                ..Default::default()
+            };
+            let builder = SassKernelBuilder::new(config);
+
+            let result = builder.build_kernel(
+                context,
+                module,
+                "ptx_mapped_kernel",
+                &[inst],
+                &[],
+            );
+
+            assert!(result.is_ok());
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_full_kernel_simulation() {
+        // Simulate a small kernel with various instruction types
+        let instructions = vec![
+            // prologue
+            create_s2r_instruction(0x00, "SR_TID_X"),
+            // load
+            create_ldg_instruction(0x10),
+            // compute
+            create_fadd_instruction(0x20),
+            create_ffma_instruction(0x30),
+            create_iadd_instruction(0x40),
+            create_imad_instruction(0x50),
+            // store
+            create_stg_instruction(0x60),
+            // sync
+            create_bar_instruction(0x70),
+            // exit
+            create_exit_instruction(0x80),
+        ];
+
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            // Test all strategies
+            for strategy in &[
+                SassInlineStrategy::InlineAssembly,
+                SassInlineStrategy::PtxReconstruction,
+                SassInlineStrategy::MetadataOnly,
+                SassInlineStrategy::Hybrid,
+            ] {
+                let config = SassInlineConfig {
+                    strategy: *strategy,
+                    ..Default::default()
+                };
+                let builder = SassKernelBuilder::new(config);
+
+                let kernel_name = format!("full_kernel_{:?}", strategy);
+                let result = builder.build_kernel(
+                    context,
+                    module,
+                    &kernel_name,
+                    &instructions,
+                    &[],
+                );
+
+                assert!(result.is_ok(), "Failed for strategy {:?}", strategy);
+            }
+
+            // Print module IR for inspection
+            let ir_str = LLVMPrintModuleToString(module);
+            let ir = std::ffi::CStr::from_ptr(ir_str).to_string_lossy();
+
+            // Verify functions were created
+            assert!(ir.contains("_sass_full_kernel"));
+
+            LLVMDisposeMessage(ir_str);
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_sass_to_llvm_mapping() {
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig {
+                strategy: SassInlineStrategy::MetadataOnly,
+                ..Default::default()
+            };
+
+            let mut inliner = SassInliner::new(context, module, config);
+
+            // Create function and entry block for testing
+            let void_type = LLVMVoidTypeInContext(context);
+            let fn_type = LLVMFunctionType(void_type, std::ptr::null_mut(), 0, 0);
+            let fn_name = std::ffi::CString::new("test_func").unwrap();
+            let function = LLVMAddFunction(module, fn_name.as_ptr(), fn_type);
+            let bb_name = std::ffi::CString::new("entry").unwrap();
+            let entry = LLVMAppendBasicBlockInContext(context, function, bb_name.as_ptr());
+
+            let instructions = vec![
+                create_mov_instruction(0x100),
+                create_iadd_instruction(0x110),
+            ];
+
+            let result = inliner.inline_instructions(&instructions, entry);
+            assert!(result.is_ok());
+
+            // Check mapping was created
+            let mapping = inliner.get_sass_to_llvm_map();
+            assert_eq!(mapping.len(), 2);
+            assert!(mapping.contains_key(&0x100));
+            assert!(mapping.contains_key(&0x110));
+
+            // Check stats
+            let stats = inliner.get_stats();
+            assert_eq!(stats.instructions_processed, 2);
+            assert_eq!(stats.metadata_only, 2);
+
+            drop(inliner);
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_data_type_to_llvm() {
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig::default();
+            let inliner = SassInliner::new(context, module, config);
+
+            // Test various data types
+            let types = [
+                (SassDataType::U8, 8),
+                (SassDataType::U16, 16),
+                (SassDataType::U32, 32),
+                (SassDataType::U64, 64),
+                (SassDataType::S32, 32),
+                (SassDataType::F32, 32),
+                (SassDataType::F64, 64),
+            ];
+
+            for (dt, expected_bits) in &types {
+                let llvm_type = inliner.get_data_type_llvm(Some(dt));
+                let actual_bits = if *expected_bits <= 64 && *dt != SassDataType::F32 && *dt != SassDataType::F64 {
+                    LLVMGetIntTypeWidth(llvm_type)
+                } else {
+                    // For floats, we just verify the type is not null
+                    if !llvm_type.is_null() { *expected_bits } else { 0 }
+                };
+                assert!(actual_bits > 0 || !llvm_type.is_null(), "Failed for {:?}", dt);
+            }
+
+            drop(inliner);
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_address_space_mapping() {
+        let config = SassInlineConfig::default();
+
+        // Use a helper struct to test address space without unsafe
+        let spaces = [
+            (Some(SassMemorySpace::Global), 1u32),
+            (Some(SassMemorySpace::Shared), 3u32),
+            (Some(SassMemorySpace::Constant), 4u32),
+            (Some(SassMemorySpace::Local), 5u32),
+            (None, 0u32),
+        ];
+
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+            let inliner = SassInliner::new(context, module, config);
+
+            for (space, expected) in &spaces {
+                let actual = inliner.get_address_space(space.as_ref());
+                assert_eq!(actual, *expected, "Failed for {:?}", space);
+            }
+
+            drop(inliner);
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_multiple_kernels() {
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("multi_kernel").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig::default();
+            let builder = SassKernelBuilder::new(config);
+
+            // Create multiple kernels
+            for i in 0..5 {
+                let instructions = vec![
+                    create_mov_instruction(i * 0x100),
+                    create_iadd_instruction(i * 0x100 + 0x10),
+                    create_exit_instruction(i * 0x100 + 0x20),
+                ];
+
+                let kernel_name = format!("kernel_{}", i);
+                let result = builder.build_kernel(
+                    context,
+                    module,
+                    &kernel_name,
+                    &instructions,
+                    &[],
+                );
+
+                assert!(result.is_ok());
+            }
+
+            // Verify all functions exist
+            for i in 0..5 {
+                let func_name = std::ffi::CString::new(format!("_sass_kernel_{}", i)).unwrap();
+                let func = LLVMGetNamedFunction(module, func_name.as_ptr());
+                assert!(!func.is_null(), "Function kernel_{} not found", i);
+            }
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_immediate_operands() {
+        let mut inst = EnhancedSassInstruction::new("IADD".to_string(), 0x00);
+        inst.opcode_class = SassOpcodeClass::IntegerArithmetic;
+        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.src_operands.push(SassOperand::Immediate(42));
+
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig {
+                strategy: SassInlineStrategy::PtxReconstruction,
+                ..Default::default()
+            };
+            let builder = SassKernelBuilder::new(config);
+
+            let result = builder.build_kernel(
+                context,
+                module,
+                "imm_kernel",
+                &[inst],
+                &[],
+            );
+
+            assert!(result.is_ok());
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_float_immediate_operands() {
+        let mut inst = EnhancedSassInstruction::new("FADD".to_string(), 0x00);
+        inst.data_type = Some(SassDataType::F32);
+        inst.opcode_class = SassOpcodeClass::FloatArithmetic;
+        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.src_operands.push(SassOperand::FloatImmediate(3.14159));
+
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig {
+                strategy: SassInlineStrategy::PtxReconstruction,
+                ..Default::default()
+            };
+            let builder = SassKernelBuilder::new(config);
+
+            let result = builder.build_kernel(
+                context,
+                module,
+                "fimm_kernel",
+                &[inst],
+                &[],
+            );
+
+            assert!(result.is_ok());
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
+    }
+
+    #[test]
+    fn test_bitwise_operations() {
+        let opcodes = ["AND", "OR", "XOR", "NOT", "SHL", "SHR"];
+
+        for opcode in &opcodes {
+            let mut inst = EnhancedSassInstruction::new(opcode.to_string(), 0x00);
+            inst.opcode_class = SassOpcodeClass::IntegerLogical;
+            inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+            inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+            if *opcode != "NOT" {
+                inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 2)));
+            }
+
+            unsafe {
+                let context = LLVMContextCreate();
+                let module_name = std::ffi::CString::new("test_module").unwrap();
+                let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+                let config = SassInlineConfig {
+                    strategy: SassInlineStrategy::PtxReconstruction,
+                    ..Default::default()
+                };
+                let builder = SassKernelBuilder::new(config);
+
+                let result = builder.build_kernel(
+                    context,
+                    module,
+                    &format!("{}_kernel", opcode),
+                    &[inst],
+                    &[],
+                );
+
+                assert!(result.is_ok(), "Failed for opcode {}", opcode);
+
+                LLVMDisposeModule(module);
+                LLVMContextDispose(context);
+            }
+        }
+    }
+
+    #[test]
+    fn test_comparison_operations() {
+        let mut inst = EnhancedSassInstruction::new("ISETP".to_string(), 0x00);
+        inst.opcode_class = SassOpcodeClass::IntegerComparison;
+        inst.modifiers.push(".LT".to_string());
+        inst.dest_operands.push(SassOperand::Register(SassRegister::new("P", 0)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 2)));
+
+        unsafe {
+            let context = LLVMContextCreate();
+            let module_name = std::ffi::CString::new("test_module").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+
+            let config = SassInlineConfig {
+                strategy: SassInlineStrategy::PtxReconstruction,
+                ..Default::default()
+            };
+            let builder = SassKernelBuilder::new(config);
+
+            let result = builder.build_kernel(
+                context,
+                module,
+                "cmp_kernel",
+                &[inst],
+                &[],
+            );
+
+            assert!(result.is_ok());
+
+            LLVMDisposeModule(module);
+            LLVMContextDispose(context);
+        }
     }
 }

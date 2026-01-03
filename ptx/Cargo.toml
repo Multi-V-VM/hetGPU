@@ -65,6 +65,14 @@ path = "examples/checkpoint_demo.rs"
 name = "ptx_to_tmatmul_hw"
 path = "src/bin/ptx_to_tmatmul_hw.rs"
 
+[[bin]]
+name = "sass_inliner"
+path = "src/bin/sass_inliner.rs"
+
+[[bin]]
+name = "gpu_rr"
+path = "src/bin/gpu_rr.rs"
+
 [features]
 intel = ["comgr/intel"]
 amd = ["comgr/amd"]
