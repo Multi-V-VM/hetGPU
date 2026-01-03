@@ -76,6 +76,69 @@ ln -s libnvcuda.so target/release/libcuda.so.1
 ln -s libnvml.so target/release/libnvidia-ml.so
 ```
 
+## Developer Tools
+
+hetGPU includes several developer tools for GPU debugging and analysis:
+
+### SASS Inliner (`sass_inliner`)
+
+Convert SASS (NVIDIA GPU assembly) to LLVM IR for analysis and cross-platform compilation:
+
+```bash
+# Build the tool
+cargo build -p ptx --bin sass_inliner
+
+# Inline SASS from CUBIN file
+sass_inliner kernel.cubin -o output.ll
+
+# Use cuobjdump output
+cuobjdump -sass -lineinfo kernel.cubin | sass_inliner --stdin -o output.ll
+
+# Dump SASS instructions
+sass_inliner kernel.cubin --dump-sass
+```
+
+#### PTX Recovery
+
+Recover PTX source code from SASS using DWARF debug information or semantic reconstruction:
+
+```bash
+# Recover PTX from CUBIN with debug info
+sass_inliner kernel.cubin --recover-ptx --ptx-output recovered.ptx
+
+# Recover PTX from cuobjdump output (semantic reconstruction)
+cuobjdump -sass kernel.cubin | sass_inliner --stdin --recover-ptx
+```
+
+### GPU Record/Replay (`gpu_rr`)
+
+rr-style debugging for GPU kernels with record, replay, and analysis capabilities:
+
+```bash
+# Build the tool
+cargo build -p ptx --bin gpu_rr
+
+# Record kernel execution
+gpu_rr record kernel.cubin -o trace.gpur
+
+# Replay with breakpoint
+gpu_rr replay --break 0x100 trace.gpur
+
+# Analyze execution hotspots
+gpu_rr analyze trace.gpur -o report.json
+
+# Recover PTX from SASS
+gpu_rr ptx kernel.cubin -o recovered.ptx
+```
+
+### Inlining Strategies
+
+The SASS inliner supports multiple strategies:
+- `asm` / `inline-asm` - Preserve exact SASS encoding as inline assembly
+- `ptx` / `reconstruct` - Convert to PTX-equivalent LLVM IR
+- `meta` / `metadata` - Metadata only, no IR changes
+- `hybrid` (default) - Balance precision and compatibility
+
 ## Contributing
 
 If you want to develop hetGPU itself, read [CONTRIBUTING.md](CONTRIBUTING.md), it contains instructions how to set up dependencies and run tests

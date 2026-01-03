@@ -219,12 +219,20 @@ OPTIONS:
                               hybrid (default)   - Balance precision/compatibility
     --sm <version>          Target SM version (default: 75)
     --ptx <file>            PTX source file for mapping
+    --recover-ptx           Recover PTX from SASS using debug info
+    --ptx-output <file>     Output file for recovered PTX (default: stdout)
     --dump-sass             Dump parsed SASS instructions (no LLVM)
     --dump-cubin            Dump parsed CUBIN structure
     -c, --emit-bitcode      Emit LLVM bitcode instead of text IR
     --no-verify             Skip LLVM module verification
     --no-control-codes      Don't preserve SASS control codes
     -v, --verbose           Verbose output
+
+PTX RECOVERY:
+    The --recover-ptx option extracts PTX source from CUBIN files using
+    DWARF debug information (.debug_line section). If no debug info is
+    available, it reconstructs approximate PTX from SASS instruction
+    semantics.
 
 EXAMPLES:
     # Inline SASS from CUBIN file
@@ -238,6 +246,12 @@ EXAMPLES:
 
     # Use PTX reconstruction strategy
     sass_inliner kernel.cubin --strategy ptx -o output.ll
+
+    # Recover PTX from CUBIN with debug info
+    sass_inliner kernel.cubin --recover-ptx --ptx-output recovered.ptx
+
+    # Recover PTX with original PTX source for better mapping
+    sass_inliner kernel.cubin --recover-ptx --ptx original.ptx -o recovered.ptx
 "#
     );
 }
