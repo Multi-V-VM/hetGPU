@@ -205,7 +205,7 @@ pub(crate) unsafe fn launch_kernel(
 
             // Get cocotb directory
             let cocotb_dir = std::env::var("HETGPU_TMATMUL_COCOTB_DIR")
-                .unwrap_or_else(|_| "/home/victoryang00/ternary_matmul/cocotb".to_string());
+                .unwrap_or_else(|_| "/mnt/ubuntu/ternary_matmul/cocotb".to_string());
 
             // Create run directory
             let _ = std::fs::create_dir_all(format!("{}/run", cocotb_dir));
@@ -215,19 +215,24 @@ pub(crate) unsafe fn launch_kernel(
             if let Err(e) = std::fs::write(&ptx_path, ptx_source.as_str()) {
                 eprintln!("[TMatmul Backend] Failed to write PTX to {}: {}", ptx_path.display(), e);
             } else {
-                eprintln!("[TMatmul Backend] PTX saved to {}", ptx_path.display());
+                eprintln!("[TMatmul Backend] PTX saved to {} ({} bytes)", ptx_path.display(), ptx_source.len());
 
-                // TODO: Compile PTX to TMatmul assembly
-                // For now, this would call the PTX → TMatmul compiler
-                // Example:
-                // let asm_path = std::path::Path::new(&cocotb_dir).join("run/kernel.asm");
-                // let compile_result = std::process::Command::new("ptx2tmatmul")
-                //     .arg(&ptx_path)
-                //     .arg("-o")
-                //     .arg(&asm_path)
-                //     .status();
-
-                eprintln!("[TMatmul Backend] PTX compilation to TMatmul assembly would happen here");
+                // Compile PTX to TMatmul assembly
+                match ptx::pass::ptx_to_tmatmul_assembly(ptx_source.as_str()) {
+                    Ok(asm) => {
+                        let asm_path = std::path::Path::new(&cocotb_dir).join("run/kernel.S");
+                        if let Err(e) = std::fs::write(&asm_path, &asm) {
+                            eprintln!("[TMatmul Backend] Failed to write assembly to {}: {}", asm_path.display(), e);
+                        } else {
+                            eprintln!("[TMatmul Backend] TMatmul assembly saved to {} ({} bytes)", asm_path.display(), asm.len());
+                        }
+                        // Also save to /tmp for emulator access
+                        let _ = std::fs::write("/tmp/tmatmul_kernel.S", &asm);
+                    }
+                    Err(e) => {
+                        eprintln!("[TMatmul Backend] PTX->TMatmul compilation failed: {}", e);
+                    }
+                }
             }
         } else if let Some(ref ptx_source) = f.ptx_source {
             eprintln!("[TMatmul Backend] Invalid PTX source ({} bytes, starts with {:?}) - kernel will be no-op",
@@ -339,60 +344,32 @@ pub(crate) unsafe fn launch_kernel(
             eprintln!("[TMatmul Backend] Found {} kernel parameters total", num_params);
             eprintln!("[TMatmul Backend] Selected output_ptr: {:p}", output_ptr);
         } else if !is_matmul_name {
-            // Non-matmul kernel - still run through cocotb for actual execution
-            eprintln!("[TMatmul Backend] Running non-matmul kernel '{}' through cocotb", f.name);
+            // Non-matmul kernel - compile PTX to tmatmul assembly for emulation
+            eprintln!("[TMatmul Backend] Non-matmul kernel '{}' - compiling PTX for emulator", f.name);
 
-            // Get cocotb directory
-            let cocotb_dir = std::env::var("HETGPU_TMATMUL_COCOTB_DIR")
-                .unwrap_or_else(|_| "/home/victoryang00/ternary_matmul/cocotb".to_string());
-
-            // Write kernel metadata
-            let _ = std::fs::create_dir_all(format!("{}/run", cocotb_dir));
-            let meta_path = std::path::Path::new(&cocotb_dir).join("run/meta.json");
-            let _ = std::fs::write(
-                &meta_path,
-                format!(
-                    "{{\n  \"kernel\": \"{}\",\n  \"grid\": [{},{},{}],\n  \"block\": [{},{},{}]\n}}\n",
-                    f.name, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z
-                ),
-            );
-
-            // Extract kernel parameters to find output buffers
-            // NOTE: We don't try to detect output buffers for non-matmul kernels
-            // because the heuristics are unreliable and can cause segfaults.
-            // Instead, we just run cocotb and let it handle I/O via files.
-
-            // Run cocotb simulation
-            let autorun = std::env::var("HETGPU_TMATMUL_AUTORUN")
-                .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
-                .unwrap_or(true); // Default to true for non-matmul kernels
-
-            if autorun {
-                eprintln!("[TMatmul Backend] Running cocotb: make SIM=verilator MODULE=tb_asm");
-                let make_result = std::process::Command::new("make")
-                    .arg("SIM=verilator")
-                    .arg("MODULE=tb_asm")
-                    .current_dir(&cocotb_dir)
-                    .output();
-
-                match make_result {
-                    Ok(output) => {
-                        if output.status.success() {
-                            eprintln!("[TMatmul Backend] Cocotb completed successfully");
-                            // Output handling is done via files - cocotb writes results directly
-                        } else {
-                            let stderr = String::from_utf8_lossy(&output.stderr);
-                            if stderr.contains("No such file") || stderr.contains("cocotb-config") {
-                                eprintln!("[TMatmul Backend] Cocotb not installed - kernel skipped (output stays zeroed)");
-                            } else {
-                                eprintln!("[TMatmul Backend] Cocotb failed: {}", stderr);
-                            }
+            // Compile PTX to TMatmul assembly if PTX source is available
+            if let Some(ref ptx_source) = f.ptx_source {
+                if ptx_source.len() >= 50 && (ptx_source.starts_with(".version") || ptx_source.starts_with("//")) {
+                    match ptx::pass::ptx_to_tmatmul_assembly(ptx_source.as_str()) {
+                        Ok(asm) => {
+                            // Save assembly for emulator
+                            let asm_dir = std::env::var("HETGPU_TMATMUL_ASM_DIR")
+                                .unwrap_or_else(|_| "/mnt/ubuntu/ternary_matmul/cocotb/run".to_string());
+                            let _ = std::fs::create_dir_all(&asm_dir);
+                            let asm_path = std::path::Path::new(&asm_dir).join("kernel.S");
+                            let _ = std::fs::write(&asm_path, &asm);
+                            let _ = std::fs::write("/tmp/tmatmul_kernel.S", &asm);
+                            eprintln!("[TMatmul Backend] TMatmul assembly saved ({} bytes) - ready for emulator", asm.len());
+                        }
+                        Err(e) => {
+                            eprintln!("[TMatmul Backend] PTX->TMatmul compilation failed: {} - kernel skipped", e);
                         }
                     }
-                    Err(e) => {
-                        eprintln!("[TMatmul Backend] Failed to run cocotb: {} - kernel skipped", e);
-                    }
+                } else {
+                    eprintln!("[TMatmul Backend] Invalid PTX source ({} bytes) - kernel skipped", ptx_source.len());
                 }
+            } else {
+                eprintln!("[TMatmul Backend] No PTX source - kernel skipped");
             }
 
             super::checkpoint::end_kernel_execution(exec_id);
@@ -447,184 +424,55 @@ pub(crate) unsafe fn launch_kernel(
                 }
             }
 
-            // If dims not provided, write metadata and try cocotb; then copy outputs/out.bin back if present
-            let cocotb_dir = std::env::var("HETGPU_TMATMUL_COCOTB_DIR").unwrap_or_else(|_| {
-                "/root/matmulfreellm/hardware/ternary_matmul/cocotb".to_string()
-            });
-            let _ = std::fs::create_dir_all(format!("{}/run", cocotb_dir));
-            let meta_path = std::path::Path::new(&cocotb_dir).join("run/meta.json");
-            let _ = std::fs::write(
-                &meta_path,
-                format!(
-                "{{\n  \"kernel\": \"{}\",\n  \"grid\": [{},{},{}],\n  \"block\": [{},{},{}]\n}}\n",
-                f.name, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z),
-            );
-            crate::r#impl::hetgpu_debug!(
-                "[TMatmul Backend] Cocotb matmul: wrote {}",
-                meta_path.display()
-            );
-            let autorun = std::env::var("HETGPU_TMATMUL_AUTORUN")
-                .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
-                .unwrap_or(false)
-                || std::env::var("HETGPU_TMATMUL_COCOTB_AUTORUN")
-                    .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
-                    .unwrap_or(false);
-            if autorun {
-                let _ = std::process::Command::new("make")
-                    .arg("SIM=verilator")
-                    .arg("MODULE=tb_asm")
-                    .current_dir(&cocotb_dir)
-                    .status();
-            } else {
-                crate::r#impl::hetgpu_debug!(
-                    "[TMatmul Backend] Cocotb autorun disabled; skipping simulator run"
-                );
-            }
-            let out_bin = std::path::Path::new(&cocotb_dir).join("outputs/out.bin");
-            if out_bin.exists() {
-                if let Ok(bytes) = std::fs::read(&out_bin) {
-                    std::ptr::copy_nonoverlapping(bytes.as_ptr(), c_ptr as *mut u8, bytes.len());
-                    crate::r#impl::hetgpu_debug!(
-                        "[TMatmul Backend] Copied {} bytes from {} to {:p}",
-                        bytes.len(),
-                        out_bin.display(),
-                        c_ptr
-                    );
-                    super::checkpoint::end_kernel_execution(exec_id);
-                    return ze_result_t::ZE_RESULT_SUCCESS;
-                }
-            }
-            crate::r#impl::hetgpu_debug!(
-                "[TMatmul Backend] Cocotb output missing; virtual success"
-            );
-            super::checkpoint::end_kernel_execution(exec_id);
-            return ze_result_t::ZE_RESULT_SUCCESS;
-        }
-
-        // Optional non-blocking cocotb autorun (disabled by default)
-        if use_cocotb {
-            let autorun = std::env::var("HETGPU_TMATMUL_AUTORUN")
-                .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
-                .unwrap_or(false)
-                || std::env::var("HETGPU_TMATMUL_COCOTB_AUTORUN")
-                    .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
-                    .unwrap_or(false);
-            if autorun {
-                let cocotb_dir = std::env::var("HETGPU_TMATMUL_COCOTB_DIR").unwrap_or_else(|_| {
-                    "/root/matmulfreellm/hardware/ternary_matmul/cocotb".to_string()
-                });
-                crate::r#impl::hetgpu_debug!(
-                    "[TMatmul Backend] Launching cocotb: make SIM=verilator MODULE=tb_asm"
-                );
-                let _ = std::process::Command::new("make")
-                    .arg("SIM=verilator")
-                    .arg("MODULE=tb_asm")
-                    .current_dir(&cocotb_dir)
-                    .status();
-            } else {
-                crate::r#impl::hetgpu_debug!(
-                    "[TMatmul Backend] Cocotb autorun disabled; skipping simulator run"
-                );
-            }
-        }
-
-        // Virtual device: For PyTorch operations, DO NOT write to memory here
-        // PyTorch has already initialized the memory via cuMemset/cuMemcpy
-        // The kernel launch is just a stub - memory is already correct (zeros from alloc_zeroed)
-        //
-        // For TMatmul/cocotb execution, we would:
-        // 1. Extract PTX from the module
-        // 2. Compile PTX -> TMatmul assembly
-        // 3. Run cocotb simulation
-        // 4. Parse results and write to output_ptr
-        //
-        // But for PyTorch built-in operations (zeros, ones, etc.), the memory is
-        // already initialized and we just need to return success
-
-        // Execute cocotb simulation if we have assembly
-        if use_cocotb {
-            crate::r#impl::hetgpu_debug!("[TMatmul Backend] Executing cocotb simulation...");
-
-            // Check if we have output buffer and parameters
-            if output_ptr.is_null() {
-                crate::r#impl::hetgpu_debug!("[TMatmul Backend] No output buffer detected; skipping simulation (virtual success)");
-                super::checkpoint::end_kernel_execution(exec_id);
-                return ze_result_t::ZE_RESULT_SUCCESS;
-            }
-
-            // Run cocotb simulation
-            let cocotb_dir = std::env::var("HETGPU_TMATMUL_COCOTB_DIR").unwrap_or_else(|_| {
-                "/root/matmulfreellm/hardware/ternary_matmul/cocotb".to_string()
-            });
-
-            crate::r#impl::hetgpu_debug!(
-                "[TMatmul Backend] Running: make SIM=verilator MODULE=tb_asm in {}",
-                cocotb_dir
-            );
-            let make_output = std::process::Command::new("make")
-                .arg("SIM=verilator")
-                .arg("MODULE=tb_asm")
-                .current_dir(&cocotb_dir)
-                .output();
-
-            match make_output {
-                Ok(output) => {
-                    if output.status.success() {
-                        crate::r#impl::hetgpu_debug!(
-                            "[TMatmul Backend] Cocotb simulation completed successfully"
-                        );
-
-                        // Parse output and write to buffer
-                        // For now, write ones to the output buffer as a test
-                        let num_elements = (grid_dim_x
-                            * grid_dim_y
-                            * grid_dim_z
-                            * block_dim_x
-                            * block_dim_y
-                            * block_dim_z) as usize;
-                        let safe_elements = num_elements.max(1).min(1024); // Limit to 1K elements
-
-                        crate::r#impl::hetgpu_debug!(
-                            "[TMatmul Backend] Writing {} result floats to output buffer {:p}",
-                            safe_elements,
-                            output_ptr
-                        );
-
-                        // Write 1.0f values as a test (TODO: parse actual cocotb results)
-                        let result_data: Vec<f32> = vec![1.0f32; safe_elements];
-                        unsafe {
-                            std::ptr::copy_nonoverlapping(
-                                result_data.as_ptr() as *const u8,
-                                output_ptr as *mut u8,
-                                safe_elements * std::mem::size_of::<f32>(),
+            // If dims not provided, compile PTX to tmatmul assembly for emulator
+            if let Some(ref ptx_source) = f.ptx_source {
+                if ptx_source.len() >= 50 {
+                    match ptx::pass::ptx_to_tmatmul_assembly(ptx_source.as_str()) {
+                        Ok(asm) => {
+                            let _ = std::fs::write("/tmp/tmatmul_kernel.S", &asm);
+                            crate::r#impl::hetgpu_debug!(
+                                "[TMatmul Backend] Matmul PTX compiled to tmatmul assembly ({} bytes)",
+                                asm.len()
                             );
                         }
-                        crate::r#impl::hetgpu_debug!(
-                            "[TMatmul Backend] Results written successfully"
-                        );
-                    } else {
-                        crate::r#impl::hetgpu_debug!("[TMatmul Backend] Cocotb simulation failed:");
-                        crate::r#impl::hetgpu_debug!("{}", String::from_utf8_lossy(&output.stderr));
+                        Err(e) => {
+                            crate::r#impl::hetgpu_debug!(
+                                "[TMatmul Backend] Matmul PTX compilation failed: {}",
+                                e
+                            );
+                        }
                     }
                 }
-                Err(e) => {
-                    crate::r#impl::hetgpu_debug!("[TMatmul Backend] Failed to run cocotb: {}", e);
-                }
-            }
-        } else {
-            if !output_ptr.is_null() {
-                crate::r#impl::hetgpu_debug!(
-                    "[TMatmul Backend] Output buffer detected at {:p}",
-                    output_ptr
-                );
             }
             crate::r#impl::hetgpu_debug!(
-                "[TMatmul Backend] Cocotb disabled; treating as no-op launch (virtual success)"
+                "[TMatmul Backend] Matmul kernel compiled; virtual success"
             );
             super::checkpoint::end_kernel_execution(exec_id);
             return ze_result_t::ZE_RESULT_SUCCESS;
         }
-        // In cocotb/virtual path, do not proceed to Level Zero calls. Treat as success.
+
+        // Compile PTX to TMatmul assembly for emulator execution
+        if let Some(ref ptx_source) = f.ptx_source {
+            if ptx_source.len() >= 50 && (ptx_source.starts_with(".version") || ptx_source.starts_with("//")) {
+                match ptx::pass::ptx_to_tmatmul_assembly(ptx_source.as_str()) {
+                    Ok(asm) => {
+                        let _ = std::fs::write("/tmp/tmatmul_kernel.S", &asm);
+                        crate::r#impl::hetgpu_debug!(
+                            "[TMatmul Backend] PTX compiled to tmatmul assembly ({} bytes) - ready for emulator",
+                            asm.len()
+                        );
+                    }
+                    Err(e) => {
+                        crate::r#impl::hetgpu_debug!(
+                            "[TMatmul Backend] PTX->TMatmul compilation failed: {}",
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        // Virtual device path: kernel output stays zeroed, return success
         super::checkpoint::end_kernel_execution(exec_id);
         return ze_result_t::ZE_RESULT_SUCCESS;
     }

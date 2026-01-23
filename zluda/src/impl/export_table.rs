@@ -171,20 +171,28 @@ fn cudart_interface_fn1_impl_amd(pctx: *mut CUcontext, dev: c_int) -> hipError_t
 
 #[cfg(feature = "intel")]
 fn cudart_interface_fn1_impl_intel(pctx: *mut CUcontext, dev: c_int) -> CUresult {
-    let mut ze_device = ptr::null_mut();
-    
-    // Get device
-    let result = device::primary_context_retain(pctx, ze_device);
+    eprintln!("[hetGPU] cudart_interface_fn1_impl_intel called: pctx={:p}, dev={}", pctx, dev);
+    if pctx.is_null() {
+        eprintln!("[hetGPU] cudart_interface_fn1: pctx is null!");
+        return CUresult::CUDA_ERROR_INVALID_VALUE;
+    }
+
+    // Retain and release primary context for the device
+    let result = unsafe { device::primary_context_retain(&mut *pctx, dev) };
     if result.is_err() {
+        eprintln!("[hetGPU] cudart_interface_fn1: primary_context_retain failed");
         return CUresult::CUDA_ERROR_INVALID_DEVICE;
     }
-    
+    eprintln!("[hetGPU] cudart_interface_fn1: primary_context_retain succeeded, ctx={:?}", unsafe { *pctx });
+
     // Release the primary context (decrement ref count)
-    let result = device::primary_context_release(ze_device);
+    let result = device::primary_context_release(dev);
     if result.is_err() {
+        eprintln!("[hetGPU] cudart_interface_fn1: primary_context_release failed");
         return CUresult::CUDA_ERROR_UNKNOWN;
     }
-    
+
+    eprintln!("[hetGPU] cudart_interface_fn1: success");
     CUresult::CUDA_SUCCESS
 }
 

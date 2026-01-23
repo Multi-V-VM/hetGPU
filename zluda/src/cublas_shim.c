@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <dlfcn.h>
 #include <stdlib.h>
 
@@ -17,48 +18,14 @@
 static void* real_cublas_handle = NULL;
 static void* real_cublaslt_handle_from_cublas = NULL;
 
-// Initialize and get real cuBLAS library handle
+// Get real cuBLAS library handle - DISABLED for virtual device backend
+// Loading real cuBLAS causes recursive symbol resolution or initialization
+// that crashes with our virtual CUDA driver. Use fallback implementations instead.
 static void* get_real_cublas() {
-    if (real_cublas_handle == NULL) {
-        // FIRST load cuBLASLt with RTLD_GLOBAL so cuBLAS can find it
-        const char* cublaslt_paths[] = {
-            "/usr/local/cuda/lib64/libcublasLt.so.12",
-            "/usr/local/cuda-12.8/lib64/libcublasLt.so.12",
-            "/usr/local/cuda-12/lib64/libcublasLt.so.12",
-            "libcublasLt.so.12",
-            NULL
-        };
-
-        for (int i = 0; cublaslt_paths[i] != NULL; i++) {
-            real_cublaslt_handle_from_cublas = dlopen(cublaslt_paths[i], RTLD_LAZY | RTLD_GLOBAL);
-            if (real_cublaslt_handle_from_cublas != NULL) {
-                fprintf(stderr, "[cuBLAS shim] Loaded real cuBLASLt from: %s\n", cublaslt_paths[i]);
-                break;
-            }
-        }
-
-        // THEN load cuBLAS
-        const char* cublas_paths[] = {
-            "/usr/local/cuda/lib64/libcublas.so.12",
-            "/usr/local/cuda-12.8/lib64/libcublas.so.12",
-            "/usr/local/cuda-12/lib64/libcublas.so.12",
-            "libcublas.so.12",
-            NULL
-        };
-
-        for (int i = 0; cublas_paths[i] != NULL; i++) {
-            real_cublas_handle = dlopen(cublas_paths[i], RTLD_LAZY | RTLD_LOCAL);
-            if (real_cublas_handle != NULL) {
-                fprintf(stderr, "[cuBLAS shim] Loaded real cuBLAS from: %s\n", cublas_paths[i]);
-                break;
-            }
-        }
-
-        if (real_cublas_handle == NULL) {
-            fprintf(stderr, "[cuBLAS shim] WARNING: Could not load real cuBLAS library: %s\n", dlerror());
-        }
-    }
-    return real_cublas_handle;
+    // Always return NULL to use our fallback implementations.
+    // The hetGPU virtual device doesn't support forwarding to real cuBLAS
+    // because real cuBLAS tries to initialize with our fake CUDA context.
+    return NULL;
 }
 
 // cuBLAS types
@@ -130,11 +97,8 @@ typedef enum {
     CUDA_R_32I = 10
 } cudaDataType;
 
-#ifdef HETGPU_DEBUG_LOGS
+// Always log cuBLAS shim calls for debugging
 #define DEBUG_LOG(fmt, ...) fprintf(stderr, "[hetGPU cublas_shim] " fmt "\n", ##__VA_ARGS__)
-#else
-#define DEBUG_LOG(fmt, ...) ((void)0)
-#endif
 
 // Helper macro to get function pointer from real cuBLAS and call it
 #define GET_REAL_FUNC(func_name, func_type) \
@@ -207,9 +171,7 @@ cublasStatus_t cublasGetAtomicsMode(cublasHandle_t handle, cublasAtomicsMode_t *
 
 cublasStatus_t cublasSetMathMode(cublasHandle_t handle, cublasMath_t mode) {
     DEBUG_LOG("cublasSetMathMode called: mode=%d", mode);
-    if (mode != CUBLAS_DEFAULT_MATH) {
-        return CUBLAS_STATUS_NOT_SUPPORTED;
-    }
+    // Accept all math modes - PyTorch sets TF32/tensor op modes
     g_math_mode = mode;
     return CUBLAS_STATUS_SUCCESS;
 }
@@ -293,9 +255,14 @@ cublasStatus_t cublasSgemm_v2(cublasHandle_t handle,
     if (real_cublasSgemm_v2) {
         return real_cublasSgemm_v2(handle, transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
     }
-    // Fallback: zero output
-    if (C) {
-        for (int i = 0; i < m * ldc; i++) C[i] = 0.0f;
+    // Fallback: zero output (column-major: ldc * n elements)
+    DEBUG_LOG("cublasSgemm_v2 fallback: zeroing output C=%p, ldc*n=%d", (void*)C, ldc * n);
+    if (C && n > 0 && ldc > 0) {
+        for (int col = 0; col < n; col++) {
+            for (int row = 0; row < ldc; row++) {
+                C[col * ldc + row] = 0.0f;
+            }
+        }
     }
     return CUBLAS_STATUS_SUCCESS;
 }
@@ -351,6 +318,17 @@ cublasStatus_t cublasDgemmStridedBatched(cublasHandle_t handle,
     return CUBLAS_STATUS_SUCCESS;
 }
 
+// Helper to get element size from cudaDataType
+static size_t get_element_size(cudaDataType dtype) {
+    switch (dtype) {
+        case CUDA_R_16F: return 2;
+        case CUDA_R_32F: return 4;
+        case CUDA_R_64F: return 8;
+        case CUDA_R_32I: return 4;
+        default: return 4; // Default to 4 bytes
+    }
+}
+
 // GemmEx - Extended GEMM with mixed precision
 cublasStatus_t cublasGemmEx(cublasHandle_t handle,
                              cublasOperation_t transa, cublasOperation_t transb,
@@ -361,7 +339,14 @@ cublasStatus_t cublasGemmEx(cublasHandle_t handle,
                              const void *beta,
                              void *C, cudaDataType Ctype, int ldc,
                              cublasComputeType_t computeType, cublasGemmAlgo_t algo) {
-    DEBUG_LOG("cublasGemmEx called: m=%d, n=%d, k=%d", m, n, k);
+    DEBUG_LOG("cublasGemmEx called: m=%d, n=%d, k=%d, Ctype=%d, ldc=%d", m, n, k, Ctype, ldc);
+    // Zero the output buffer (column-major: ldc * n elements)
+    if (C && n > 0 && ldc > 0) {
+        size_t elem_size = get_element_size(Ctype);
+        size_t total_bytes = (size_t)ldc * (size_t)n * elem_size;
+        DEBUG_LOG("cublasGemmEx fallback: zeroing output C=%p, total_bytes=%zu", C, total_bytes);
+        memset(C, 0, total_bytes);
+    }
     return CUBLAS_STATUS_SUCCESS;
 }
 
@@ -661,6 +646,15 @@ cublasStatus_t cublasGemmStridedBatchedEx(cublasHandle_t handle,
                                            int batchCount,
                                            cublasComputeType_t computeType, cublasGemmAlgo_t algo) {
     DEBUG_LOG("cublasGemmStridedBatchedEx called: m=%d, n=%d, k=%d, batchCount=%d", m, n, k, batchCount);
+    // Zero the output buffer for all batches
+    if (C && n > 0 && ldc > 0 && batchCount > 0) {
+        size_t elem_size = get_element_size(Ctype);
+        size_t batch_bytes = (size_t)ldc * (size_t)n * elem_size;
+        size_t total_bytes = (strideC > 0) ? (size_t)(strideC * (batchCount - 1)) * elem_size + batch_bytes
+                                           : batch_bytes * (size_t)batchCount;
+        DEBUG_LOG("cublasGemmStridedBatchedEx fallback: zeroing output C=%p, total_bytes=%zu", C, total_bytes);
+        memset(C, 0, total_bytes);
+    }
     return CUBLAS_STATUS_SUCCESS;
 }
 

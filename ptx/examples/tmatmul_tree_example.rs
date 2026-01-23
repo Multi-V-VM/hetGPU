@@ -65,7 +65,7 @@ fn example_vector_add() {
 /// Example 2: Matrix-vector multiplication (Y = W * X)
 fn example_matmul() {
     println!("Example 2: Matrix-Vector Multiplication (Y = W * X)");
-    println!("-".repeat(40));
+    println!("{}", "-".repeat(40));
 
     let config = TMatmulConfig {
         d: 32, // 32x32 blocks for smaller example
@@ -105,7 +105,7 @@ fn example_matmul() {
 /// Implements: output = down_proj(silu(gate_proj(x)) * up_proj(x))
 fn example_ffn_layer() {
     println!("Example 3: FFN Layer (SiLU-Gated FFN)");
-    println!("-".repeat(40));
+    println!("{}", "-".repeat(40));
 
     let config = TMatmulConfig {
         d: 32,

@@ -22,7 +22,7 @@ pub(crate) struct Module {
     device: ze_device_handle_t,
     module: ze_module_handle_t,
     functions: Vec<(String, ze_kernel_handle_t)>,
-    // Store PTX source and TMatmul assembly for cocotb execution
+    // Store PTX source and TMatmul assembly for emulator execution
     ptx_source: Option<String>,
     tmatmul_assembly: Option<String>,
 }
@@ -329,7 +329,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
         .to_str()
         .map_err(|_| CUerror::INVALID_VALUE)?;
 
-    // If cocotb fallback is requested or we are on virtual device, stage for simulator
+    // If tmatmul emulation is requested or we are on virtual device, compile PTX for emulator
     let use_cocotb = std::env::var("HETGPU_TMATMUL_COCOTB")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
         .unwrap_or(false);
@@ -341,7 +341,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
 
     if use_cocotb || is_virtual {
         crate::r#impl::hetgpu_debug!(
-            "[TMatmul Backend] Cocotb fallback enabled (HETGPU_TMATMUL_COCOTB=1)"
+            "[TMatmul Backend] TMatmul emulation enabled (virtual device or HETGPU_TMATMUL_COCOTB=1)"
         );
         match ptx::pass::ptx_to_tmatmul_assembly(text) {
             Ok(tmatmul_asm) => {
@@ -361,7 +361,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
 
                 // Optionally copy into hardware simulator asm dir
                 let hw_asm_dir = std::env::var("HETGPU_TMATMUL_ASM_DIR").unwrap_or_else(|_| {
-                    "/root/matmulfreellm/hardware/ternary_matmul/asm".to_string()
+                    "/mnt/ubuntu/ternary_matmul/asm".to_string()
                 });
                 let hw_asm_out = std::path::Path::new(&hw_asm_dir).join("hetgpu_kernel.S");
                 if let Err(e) = (|| -> Result<(), std::io::Error> {
@@ -376,7 +376,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                     );
                 } else {
                     crate::r#impl::hetgpu_debug!(
-                        "[TMatmul Backend] Staged assembly for cocotb at: {}",
+                        "[TMatmul Backend] Assembly staged for emulator at: {}",
                         hw_asm_out.display()
                     );
                 }
@@ -400,42 +400,9 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                 );
                 ensure_virtual_context(ctx_handle, dev_handle);
 
-                // Optionally auto-run cocotb if requested
-                let autorun = std::env::var("HETGPU_TMATMUL_COCOTB_AUTORUN")
-                    .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
-                    .unwrap_or(false);
-                if autorun {
-                    crate::r#impl::hetgpu_debug!(
-                        "[TMatmul Backend] Launching Verilator+cocotb run (autorun)"
-                    );
-                    let cocotb_dir =
-                        std::env::var("HETGPU_TMATMUL_COCOTB_DIR").unwrap_or_else(|_| {
-                            "/root/matmulfreellm/hardware/ternary_matmul/cocotb".to_string()
-                        });
-                    let make_status = std::process::Command::new("make")
-                        .arg("SIM=verilator")
-                        .arg("MODULE=tb_asm")
-                        .current_dir(&cocotb_dir)
-                        .status();
-                    match make_status {
-                        Ok(status) => {
-                            crate::r#impl::hetgpu_debug!(
-                                "[TMatmul Backend] cocotb run finished with status: {}",
-                                status
-                            );
-                        }
-                        Err(e) => {
-                            crate::r#impl::hetgpu_debug!(
-                                "[TMatmul Backend] Failed to launch cocotb make: {}",
-                                e
-                            );
-                        }
-                    }
-                } else {
-                    crate::r#impl::hetgpu_debug!(
-                        "[TMatmul Backend] To execute on simulator: (1) cd /root/matmulfreellm/hardware/ternary_matmul/cocotb (2) make SIM=verilator MODULE=tb_asm"
-                    );
-                }
+                crate::r#impl::hetgpu_debug!(
+                    "[TMatmul Backend] TMatmul assembly ready for emulator at /tmp/tmatmul_kernel.S"
+                );
 
                 return Ok(());
             }
@@ -452,7 +419,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                         let _ = std::fs::write(&asm_path, &tmatmul_asm);
                         let hw_asm_dir =
                             std::env::var("HETGPU_TMATMUL_ASM_DIR").unwrap_or_else(|_| {
-                                "/root/matmulfreellm/hardware/ternary_matmul/asm".to_string()
+                                "/mnt/ubuntu/ternary_matmul/asm".to_string()
                             });
                         let hw_asm_out = std::path::Path::new(&hw_asm_dir).join("hetgpu_kernel.S");
                         let _ = (|| -> Result<(), std::io::Error> {
@@ -716,19 +683,19 @@ pub(crate) fn get_function(
         .to_str()
         .map_err(|_| CUerror::INVALID_VALUE)?;
 
-    // If cocotb fallback is active or module handle is null (virtual), return a placeholder kernel
-    let use_cocotb = std::env::var("HETGPU_TMATMUL_COCOTB")
+    // If virtual device or tmatmul emulation mode, return a placeholder kernel
+    let use_tmatmul = std::env::var("HETGPU_TMATMUL_COCOTB")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
         .unwrap_or(false);
-    if use_cocotb || hmod.module.0.is_null() {
-        eprintln!("[Intel Backend] Creating placeholder kernel '{}' for cocotb execution", name_str);
+    if use_tmatmul || hmod.module.0.is_null() {
+        eprintln!("[Intel Backend] Creating placeholder kernel '{}' for tmatmul emulation", name_str);
         let kernel_wrapper = ZeKernel {
             context: hmod.context,
             device: hmod.device,
             module: hmod.module,
             kernel: ze_kernel_handle_t(std::ptr::null_mut()),
             name: name_str.to_string(),
-            ptx_source: hmod.ptx_source.clone(),  // Pass PTX to kernel for cocotb
+            ptx_source: hmod.ptx_source.clone(),  // Pass PTX to kernel for emulation
             module_handle: hmod.module.0 as u64,
         };
         if let Some(ref ptx) = kernel_wrapper.ptx_source {
@@ -797,7 +764,7 @@ pub(crate) struct ZeKernel {
     pub module: ze_module_handle_t,
     pub kernel: ze_kernel_handle_t,
     pub name: String,
-    pub ptx_source: Option<String>,  // Store PTX for cocotb execution
+    pub ptx_source: Option<String>,  // Store PTX for emulator execution
     pub module_handle: u64,  // Handle for checkpoint tracking
 }
 #[cfg(feature = "intel")]
