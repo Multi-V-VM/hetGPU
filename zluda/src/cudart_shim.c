@@ -344,8 +344,25 @@ const char* cudaGetErrorName(cudaError_t error) {
 }
 
 // Device/runtime info APIs
-// Note: cudaGetDeviceCount and cudaDriverGetVersion are already implemented in Rust (lib.rs)
-// so we don't define them here to avoid duplicate symbol errors
+// Declare driver API functions (defined in Rust) that we call through to
+extern int cuDeviceGetCount(int* count);
+extern int cuDriverGetVersion(int* version);
+extern int cuInit(unsigned int flags);
+
+cudaError_t cudaGetDeviceCount(int* count) {
+    if (!count) return 1; // cudaErrorInvalidValue
+    fprintf(stderr, "[hetGPU] cudaGetDeviceCount called\n");
+    cuInit(0);
+    int result = cuDeviceGetCount(count);
+    fprintf(stderr, "[hetGPU] cudaGetDeviceCount: %d devices\n", count ? *count : -1);
+    return (result == 0) ? 0 : 2; // cudaSuccess or cudaErrorMemoryAllocation
+}
+
+cudaError_t cudaDriverGetVersion(int* version) {
+    if (!version) return 1;
+    cuDriverGetVersion(version);
+    return 0;
+}
 
 // Full cudaDeviceProp struct matching CUDA 11.x/12.x layout
 // This must match PyTorch's expectations exactly
@@ -1131,11 +1148,15 @@ cudaError_t __cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, vo
     }
 
     // Look up the function in our registration table
+    // Compare with normalization (mask off low 3 bits) since cudaLaunchKernel
+    // and __cudaRegisterFunction may use different pointer representations
     CUfunction cuFunc = NULL;
     const char* funcName = "<unknown>";
+    uintptr_t func_normalized = (uintptr_t)func & ~(uintptr_t)0x7;
 
     for (int i = 0; i < g_function_count; i++) {
-        if (g_functions[i].hostFun == func) {
+        uintptr_t registered_normalized = (uintptr_t)g_functions[i].hostFun & ~(uintptr_t)0x7;
+        if (g_functions[i].hostFun == func || registered_normalized == func_normalized) {
             cuFunc = g_functions[i].cuFunc;
             funcName = g_functions[i].name;
             fprintf(stderr, "[cudart_shim] Found registered function '%s': %p -> %p\n",
@@ -1398,10 +1419,17 @@ typedef struct {
     unsigned int unknown0;           // unknown                        (offset 12)
     unsigned int payload_size;       // actual size of payload data   (offset 16)
     unsigned int unknown1;           // unknown                        (offset 20)
-    unsigned int sm_version;         // sm version                     (offset 24)
-    unsigned int flags;              // flags                          (offset 28)
-    // More fields follow up to header_size...
+    unsigned int unknown2;           // unknown                        (offset 24)
+    unsigned int sm_version;         // sm version (e.g. 0x78=120)    (offset 28)
+    unsigned int bit_width;          // 32 or 64                      (offset 32)
+    unsigned int unknown3;           // unknown                        (offset 36)
+    unsigned long unknown4;          // unknown                        (offset 40)
+    unsigned long unknown5;          // unknown                        (offset 48)
+    unsigned long uncompressed_payload; // decompressed size (0=not compressed) (offset 56)
 } FatbinFileHeader;
+
+// LZ4 decompression (provided by Rust FFI wrapper in lib.rs)
+extern int hetgpu_lz4_decompress(const char* src, char* dst, int compressedSize, int dstCapacity);
 
 #define FATBIN_MAGIC 0xBA55ED50
 #define FATBIN_KIND_PTX 0x01
@@ -1459,116 +1487,59 @@ void** __cudaRegisterFatBinary(void* fatCubin) {
         while (file_ptr < end_ptr) {
             FatbinFileHeader* file_header = (FatbinFileHeader*)file_ptr;
 
-            fprintf(stderr, "[cudart_shim] File entry: kind=0x%04x, header_size=%u, payload_size=%u, padded=%u, flags=0x%08x\n",
+            fprintf(stderr, "[cudart_shim] File entry: kind=0x%04x, header_size=%u, payload_size=%u, padded=%u, sm=%u, uncompressed=%lu\n",
                     file_header->kind, file_header->header_size,
                     file_header->payload_size, file_header->padded_payload_size,
-                    file_header->flags);
+                    file_header->sm_version, file_header->uncompressed_payload);
 
             // Prefer PTX over CUBIN
             if (file_header->kind == FATBIN_KIND_PTX && payload == NULL) {
                 unsigned char* ptx_payload = file_ptr + file_header->header_size;
                 size_t raw_size = file_header->payload_size;
-                fprintf(stderr, "[cudart_shim] Found PTX payload at offset +%lu, size=%zu\n",
-                        (unsigned long)((char*)ptx_payload - (char*)fatbin_header_ptr), raw_size);
-                // Debug: show first 32 bytes to check if PTX or compressed
-                fprintf(stderr, "[cudart_shim] PTX payload first 32 bytes: ");
-                for (size_t i = 0; i < 32 && i < raw_size; i++) {
-                    fprintf(stderr, "%02x ", ptx_payload[i]);
-                }
-                fprintf(stderr, "\n");
+                size_t uncompressed_size = file_header->uncompressed_payload;
+                fprintf(stderr, "[cudart_shim] Found PTX payload at offset +%lu, compressed_size=%zu, uncompressed_size=%zu, sm=%u\n",
+                        (unsigned long)((char*)ptx_payload - (char*)fatbin_header_ptr),
+                        raw_size, uncompressed_size, file_header->sm_version);
 
-                // PTX payload often has a header before the actual PTX
-                // Search for ".version" marker which indicates start of PTX
-                char* version_marker = NULL;
-                for (size_t i = 0; i < raw_size - 8; i++) {
-                    if (ptx_payload[i] == '.' && memcmp(ptx_payload + i, ".version", 8) == 0) {
-                        version_marker = (char*)(ptx_payload + i);
-                        break;
-                    }
-                }
+                if (uncompressed_size > 0) {
+                    // PTX payload is LZ4-compressed - decompress it
+                    fprintf(stderr, "[cudart_shim] PTX is LZ4-compressed, decompressing %zu -> %zu bytes\n",
+                            raw_size, uncompressed_size);
 
-                if (version_marker) {
-                    size_t skip = version_marker - (char*)ptx_payload;
-                    size_t remaining_size = raw_size - skip;
-                    fprintf(stderr, "[cudart_shim] Found .version marker at offset %zu, remaining size=%zu\n",
-                            skip, remaining_size);
-                    fprintf(stderr, "[cudart_shim] PTX flags=0x%08x (compression/encoding flags)\n", file_header->flags);
+                    char* decompressed = (char*)malloc(uncompressed_size + 1);
+                    if (decompressed) {
+                        int result = hetgpu_lz4_decompress(
+                            (const char*)ptx_payload,
+                            decompressed,
+                            (int)raw_size,
+                            (int)uncompressed_size
+                        );
 
-                    // Find actual end of PTX text by scanning backwards for last closing brace
-                    // PTX modules end with a closing brace after function definitions
-                    size_t actual_end = remaining_size;
-                    for (size_t i = remaining_size; i > 0; i--) {
-                        char c = version_marker[i - 1];
-                        if (c == '}') {
-                            actual_end = i;
-                            break;
-                        }
-                    }
+                        if (result > 0) {
+                            decompressed[result] = '\0';
+                            fprintf(stderr, "[cudart_shim] LZ4 decompression successful: %d bytes\n", result);
+                            fprintf(stderr, "[cudart_shim] PTX preview (first 200 chars):\n%.200s\n", decompressed);
 
-                    fprintf(stderr, "[cudart_shim] Found last '}' at offset %zu from .version\n", actual_end);
-
-                    // The PTX payload uses a length-prefixed format for strings
-                    // Instead of removing nulls, we need to parse the actual text lines
-                    // Strategy: Copy only printable ASCII characters (0x20-0x7E) plus \n, \t
-                    char* clean_ptx = (char*)malloc(actual_end + 1);
-                    if (clean_ptx) {
-                        size_t write_pos = 0;
-                        size_t binary_count = 0;
-                        size_t null_count = 0;
-                        int consecutive_binary = 0;
-
-                        for (size_t i = 0; i < actual_end; i++) {
-                            unsigned char c = (unsigned char)version_marker[i];
-
-                            // Valid PTX text characters: printable ASCII + whitespace
-                            if ((c >= 0x20 && c <= 0x7E) || c == '\n' || c == '\t' || c == '\r') {
-                                clean_ptx[write_pos++] = (char)c;
-                                consecutive_binary = 0;
-                            } else if (c == '\0') {
-                                null_count++;
-                                // Keep track of null positions - they might indicate string boundaries
-                            } else {
-                                // Non-printable, non-null byte - likely length prefix or binary data
-                                binary_count++;
-                                consecutive_binary++;
-
-                                // If we have many consecutive binary bytes, skip them silently
-                                // But if isolated, they might be string length prefixes we need to skip
-                            }
-                        }
-                        clean_ptx[write_pos] = '\0';
-
-                        fprintf(stderr, "[cudart_shim] Cleaned PTX: removed %zu binary bytes, %zu nulls, final size=%zu\n",
-                                binary_count, null_count, write_pos);
-                        fprintf(stderr, "[cudart_shim] PTX text preview (first 500 chars):\n%.500s\n", clean_ptx);
-
-                        // Verify the cleaned PTX looks valid
-                        if (write_pos > 50 && strncmp(clean_ptx, ".version", 8) == 0) {
-                            fprintf(stderr, "[cudart_shim] Cleaned PTX looks valid\n");
-
-                            // Use static storage for the clean copy (leaked, but necessary for lifetime)
-                            static char* g_clean_ptx = NULL;
-                            if (g_clean_ptx) free(g_clean_ptx);
-                            g_clean_ptx = clean_ptx;
-
-                            payload = g_clean_ptx;
-                            payload_size = write_pos;
+                            // Store decompressed PTX (leaked for lifetime)
+                            payload = decompressed;
+                            payload_size = (size_t)result;
                         } else {
-                            fprintf(stderr, "[cudart_shim] Warning: Cleaned PTX doesn't start with .version, using original\n");
-                            free(clean_ptx);
-                            payload = version_marker;
-                            payload_size = actual_end;
+                            fprintf(stderr, "[cudart_shim] LZ4 decompression FAILED (result=%d), trying raw\n", result);
+                            free(decompressed);
+                            // Fall through to try raw
+                            payload = ptx_payload;
+                            payload_size = raw_size;
                         }
                     } else {
-                        // Fallback to raw payload if malloc fails
-                        payload = version_marker;
-                        payload_size = actual_end;
+                        fprintf(stderr, "[cudart_shim] Failed to allocate %zu bytes for decompression\n", uncompressed_size);
+                        payload = ptx_payload;
+                        payload_size = raw_size;
                     }
                 } else {
-                    // No .version found, use as-is
+                    // Uncompressed PTX - use directly
+                    fprintf(stderr, "[cudart_shim] PTX payload is uncompressed, using directly\n");
                     payload = ptx_payload;
                     payload_size = raw_size;
-                    fprintf(stderr, "[cudart_shim] No .version marker found, using raw payload\n");
                 }
                 break;  // Prefer PTX, so break immediately
             } else if (file_header->kind == FATBIN_KIND_ELF && payload == NULL) {
@@ -1880,7 +1851,6 @@ cudaError_t cudaMalloc(void** devPtr, size_t size) {
     CUdeviceptr dptr = 0;
     CUresult result = cuMemAlloc_v2(&dptr, size);
     if (result != 0) {
-        HETGPU_LOG("[cudart_shim] cudaMalloc(%zu) cuMemAlloc_v2 failed: %d; falling back to host alloc\n", size, result);
         // Fallback: host allocation (zeroed)
         void* ptr = NULL;
         if (size > 0) {
@@ -1893,7 +1863,6 @@ cudaError_t cudaMalloc(void** devPtr, size_t size) {
         return ptr ? 0 : 2; // cudaErrorMemoryAllocation if NULL
     }
     *devPtr = (void*)dptr;
-    HETGPU_LOG("[cudart_shim] cudaMalloc(%zu) -> %p\n", size, *devPtr);
     return 0;
 }
 
@@ -2049,4 +2018,382 @@ cudaError_t cudaDeviceGetStreamPriorityRange(int* leastPriority,
     if (leastPriority) *leastPriority = 0;
     if (greatestPriority) *greatestPriority = 0;
     return 0; // cudaSuccess
+}
+
+// NVRTC implementation - compiles CUDA source to PTX via nvcc
+// nvrtcResult enum values
+#define NVRTC_SUCCESS 0
+#define NVRTC_ERROR_OUT_OF_MEMORY 1
+#define NVRTC_ERROR_PROGRAM_CREATION_FAILURE 2
+#define NVRTC_ERROR_INVALID_INPUT 3
+#define NVRTC_ERROR_INVALID_PROGRAM 4
+#define NVRTC_ERROR_COMPILATION 6
+
+typedef struct nvrtc_program_st {
+    char* source;           // CUDA source code
+    char* name;             // Program name
+    char* ptx;              // Compiled PTX output
+    size_t ptx_size;        // Size of PTX (including null terminator)
+    char* log;              // Compilation log
+    size_t log_size;        // Size of log (including null terminator)
+    char** name_expressions; // Added name expressions
+    int num_name_expressions;
+} nvrtc_program_st;
+
+typedef nvrtc_program_st* nvrtcProgram;
+
+int nvrtcVersion(int* major, int* minor) {
+    if (major) *major = 12;
+    if (minor) *minor = 8;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcCreateProgram(nvrtcProgram* prog, const char* src,
+                       const char* name, int numHeaders,
+                       const char* const* headers,
+                       const char* const* includeNames) {
+    if (!prog || !src) return NVRTC_ERROR_INVALID_INPUT;
+
+    nvrtc_program_st* p = (nvrtc_program_st*)calloc(1, sizeof(nvrtc_program_st));
+    if (!p) return NVRTC_ERROR_OUT_OF_MEMORY;
+
+    p->source = strdup(src);
+    p->name = name ? strdup(name) : strdup("default_program");
+    p->ptx = NULL;
+    p->ptx_size = 0;
+    p->log = strdup("");
+    p->log_size = 1;
+    p->name_expressions = NULL;
+    p->num_name_expressions = 0;
+
+    *prog = p;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcDestroyProgram(nvrtcProgram* prog) {
+    if (!prog || !*prog) return NVRTC_SUCCESS;
+    nvrtc_program_st* p = *prog;
+    free(p->source);
+    free(p->name);
+    free(p->ptx);
+    free(p->log);
+    if (p->name_expressions) {
+        for (int i = 0; i < p->num_name_expressions; i++)
+            free(p->name_expressions[i]);
+        free(p->name_expressions);
+    }
+    free(p);
+    *prog = NULL;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcCompileProgram(nvrtcProgram prog, int numOptions, const char* const* options) {
+    if (!prog || !prog->source) return NVRTC_ERROR_INVALID_PROGRAM;
+
+    // Write source to temp file
+    char src_path[256];
+    snprintf(src_path, sizeof(src_path), "/tmp/nvrtc_%d_%p.cu", getpid(), (void*)prog);
+    char ptx_path[256];
+    snprintf(ptx_path, sizeof(ptx_path), "/tmp/nvrtc_%d_%p.ptx", getpid(), (void*)prog);
+
+    FILE* f = fopen(src_path, "w");
+    if (!f) {
+        fprintf(stderr, "[nvrtc] Failed to write source to %s\n", src_path);
+        return NVRTC_ERROR_COMPILATION;
+    }
+    // Preprocess source: nvrtc doesn't include system headers but nvcc does,
+    // so typedefs like "typedef long long int int64_t;" conflict with <stdint.h>.
+    // Wrap them with guards.
+    fputs("#include <stdint.h>\n", f);
+    const char* src = prog->source;
+    const char* line_start = src;
+    while (*line_start) {
+        const char* line_end = strchr(line_start, '\n');
+        if (!line_end) line_end = line_start + strlen(line_start);
+        size_t line_len = line_end - line_start;
+
+        // Skip typedef lines that redefine standard integer types
+        // (nvrtc doesn't include system headers, but nvcc does)
+        int skip = 0;
+        const char* trimmed = line_start;
+        while (trimmed < line_start + line_len && (*trimmed == ' ' || *trimmed == '\t'))
+            trimmed++;
+        size_t trimmed_len = line_len - (trimmed - line_start);
+        if (trimmed_len > 7 && strncmp(trimmed, "typedef", 7) == 0) {
+            char line_buf[512];
+            size_t copy_len = line_len < sizeof(line_buf)-1 ? line_len : sizeof(line_buf)-1;
+            memcpy(line_buf, line_start, copy_len);
+            line_buf[copy_len] = '\0';
+            if (strstr(line_buf, "int64_t") ||
+                strstr(line_buf, "uint32_t") ||
+                strstr(line_buf, "int8_t") ||
+                strstr(line_buf, "uint8_t") ||
+                strstr(line_buf, "int16_t"))
+                skip = 1;
+        }
+
+        if (!skip) {
+            fwrite(line_start, 1, line_len, f);
+            fputc('\n', f);
+        } else {
+            fputs("// [nvrtc-shim] skipped conflicting typedef\n", f);
+        }
+
+        line_start = (*line_end == '\n') ? line_end + 1 : line_end;
+    }
+    fclose(f);
+
+    // Build nvcc command - translate nvrtc options to nvcc options
+    char cmd[4096];
+    char arch_flag[64] = "--gpu-architecture=sm_80";
+    char extra_opts[2048] = "";
+    size_t extra_len = 0;
+    int has_device_default = 0;
+
+    for (int i = 0; i < numOptions; i++) {
+        if (!options[i]) continue;
+
+        // Architecture flag
+        if (strncmp(options[i], "--gpu-architecture", 18) == 0 ||
+            strncmp(options[i], "-arch", 5) == 0) {
+            snprintf(arch_flag, sizeof(arch_flag), "%s", options[i]);
+        }
+        // nvrtc's -default-device -> nvcc's --device-as-default-execution-space
+        else if (strncmp(options[i], "-default-device", 15) == 0) {
+            has_device_default = 1;
+        }
+        else if (strncmp(options[i], "--device-as-default-execution-space", 35) == 0) {
+            has_device_default = 1;
+        }
+        // Options safe to pass through to nvcc
+        else if (strncmp(options[i], "--std=", 6) == 0 ||
+                   strncmp(options[i], "-std=", 5) == 0 ||
+                   strncmp(options[i], "-D", 2) == 0 ||
+                   strncmp(options[i], "--define-macro", 14) == 0 ||
+                   strncmp(options[i], "-I", 2) == 0 ||
+                   strncmp(options[i], "--include-path", 14) == 0 ||
+                   strncmp(options[i], "--pre-include", 13) == 0 ||
+                   strncmp(options[i], "--use_fast_math", 15) == 0 ||
+                   strncmp(options[i], "-use_fast_math", 14) == 0 ||
+                   strncmp(options[i], "--fmad", 6) == 0 ||
+                   strncmp(options[i], "--extra-device-vectorization", 28) == 0) {
+            int n = snprintf(extra_opts + extra_len, sizeof(extra_opts) - extra_len,
+                           " %s", options[i]);
+            if (n > 0) extra_len += n;
+        }
+        // Skip nvrtc-specific options that nvcc doesn't understand
+        // e.g., -rdc, --extensible-whole-program, etc.
+    }
+
+    // Note: nvrtc's -default-device is not needed for nvcc since
+    // the jiterator source has explicit __global__/__device__ annotations
+    (void)has_device_default;
+
+    snprintf(cmd, sizeof(cmd),
+             "nvcc --ptx %s %s -o %s %s 2>&1",
+             arch_flag, extra_opts, ptx_path, src_path);
+
+    fprintf(stderr, "[nvrtc] Compiling: %s\n", cmd);
+
+    // Run nvcc
+    FILE* pipe = popen(cmd, "r");
+    if (!pipe) {
+        unlink(src_path);
+        return NVRTC_ERROR_COMPILATION;
+    }
+
+    // Capture log
+    char log_buf[8192] = "";
+    size_t log_len = 0;
+    char line[512];
+    while (fgets(line, sizeof(line), pipe)) {
+        size_t ll = strlen(line);
+        if (log_len + ll < sizeof(log_buf) - 1) {
+            memcpy(log_buf + log_len, line, ll);
+            log_len += ll;
+        }
+    }
+    log_buf[log_len] = '\0';
+    int ret = pclose(pipe);
+
+    // Update log
+    free(prog->log);
+    prog->log = strdup(log_buf);
+    prog->log_size = strlen(log_buf) + 1;
+
+    if (ret != 0) {
+        fprintf(stderr, "[nvrtc] Compilation failed (exit %d):\n%s\n", WEXITSTATUS(ret), log_buf);
+        unlink(src_path);
+        unlink(ptx_path);
+        return NVRTC_ERROR_COMPILATION;
+    }
+
+    // Read compiled PTX
+    FILE* ptx_file = fopen(ptx_path, "r");
+    if (!ptx_file) {
+        fprintf(stderr, "[nvrtc] Failed to read PTX from %s\n", ptx_path);
+        unlink(src_path);
+        return NVRTC_ERROR_COMPILATION;
+    }
+
+    fseek(ptx_file, 0, SEEK_END);
+    long ptx_len = ftell(ptx_file);
+    fseek(ptx_file, 0, SEEK_SET);
+
+    free(prog->ptx);
+    prog->ptx = (char*)malloc(ptx_len + 1);
+    if (!prog->ptx) {
+        fclose(ptx_file);
+        unlink(src_path);
+        unlink(ptx_path);
+        return NVRTC_ERROR_OUT_OF_MEMORY;
+    }
+
+    size_t read_len = fread(prog->ptx, 1, ptx_len, ptx_file);
+    prog->ptx[read_len] = '\0';
+    prog->ptx_size = read_len + 1;
+    fclose(ptx_file);
+
+    fprintf(stderr, "[nvrtc] Compilation success: %zu bytes PTX\n", read_len);
+
+    // Cleanup temp files
+    unlink(src_path);
+    unlink(ptx_path);
+
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetPTXSize(nvrtcProgram prog, size_t* ptxSizeRet) {
+    if (!prog) return NVRTC_ERROR_INVALID_PROGRAM;
+    if (ptxSizeRet) *ptxSizeRet = prog->ptx_size ? prog->ptx_size : 1;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetPTX(nvrtcProgram prog, char* ptx) {
+    if (!prog) return NVRTC_ERROR_INVALID_PROGRAM;
+    if (ptx) {
+        if (prog->ptx && prog->ptx_size > 0) {
+            memcpy(ptx, prog->ptx, prog->ptx_size);
+        } else {
+            ptx[0] = '\0';
+        }
+    }
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetCUBINSize(nvrtcProgram prog, size_t* cubinSizeRet) {
+    if (cubinSizeRet) *cubinSizeRet = 0;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetCUBIN(nvrtcProgram prog, char* cubin) {
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetProgramLogSize(nvrtcProgram prog, size_t* logSizeRet) {
+    if (!prog) return NVRTC_ERROR_INVALID_PROGRAM;
+    if (logSizeRet) *logSizeRet = prog->log_size ? prog->log_size : 1;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetProgramLog(nvrtcProgram prog, char* log) {
+    if (!prog) return NVRTC_ERROR_INVALID_PROGRAM;
+    if (log) {
+        if (prog->log && prog->log_size > 0) {
+            memcpy(log, prog->log, prog->log_size);
+        } else {
+            log[0] = '\0';
+        }
+    }
+    return NVRTC_SUCCESS;
+}
+
+const char* nvrtcGetErrorString(int result) {
+    switch (result) {
+        case NVRTC_SUCCESS: return "NVRTC_SUCCESS";
+        case NVRTC_ERROR_OUT_OF_MEMORY: return "NVRTC_ERROR_OUT_OF_MEMORY";
+        case NVRTC_ERROR_PROGRAM_CREATION_FAILURE: return "NVRTC_ERROR_PROGRAM_CREATION_FAILURE";
+        case NVRTC_ERROR_INVALID_INPUT: return "NVRTC_ERROR_INVALID_INPUT";
+        case NVRTC_ERROR_INVALID_PROGRAM: return "NVRTC_ERROR_INVALID_PROGRAM";
+        case NVRTC_ERROR_COMPILATION: return "NVRTC_ERROR_COMPILATION";
+        default: return "NVRTC_ERROR_UNKNOWN";
+    }
+}
+
+int nvrtcAddNameExpression(nvrtcProgram prog, const char* nameExpression) {
+    if (!prog || !nameExpression) return NVRTC_ERROR_INVALID_INPUT;
+    prog->name_expressions = (char**)realloc(prog->name_expressions,
+        (prog->num_name_expressions + 1) * sizeof(char*));
+    if (!prog->name_expressions) return NVRTC_ERROR_OUT_OF_MEMORY;
+    prog->name_expressions[prog->num_name_expressions] = strdup(nameExpression);
+    prog->num_name_expressions++;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetLoweredName(nvrtcProgram prog, const char* nameExpression,
+                        const char** loweredName) {
+    if (!prog || !nameExpression || !loweredName) return NVRTC_ERROR_INVALID_INPUT;
+    // For now return the expression as-is (no name mangling)
+    *loweredName = nameExpression;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetNumSupportedArchs(int* numArchs) {
+    if (numArchs) *numArchs = 1;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetSupportedArchs(int* supportedArchs) {
+    if (supportedArchs) supportedArchs[0] = 80;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetLTOIRSize(nvrtcProgram prog, size_t* ltoSizeRet) {
+    if (ltoSizeRet) *ltoSizeRet = 0;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetLTOIR(nvrtcProgram prog, char* lto) {
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetNVVMSize(nvrtcProgram prog, size_t* nvvmSizeRet) {
+    if (nvvmSizeRet) *nvvmSizeRet = 0;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetNVVM(nvrtcProgram prog, char* nvvm) {
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetOptiXIRSize(nvrtcProgram prog, size_t* sizeRet) {
+    if (sizeRet) *sizeRet = 0;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetOptiXIR(nvrtcProgram prog, char* ir) {
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcSetFlowCallback(nvrtcProgram prog, void* callback, void* payload) {
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetPCHCreateStatus(nvrtcProgram prog) {
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetPCHHeapSize(size_t* size) {
+    if (size) *size = 0;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcGetPCHHeapSizeRequired(size_t* size) {
+    if (size) *size = 0;
+    return NVRTC_SUCCESS;
+}
+
+int nvrtcSetPCHHeapSize(size_t size) {
+    (void)size;
+    return NVRTC_SUCCESS;
 }

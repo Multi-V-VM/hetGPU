@@ -10,6 +10,43 @@ use nvidia_runtime_sys;
 use std::ptr;
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
+
+/// Global allocation tracker for virtual backend.
+/// Maps pointer addresses to their allocation sizes in bytes.
+/// Used by invoke_emulator_bridge to determine safe read sizes.
+#[cfg(feature = "intel")]
+use std::sync::Mutex;
+#[cfg(feature = "intel")]
+use std::collections::HashMap;
+
+#[cfg(feature = "intel")]
+lazy_static::lazy_static! {
+    pub(crate) static ref VIRTUAL_ALLOC_MAP: Mutex<HashMap<usize, usize>> = Mutex::new(HashMap::new());
+}
+
+/// Look up the allocation containing the given address.
+/// Returns Some((remaining_bytes, base_addr)) if the address falls within a tracked allocation.
+/// `remaining_bytes` is how many bytes are available from `addr` to the end of the allocation.
+/// Returns None if the address is not within any tracked allocation.
+#[cfg(feature = "intel")]
+pub(crate) fn get_alloc_size(addr: usize) -> Option<usize> {
+    if let Ok(map) = VIRTUAL_ALLOC_MAP.lock() {
+        // Check for exact match first (fast path)
+        if let Some(&size) = map.get(&addr) {
+            return Some(size);
+        }
+        // Check if addr falls within any allocation range
+        for (&base, &size) in map.iter() {
+            if addr >= base && addr < base + size {
+                // Return remaining bytes from addr to end of allocation
+                return Some(size - (addr - base));
+            }
+        }
+        None
+    } else {
+        None
+    }
+}
 #[cfg(feature = "amd")]
 pub(crate) fn alloc_v2(dptr: *mut hipDeviceptr_t, bytesize: usize) -> hipError_t {
     unsafe { hipMalloc(dptr.cast(), bytesize) }?;
@@ -57,6 +94,11 @@ pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
                 host_ptr,
                 (*dptr).0
             );
+        }
+
+        // Track allocation for safe reads in emulator bridge
+        if let Ok(mut map) = VIRTUAL_ALLOC_MAP.lock() {
+            map.insert(host_ptr as usize, bytesize);
         }
 
         return Ok(());
@@ -124,13 +166,17 @@ pub(crate) fn free_v2(dptr: CUdeviceptr) -> CUresult {
 
     // Check if this is a virtual device (null handle)
     if ze_context.device.0.is_null() {
-        // Virtual device: free host memory
+        // Virtual device: free host memory using tracked allocation size
         use std::alloc::{dealloc, Layout};
 
-        // We don't know the original size, so we can't properly deallocate
-        // For now, just leak the memory (this is for testing only)
-        // In a real implementation, we'd track allocations
-        // TODO: Track allocations to properly deallocate
+        let addr = dptr.0 as usize;
+        if let Ok(mut map) = VIRTUAL_ALLOC_MAP.lock() {
+            if let Some(bytesize) = map.remove(&addr) {
+                if let Ok(layout) = Layout::from_size_align(bytesize, 64) {
+                    unsafe { dealloc(dptr.0 as *mut u8, layout); }
+                }
+            }
+        }
         return Ok(());
     }
 

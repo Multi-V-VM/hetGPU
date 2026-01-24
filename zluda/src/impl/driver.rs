@@ -34,11 +34,14 @@ pub(crate) fn get_proc_address(
 
     #[cfg(unix)]
     unsafe {
+        let sym_str = std::ffi::CStr::from_ptr(symbol).to_string_lossy();
         let addr = dlsym(RTLD_DEFAULT, symbol);
-        *pfn = addr as *mut c_void;
         if addr.is_null() {
+            eprintln!("[hetGPU] cuGetProcAddress: '{}' NOT FOUND", sym_str);
+            *pfn = std::ptr::null_mut();
             return Err(CUerror::NOT_FOUND);
         }
+        *pfn = addr as *mut c_void;
     }
 
     Ok(())

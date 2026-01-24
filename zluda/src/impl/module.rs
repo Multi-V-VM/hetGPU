@@ -241,18 +241,47 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
             ze_device_handle_t(ptr::null_mut()),
         ));
 
-        // Get the size of the binary (scan for null terminator or use a heuristic)
-        let mut binary_size = 0;
-        unsafe {
-            let ptr = image as *const u8;
-            // Scan up to 10MB for the binary size
-            while binary_size < 10 * 1024 * 1024 {
-                if *ptr.add(binary_size) == 0 && binary_size > 0 && *ptr.add(binary_size - 1) == 0 {
-                    break;
+        // Get the size of the binary using ELF header info or scanning
+        let binary_size = if first_bytes.len() >= 64 && first_bytes[4] == 2 {
+            // 64-bit ELF: size = max(e_shoff + e_shnum * e_shentsize, e_phoff + e_phnum * e_phentsize)
+            let e_shoff = u64::from_le_bytes([
+                first_bytes[40], first_bytes[41], first_bytes[42], first_bytes[43],
+                first_bytes[44], first_bytes[45], first_bytes[46], first_bytes[47]
+            ]) as usize;
+            let e_shentsize = u16::from_le_bytes([first_bytes[58], first_bytes[59]]) as usize;
+            let e_shnum = u16::from_le_bytes([first_bytes[60], first_bytes[61]]) as usize;
+            let elf_end = e_shoff + e_shnum * e_shentsize;
+            if elf_end > 0 && elf_end < 100 * 1024 * 1024 {
+                eprintln!("[Intel Backend] ELF binary size from headers: {} bytes", elf_end);
+                elf_end
+            } else {
+                // Fallback: scan for end (less reliable)
+                let mut size = 0usize;
+                unsafe {
+                    let ptr = image as *const u8;
+                    while size < 10 * 1024 * 1024 {
+                        if *ptr.add(size) == 0 && size > 0 && *ptr.add(size - 1) == 0 {
+                            break;
+                        }
+                        size += 1;
+                    }
                 }
-                binary_size += 1;
+                size
             }
-        }
+        } else {
+            // Non-ELF binary: scan for double null
+            let mut size = 0usize;
+            unsafe {
+                let ptr = image as *const u8;
+                while size < 10 * 1024 * 1024 {
+                    if *ptr.add(size) == 0 && size > 0 && *ptr.add(size - 1) == 0 {
+                        break;
+                    }
+                    size += 1;
+                }
+            }
+            size
+        };
 
         // Create module descriptor for binary
         let module_desc = ze_module_desc_t {
@@ -283,10 +312,34 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
         }
 
         if result != ze_result_t::ZE_RESULT_SUCCESS || context.0.is_null() || device.0.is_null() {
-            eprintln!("[Intel Backend] Binary module load failed or virtual device detected ({:?}); attempting PTX extraction", result);
+            eprintln!("[Intel Backend] Binary module load failed or virtual device detected ({:?}); attempting PTX extraction (binary_size={})", result, binary_size);
 
-            // Try to extract PTX from CUBIN using cuobjdump
-            let ptx_source = try_extract_ptx_from_cubin(first_bytes);
+            // Use the full binary for PTX extraction, not just first_bytes
+            let full_binary = if binary_size > 0 && binary_size <= 10 * 1024 * 1024 {
+                unsafe { std::slice::from_raw_parts(image as *const u8, binary_size) }
+            } else {
+                // Try ELF-based size detection for 64-bit ELF
+                let elf_size = if first_bytes.len() >= 64 && first_bytes[4] == 2 {
+                    // 64-bit ELF: section header table end = e_shoff + e_shnum * e_shentsize
+                    let e_shoff = u64::from_le_bytes([
+                        first_bytes[40], first_bytes[41], first_bytes[42], first_bytes[43],
+                        first_bytes[44], first_bytes[45], first_bytes[46], first_bytes[47]
+                    ]) as usize;
+                    let e_shentsize = u16::from_le_bytes([first_bytes[58], first_bytes[59]]) as usize;
+                    let e_shnum = u16::from_le_bytes([first_bytes[60], first_bytes[61]]) as usize;
+                    let end = e_shoff + e_shnum * e_shentsize;
+                    if end > 0 && end < 100 * 1024 * 1024 { end } else { 0 }
+                } else { 0 };
+                if elf_size > 4096 {
+                    eprintln!("[Intel Backend] ELF size detected: {} bytes", elf_size);
+                    unsafe { std::slice::from_raw_parts(image as *const u8, elf_size) }
+                } else {
+                    first_bytes
+                }
+            };
+
+            // Try to extract PTX from CUBIN using full binary
+            let ptx_source = try_extract_ptx_from_cubin(full_binary);
 
             if let Some(ref ptx) = ptx_source {
                 eprintln!("[Intel Backend] Successfully extracted {} bytes of PTX from CUBIN", ptx.len());

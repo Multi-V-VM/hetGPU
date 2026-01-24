@@ -19,44 +19,23 @@ use libc::{dlsym, RTLD_DEFAULT};
 // Note: The cudart shim symbols are force-linked via --whole-archive in build.rs,
 // so we don't need an explicit anchor function here.
 
+// FFI wrapper for LZ4 decompression called from cudart_shim.c
 #[no_mangle]
-pub unsafe extern "C" fn cudaDriverGetVersion(driver_version: *mut i32) -> i32 {
-    if driver_version.is_null() {
-        return 1; // cudaErrorInvalidValue
-    }
-
-    *driver_version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
-    0
+pub extern "C" fn hetgpu_lz4_decompress(
+    src: *const c_char,
+    dst: *mut c_char,
+    compressed_size: c_int,
+    dst_capacity: c_int,
+) -> c_int {
+    unsafe { lz4_sys::LZ4_decompress_safe(src, dst, compressed_size, dst_capacity) }
 }
+
+// Note: cudaDriverGetVersion and cudaGetDeviceCount are now in cudart_shim.c
+// to get proper version tags (@@libcudart.so.12). The C implementations
+// call through to cuDriverGetVersion/cuDeviceGetCount defined below.
 
 // Note: cuGetProcAddress/cuGetProcAddress_v2/cuGetExportTable are provided
 // via cuda_function_declarations! and implemented in r#impl::driver.
-
-#[no_mangle]
-pub unsafe extern "C" fn cudaGetDeviceCount(count: *mut i32) -> i32 {
-    eprintln!("[hetGPU] cudaGetDeviceCount called");
-    if count.is_null() {
-        eprintln!("[hetGPU] cudaGetDeviceCount: count is null");
-        return 1; // cudaErrorInvalidValue
-    }
-
-    match crate::r#impl::driver::init(0) {
-        Ok(_) => eprintln!("[hetGPU] cudaGetDeviceCount: init succeeded"),
-        Err(e) => {
-            eprintln!("[hetGPU] cudaGetDeviceCount: init failed with {:?}", e);
-            *count = 0;
-            return 0;
-        }
-    }
-
-    *count = crate::r#impl::driver::global_state()
-        .map(|state| {
-            eprintln!("[hetGPU] cudaGetDeviceCount: {} devices", state.devices.len());
-            state.devices.len() as i32
-        })
-        .unwrap_or(0);
-    0
-}
 
 // Get device handle by index using the ordinal-to-handle mapping from driver.rs
 #[cfg(feature = "intel")]

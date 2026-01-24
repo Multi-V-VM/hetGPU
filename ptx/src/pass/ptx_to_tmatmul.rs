@@ -29,8 +29,10 @@ pub struct PtxToTMatmulCompiler {
     codegen: TMatmulCodegen,
     ssa_counter: usize,
     ptx_to_ssa: HashMap<String, String>,
-    /// Track which PTX variables came from which memory regions
+    /// Track which PTX variables came from which memory regions (e.g., "%rd1" → "PARAM_0")
     ptx_to_memory: HashMap<String, String>,
+    /// Map kernel parameter names to their indices (e.g., "output_ptr" → 0)
+    param_name_to_index: HashMap<String, usize>,
     function_map: HashMap<String, usize>,
     current_function: Option<String>,
     stats: RegisterStats,
@@ -43,6 +45,7 @@ impl PtxToTMatmulCompiler {
             ssa_counter: 0,
             ptx_to_ssa: HashMap::new(),
             ptx_to_memory: HashMap::new(),
+            param_name_to_index: HashMap::new(),
             function_map: HashMap::new(),
             current_function: None,
             stats: RegisterStats {
@@ -273,6 +276,17 @@ impl PtxToTMatmulCompiler {
         self.codegen
             .add_section(&format!("FUNCTION: {}", func_name));
 
+        // Build parameter name → index mapping from function's input arguments
+        self.param_name_to_index.clear();
+        for (idx, var) in function.func_directive.input_arguments.iter().enumerate() {
+            let param_name = var.name.to_string();
+            self.param_name_to_index.insert(param_name.clone(), idx);
+            self.codegen.add_comment(&format!("BIND PARAM_{} {}", idx, param_name));
+        }
+        if !function.func_directive.input_arguments.is_empty() {
+            self.codegen.add_comment("END_BINDINGS");
+        }
+
         // Process function body if it exists
         if let Some(body) = function.body {
             for statement in body {
@@ -316,66 +330,99 @@ impl PtxToTMatmulCompiler {
         self.stats.total_operations += 1;
 
         match inst {
-            // Arithmetic instructions - pattern match on data and arguments
-            ast::Instruction::Add { arguments, .. } => {
+            // Arithmetic instructions - only emit for float types (skip integer index/address math)
+            ast::Instruction::Add { data, arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                let src1_name = Self::operand_to_string(&arguments.src1);
+                let src2_name = Self::operand_to_string(&arguments.src2);
 
-                let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
-                let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
+                // Check if this is pointer arithmetic (add base_ptr, offset)
+                let src1_is_ptr = self.ptx_to_memory.contains_key(&src1_name);
+                let src2_is_ptr = self.ptx_to_memory.contains_key(&src2_name);
 
-                self.codegen
-                    .emit_operation("tmatmul.add", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                if src1_is_ptr || src2_is_ptr {
+                    // Pointer arithmetic - propagate memory binding
+                    let ptr_name = if src1_is_ptr { &src1_name } else { &src2_name };
+                    if let Some(mem_region) = self.ptx_to_memory.get(ptr_name).cloned() {
+                        self.ptx_to_memory.insert(dst_name.clone(), mem_region);
+                    }
+                    self.codegen.add_comment(&format!("PTX add (pointer arithmetic, propagating {})", ptr_name));
+                    let src_ssa = self.map_ptx_to_ssa(if src1_is_ptr { &src1_name } else { &src2_name });
+                    self.ptx_to_ssa.insert(dst_name, src_ssa);
+                } else if matches!(data, ast::ArithDetails::Float(_)) {
+                    // Float data add - emit tmatmul instruction
+                    let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                    let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
+                    let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
+                    self.codegen
+                        .emit_operation("tmatmul.add", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                } else {
+                    // Integer add (index/address computation) - just track SSA, don't emit
+                    let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                }
             }
-            ast::Instruction::Sub { arguments, .. } => {
-                let dst_name = Self::operand_to_string(&arguments.dst);
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-
-                let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
-                let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
-
-                self.codegen
-                    .emit_operation("tmatmul.sub", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+            ast::Instruction::Sub { data, arguments, .. } => {
+                if matches!(data, ast::ArithDetails::Float(_)) {
+                    let dst_name = Self::operand_to_string(&arguments.dst);
+                    let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                    let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
+                    let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
+                    self.codegen
+                        .emit_operation("tmatmul.sub", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                } else {
+                    let dst_name = Self::operand_to_string(&arguments.dst);
+                    let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                }
             }
-            ast::Instruction::Mul { arguments, .. } => {
-                let dst_name = Self::operand_to_string(&arguments.dst);
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-
-                let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
-                let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
-
-                self.codegen
-                    .emit_operation("tmatmul.mul", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+            ast::Instruction::Mul { data, arguments, .. } => {
+                let is_float = matches!(data, ast::MulDetails::Float(_));
+                if is_float {
+                    let dst_name = Self::operand_to_string(&arguments.dst);
+                    let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                    let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
+                    let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
+                    self.codegen
+                        .emit_operation("tmatmul.mul", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                } else {
+                    let dst_name = Self::operand_to_string(&arguments.dst);
+                    let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                }
             }
-            ast::Instruction::Div { arguments, .. } => {
-                let dst_name = Self::operand_to_string(&arguments.dst);
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-
-                let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
-                let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
-
-                self.codegen
-                    .emit_operation("tmatmul.div", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+            ast::Instruction::Div { data, arguments, .. } => {
+                if matches!(data, ast::DivDetails::Float(_)) {
+                    let dst_name = Self::operand_to_string(&arguments.dst);
+                    let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                    let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
+                    let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
+                    self.codegen
+                        .emit_operation("tmatmul.div", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                } else {
+                    let dst_name = Self::operand_to_string(&arguments.dst);
+                    let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                }
             }
 
-            // Fused multiply-add
-            ast::Instruction::Mad { arguments, .. } => {
-                let dst_name = Self::operand_to_string(&arguments.dst);
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-
-                let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
-                let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
-                let src3_ssa = self.handle_operand_with_immediate(&arguments.src3)?;
-
-                // Emit as mul + add
-                let temp_ssa = self.new_ssa();
-                self.codegen.emit_operation(
-                    "tmatmul.mul",
-                    &[&src1_ssa, &src2_ssa],
-                    &[&temp_ssa],
-                )?;
-                self.codegen
-                    .emit_operation("tmatmul.add", &[&temp_ssa, &src3_ssa], &[&dst_ssa])?;
+            // Fused multiply-add - only emit for float
+            ast::Instruction::Mad { data, arguments, .. } => {
+                let is_float = matches!(data, ast::MadDetails::Float(_));
+                if is_float {
+                    let dst_name = Self::operand_to_string(&arguments.dst);
+                    let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                    let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
+                    let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
+                    let src3_ssa = self.handle_operand_with_immediate(&arguments.src3)?;
+                    let temp_ssa = self.new_ssa();
+                    self.codegen.emit_operation(
+                        "tmatmul.mul",
+                        &[&src1_ssa, &src2_ssa],
+                        &[&temp_ssa],
+                    )?;
+                    self.codegen
+                        .emit_operation("tmatmul.add", &[&temp_ssa, &src3_ssa], &[&dst_ssa])?;
+                } else {
+                    let dst_name = Self::operand_to_string(&arguments.dst);
+                    let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                }
             }
             ast::Instruction::Fma { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
@@ -404,20 +451,36 @@ impl PtxToTMatmulCompiler {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
 
-                // Track memory mapping for later stores
-                // src_name may be like "input", "output", or "in_addr+2"
                 let base_name = src_name.split('+').next().unwrap_or(&src_name).to_string();
-                // Resolve parameter names to memory region names
-                let resolved_base = match base_name.as_str() {
-                    "input" => "X".to_string(),
-                    "output" => "O".to_string(),
-                    _ => base_name.clone(),
-                };
-                self.ptx_to_memory.insert(dst_name.clone(), resolved_base);
 
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen
-                    .emit_operation("tmatmul.ldv", &[&src_name], &[&dst_ssa])?;
+                // Check if this is a parameter load (address setup for a pointer param)
+                if let Some(&param_idx) = self.param_name_to_index.get(&base_name) {
+                    // This is loading a kernel parameter address - just record the binding
+                    let param_ref = format!("PARAM_{}", param_idx);
+                    self.ptx_to_memory.insert(dst_name.clone(), param_ref.clone());
+                    self.codegen.add_comment(&format!("ld.param {} = {} (PARAM_{})", dst_name, base_name, param_idx));
+                    // Map the SSA value too so it can be used in later instructions
+                    let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                } else {
+                    // This is a global/generic memory load - resolve base to PARAM_N
+                    let resolved_mem = if let Some(mem_region) = self.ptx_to_memory.get(&base_name) {
+                        mem_region.clone()
+                    } else {
+                        // Fallback: check named mappings
+                        match base_name.as_str() {
+                            "input" => "X".to_string(),
+                            "output" => "O".to_string(),
+                            _ => base_name.clone(),
+                        }
+                    };
+                    // Note: Do NOT add data load destinations to ptx_to_memory.
+                    // Only pointer values (from ld.param) should be tracked there.
+                    // Data values loaded here are tensor elements, not addresses.
+
+                    let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                    self.codegen
+                        .emit_operation("tmatmul.ldv", &[&resolved_mem], &[&dst_ssa])?;
+                }
             }
             ast::Instruction::St { arguments, .. } => {
                 let addr_name = Self::operand_to_string(&arguments.src1);
@@ -427,16 +490,11 @@ impl PtxToTMatmulCompiler {
                 let resolved_addr = if let Some(mem_region) = self.ptx_to_memory.get(&addr_name) {
                     mem_region.clone()
                 } else {
-                    // Check if it's a base+offset (e.g., "out_addr+4")
+                    // Check if it's a base+offset (e.g., "%rd3+4")
                     let base = addr_name.split('+').next().unwrap_or(&addr_name);
                     if let Some(mem_region) = self.ptx_to_memory.get(base) {
-                        // Preserve the offset if present
-                        if addr_name.contains('+') {
-                            let offset = addr_name.split('+').nth(1).unwrap_or("0");
-                            format!("{}+{}", mem_region, offset)
-                        } else {
-                            mem_region.clone()
-                        }
+                        // For PARAM_N references, don't preserve offset (vector mode loads entire tensor)
+                        mem_region.clone()
                     } else {
                         addr_name.clone()
                     }
@@ -449,20 +507,32 @@ impl PtxToTMatmulCompiler {
             }
 
             // Move operations
-            ast::Instruction::Mov { arguments, .. } => {
+            ast::Instruction::Mov { data, arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
 
-                // Check if source is an immediate value
+                // Check if this is a float type move (data operation)
+                let is_float_type = matches!(&data.typ,
+                    ast::Type::Scalar(st) if matches!(st, ast::ScalarType::F32 | ast::ScalarType::F64 | ast::ScalarType::F16 | ast::ScalarType::BF16)
+                );
+
                 if Self::is_immediate(&arguments.src) {
-                    // For immediate values, we need to emit a load instruction
-                    let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                    self.codegen.add_comment(&format!("PTX mov immediate: {} = {}", dst_name, src_name));
-                    self.codegen.emit_operation("tmatmul.ldv", &[&format!("CONST_{}", src_name)], &[&dst_ssa])?;
+                    if is_float_type {
+                        // Float immediate - emit load (e.g., mov.f32 %f1, 0.0)
+                        let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                        self.codegen.emit_operation("tmatmul.ldv", &[&format!("CONST_{}", src_name)], &[&dst_ssa])?;
+                    } else {
+                        // Integer immediate (thread index, constant) - just track SSA, no emission
+                        let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                    }
                 } else {
                     let src_ssa = self.map_ptx_to_ssa(&src_name);
                     // Update mapping - move is implicit in SSA
-                    self.ptx_to_ssa.insert(dst_name, src_ssa);
+                    self.ptx_to_ssa.insert(dst_name.clone(), src_ssa);
+                    // Propagate memory bindings (e.g., mov %rd3, %rd1 where %rd1 → PARAM_0)
+                    if let Some(mem_region) = self.ptx_to_memory.get(&src_name).cloned() {
+                        self.ptx_to_memory.insert(dst_name, mem_region);
+                    }
                 }
             }
 
@@ -579,7 +649,11 @@ impl PtxToTMatmulCompiler {
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
                 self.codegen.add_comment(&format!("PTX cvt: {} = convert({})", dst_name, src_name));
                 // Pass through for now
-                self.ptx_to_ssa.insert(dst_name, src_ssa);
+                self.ptx_to_ssa.insert(dst_name.clone(), src_ssa);
+                // Propagate memory bindings through type conversions
+                if let Some(mem_region) = self.ptx_to_memory.get(&src_name).cloned() {
+                    self.ptx_to_memory.insert(dst_name, mem_region);
+                }
             }
 
             // Select/conditional
