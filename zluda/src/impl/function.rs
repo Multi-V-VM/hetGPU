@@ -1564,71 +1564,53 @@ unsafe fn execute_softmax_kernel_fallback(
     _name_lower: &str,
     kernel_params: *mut *mut ::core::ffi::c_void,
 ) {
-    // Softmax kernels typically take input ptr, output ptr, and dimension info
-    // Scan first parameter for pointers
+    // softmax_warp_forward signature:
+    //   (output_t *dst, const input_t *src, int batch_size, int stride, int element_count, ...)
+    // kernel_params[0] = &dst, [1] = &src, [2] = &batch_size, [3] = &stride, [4] = &element_count
+
     let param0 = *kernel_params.add(0);
-    if param0.is_null() {
-        eprintln!("[TMatmul Fallback] softmax: null parameter");
+    let param1 = *kernel_params.add(1);
+    if param0.is_null() || param1.is_null() {
+        eprintln!("[TMatmul Fallback] softmax: null dst or src parameter");
         return;
     }
 
-    let found_ptrs = scan_for_alloc_pointers(param0 as *const u8, 256);
+    let dst_ptr_val = (param0 as *const u64).read_unaligned();
+    let src_ptr_val = (param1 as *const u64).read_unaligned();
 
-    if found_ptrs.len() < 2 {
-        // Try scanning multiple params
-        let mut all_ptrs = found_ptrs;
-        for pi in 1..8 {
-            let p = *kernel_params.add(pi);
-            if p.is_null() { break; }
-            let more = scan_for_alloc_pointers(p as *const u8, 64);
-            all_ptrs.extend(more);
-            if all_ptrs.len() >= 2 { break; }
-        }
-        if all_ptrs.len() < 2 {
-            eprintln!("[TMatmul Fallback] softmax: couldn't find input/output pointers");
-            return;
-        }
-        // Use deduplicated set
-        all_ptrs.sort_by_key(|&(_, ptr, _)| ptr);
-        all_ptrs.dedup_by_key(|a| a.1);
+    let dst_size = super::memory::get_alloc_size(dst_ptr_val as usize);
+    let src_size = super::memory::get_alloc_size(src_ptr_val as usize);
 
-        if all_ptrs.len() < 2 {
-            eprintln!("[TMatmul Fallback] softmax: need at least 2 distinct pointers");
-            return;
-        }
-
-        let (_, ptr0, size0) = all_ptrs[0];
-        let (_, ptr1, size1) = all_ptrs[1];
-        // Same size = in-place or same shape
-        let total_elements = size0.max(size1) / 4;
-        // Assume square-ish: rows x cols where cols is the softmax dim
-        let cols = 128.min(total_elements); // heuristic
-        let rows = total_elements / cols;
-        execute_softmax_on_data(ptr0 as *const f32, ptr1 as *mut f32, rows, cols);
+    if dst_size.is_none() || src_size.is_none() {
+        eprintln!("[TMatmul Fallback] softmax: dst or src not in alloc map (dst={:#x}, src={:#x})",
+                 dst_ptr_val, src_ptr_val);
         return;
     }
 
-    // If found in single struct: typically output first, then input (or same buffer for in-place)
-    let mut sorted = found_ptrs.clone();
-    sorted.sort_by_key(|&(off, _, _)| off); // sort by offset in struct
+    // Read dimension params
+    let param2 = *kernel_params.add(2);
+    let param3 = *kernel_params.add(3);
+    let param4 = *kernel_params.add(4);
 
-    let (_, ptr0, size0) = sorted[0];
-    let (_, ptr1, size1) = sorted[1];
+    let batch_size = if !param2.is_null() { (param2 as *const i32).read_unaligned() as usize } else { 1 };
+    let stride = if !param3.is_null() { (param3 as *const i32).read_unaligned() as usize } else { 1 };
+    let element_count = if !param4.is_null() { (param4 as *const i32).read_unaligned() as usize } else {
+        // Fallback: infer from allocation size
+        let total = src_size.unwrap() / 4;
+        if batch_size > 0 { total / batch_size } else { total }
+    };
 
-    let total_elements = size0.max(size1) / 4;
-    // For softmax, input and output have the same shape
-    // Determine rows and cols from the tensor shape
-    // Heuristic: softmax is typically along last dim. If total_elements is divisible by common sizes...
-    let cols = if total_elements % 128 == 0 { 128 }
-               else if total_elements % 64 == 0 { 64 }
-               else if total_elements % 32 == 0 { 32 }
-               else { total_elements };
-    let rows = if cols > 0 { total_elements / cols } else { 1 };
+    let rows = batch_size;
+    let cols = element_count;
 
-    // First pointer in struct is likely output, second is input for PyTorch softmax
-    execute_softmax_on_data(ptr1 as *const f32, ptr0 as *mut f32, rows, cols);
+    if rows == 0 || cols == 0 {
+        eprintln!("[TMatmul Fallback] softmax: invalid dims (rows={}, cols={})", rows, cols);
+        return;
+    }
+
+    execute_softmax_on_data(src_ptr_val as *const f32, dst_ptr_val as *mut f32, rows, cols);
     eprintln!("[TMatmul Fallback] softmax executed ({}x{} = {} elements) for '{}'",
-             rows, cols, total_elements, kernel_name);
+             rows, cols, rows * cols, kernel_name);
 }
 
 #[cfg(feature = "intel")]
@@ -1673,19 +1655,19 @@ unsafe fn execute_indexselect_kernel_fallback(
         return;
     }
 
-    // Scan a larger area - TensorInfo structs are passed as separate params
+    // indexSelectSmallIndex has 7 params:
+    //   TensorInfo output, TensorInfo input, TensorInfo indices,
+    //   int dim, int numIndices, IndexType innerSize, int64_t outerSizeI
+    // Only scan the first 3 TensorInfo params for pointers (each contains data ptr at offset 0)
     let mut all_ptrs: Vec<(usize, u64, usize)> = Vec::new();
-    for pi in 0..10 {
+    for pi in 0..3 {
         let p = *kernel_params.add(pi);
-        if p.is_null() { break; }
-        // Each param could be a pointer-to-value or the value itself
-        let as_u64 = (p as *const u64).read_unaligned();
-        if let Some(size) = super::memory::get_alloc_size(as_u64 as usize) {
-            all_ptrs.push((pi, as_u64, size));
+        if p.is_null() { continue; }
+        // TensorInfo has data pointer at offset 0
+        let data_ptr = (p as *const u64).read_unaligned();
+        if let Some(size) = super::memory::get_alloc_size(data_ptr as usize) {
+            all_ptrs.push((pi, data_ptr, size));
         }
-        // Also check if p points to a struct containing pointers
-        let inner = scan_for_alloc_pointers(p as *const u8, 64);
-        all_ptrs.extend(inner.into_iter().map(|(off, ptr, sz)| (pi * 100 + off, ptr, sz)));
     }
 
     // Deduplicate by pointer value
@@ -1849,88 +1831,81 @@ unsafe fn execute_norm_kernel_fallback(
     name_lower: &str,
     kernel_params: *mut *mut ::core::ffi::c_void,
 ) {
-    // LayerNorm/RMSNorm kernels: scan params for allocation pointers
-    let mut all_ptrs: Vec<(usize, u64, usize)> = Vec::new();
-    for pi in 0..10 {
-        let p = *kernel_params.add(pi);
-        if p.is_null() { break; }
-        let as_u64 = (p as *const u64).read_unaligned();
-        if let Some(size) = super::memory::get_alloc_size(as_u64 as usize) {
-            all_ptrs.push((pi, as_u64, size));
-        }
-        let inner = scan_for_alloc_pointers(p as *const u8, 128);
-        all_ptrs.extend(inner.into_iter().map(|(off, ptr, sz)| (pi * 1000 + off, ptr, sz)));
-    }
-
-    all_ptrs.sort_by_key(|&(_, ptr, _)| ptr);
-    all_ptrs.dedup_by_key(|a| a.1);
-
-    if all_ptrs.len() < 2 {
-        eprintln!("[TMatmul Fallback] norm: need at least input and output (found {})", all_ptrs.len());
-        return;
-    }
-
-    // Sort by size: weight/bias are smallest (hidden_size), input/output are larger (batch*hidden)
-    all_ptrs.sort_by_key(|&(_, _, size)| size);
-
     let is_rmsnorm = name_lower.contains("rmsnorm") || name_lower.contains("rms_norm");
 
-    // Find the largest allocations (input/output) and smallest (weight/bias)
-    let large_ptrs: Vec<_> = all_ptrs.iter().filter(|&&(_, _, s)| s == all_ptrs.last().unwrap().2).collect();
-    let small_ptrs: Vec<_> = all_ptrs.iter().filter(|&&(_, _, s)| s < all_ptrs.last().unwrap().2).collect();
-
-    if large_ptrs.len() < 2 {
-        // Input and output might be same size but different pointers
-        // Use the two largest
-        let n = all_ptrs.len();
-        let (_, inp_ptr, inp_size) = all_ptrs[n - 1];
-        let (_, out_ptr, _) = if n >= 2 { all_ptrs[n - 2] } else { all_ptrs[n - 1] };
-
-        let total_elements = inp_size / 4;
-        let hidden_size = if !small_ptrs.is_empty() {
-            small_ptrs[0].2 / 4
-        } else {
-            128 // default
-        };
-        let batch_size = if hidden_size > 0 { total_elements / hidden_size } else { 1 };
-
-        let weight_ptr = if !small_ptrs.is_empty() { small_ptrs[0].1 as *const f32 } else { std::ptr::null() };
-        let bias_ptr = if small_ptrs.len() >= 2 { small_ptrs[1].1 as *const f32 } else { std::ptr::null() };
-
-        execute_norm_on_data(
-            inp_ptr as *const f32, out_ptr as *mut f32,
-            weight_ptr, bias_ptr,
-            batch_size, hidden_size, is_rmsnorm, 1e-5,
-        );
-        eprintln!("[TMatmul Fallback] norm executed (batch={}, hidden={}, rmsnorm={}) for '{}'",
-                 batch_size, hidden_size, is_rmsnorm, kernel_name);
+    // vectorized_layer_norm_kernel signature:
+    //   (int N, T_ACC epsilon, const T* X, const T* gamma, const T* beta, T* Y, T_ACC* mean, T_ACC* rstd)
+    // kernel_params[0] = &N, [1] = &epsilon, [2] = &X, [3] = &gamma, [4] = &beta,
+    // [5] = &Y, [6] = &mean, [7] = &rstd
+    //
+    // For welford/other norm kernels, scan only pointer params safely
+    let param0 = *kernel_params.add(0);
+    if param0.is_null() {
+        eprintln!("[TMatmul Fallback] norm: null param0");
         return;
     }
 
-    let (_, ptr_a, size_a) = *large_ptrs[0];
-    let (_, ptr_b, _) = *large_ptrs[1];
-    let total_elements = size_a / 4;
-    let hidden_size = if !small_ptrs.is_empty() { small_ptrs[0].2 / 4 } else { 128 };
+    // Read hidden_size (N) from param 0
+    let hidden_size = (param0 as *const i32).read_unaligned() as usize;
+    if hidden_size == 0 || hidden_size > 65536 {
+        eprintln!("[TMatmul Fallback] norm: invalid hidden_size={}", hidden_size);
+        return;
+    }
+
+    // Read epsilon from param 1
+    let eps_param = *kernel_params.add(1);
+    let epsilon = if !eps_param.is_null() {
+        (eps_param as *const f32).read_unaligned() as f64
+    } else {
+        1e-5
+    };
+
+    // Read tensor pointers from params 2-5
+    let mut ptrs: Vec<(*mut u8, usize)> = Vec::new(); // (ptr, alloc_size)
+    for pi in 2..8 {
+        let p = *kernel_params.add(pi);
+        if p.is_null() {
+            ptrs.push((std::ptr::null_mut(), 0));
+            continue;
+        }
+        let ptr_val = (p as *const u64).read_unaligned();
+        if let Some(size) = super::memory::get_alloc_size(ptr_val as usize) {
+            ptrs.push((ptr_val as *mut u8, size));
+        } else {
+            ptrs.push((std::ptr::null_mut(), 0));
+        }
+    }
+
+    // ptrs[0] = X (input), ptrs[1] = gamma (weight), ptrs[2] = beta (bias),
+    // ptrs[3] = Y (output), ptrs[4] = mean, ptrs[5] = rstd
+    let x_ptr = ptrs[0].0 as *const f32;
+    let gamma_ptr = ptrs[1].0 as *const f32;
+    let beta_ptr = ptrs[2].0 as *const f32;
+    let y_ptr = ptrs[3].0 as *mut f32;
+
+    if x_ptr.is_null() || y_ptr.is_null() {
+        eprintln!("[TMatmul Fallback] norm: missing input or output pointer");
+        return;
+    }
+
+    // Determine batch size from allocation
+    let x_size = ptrs[0].1;
+    let total_elements = x_size / 4; // f32
     let batch_size = if hidden_size > 0 { total_elements / hidden_size } else { 1 };
 
-    let weight_ptr = if !small_ptrs.is_empty() { small_ptrs[0].1 as *const f32 } else { std::ptr::null() };
-    let bias_ptr = if small_ptrs.len() >= 2 { small_ptrs[1].1 as *const f32 } else { std::ptr::null() };
+    let weight_ptr = if !gamma_ptr.is_null() { gamma_ptr } else { std::ptr::null() };
+    let bias_ptr = if !beta_ptr.is_null() { beta_ptr } else { std::ptr::null() };
 
-    // Determine which is input and which is output
-    // Heuristic: first in struct order is output
-    let (inp_ptr, out_ptr) = if large_ptrs[0].0 < large_ptrs[1].0 {
-        (ptr_b, ptr_a) // first = output, second = input
-    } else {
-        (ptr_a, ptr_b)
-    };
+    let inp_ptr = x_ptr as u64;
+    let out_ptr = y_ptr as u64;
 
     execute_norm_on_data(
         inp_ptr as *const f32, out_ptr as *mut f32,
         weight_ptr, bias_ptr,
-        batch_size, hidden_size, is_rmsnorm, 1e-5,
+        batch_size, hidden_size, is_rmsnorm, epsilon as f32,
     );
-    eprintln!("[TMatmul Fallback] norm executed (batch={}, hidden={}, rmsnorm={}) for '{}'",
-             batch_size, hidden_size, is_rmsnorm, kernel_name);
+    eprintln!("[TMatmul Fallback] norm executed (batch={}, hidden={}, eps={}, rmsnorm={}) for '{}'",
+             batch_size, hidden_size, epsilon, is_rmsnorm, kernel_name);
 }
 
 #[cfg(feature = "intel")]

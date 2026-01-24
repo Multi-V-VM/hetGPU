@@ -21,6 +21,35 @@ use super::LiveCheck;
 #[cfg(unix)]
 use libc::{dlsym, RTLD_DEFAULT};
 
+/// Get a handle to our own .so (libnvcuda.so) so we can resolve cu* symbols
+/// from OUR library, not the system's /lib/x86_64-linux-gnu/libcuda.so.1.
+#[cfg(unix)]
+fn get_self_library_handle() -> *mut c_void {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    static mut SELF_HANDLE: *mut c_void = std::ptr::null_mut();
+
+    INIT.call_once(|| {
+        unsafe {
+            // Use dladdr on cuInit (which we know is in our library) to find our .so path
+            let mut info: libc::Dl_info = std::mem::zeroed();
+            // Use a known exported function as the reference point
+            extern "C" { fn cuInit(flags: std::os::raw::c_uint) -> std::os::raw::c_int; }
+            let func_ptr = cuInit as *const c_void;
+            if libc::dladdr(func_ptr, &mut info) != 0 && !info.dli_fname.is_null() {
+                let handle = libc::dlopen(info.dli_fname, libc::RTLD_NOLOAD | libc::RTLD_NOW);
+                if !handle.is_null() {
+                    let fname = CStr::from_ptr(info.dli_fname).to_string_lossy();
+                    eprintln!("[hetGPU] cuGetProcAddress: self library = {} (handle={:p})", fname, handle);
+                    SELF_HANDLE = handle;
+                }
+            }
+        }
+    });
+
+    unsafe { SELF_HANDLE }
+}
+
 // CUDA driver entry point lookups
 pub(crate) fn get_proc_address(
     symbol: *const c_char,
@@ -35,7 +64,16 @@ pub(crate) fn get_proc_address(
     #[cfg(unix)]
     unsafe {
         let sym_str = std::ffi::CStr::from_ptr(symbol).to_string_lossy();
-        let addr = dlsym(RTLD_DEFAULT, symbol);
+        // First try our own library to avoid resolving to system's libcuda.so.1
+        let self_handle = get_self_library_handle();
+        let mut addr = std::ptr::null_mut();
+        if !self_handle.is_null() {
+            addr = dlsym(self_handle, symbol);
+        }
+        if addr.is_null() {
+            // Fallback to global search
+            addr = dlsym(RTLD_DEFAULT, symbol);
+        }
         if addr.is_null() {
             eprintln!("[hetGPU] cuGetProcAddress: '{}' NOT FOUND", sym_str);
             *pfn = std::ptr::null_mut();
@@ -60,7 +98,16 @@ pub(crate) fn get_proc_address_v2(
 
     #[cfg(unix)]
     unsafe {
-        let addr = dlsym(RTLD_DEFAULT, symbol);
+        // First try our own library to avoid resolving to system's libcuda.so.1
+        let self_handle = get_self_library_handle();
+        let mut addr = std::ptr::null_mut();
+        if !self_handle.is_null() {
+            addr = dlsym(self_handle, symbol);
+        }
+        if addr.is_null() {
+            // Fallback to global search
+            addr = dlsym(RTLD_DEFAULT, symbol);
+        }
         *pfn = addr as *mut c_void;
         if !symbol_status.is_null() {
             (*symbol_status).0 = if addr.is_null() { 1 } else { 0 };

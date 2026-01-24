@@ -150,6 +150,4 @@ libcudart.so.12 {
     nvrtcGetPCHHeapSize;
     nvrtcGetPCHHeapSizeRequired;
     nvrtcSetPCHHeapSize;
-  local:
-    *;
 };

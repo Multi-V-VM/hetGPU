@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <ucontext.h>
+#include <dlfcn.h>
 
 // SIGFPE handler - log first occurrence then disable FP exceptions to continue
 static int sigfpe_count = 0;
@@ -1473,6 +1474,7 @@ void** __cudaRegisterFatBinary(void* fatCubin) {
     FatbinHeader* fatbin_header = (FatbinHeader*)fatbin_header_ptr;
     void* payload = NULL;
     size_t payload_size = 0;
+    int payload_needs_free = 0;
 
     if (fatbin_header && fatbin_header->magic == FATBIN_MAGIC) {
         fprintf(stderr, "[cudart_shim] Valid FatbinHeader found (magic: 0x%08x)\n", fatbin_header->magic);
@@ -1518,11 +1520,10 @@ void** __cudaRegisterFatBinary(void* fatCubin) {
                         if (result > 0) {
                             decompressed[result] = '\0';
                             fprintf(stderr, "[cudart_shim] LZ4 decompression successful: %d bytes\n", result);
-                            fprintf(stderr, "[cudart_shim] PTX preview (first 200 chars):\n%.200s\n", decompressed);
 
-                            // Store decompressed PTX (leaked for lifetime)
                             payload = decompressed;
                             payload_size = (size_t)result;
+                            payload_needs_free = 1;
                         } else {
                             fprintf(stderr, "[cudart_shim] LZ4 decompression FAILED (result=%d), trying raw\n", result);
                             free(decompressed);
@@ -1628,6 +1629,7 @@ void** __cudaRegisterFatBinary(void* fatCubin) {
                             fprintf(stderr, "[cudart_shim] PTX preview: %.200s...\n", ptx_data);
                             payload = ptx_data;
                             payload_size = ptx_size;
+                            payload_needs_free = 1;
                         } else {
                             fprintf(stderr, "[cudart_shim] Extracted PTX doesn't look valid\n");
                             free(ptx_data);
@@ -1657,11 +1659,16 @@ void** __cudaRegisterFatBinary(void* fatCubin) {
     CUmodule module = NULL;
     CUresult result = cuModuleLoadData(&module, payload);
 
+    // Free decompressed PTX buffer now that cuModuleLoadData has consumed it
+    if (payload_needs_free && payload) {
+        free(payload);
+        payload = NULL;
+        payload_needs_free = 0;
+    }
+
     if (result != 0) {
         fprintf(stderr, "[cudart_shim] cuModuleLoadData failed: %d\n", result);
         fprintf(stderr, "[cudart_shim] Module load failed, but continuing with placeholder\n");
-        // Don't fail completely - return a handle even if load fails
-        // This allows the rest of the code to continue
     } else {
         fprintf(stderr, "[cudart_shim] Successfully loaded module: %p\n", module);
     }
@@ -1765,12 +1772,53 @@ cudaError_t cudaGetDriverEntryPoint(const char* symbol,
     return cudaGetDriverEntryPointByVersion(symbol, funcPtr, driverVersion, flags);
 }
 
+// Get a dlopen handle to our own .so (libnvcuda.so) so we can resolve
+// cu* driver symbols from OUR library, not the system's libcuda.so.1.
+static void* get_self_library_handle(void) {
+    static void* self_handle = NULL;
+    static int tried = 0;
+    if (!tried) {
+        tried = 1;
+        Dl_info info;
+        if (dladdr((void*)cudaGetDriverEntryPointByVersion, &info) && info.dli_fname) {
+            self_handle = dlopen(info.dli_fname, RTLD_NOLOAD | RTLD_NOW);
+            if (self_handle) {
+                fprintf(stderr, "[cudart_shim] Self library: %s (handle=%p)\n",
+                        info.dli_fname, self_handle);
+            }
+        }
+    }
+    return self_handle;
+}
+
 cudaError_t cudaGetDriverEntryPointByVersion(const char* symbol,
                                              void** funcPtr,
                                              int driverVersion,
                                              unsigned long long flags) {
-    (void)symbol; (void)driverVersion; (void)flags;
-    if (funcPtr) *funcPtr = (void*)0;
+    (void)driverVersion; (void)flags;
+    if (!funcPtr) return 0;
+
+    // Look up the requested CUDA driver symbol in OUR library (libnvcuda.so).
+    // PyTorch 2.9+ uses this to get function pointers for cuDevicePrimaryCtxRetain,
+    // cuCtxSetCurrent, etc. at runtime rather than linking directly.
+    // We must NOT use RTLD_DEFAULT because that would find the system's
+    // /lib/x86_64-linux-gnu/libcuda.so.1 which tries to talk to a real GPU driver.
+    void* handle = get_self_library_handle();
+    void* ptr = NULL;
+    if (handle) {
+        ptr = dlsym(handle, symbol);
+    }
+    if (!ptr) {
+        // Fallback to RTLD_DEFAULT if self-lookup fails
+        ptr = dlsym(RTLD_DEFAULT, symbol);
+    }
+    if (ptr) {
+        *funcPtr = ptr;
+        fprintf(stderr, "[cudart_shim] cudaGetDriverEntryPoint('%s') -> %p\n", symbol, ptr);
+    } else {
+        *funcPtr = NULL;
+        fprintf(stderr, "[cudart_shim] cudaGetDriverEntryPoint('%s') -> NOT FOUND\n", symbol);
+    }
     return 0;
 }
 

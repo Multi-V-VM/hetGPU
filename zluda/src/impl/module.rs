@@ -6,7 +6,7 @@ use cuda_types::cuda::*;
 use hip_runtime_sys::*;
 #[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
 use nvidia_runtime_sys;
-use std::{ffi::CStr, ptr};
+use std::{ffi::CStr, ptr, sync::Arc};
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 use tt_runtime_sys;
 #[cfg(feature = "intel")]
@@ -23,7 +23,8 @@ pub(crate) struct Module {
     module: ze_module_handle_t,
     functions: Vec<(String, ze_kernel_handle_t)>,
     // Store PTX source and TMatmul assembly for emulator execution
-    ptx_source: Option<String>,
+    // Arc<String> avoids cloning multi-MB PTX for every kernel in the module
+    ptx_source: Option<Arc<String>>,
     tmatmul_assembly: Option<String>,
 }
 
@@ -354,7 +355,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                 device,
                 module: ze_module_handle_t(ptr::null_mut()),
                 functions: Vec::new(),
-                ptx_source,
+                ptx_source: ptx_source.map(Arc::new),
                 tmatmul_assembly: None,
             };
             *module = new_module.wrap();
@@ -442,7 +443,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                     device,
                     module: ze_module_handle_t(std::ptr::null_mut()),
                     functions: Vec::new(),
-                    ptx_source: Some(text.to_string()),
+                    ptx_source: Some(Arc::new(text.to_string())),
                     tmatmul_assembly: Some(tmatmul_asm),
                 };
                 *module = new_module.wrap();
@@ -487,7 +488,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                             device,
                             module: ze_module_handle_t(std::ptr::null_mut()),
                             functions: Vec::new(),
-                            ptx_source: Some(sanitized.clone()),
+                            ptx_source: Some(Arc::new(sanitized.clone())),
                             tmatmul_assembly: Some(tmatmul_asm),
                         };
                         *module = new_module.wrap();
@@ -507,7 +508,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                             device,
                             module: ze_module_handle_t(std::ptr::null_mut()),
                             functions: Vec::new(),
-                            ptx_source: Some(text.to_string()),
+                            ptx_source: Some(Arc::new(text.to_string())),
                             tmatmul_assembly: None,
                         };
                         *module = new_module.wrap();
@@ -817,7 +818,7 @@ pub(crate) struct ZeKernel {
     pub module: ze_module_handle_t,
     pub kernel: ze_kernel_handle_t,
     pub name: String,
-    pub ptx_source: Option<String>,  // Store PTX for emulator execution
+    pub ptx_source: Option<Arc<String>>,  // Shared PTX - avoids cloning per kernel
     pub module_handle: u64,  // Handle for checkpoint tracking
 }
 #[cfg(feature = "intel")]

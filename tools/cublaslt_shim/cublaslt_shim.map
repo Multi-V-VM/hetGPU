@@ -18,6 +18,4 @@ libcublasLt.so.12 {
         cublasLtGetVersion;
         cublasLtGetStatusName;
         cublasLtGetStatusString;
-    local:
-        *;
 };
