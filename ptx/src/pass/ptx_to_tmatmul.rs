@@ -1215,14 +1215,38 @@ pub fn ptx_to_tmatmul(ptx_source: &str) -> Result<String, String> {
     // Sanitize PTX to tolerate newer forms (virtual backend)
     let sanitized = sanitize_ptx_source(ptx_source);
 
+    // Debug: save sanitized PTX for small files (extracted functions)
+    if sanitized.len() < 200_000 {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static DEBUG_COUNT: AtomicUsize = AtomicUsize::new(0);
+        let n = DEBUG_COUNT.fetch_add(1, Ordering::Relaxed);
+        if n < 10 {
+            let path = format!("/tmp/hetgpu_sanitized_debug_{}.ptx", n);
+            let _ = std::fs::write(&path, &sanitized);
+            eprintln!("[PTX Debug] Saved sanitized PTX to {} ({} bytes, {} lines)", path, sanitized.len(), sanitized.lines().count());
+        }
+    }
+
     // Parse PTX. Be tolerant: fall back to unchecked parse if strict parse fails.
     let module = match ptx_parser::parse_module_checked(&sanitized) {
-        Ok(m) => m,
-        Err(_errs) => {
+        Ok(m) => {
+            eprintln!("[PTX Parser] Checked parse OK: {} directives", m.directives.len());
+            m
+        },
+        Err(errs) => {
+            eprintln!("[PTX Parser] Checked parse failed ({} errors), trying unchecked", errs.len());
+            for (i, e) in errs.iter().enumerate().take(5) {
+                eprintln!("[PTX Parser]   error {}: {:?}", i, e);
+            }
             // Best-effort recovery path: attempt to produce an AST ignoring unknown directives
-            ptx_parser::parse_module_unchecked(&sanitized)
+            let m = ptx_parser::parse_module_unchecked(&sanitized);
+            eprintln!("[PTX Parser] Unchecked parse: {} directives", m.directives.len());
+            m
         }
     };
+
+    // Log directive types for debugging
+    eprintln!("[PTX Parser] Total directives: {}", module.directives.len());
 
     // Compile to TMatmul
     let mut compiler = PtxToTMatmulCompiler::new();
@@ -1263,18 +1287,121 @@ fn sanitize_ptx_source(src: &str) -> String {
         }
     }
 
+    // 3) Split single-line PTX into proper lines. Some custom kernels arrive as one giant line
+    // like ".version 8.7.target sm_80.address_size 64.global ...{...};.visible .entry ...".
+    // Insert newlines at directive boundaries.
+    if cleaned.lines().count() <= 3 && cleaned.len() > 100 {
+        let directives = [".version ", ".target ", ".address_size ", ".global ", ".const ",
+                          ".visible ", ".entry ", ".func ", ".extern ", ".reg ",
+                          ".shared ", ".local ", ".maxntid ", ".reqntid ",
+                          ".minnctapersm ", ".maxnreg "];
+        let mut split = String::with_capacity(cleaned.len() + 1000);
+        let bytes = cleaned.as_bytes();
+        let len = bytes.len();
+        let mut i = 0;
+        let mut in_data_init = false;
+        while i < len {
+            let ch = bytes[i] as char;
+            // Check if we're at a directive boundary (insert newline before)
+            if ch == '.' && i > 0 {
+                let remaining = &cleaned[i..];
+                let is_directive = directives.iter().any(|d| remaining.starts_with(d));
+                if is_directive && !in_data_init {
+                    split.push('\n');
+                }
+            }
+            if ch == '=' {
+                in_data_init = true;
+            } else if ch == ';' {
+                in_data_init = false;
+                split.push(ch);
+                if i + 1 < len {
+                    split.push('\n');
+                }
+                i += 1;
+                continue;
+            } else if ch == '{' && !in_data_init {
+                split.push('\n');
+                split.push(ch);
+                split.push('\n');
+                i += 1;
+                continue;
+            } else if ch == '}' && !in_data_init {
+                split.push('\n');
+                split.push(ch);
+                split.push('\n');
+                i += 1;
+                continue;
+            }
+            split.push(ch);
+            i += 1;
+        }
+        cleaned = split;
+    }
+
     let mut out = String::with_capacity(cleaned.len());
+    let mut skip_extern_continuation = false;
     for line in cleaned.lines() {
         let mut cur = line.to_string();
 
-        // Comment out global bX string/data directives with initializers that parser doesn't support
+        // Comment out global/const/shared bX array/data directives the parser doesn't support
+        // Matches both initialized (.b8 name[N] = {...}) and zero-initialized (.b8 name[N];)
+        // Also catches dynamic shared memory (.shared .b8 global_smem[];)
         {
             let t = cur.trim_start();
-            if t.starts_with(".global") && t.contains(".b") && t.contains('=') {
+            if (t.starts_with(".global") || t.starts_with(".const") || t.starts_with(".shared"))
+                && t.contains(".b") && (t.contains('=') || t.contains('[')) {
                 out.push_str("// ");
                 out.push_str(&cur);
                 out.push('\n');
                 continue;
+            }
+        }
+
+        // Comment out .extern declarations and their multi-line continuations
+        // (.extern .func name\n(\n.param ...\n)\n;)
+        {
+            let t = cur.trim_start();
+            if t.starts_with(".extern") {
+                out.push_str("// ");
+                out.push_str(&cur);
+                out.push('\n');
+                // Only expect continuation lines if the extern has '(' (parameter list)
+                // Truncated externs like ".extern .func __assertfail" (no parens, no semicolon)
+                // should be treated as complete single-line declarations
+                skip_extern_continuation = t.contains('(') && !t.contains(';');
+                continue;
+            }
+        }
+        if skip_extern_continuation {
+            out.push_str("// ");
+            out.push_str(&cur);
+            out.push('\n');
+            // End of extern: line contains ';' (the terminating semicolon)
+            let trimmed = cur.trim();
+            if trimmed.contains(';') {
+                skip_extern_continuation = false;
+            }
+            continue;
+        }
+
+        // Simplify aligned byte-array params: ".param .align N .bM name[K]" → ".param .b64 name"
+        // The parser doesn't support .align or array notation in param declarations.
+        // These are typically pointer-sized struct params (e.g., std::array<char*, 2>).
+        {
+            let t = cur.trim_start();
+            if t.starts_with(".param") && t.contains(".align") && t.contains('[') {
+                // Extract the parameter name (between last space before '[' and '[')
+                if let Some(bracket_pos) = t.find('[') {
+                    let before_bracket = &t[..bracket_pos];
+                    // Find the param name: last whitespace-delimited token before '['
+                    if let Some(name_start) = before_bracket.rfind(char::is_whitespace) {
+                        let param_name = before_bracket[name_start + 1..].trim();
+                        // Preserve trailing comma if present
+                        let trailing = if t.trim_end().ends_with(',') { "," } else { "" };
+                        cur = format!(".param .b64 {}{}", param_name, trailing);
+                    }
+                }
             }
         }
 
@@ -1385,44 +1512,52 @@ fn sanitize_ptx_source(src: &str) -> String {
             }
         }
 
-        // Expand ld.global.v4.b32 %r1, %r2, %r3, %r4, [addr]; into four scalar loads
-        if cur.trim_start().starts_with("ld.global.v4.b32") {
-            let mut parts = cur.splitn(2, '[');
-            let left = parts.next().unwrap_or("");
-            let right = parts.next().unwrap_or("");
-            // Extract destinations before '[' and the address between '[' and ']'
-            let dests_part = left.replace("ld.global.v4.b32", "");
-            let mut dests: Vec<String> = dests_part
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            // Some formats have trailing comma before bracket; trim it
-            if let Some(last) = dests.last_mut() {
-                if last.ends_with(',') {
-                    last.pop();
+        // Expand ld.*.v4.* (e.g. ld.global.v4.b32, ld.global.v4.u32) into scalar loads
+        // Handles both brace syntax: ld.global.v4.u32 {%r1, %r2, %r3, %r4}, [addr];
+        // and non-brace syntax: ld.global.v4.b32 %r1, %r2, %r3, %r4, [addr];
+        {
+            let t = cur.trim_start();
+            if t.starts_with("ld.") && (t.contains(".v4.") || t.contains(".v2.")) {
+                // Strip braces and vector width
+                let scalar_cur = cur.replace(".v4.", ".").replace(".v2.", ".")
+                    .replace('{', "").replace('}', "");
+                let mut parts = scalar_cur.splitn(2, '[');
+                let left = parts.next().unwrap_or("");
+                let right = parts.next().unwrap_or("");
+                if let Some(pct_pos) = left.find('%') {
+                    let instr_prefix = left[..pct_pos].trim();
+                    let dests_str = &left[pct_pos..];
+                    let dests: Vec<String> = dests_str
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    let addr_inside = right.split(']').next().unwrap_or("").trim().to_string();
+                    for d in &dests {
+                        out.push_str(&format!("    {} {}, [{}];\n", instr_prefix, d, addr_inside));
+                    }
+                    continue;
                 }
             }
-            let addr_inside = right.split(']').next().unwrap_or("").trim().to_string();
-            for d in dests {
-                out.push_str(&format!("    ld.global.b32 {}, [{}];\n", d, addr_inside));
-            }
-            continue;
         }
 
-        // Expand st.global.v4.b32 [addr], r1, r2, r3, r4; into four scalar stores
-        if cur.trim_start().starts_with("st.global.v4.b32") {
-            if let Some(lb) = cur.find('[') {
-                if let Some(rb) = cur.find(']') {
-                    let addr_inside = cur[lb + 1..rb].trim().to_string();
-                    let after = &cur[rb + 1..];
+        // Expand st.*.v4.* (e.g. st.global.v4.b32, st.global.v4.u32) into four scalar stores
+        if cur.trim_start().starts_with("st.") && (cur.contains(".v4.") || cur.contains(".v2.")) {
+            let scalar_cur = cur.replace(".v4.", ".").replace(".v2.", ".")
+                .replace('{', "").replace('}', "");
+            if let Some(lb) = scalar_cur.find('[') {
+                if let Some(rb) = scalar_cur.find(']') {
+                    // Extract instruction prefix (e.g. "st.global.u32")
+                    let instr_prefix = scalar_cur[..lb].trim();
+                    let addr_inside = scalar_cur[lb + 1..rb].trim().to_string();
+                    let after = &scalar_cur[rb + 1..];
                     let srcs: Vec<String> = after
                         .split(&[',', ';'][..])
                         .map(|s| s.trim().to_string())
                         .filter(|s| !s.is_empty())
                         .collect();
                     for s in srcs {
-                        out.push_str(&format!("    st.global.b32 [{}], {};\n", addr_inside, s));
+                        out.push_str(&format!("    {} [{}], {};\n", instr_prefix, addr_inside, s));
                     }
                     continue;
                 }
@@ -1431,12 +1566,29 @@ fn sanitize_ptx_source(src: &str) -> String {
 
         // Remove any braces around operands: { %r1 } -> %r1, tolerate stray '{' without matching '}'
         // BUT: Do NOT remove standalone braces that are function body delimiters
+        // Also handle predicated writes: {%r1|%p1} -> %r1 (drop the predicate part)
         {
             let trimmed = cur.trim();
             // Only strip braces if this is NOT a standalone brace line (function body delimiter)
             if trimmed != "{" && trimmed != "}" {
                 if cur.contains('{') || cur.contains('}') {
-                    cur = cur.replace('{', "").replace('}', "");
+                    // Handle {%reg|%pred} syntax - keep only the register, drop |%pred
+                    while let Some(lb) = cur.find('{') {
+                        if let Some(rb) = cur[lb..].find('}') {
+                            let inside = &cur[lb + 1..lb + rb];
+                            let replacement = if let Some(pipe) = inside.find('|') {
+                                inside[..pipe].trim().to_string()
+                            } else {
+                                inside.trim().to_string()
+                            };
+                            cur = format!("{}{}{}", &cur[..lb], replacement, &cur[lb + rb + 1..]);
+                        } else {
+                            // No matching '}', just remove '{'
+                            cur = cur.replacen('{', "", 1);
+                        }
+                    }
+                    // Remove any remaining stray '}'
+                    cur = cur.replace('}', "");
                 }
             }
         }
@@ -1561,9 +1713,18 @@ fn sanitize_ptx_source(src: &str) -> String {
         if cur.trim_start().starts_with("div.full") {
             cur = cur.replace("div.full", "div");
         }
-        // Also handle rn (round to nearest) modifier on div
-        if cur.contains("div.rn.") {
-            cur = cur.replace("div.rn.", "div.");
+        // Convert div rounding modes to .full (parser doesn't support plain div.f32)
+        // div.rn.f32 -> div.full.f32, div.rz.f32 -> div.full.f32, etc.
+        if cur.contains("div.rn.f") || cur.contains("div.rz.f") || cur.contains("div.rm.f") || cur.contains("div.rp.f") {
+            cur = cur.replace("div.rn.", "div.full.")
+                     .replace("div.rz.", "div.full.")
+                     .replace("div.rm.", "div.full.")
+                     .replace("div.rp.", "div.full.");
+        }
+        // Plain div.f32 (no qualifier) -> div.full.f32
+        if cur.trim_start().starts_with("div.f32") || cur.trim_start().starts_with("div.f64") {
+            cur = cur.replace("div.f32", "div.full.f32")
+                     .replace("div.f64", "div.full.f64");
         }
 
         // ============================================================
@@ -1859,19 +2020,28 @@ fn sanitize_ptx_source(src: &str) -> String {
                         .map(|s| s.trim().trim_end_matches(';'))
                         .collect();
 
-                    // shfl.sync.* dst, pred, src, offset, mask -> mov.type dst, src; setp.eq.b32 pred, 1, 1;
-                    if operands.len() >= 3 {
-                        let dst = operands[0];
-                        let pred = if operands.len() >= 2 { operands[1] } else { "" };
-                        let src = if operands.len() >= 3 { operands[2] } else { operands[1] };
+                    // shfl.sync.* dst|pred, src, offset, laneMask, memberMask;
+                    // -> mov.type dst, src; setp.eq.b32 pred, 1, 1;
+                    if operands.len() >= 2 {
+                        let dst_pred = operands[0];
+                        let src = operands[1];
+
+                        // Split dst|pred (e.g. "%r223|%p22" -> dst="%r223", pred="%p22")
+                        let (dst, pred) = if let Some(pipe_pos) = dst_pred.find('|') {
+                            (&dst_pred[..pipe_pos], Some(&dst_pred[pipe_pos + 1..]))
+                        } else {
+                            (dst_pred, None)
+                        };
 
                         // For single thread, shuffled value equals input
                         cur = format!("    mov.{} {}, {};", type_part, dst, src);
                         out.push_str(&cur);
                         out.push('\n');
                         // Set predicate to true if present
-                        if !pred.is_empty() && pred.starts_with('%') {
-                            out.push_str(&format!("    setp.eq.b32 {}, 1, 1;\n", pred));
+                        if let Some(p) = pred {
+                            if p.starts_with('%') {
+                                out.push_str(&format!("    setp.eq.b32 {}, 1, 1;\n", p));
+                            }
                         }
                         continue;
                     }
