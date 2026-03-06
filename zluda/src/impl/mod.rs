@@ -716,7 +716,10 @@ impl<'a> FromCuda<'a, CUpointer_attribute_enum> for CUpointer_attribute_enum {
     }
 }
 
-#[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
+#[cfg(any(
+    all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")),
+    feature = "intel"
+))]
 impl<'a> FromCuda<'a, CUfunction_attribute_enum> for CUfunction_attribute_enum {
     fn from_cuda(x: &'a CUfunction_attribute_enum) -> Result<Self, CUerror> {
         Ok(*x)

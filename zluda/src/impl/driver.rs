@@ -818,3 +818,25 @@ pub(crate) fn device_nvidia(dev_id: i32) -> Result<&'static Device, CUerror> {
 thread_local! {
     static NVIDIA_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
 }
+
+// Occupancy functions - return 1 block as a safe default for virtual backend
+pub(crate) fn occupancy_max_active_blocks_per_multiprocessor(
+    num_blocks: &mut i32,
+    _func: CUfunction,
+    _block_size: i32,
+    _dynamic_smem_size: usize,
+) -> Result<(), CUerror> {
+    *num_blocks = 1;
+    Ok(())
+}
+
+pub(crate) fn occupancy_max_active_blocks_per_multiprocessor_with_flags(
+    num_blocks: &mut i32,
+    _func: CUfunction,
+    _block_size: i32,
+    _dynamic_smem_size: usize,
+    _flags: u32,
+) -> Result<(), CUerror> {
+    *num_blocks = 1;
+    Ok(())
+}

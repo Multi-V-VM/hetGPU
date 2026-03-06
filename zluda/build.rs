@@ -51,6 +51,10 @@ fn main() {
             }
         }
 
+        // Set SONAME so the real libcudart.so.12 (which uses dlopen("libcuda.so.1"))
+        // finds our library when it's already loaded in the process.
+        println!("cargo:rustc-link-arg=-Wl,-soname,libcuda.so.1");
+
         // Force the linker to keep all symbols from the shim archives
         println!("cargo:rustc-link-arg=-Wl,--whole-archive");
         println!("cargo:rustc-link-arg=-lcudart_shim");
@@ -91,5 +95,117 @@ fn main() {
             cublaslt_build.define("HETGPU_DEBUG_LOGS", None);
         }
         cublaslt_build.compile("cublaslt_shim");
+
+        // Also build standalone shared libraries (libcudart.so.12, libcublas.so.12,
+        // libcublasLt.so.12) so they can replace the real system libraries.
+        // Without these, PyTorch resolves cudart symbols from the real libcudart.so.12
+        // which internally computes occupancy using stale/invalid state, causing SIGFPE.
+        build_standalone_shim_libraries(tools_dir, enable_logs);
+    }
+}
+
+/// Build standalone .so shim libraries that can be deployed alongside libcuda.so.1.
+/// When LD_LIBRARY_PATH includes the output directory, PyTorch finds these shims
+/// instead of the real CUDA libraries.
+fn build_standalone_shim_libraries(tools_dir: &std::path::Path, enable_logs: bool) {
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let out_path = std::path::Path::new(&out_dir);
+    // Place standalone shims next to the final library output.
+    // Cargo builds into target/{profile}/deps or target/{profile}/build/...
+    // We put them in OUT_DIR and also copy to the target directory.
+    let target_dir = out_path
+        .ancestors()
+        .find(|p| p.file_name().map_or(false, |n| n == "debug" || n == "release"))
+        .map(|p| p.to_path_buf());
+
+    // Only build standalone libcudart.so.12. The cublas/cublasLt shims are
+    // intentionally NOT built as standalone libraries — the real cublas libraries
+    // are functional and our shims lack the 77+ internal symbols that
+    // libcublas.so.12 imports from libcublasLt.so.12.
+    let shims: &[(&str, &str, &str, &str)] = &[
+        (
+            "src/cudart_shim.c",
+            "tools/cudart_shim/cudart_shim.map",
+            "libcudart.so.12",
+            "cudart",
+        ),
+    ];
+
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+
+    for (src, map, soname, label) in shims {
+        let src_path = std::path::Path::new(&manifest_dir).join(src);
+        let map_path = tools_dir.join(map);
+
+        if !src_path.exists() {
+            eprintln!("Warning: shim source {} not found, skipping standalone {}", src, soname);
+            continue;
+        }
+
+        let obj_path = out_path.join(format!("{}_standalone.o", label));
+        let so_path = out_path.join(soname);
+
+        // Compile to object file
+        let mut compile = std::process::Command::new("cc");
+        compile
+            .arg("-fPIC")
+            .arg("-shared")
+            .arg("-Wno-unused-parameter")
+            .arg("-o")
+            .arg(&so_path)
+            .arg(&src_path);
+
+        if enable_logs {
+            compile.arg("-DHETGPU_DEBUG_LOGS");
+        }
+
+        // Add version script if available
+        if map_path.exists() {
+            compile.arg(format!("-Wl,--version-script={}", map_path.display()));
+        }
+
+        // Set SONAME so the dynamic linker treats this as the real library
+        compile.arg(format!("-Wl,-soname,{}", soname));
+
+        // The standalone cudart shim uses extern cu* driver API functions.
+        // Create a symlink to libcuda.so.1 so we can link against it and
+        // generate a DT_NEEDED entry. At runtime, LD_PRELOAD provides the
+        // real libcuda.so.1 (which is our hetGPU driver).
+        if let Some(ref tdir) = target_dir {
+            let cuda_link = out_path.join("libcuda.so");
+            let cuda_target = tdir.join("libcuda.so.1");
+            if cuda_target.exists() {
+                let _ = std::fs::remove_file(&cuda_link);
+                let _ = std::os::unix::fs::symlink(&cuda_target, &cuda_link);
+                compile.arg(format!("-L{}", out_path.display()));
+                compile.arg("-lcuda");
+            }
+        }
+
+        compile.arg("-Wl,--no-as-needed");
+
+        let status = compile.status();
+        match status {
+            Ok(s) if s.success() => {
+                eprintln!("Built standalone {}", soname);
+                // Copy to target directory if found
+                if let Some(ref tdir) = target_dir {
+                    let dest = tdir.join(soname);
+                    // Remove existing file/symlink first to avoid
+                    // following symlinks during copy
+                    let _ = std::fs::remove_file(&dest);
+                    match std::fs::copy(&so_path, &dest) {
+                        Ok(_) => eprintln!("  -> copied to {}", dest.display()),
+                        Err(e) => eprintln!("  -> copy to {} failed: {}", dest.display(), e),
+                    }
+                }
+            }
+            Ok(s) => {
+                eprintln!("Warning: building standalone {} failed (exit {})", soname, s);
+            }
+            Err(e) => {
+                eprintln!("Warning: could not run cc to build standalone {}: {}", soname, e);
+            }
+        }
     }
 }

@@ -994,13 +994,17 @@ impl PtxToTMatmulCompiler {
             // ADDRESS SPACE OPERATIONS
             // ============================================================
             ast::Instruction::Cvta { arguments, .. } => {
-                // Convert address to/from generic
+                // Convert address to/from generic - propagate pointer bindings
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
 
                 self.codegen.add_comment("PTX: cvta (address passthrough)");
-                self.ptx_to_ssa.insert(dst_name, src_ssa);
+                self.ptx_to_ssa.insert(dst_name.clone(), src_ssa);
+                // Propagate memory bindings through address space conversions
+                if let Some(mem_region) = self.ptx_to_memory.get(&src_name).cloned() {
+                    self.ptx_to_memory.insert(dst_name, mem_region);
+                }
             }
 
             // ============================================================
@@ -1051,9 +1055,43 @@ impl PtxToTMatmulCompiler {
                 self.codegen.add_comment("PTX: nanosleep (no-op)");
             }
 
-            // Matrix multiply-accumulate (tensor core)
-            ast::Instruction::Mma { .. } => {
-                self.codegen.add_comment("PTX: mma (tensor core - needs special handling)");
+            // Matrix multiply-accumulate (tensor core) -> tmatmul sequence
+            ast::Instruction::Mma { arguments, .. } => {
+                self.codegen.add_comment("PTX: mma (tensor core -> tmatmul)");
+
+                // MMA has: dst, src1 (A matrix), src2 (B matrix), src3 (C accumulator)
+                // We translate to: tmatmul_import(A), tmatmul_go(B), tmatmul_export(dst), add(dst, dst, C)
+
+                let dst_name = Self::operand_to_string(&arguments.dst);
+                let a_name = Self::operand_to_string(&arguments.src1);
+                let b_name = Self::operand_to_string(&arguments.src2);
+                let c_name = Self::operand_to_string(&arguments.src3);
+
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                let a_ssa = self.map_ptx_to_ssa(&a_name);
+                let c_ssa = self.map_ptx_to_ssa(&c_name);
+
+                // Resolve B matrix to memory location
+                let b_mem = if let Some(mem) = self.ptx_to_memory.get(&b_name) {
+                    mem.clone()
+                } else {
+                    format!("PARAM_B_{}", b_name)
+                };
+
+                // Emit tmatmul sequence
+                self.codegen.add_comment("tmatmul: import A matrix data");
+                self.codegen.emit_operation("tmatmul_import", &[&a_ssa], &[])?;
+
+                self.codegen.add_comment("tmatmul: matrix multiply with B weights");
+                self.codegen.emit_operation("tmatmul_go", &[&b_mem], &[])?;
+
+                let mma_result = self.new_ssa();
+                self.codegen.add_comment("tmatmul: export result");
+                self.codegen.emit_operation("tmatmul_export", &[], &[&mma_result])?;
+
+                // Add C accumulator: dst = mma_result + C
+                self.codegen.add_comment("tmatmul: add accumulator");
+                self.codegen.emit_operation("tmatmul.add", &[&mma_result, &c_ssa], &[&dst_ssa])?;
             }
 
             // Other instructions - passthrough with comment
@@ -1210,6 +1248,7 @@ fn sanitize_ptx_source(src: &str) -> String {
     }
 
     // 2) Strip ANSI/control characters (keep newlines, tabs, CR). This removes sequences like "\x1b[31m".
+    //    Also replace '$' with '_' — PTX labels like $L__BB50_3 use '$' which our lexer doesn't support.
     let mut cleaned = String::with_capacity(start_slice.len());
     for ch in start_slice.chars() {
         let code = ch as u32;
@@ -1217,6 +1256,8 @@ fn sanitize_ptx_source(src: &str) -> String {
             if ch == '\n' || ch == '\r' || ch == '\t' {
                 cleaned.push(ch);
             }
+        } else if ch == '$' {
+            cleaned.push('_');
         } else {
             cleaned.push(ch);
         }

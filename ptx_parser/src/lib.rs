@@ -445,9 +445,9 @@ pub fn parse_module_unchecked<'input>(text: &'input str) -> ast::Module<'input> 
             }
         }
     }
-    if !errors.is_empty() {
-        return ast::Module::empty();
-    }
+    // Don't bail on lex errors — try to parse whatever valid tokens we got.
+    // PyTorch PTX may contain syntax our lexer doesn't understand, but the
+    // function bodies often lex fine and that's what we need.
     let parse_result = {
         let state = PtxParserState::new(text, &mut errors);
         let parser = PtxParser {

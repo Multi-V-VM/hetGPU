@@ -565,7 +565,7 @@ pub(crate) fn get_attribute(
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK => {
-            *pi = 64; // Default value since there's no direct equivalent
+            *pi = 65536;
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_CLOCK_RATE => {
@@ -713,7 +713,7 @@ pub(crate) fn get_attribute(
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_MULTIPROCESSOR => {
-            *pi = 64; // Default value
+            *pi = 65536;
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY => {
