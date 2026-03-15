@@ -195,6 +195,41 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
 }
 
 #[cfg(feature = "intel")]
+pub(crate) fn load(
+    module: &mut CUmodule,
+    fname: *const ::core::ffi::c_char,
+) -> CUresult {
+    eprintln!("[Intel Backend] cuModuleLoad called (load from file)");
+    let path = unsafe { std::ffi::CStr::from_ptr(fname) }
+        .to_str()
+        .map_err(|_| CUerror::INVALID_VALUE)?;
+    let data = std::fs::read(path).map_err(|_| CUerror::FILE_NOT_FOUND)?;
+    load_data(module, data.as_ptr() as *const std::ffi::c_void)
+}
+
+#[cfg(feature = "intel")]
+pub(crate) fn load_fat_binary(
+    module: &mut CUmodule,
+    fat_cubin: *const std::ffi::c_void,
+) -> CUresult {
+    eprintln!("[Intel Backend] cuModuleLoadFatBinary called (delegating to load_data)");
+    load_data(module, fat_cubin)
+}
+
+#[cfg(feature = "intel")]
+pub(crate) fn load_data_ex(
+    module: &mut CUmodule,
+    image: *const std::ffi::c_void,
+    _num_options: std::ffi::c_uint,
+    _options: *mut cuda_types::cuda::CUjit_option,
+    _option_values: *mut *mut std::ffi::c_void,
+) -> CUresult {
+    // Delegate to load_data, ignoring JIT options
+    eprintln!("[Intel Backend] cuModuleLoadDataEx called (delegating to load_data)");
+    load_data(module, image)
+}
+
+#[cfg(feature = "intel")]
 pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -> CUresult {
     crate::r#impl::hetgpu_debug!(
         "[Intel Backend] cuModuleLoadData called from PyTorch/application"

@@ -265,6 +265,12 @@ pub enum TMatmulInstruction {
         dst: String,
     },
 
+    // Raw instruction text — allows emitting any instruction the interpreter
+    // supports (abs, max, min, sqrt, rsqrt, exp, log, tanh, floor, ceil,
+    // round, sign, relu, gelu, reduce_sum, reduce_max, etc.) without needing
+    // a formal enum variant for each one.
+    Raw(String),
+
     // Comments and labels
     Comment(String),
     Label(String),
@@ -311,6 +317,9 @@ impl std::fmt::Display for TMatmulInstruction {
             }
             TMatmulInstruction::TMatmulExport { dst } => {
                 write!(f, "    tmatmul_export    {}", dst)
+            }
+            TMatmulInstruction::Raw(text) => {
+                write!(f, "{}", text)
             }
             TMatmulInstruction::Comment(text) => {
                 write!(f, "    ; {}", text)
@@ -597,6 +606,41 @@ impl TMatmulCodegen {
                     .add_instruction(TMatmulInstruction::TMatmulGo { weights });
                 self.program
                     .add_instruction(TMatmulInstruction::TMatmulExport { dst: output_reg });
+            }
+            // Unary math ops — supported by the interpreter directly
+            "tmatmul.abs" | "tmatmul.neg" | "tmatmul.sqrt" | "tmatmul.rsqrt"
+            | "tmatmul.exp" | "tmatmul.log" | "tmatmul.sin" | "tmatmul.cos"
+            | "tmatmul.tanh" | "tmatmul.floor" | "tmatmul.ceil" | "tmatmul.round"
+            | "tmatmul.sign" | "tmatmul.relu" | "tmatmul.gelu" | "tmatmul.reciprocal" => {
+                let opname = &op["tmatmul.".len()..];
+                let src = self.ensure_in_register(operands[0])?;
+                self.emit_pending_spills();
+                let dst = self.reg_allocator.allocate(results[0])?;
+                self.emit_pending_spills();
+                self.program.add_instruction(TMatmulInstruction::Raw(
+                    format!("    {}    {},{}", opname, dst, src),
+                ));
+            }
+            // Binary math ops — min, max
+            "tmatmul.min" | "tmatmul.max" => {
+                let opname = &op["tmatmul.".len()..];
+                let src1 = self.ensure_in_register(operands[0])?;
+                let src2 = self.ensure_in_register(operands[1])?;
+                self.emit_pending_spills();
+                let dst = self.reg_allocator.allocate(results[0])?;
+                self.emit_pending_spills();
+                self.program.add_instruction(TMatmulInstruction::Raw(
+                    format!("    {}    {},{},{}", opname, dst, src1, src2),
+                ));
+            }
+            // Reduction ops
+            "tmatmul.reduce_sum" | "tmatmul.reduce_max" | "tmatmul.reduce_mean" => {
+                let opname = &op["tmatmul.".len()..];
+                let src = self.ensure_in_register(operands[0])?;
+                self.emit_pending_spills();
+                self.program.add_instruction(TMatmulInstruction::Raw(
+                    format!("    {}    {}", opname, src),
+                ));
             }
             _ => {
                 return Err(format!("Unknown operation: {}", op));

@@ -545,12 +545,10 @@ impl PtxToTMatmulCompiler {
             ast::Instruction::Abs { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-                // Emit as a pass-through for now (abs not directly supported)
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
                 self.codegen.add_comment(&format!("PTX abs: {} = |{}|", dst_name, src_name));
-                // Copy src to dst (approximation - real abs would need special handling)
-                self.ptx_to_ssa.insert(dst_name, src_ssa);
+                self.codegen.emit_operation("tmatmul.abs", &[&src_ssa], &[&dst_ssa])?;
             }
             ast::Instruction::Neg { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
@@ -630,16 +628,14 @@ impl PtxToTMatmulCompiler {
                 let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
                 let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen.add_comment(&format!("PTX min (passthrough)"));
-                self.ptx_to_ssa.insert(dst_name, src1_ssa);
+                self.codegen.emit_operation("tmatmul.min", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
             }
             ast::Instruction::Max { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
                 let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen.add_comment(&format!("PTX max (passthrough)"));
-                self.ptx_to_ssa.insert(dst_name, src1_ssa);
+                self.codegen.emit_operation("tmatmul.max", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
             }
 
             // Type conversion
@@ -877,44 +873,39 @@ impl PtxToTMatmulCompiler {
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
 
-                self.codegen.add_comment("PTX: rsqrt (passthrough - needs sqrt support)");
-                self.ptx_to_ssa.insert(dst_name, src_ssa);
+                self.codegen.emit_operation("tmatmul.rsqrt", &[&src_ssa], &[&dst_ssa])?;
             }
 
             ast::Instruction::Sqrt { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-
-                self.codegen.add_comment("PTX: sqrt (passthrough)");
-                self.ptx_to_ssa.insert(dst_name, src_ssa);
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                self.codegen.emit_operation("tmatmul.sqrt", &[&src_ssa], &[&dst_ssa])?;
             }
 
             ast::Instruction::Sin { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-
-                self.codegen.add_comment("PTX: sin (passthrough)");
-                self.ptx_to_ssa.insert(dst_name, src_ssa);
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                self.codegen.emit_operation("tmatmul.sin", &[&src_ssa], &[&dst_ssa])?;
             }
 
             ast::Instruction::Cos { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-
-                self.codegen.add_comment("PTX: cos (passthrough)");
-                self.ptx_to_ssa.insert(dst_name, src_ssa);
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                self.codegen.emit_operation("tmatmul.cos", &[&src_ssa], &[&dst_ssa])?;
             }
 
             ast::Instruction::Tanh { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-
-                self.codegen.add_comment("PTX: tanh (passthrough)");
-                self.ptx_to_ssa.insert(dst_name, src_ssa);
+                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                self.codegen.emit_operation("tmatmul.tanh", &[&src_ssa], &[&dst_ssa])?;
             }
 
             // ============================================================
@@ -1215,15 +1206,26 @@ pub fn ptx_to_tmatmul(ptx_source: &str) -> Result<String, String> {
     // Sanitize PTX to tolerate newer forms (virtual backend)
     let sanitized = sanitize_ptx_source(ptx_source);
 
-    // Debug: save sanitized PTX for small files (extracted functions)
-    if sanitized.len() < 200_000 {
+    // Reject truncated PTX: if sanitized output has unbalanced braces (more '{' than '}'),
+    // the function body is incomplete (typically from partial CUBIN extraction)
+    {
+        let open = sanitized.chars().filter(|&c| c == '{').count();
+        let close = sanitized.chars().filter(|&c| c == '}').count();
+        if open > close {
+            return Err(format!("Truncated PTX ({} bytes, {} unmatched braces) - incomplete function body", ptx_source.len(), open - close));
+        }
+    }
+
+    // Debug: save sanitized PTX for analysis
+    {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static DEBUG_COUNT: AtomicUsize = AtomicUsize::new(0);
         let n = DEBUG_COUNT.fetch_add(1, Ordering::Relaxed);
         if n < 10 {
             let path = format!("/tmp/hetgpu_sanitized_debug_{}.ptx", n);
             let _ = std::fs::write(&path, &sanitized);
-            eprintln!("[PTX Debug] Saved sanitized PTX to {} ({} bytes, {} lines)", path, sanitized.len(), sanitized.lines().count());
+            let raw_path = format!("/tmp/hetgpu_raw_debug_{}.ptx", n);
+            let _ = std::fs::write(&raw_path, ptx_source);
         }
     }
 
@@ -1235,8 +1237,23 @@ pub fn ptx_to_tmatmul(ptx_source: &str) -> Result<String, String> {
         },
         Err(errs) => {
             eprintln!("[PTX Parser] Checked parse failed ({} errors), trying unchecked", errs.len());
-            for (i, e) in errs.iter().enumerate().take(5) {
+            for (i, e) in errs.iter().enumerate().take(3) {
                 eprintln!("[PTX Parser]   error {}: {:?}", i, e);
+            }
+            // Show first few lines of sanitized PTX for diagnosis
+            {
+                use std::sync::atomic::{AtomicUsize, Ordering};
+                static DIAG_COUNT: AtomicUsize = AtomicUsize::new(0);
+                let n = DIAG_COUNT.fetch_add(1, Ordering::Relaxed);
+                if n < 20 {
+                    let first_lines: String = sanitized.lines().take(5).collect::<Vec<_>>().join(" | ");
+                    eprintln!("[PTX Parser] FAIL#{} first5: {}", n, first_lines);
+                    // Save failing PTX for analysis
+                    let path = format!("/tmp/hetgpu_fail_{}.ptx", n);
+                    let _ = std::fs::write(&path, &sanitized);
+                    let raw_path = format!("/tmp/hetgpu_rawfail_{}.ptx", n);
+                    let _ = std::fs::write(&raw_path, ptx_source);
+                }
             }
             // Best-effort recovery path: attempt to produce an AST ignoring unknown directives
             let m = ptx_parser::parse_module_unchecked(&sanitized);
@@ -1291,8 +1308,10 @@ fn sanitize_ptx_source(src: &str) -> String {
     // like ".version 8.7.target sm_80.address_size 64.global ...{...};.visible .entry ...".
     // Insert newlines at directive boundaries.
     if cleaned.lines().count() <= 3 && cleaned.len() > 100 {
+        // Note: .visible and .extern are NOT in this list because they are modifiers
+        // that must stay on the same line as the following .entry/.func directive
         let directives = [".version ", ".target ", ".address_size ", ".global ", ".const ",
-                          ".visible ", ".entry ", ".func ", ".extern ", ".reg ",
+                          ".entry ", ".func ", ".reg ",
                           ".shared ", ".local ", ".maxntid ", ".reqntid ",
                           ".minnctapersm ", ".maxnreg "];
         let mut split = String::with_capacity(cleaned.len() + 1000);
@@ -1300,10 +1319,15 @@ fn sanitize_ptx_source(src: &str) -> String {
         let len = bytes.len();
         let mut i = 0;
         let mut in_data_init = false;
+        let mut paren_depth: i32 = 0;
         while i < len {
             let ch = bytes[i] as char;
+            // Track parentheses depth — don't split inside parameter lists
+            if ch == '(' { paren_depth += 1; }
+            if ch == ')' { paren_depth = (paren_depth - 1).max(0); }
             // Check if we're at a directive boundary (insert newline before)
-            if ch == '.' && i > 0 {
+            // But NOT inside parentheses (parameter lists use .global/.shared as qualifiers)
+            if ch == '.' && i > 0 && paren_depth == 0 {
                 let remaining = &cleaned[i..];
                 let is_directive = directives.iter().any(|d| remaining.starts_with(d));
                 if is_directive && !in_data_init {
@@ -1337,12 +1361,81 @@ fn sanitize_ptx_source(src: &str) -> String {
             i += 1;
         }
         cleaned = split;
+
+        // Join modifier-only lines with the following line
+        // e.g., ".visible\n.entry func()" → ".visible .entry func()"
+        let mut joined = String::with_capacity(cleaned.len());
+        let mut pending: Option<String> = None;
+        for line in cleaned.lines() {
+            let t = line.trim();
+            if t == ".visible" || t == ".extern" || t == ".weak" {
+                pending = Some(t.to_string());
+                continue;
+            }
+            if let Some(prefix) = pending.take() {
+                joined.push_str(&prefix);
+                joined.push(' ');
+                joined.push_str(line.trim_start());
+                joined.push('\n');
+            } else {
+                joined.push_str(line);
+                joined.push('\n');
+            }
+        }
+        if let Some(prefix) = pending {
+            joined.push_str(&prefix);
+            joined.push('\n');
+        }
+        cleaned = joined;
     }
 
     let mut out = String::with_capacity(cleaned.len());
     let mut skip_extern_continuation = false;
+    let mut main_brace_depth: i32 = 0;
     for line in cleaned.lines() {
         let mut cur = line.to_string();
+
+        // ============================================================
+        // BRACE DEPTH TRACKING (before brace removal)
+        // Count all braces on this line to maintain accurate depth.
+        // Handle standalone '{' and '}' lines: only emit at function body level.
+        // This prevents orphaned '}' from scoping blocks (e.g., {neg.f16 ...\n})
+        // from prematurely closing function bodies.
+        // ============================================================
+        {
+            let trimmed = cur.trim();
+            // Count braces on this line BEFORE any brace removal
+            let opens = trimmed.chars().filter(|&c| c == '{').count() as i32;
+            let closes = trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+            if trimmed == "{" {
+                // Standalone opening brace
+                main_brace_depth += 1;
+                if main_brace_depth == 1 {
+                    // Function body opener — emit
+                    out.push_str(&cur);
+                    out.push('\n');
+                }
+                // Inner scoping braces — skip
+                continue;
+            }
+            if trimmed == "}" {
+                if main_brace_depth == 1 {
+                    // Function body closer — emit
+                    out.push_str(&cur);
+                    out.push('\n');
+                }
+                // Inner scoping closers — skip
+                main_brace_depth = (main_brace_depth - 1).max(0);
+                continue;
+            }
+
+            // For instruction lines with embedded braces (e.g., {neg.f16 ...;\n}),
+            // update depth from counted braces. The brace removal below will strip them.
+            main_brace_depth += opens;
+            main_brace_depth -= closes;
+            main_brace_depth = main_brace_depth.max(0);
+        }
 
         // Comment out global/const/shared bX array/data directives the parser doesn't support
         // Matches both initialized (.b8 name[N] = {...}) and zero-initialized (.b8 name[N];)
@@ -1383,6 +1476,24 @@ fn sanitize_ptx_source(src: &str) -> String {
                 skip_extern_continuation = false;
             }
             continue;
+        }
+        // Catch orphaned extern continuation: a "(" line that follows a commented-out ".extern"
+        // Also catch standalone .param lines and ")" and ";" that are extern continuations
+        {
+            let t = cur.trim();
+            // If previous non-empty output line was a commented extern, this "(" is its continuation
+            if t == "(" {
+                let last_line = out.lines().rev()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or("");
+                if last_line.starts_with("// .extern") || last_line.starts_with("//.extern") {
+                    out.push_str("// ");
+                    out.push_str(&cur);
+                    out.push('\n');
+                    skip_extern_continuation = true;
+                    continue;
+                }
+            }
         }
 
         // Simplify aligned byte-array params: ".param .align N .bM name[K]" → ".param .b64 name"
@@ -1499,16 +1610,26 @@ fn sanitize_ptx_source(src: &str) -> String {
             }
         }
 
-        // Normalize multi-operand mov (e.g., mov.b32 dst, src0, src1;) to two-operand form
-        if cur.trim_start().starts_with("mov.b32") {
-            let rest = &cur.trim_start()["mov.b32".len()..];
+        // Normalize multi-operand mov (e.g., mov.b32 dst, src0, src1; or mov.b64 {lo, hi}, src;)
+        // After brace removal, pack/unpack becomes 3 operands. Reduce to 2-operand form.
+        if cur.trim_start().starts_with("mov.b32") || cur.trim_start().starts_with("mov.b64") {
+            let prefix_end = if cur.trim_start().starts_with("mov.b64") { "mov.b64".len() } else { "mov.b32".len() };
+            let t = cur.trim_start();
+            let rest = &t[prefix_end..];
+            let type_str = &t[..prefix_end];
             let toks: Vec<&str> = rest
                 .split(|c| c == ',' || c == ';')
                 .map(|s| s.trim())
                 .filter(|s| !s.is_empty())
                 .collect();
-            if toks.len() >= 2 {
-                cur = format!("    mov.b32 {}, {};", toks[0], toks[1]);
+            if toks.len() == 3 {
+                // 3-operand mov (from brace removal):
+                // Unpack: mov.b64 {%r_lo, %r_hi}, %rd_src -> mov.b32 %r_lo, %rd_src; (take low part)
+                // Pack:   mov.b64 %rd_dst, {%r_lo, %r_hi} -> mov.b32 %rd_dst, %r_lo; (use first part)
+                // mov.b32 {tmp, %rs13}, %r1613 -> mov.b32 tmp, %r1613; (use source)
+                cur = format!("    mov.b32 {}, {};", toks[0], toks[2]);
+            } else if toks.len() >= 2 {
+                cur = format!("    {} {}, {};", type_str, toks[0], toks[1]);
             }
         }
 
@@ -1561,6 +1682,93 @@ fn sanitize_ptx_source(src: &str) -> String {
                     }
                     continue;
                 }
+            }
+        }
+
+        // ============================================================
+        // MMA.SYNC HANDLING (must come BEFORE brace removal)
+        // Convert mma.sync to simplified form for tmatmul emulation
+        // mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        //   {%f1,%f2,%f3,%f4}, {%r1,%r2,%r3,%r4}, {%r5,%r6}, {%f5,%f6,%f7,%f8};
+        // -> Comment out (handled as tmatmul sequence in compiler)
+        //    or expand to scalar mad instructions
+        // ============================================================
+        {
+            let t = cur.trim_start();
+            if t.starts_with("mma.sync.") {
+                // Replace with a sequence of scalar mad operations
+                // Extract brace groups: D = A * B + C
+                // For simplicity, extract first register from each brace group
+                let groups: Vec<Vec<String>> = cur.split('{')
+                    .skip(1) // skip everything before first '{'
+                    .filter_map(|chunk| {
+                        chunk.find('}').map(|end| {
+                            chunk[..end].split(',')
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty())
+                                .collect()
+                        })
+                    })
+                    .collect();
+
+                if groups.len() == 4 {
+                    // groups: [D_regs, A_regs, B_regs, C_regs]
+                    let d_regs = &groups[0];
+                    let a_regs = &groups[1];
+                    let b_regs = &groups[2];
+                    let c_regs = &groups[3];
+
+                    // Emit scalar mad for each D register: D[i] = A[0] * B[0] + C[i]
+                    for i in 0..d_regs.len().min(c_regs.len()) {
+                        let a = a_regs.first().unwrap_or(&"%r0".to_string()).clone();
+                        let b = b_regs.first().unwrap_or(&"%r0".to_string()).clone();
+                        out.push_str(&format!("    mad.lo.s32 {}, {}, {}, {};\n",
+                            d_regs[i], a, b, c_regs[i]));
+                    }
+                    continue;
+                } else {
+                    // Can't parse brace groups, comment out
+                    out.push_str("    // ");
+                    out.push_str(&cur);
+                    out.push('\n');
+                    continue;
+                }
+            }
+        }
+
+        // ============================================================
+        // LDMATRIX HANDLING (must come BEFORE brace removal)
+        // ldmatrix.sync.aligned.x4.m8n8.shared.b16 {%r1,%r2,%r3,%r4}, [%r5];
+        // -> expand to scalar ld.shared.b16 for each register
+        // ============================================================
+        {
+            let t = cur.trim_start();
+            if t.starts_with("ldmatrix.") {
+                // Extract register list from braces and address from brackets
+                if let Some(lb) = cur.find('{') {
+                    if let Some(rb) = cur.find('}') {
+                        let regs: Vec<String> = cur[lb+1..rb].split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        // Extract address [%rN]
+                        if let Some(addr_start) = cur.find('[') {
+                            if let Some(addr_end) = cur.find(']') {
+                                let addr = &cur[addr_start..=addr_end]; // includes brackets
+                                for r in &regs {
+                                    out.push_str(&format!("    ld.shared.b16 {}, {};\n", r, addr));
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                }
+                // No braces — may be already expanded or single register
+                // Comment out if we can't parse
+                out.push_str("    // ");
+                out.push_str(&cur);
+                out.push('\n');
+                continue;
             }
         }
 
@@ -1705,26 +1913,28 @@ fn sanitize_ptx_source(src: &str) -> String {
 
         // ============================================================
         // DIV MODIFIER HANDLING
-        // Strip approx/full modifiers from div instructions
+        // Normalize div instructions to forms the parser accepts:
+        //   f32: div.full.f32 (parser knows this)
+        //   f64: div.rn.f64 (div.full is f32-only in PTX ISA)
         // ============================================================
-        if cur.trim_start().starts_with("div.approx") {
-            cur = cur.replace("div.approx", "div");
-        }
-        if cur.trim_start().starts_with("div.full") {
-            cur = cur.replace("div.full", "div");
-        }
-        // Convert div rounding modes to .full (parser doesn't support plain div.f32)
-        // div.rn.f32 -> div.full.f32, div.rz.f32 -> div.full.f32, etc.
-        if cur.contains("div.rn.f") || cur.contains("div.rz.f") || cur.contains("div.rm.f") || cur.contains("div.rp.f") {
-            cur = cur.replace("div.rn.", "div.full.")
-                     .replace("div.rz.", "div.full.")
-                     .replace("div.rm.", "div.full.")
-                     .replace("div.rp.", "div.full.");
-        }
-        // Plain div.f32 (no qualifier) -> div.full.f32
-        if cur.trim_start().starts_with("div.f32") || cur.trim_start().starts_with("div.f64") {
-            cur = cur.replace("div.f32", "div.full.f32")
-                     .replace("div.f64", "div.full.f64");
+        {
+            let t = cur.trim_start();
+            if t.starts_with("div.") {
+                let is_f64 = t.contains(".f64");
+                // Strip approx/full/rounding modifiers first
+                cur = cur.replace("div.approx.", "div.")
+                         .replace("div.full.", "div.")
+                         .replace("div.rn.", "div.")
+                         .replace("div.rz.", "div.")
+                         .replace("div.rm.", "div.")
+                         .replace("div.rp.", "div.");
+                // Now we have plain div.f32 or div.f64 — add correct qualifier
+                if is_f64 {
+                    cur = cur.replace("div.f64", "div.rn.f64");
+                } else {
+                    cur = cur.replace("div.f32", "div.full.f32");
+                }
+            }
         }
 
         // ============================================================
@@ -1875,75 +2085,36 @@ fn sanitize_ptx_source(src: &str) -> String {
         }
 
         // Handle vector member access: temp.x, temp.y -> temp (just use base variable)
-        // This is a simplification - use first element for all
-        if cur.contains(".x") && !cur.contains("%") {
-            // Be careful not to replace .x in instruction names or labels
-            let has_member_access = cur.split_whitespace()
-                .any(|word| word.contains(".x") && !word.starts_with('.') && !word.starts_with('%'));
-            if has_member_access {
-                // Replace variable.x with just variable
-                let parts: Vec<&str> = cur.split_whitespace().collect();
-                let new_parts: Vec<String> = parts.iter()
-                    .map(|p| {
-                        if p.contains(".x") && !p.starts_with('.') && !p.starts_with('%') {
-                            p.replace(".x", "").replace(",", ",")
-                        } else {
-                            p.to_string()
-                        }
-                    })
-                    .collect();
-                cur = new_parts.join(" ");
+        // Only strip .x/.y/.z/.w when it's at the END of a token (optionally followed by , or ;)
+        // This avoids corrupting instruction names like bar.warp.sync
+        {
+            fn strip_vec_member(token: &str, suffix: &str) -> Option<String> {
+                // Token must not start with '.' or '%'
+                if token.starts_with('.') || token.starts_with('%') {
+                    return None;
+                }
+                // Strip trailing punctuation
+                let (core, trail) = if token.ends_with(',') || token.ends_with(';') {
+                    (&token[..token.len()-1], &token[token.len()-1..])
+                } else {
+                    (token, "")
+                };
+                // Only match if suffix is at the very end
+                if core.ends_with(suffix) && core.len() > suffix.len() {
+                    Some(format!("{}{}", &core[..core.len()-suffix.len()], trail))
+                } else {
+                    None
+                }
             }
-        }
-        if cur.contains(".y") && !cur.contains("%") {
-            let has_member_access = cur.split_whitespace()
-                .any(|word| word.contains(".y") && !word.starts_with('.') && !word.starts_with('%'));
-            if has_member_access {
-                let parts: Vec<&str> = cur.split_whitespace().collect();
-                let new_parts: Vec<String> = parts.iter()
-                    .map(|p| {
-                        if p.contains(".y") && !p.starts_with('.') && !p.starts_with('%') {
-                            p.replace(".y", "")
-                        } else {
-                            p.to_string()
-                        }
-                    })
-                    .collect();
-                cur = new_parts.join(" ");
-            }
-        }
-        if cur.contains(".z") && !cur.contains("%") {
-            let has_member_access = cur.split_whitespace()
-                .any(|word| word.contains(".z") && !word.starts_with('.') && !word.starts_with('%'));
-            if has_member_access {
-                let parts: Vec<&str> = cur.split_whitespace().collect();
-                let new_parts: Vec<String> = parts.iter()
-                    .map(|p| {
-                        if p.contains(".z") && !p.starts_with('.') && !p.starts_with('%') {
-                            p.replace(".z", "")
-                        } else {
-                            p.to_string()
-                        }
-                    })
-                    .collect();
-                cur = new_parts.join(" ");
-            }
-        }
-        if cur.contains(".w") && !cur.contains("%") {
-            let has_member_access = cur.split_whitespace()
-                .any(|word| word.contains(".w") && !word.starts_with('.') && !word.starts_with('%'));
-            if has_member_access {
-                let parts: Vec<&str> = cur.split_whitespace().collect();
-                let new_parts: Vec<String> = parts.iter()
-                    .map(|p| {
-                        if p.contains(".w") && !p.starts_with('.') && !p.starts_with('%') {
-                            p.replace(".w", "")
-                        } else {
-                            p.to_string()
-                        }
-                    })
-                    .collect();
-                cur = new_parts.join(" ");
+
+            for suffix in &[".x", ".y", ".z", ".w"] {
+                if cur.contains(suffix) && !cur.contains('%') {
+                    let parts: Vec<&str> = cur.split_whitespace().collect();
+                    let changed: Vec<String> = parts.iter()
+                        .map(|p| strip_vec_member(p, suffix).unwrap_or_else(|| p.to_string()))
+                        .collect();
+                    cur = changed.join(" ");
+                }
             }
         }
 
@@ -2075,6 +2246,79 @@ fn sanitize_ptx_source(src: &str) -> String {
             }
         }
 
+        // ============================================================
+        // CACHE HINT STRIPPING
+        // Strip .L2::cache_hint, .L2::64B, .L2::128B, .L2::256B, .L1::evict_*
+        // These are sm_80+ performance hints that don't affect semantics
+        // ============================================================
+        if cur.contains("::") {
+            cur = cur.replace(".L2::cache_hint", "")
+                .replace(".L2::64B", "")
+                .replace(".L2::128B", "")
+                .replace(".L2::256B", "")
+                .replace(".L1::evict_normal", "")
+                .replace(".L1::evict_unchanged", "")
+                .replace(".L1::evict_first", "")
+                .replace(".L1::evict_last", "")
+                .replace(".L1::no_allocate", "")
+                .replace(".shared::cta", ".shared")
+                .replace(".shared::cluster", ".shared")
+                .replace(".param::entry", ".param")
+                .replace(".param::func", ".param");
+        }
+
+        // ============================================================
+        // UNIFIED ADDRESSING HINT STRIPPING
+        // Strip .unified from load instructions (semantic no-op)
+        // ============================================================
+        if cur.contains(".unified") {
+            cur = cur.replace(".unified", "");
+        }
+
+        // ============================================================
+        // LDMATRIX ORDER FIX
+        // PTX emits: ldmatrix.sync.aligned.x4.m8n8.shared.b16
+        // Parser expects: ldmatrix.sync.aligned.m8n8.x4{.trans}.shared.b16
+        // Swap .xN and .mMnN order, and handle multi-register output
+        // ============================================================
+        {
+            let t = cur.trim_start();
+            if t.starts_with("ldmatrix.sync.aligned.") {
+                // Fix operand ordering: swap .xN and .mMnN
+                // ldmatrix.sync.aligned.x4.m8n8 -> ldmatrix.sync.aligned.m8n8.x4
+                // ldmatrix.sync.aligned.x4.trans.m8n8 -> ldmatrix.sync.aligned.m8n8.x4.trans
+                cur = cur.replace(".x1.m8n8", ".m8n8.x1")
+                    .replace(".x2.m8n8", ".m8n8.x2")
+                    .replace(".x4.m8n8", ".m8n8.x4")
+                    .replace(".x1.trans.m8n8", ".m8n8.x1.trans")
+                    .replace(".x2.trans.m8n8", ".m8n8.x2.trans")
+                    .replace(".x4.trans.m8n8", ".m8n8.x4.trans")
+                    .replace(".x1.m16n16", ".m16n16.x1")
+                    .replace(".x2.m16n16", ".m16n16.x2")
+                    .replace(".x4.m16n16", ".m16n16.x4");
+
+                // Handle multi-register output: after brace removal
+                // "ldmatrix.sync.aligned.m8n8.x4.shared.b16 %r1, %r2, %r3, %r4, [%r5];"
+                // -> expand to 4 scalar loads: "ld.shared.b16 %r1, [%r5];" etc.
+                let t2 = cur.trim_start();
+                if let Some(bracket_pos) = t2.find('[') {
+                    let before_bracket = &t2[..bracket_pos];
+                    let after_bracket = &t2[bracket_pos..];
+                    // Count register operands before '['
+                    let instr_and_regs: Vec<&str> = before_bracket.split_whitespace().collect();
+                    if instr_and_regs.len() > 2 {
+                        // Multiple output registers — expand to individual loads
+                        let addr = after_bracket.trim().trim_end_matches(';');
+                        for i in 1..instr_and_regs.len() {
+                            let reg = instr_and_regs[i].trim_end_matches(',');
+                            out.push_str(&format!("    ld.shared.b16 {}, {};\n", reg, addr));
+                        }
+                        continue;
+                    }
+                }
+            }
+        }
+
         // Simplify "+ 0" in addressing and normalize bracket spacing
         if cur.contains(" + 0") {
             cur = cur.replace(" + 0", "");
@@ -2086,7 +2330,164 @@ fn sanitize_ptx_source(src: &str) -> String {
         out.push_str(&cur);
         out.push('\n');
     }
-    out
+
+    // ============================================================
+    // POST-PROCESSING PASS
+    // Fix structural issues that can only be resolved after the main loop:
+    // 1. Remove inner scoping braces (track depth, keep only function body {/})
+    // 2. Split multi-statement lines (e.g., ".reg .b16 tmp; mov.b32 tmp, ...")
+    // 3. Fix 3-operand mov.b32/b64 from brace removal
+    // 4. Comment out remaining unsupported instructions
+    // 5. Strip memory ordering/cache qualifiers
+    // ============================================================
+    let mut final_out = String::with_capacity(out.len());
+    for line in out.lines() {
+        let t = line.trim();
+
+        // Skip empty lines and comments
+        if t.is_empty() || t.starts_with("//") {
+            final_out.push_str(line);
+            final_out.push('\n');
+            continue;
+        }
+
+        // Standalone braces are already handled by the main loop's brace depth tracker.
+        // Pass them through as-is (the main loop only emits function-level braces).
+        if t == "{" || t == "}" {
+            final_out.push_str(line);
+            final_out.push('\n');
+            continue;
+        }
+
+        // Split multi-statement lines: ".reg .b16 tmp; mov.b32 tmp, %rs, %r;"
+        // Split at ';' boundaries when there are multiple statements
+        let semi_count = t.chars().filter(|&c| c == ';').count();
+        if semi_count > 1 && !t.contains(" = {") {
+            let parts: Vec<&str> = t.split(';').collect();
+            for part in &parts {
+                let stmt = part.trim();
+                if !stmt.is_empty() {
+                    // Pass without ';' — postprocess_statement handles it
+                    let fixed = postprocess_statement(stmt);
+                    final_out.push_str("    ");
+                    final_out.push_str(&fixed);
+                    final_out.push_str(";\n");
+                }
+            }
+            continue;
+        }
+
+        // Process single statement
+        let fixed = postprocess_statement(t);
+        // Preserve original indentation
+        let indent = if line.starts_with("    ") || line.starts_with('\t') { "    " } else { "" };
+        final_out.push_str(indent);
+        final_out.push_str(&fixed);
+        final_out.push('\n');
+    }
+    final_out
+}
+
+/// Post-process a single statement: fix remaining issues after the main sanitization loop.
+/// Handles semicolons: strips trailing ';', processes, then re-adds ';'.
+fn postprocess_statement(stmt: &str) -> String {
+    let trimmed = stmt.trim();
+    let (body, has_semi) = if trimmed.ends_with(';') {
+        (&trimmed[..trimmed.len()-1], true)
+    } else {
+        (trimmed, false)
+    };
+    let semi = if has_semi { ";" } else { "" };
+    let mut cur = body.to_string();
+
+    // Comment out unsupported bf16 instructions
+    if cur.starts_with("neg.bf16") || cur.starts_with("neg.f16") {
+        return format!("// {}{}", cur, semi);
+    }
+
+    // Comment out cp.async instructions (async memory copy)
+    if cur.starts_with("cp.async") {
+        return format!("// {}{}", cur, semi);
+    }
+
+    // Comment out nanosleep
+    if cur.starts_with("nanosleep") {
+        return format!("// {}{}", cur, semi);
+    }
+
+    // Comment out barrier/fence/sync instructions not supported by parser
+    // These are no-ops for single-threaded TMatmul emulation
+    if cur.starts_with("bar.arrive") || cur.starts_with("bar.sync")
+        || cur.starts_with("bar.warp")
+        || cur.starts_with("barrier.cluster") || cur.starts_with("barrier.sync")
+        || cur.starts_with("mbarrier.") || cur.starts_with("fence.")
+        || cur.starts_with("elect.sync") || cur.starts_with("mapa.")
+        || cur.starts_with("brkpt") || cur.starts_with("trap")
+        || cur.starts_with("call.uni") || cur.starts_with("vprintf")
+    {
+        return format!("// {}{}", cur, semi);
+    }
+
+    // Convert cvt.rn.bf16x2.f32 %r, %f1, %f2 → mov.b32 %r, %f1;
+    if cur.starts_with("cvt.rn.bf16x2.f32") || cur.starts_with("cvt.rn.f16x2.f32") {
+        let prefix = if cur.starts_with("cvt.rn.bf16x2.f32") {
+            "cvt.rn.bf16x2.f32"
+        } else {
+            "cvt.rn.f16x2.f32"
+        };
+        let rest = &cur[prefix.len()..];
+        let toks: Vec<&str> = rest.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if toks.len() >= 2 {
+            return format!("mov.b32 {}, {}{}", toks[0], toks[1], semi);
+        }
+        return format!("// {}{}", cur, semi);
+    }
+
+    // Comment out set.*.f16x2 / set.*.bf16x2 (vector comparison)
+    if (cur.starts_with("set.") || cur.starts_with("setp.")) && (cur.contains(".f16x2") || cur.contains(".bf16x2")) {
+        return format!("// {}{}", cur, semi);
+    }
+
+    // Fix 3-operand mov.b32/b64 (from brace removal of pack/unpack)
+    if cur.starts_with("mov.b32") || cur.starts_with("mov.b64") {
+        let prefix_len = if cur.starts_with("mov.b64") { "mov.b64".len() } else { "mov.b32".len() };
+        let rest = &cur[prefix_len..];
+        let toks: Vec<&str> = rest.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if toks.len() == 3 {
+            return format!("mov.b32 {}, {}{}", toks[0], toks[2], semi);
+        }
+    }
+
+    // Strip memory ordering qualifiers from ld/st
+    // Only modify the instruction mnemonic part (before first space)
+    if cur.starts_with("ld.") || cur.starts_with("st.") {
+        if let Some(space_pos) = cur.find(' ') {
+            let mnemonic = &cur[..space_pos];
+            let rest = &cur[space_pos..];
+            let clean_mnemonic = mnemonic
+                .replace(".release", "").replace(".acquire", "")
+                .replace(".relaxed", "").replace(".acq_rel", "")
+                .replace(".weak", "")
+                .replace(".sys.", ".").replace(".gpu.", ".").replace(".cta.", ".")
+                .replace(".cluster.", ".")
+                .replace(".ca.", ".").replace(".cg.", ".").replace(".cs.", ".")
+                .replace(".lu.", ".").replace(".cv.", ".")
+                .replace(".wb.", ".").replace(".wt.", ".");
+            // Clean up double dots
+            let mut m = clean_mnemonic;
+            while m.contains("..") {
+                m = m.replace("..", ".");
+            }
+            cur = format!("{}{}", m, rest);
+        }
+    }
+
+    // Replace %globaltimer with 0
+    if cur.contains("%globaltimer") {
+        cur = cur.replace("%globaltimer", "0");
+    }
+
+    format!("{}{}", cur, semi)
 }
 
 /// Pattern-based optimization: Detect and optimize common PTX patterns

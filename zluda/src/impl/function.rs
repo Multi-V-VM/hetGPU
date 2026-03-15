@@ -505,8 +505,32 @@ pub(crate) unsafe fn launch_kernel(
                             Some(asm)
                         }
                         Err(e) => {
-                            eprintln!("[TMatmul Backend] PTX->TMatmul compilation failed: {}", e);
-                            None
+                            eprintln!("[TMatmul Backend] PTX->TMatmul compilation failed: {} - trying cached PTX lookup", e);
+                            // The kernel's own PTX may be truncated (e.g. CUBIN extraction).
+                            // Try the cached PTX index which may have the full PTX (e.g. from Triton cache).
+                            if let Some(cached_ptx) = cached_ptx_lookup(&f.name) {
+                                eprintln!("[TMatmul Backend] Found cached PTX for '{}' ({} bytes)", f.name, cached_ptx.len());
+                                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    ptx::pass::ptx_to_tmatmul_assembly(&cached_ptx)
+                                })) {
+                                    Ok(Ok(asm)) => {
+                                        let asm_path = format!("/tmp/hetgpu_asm_{}.S", f.name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_"));
+                                        let _ = std::fs::write(&asm_path, &asm);
+                                        eprintln!("[TMatmul Backend] Cached PTX compiled to {} ({} bytes)", asm_path, asm.len());
+                                        Some(asm)
+                                    }
+                                    Ok(Err(e2)) => {
+                                        eprintln!("[TMatmul Backend] Cached PTX compilation also failed: {}", e2);
+                                        None
+                                    }
+                                    Err(_) => {
+                                        eprintln!("[TMatmul Backend] Cached PTX compilation panicked");
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            }
                         }
                     };
 
@@ -531,8 +555,28 @@ pub(crate) unsafe fn launch_kernel(
                         }
                     }
                 } else {
-                    eprintln!("[TMatmul Backend] Invalid PTX source ({} bytes) - trying kernel name fallback", ptx_source.len());
-                    execute_kernel_name_fallback(&f.name, kernel_params, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z);
+                    eprintln!("[TMatmul Backend] Invalid PTX source ({} bytes) - trying cached PTX lookup", ptx_source.len());
+                    // Try cached PTX index before falling back to kernel name
+                    let mut handled = false;
+                    if let Some(cached_ptx) = cached_ptx_lookup(&f.name) {
+                        if let Ok(Ok(asm)) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            ptx::pass::ptx_to_tmatmul_assembly(&cached_ptx)
+                        })) {
+                            if !kernel_params.is_null() {
+                                if let Ok(()) = super::tmatmul_interpreter::execute_assembly(
+                                    &asm, kernel_params,
+                                    (grid_dim_x, grid_dim_y, grid_dim_z),
+                                    (block_dim_x, block_dim_y, block_dim_z),
+                                ) {
+                                    eprintln!("[TMatmul Interpreter] Kernel '{}' executed via cached PTX", f.name);
+                                    handled = true;
+                                }
+                            }
+                        }
+                    }
+                    if !handled {
+                        execute_kernel_name_fallback(&f.name, kernel_params, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z);
+                    }
                 }
             } else {
                 // No PTX on the function — try the cached index to find it
@@ -1082,10 +1126,68 @@ static PTX_INDEX: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
 /// Values are PTX file paths.
 fn build_ptx_index() -> HashMap<String, String> {
     let mut index = HashMap::new();
-    let ptx_dirs: Vec<_> = (0..10)
+    let mut ptx_dirs: Vec<String> = (0..10)
         .map(|i| format!("/tmp/hetgpu_so_ptx_{}", i))
         .filter(|d| std::path::Path::new(d).is_dir())
         .collect();
+
+    // Also search HETGPU_PTX_DIR (user-configured) and the repo root for
+    // pre-extracted libtorch_cuda.*.ptx files that ship with hetGPU.
+    if let Ok(extra) = std::env::var("HETGPU_PTX_DIR") {
+        for dir in extra.split(':') {
+            let d = dir.trim().to_string();
+            if !d.is_empty() && std::path::Path::new(&d).is_dir() {
+                ptx_dirs.push(d);
+            }
+        }
+    }
+    // Auto-discover: look next to the libnvcuda.so binary for PTX files.
+    // The pre-extracted libtorch_cuda.*.sm_120.ptx files live in the repo root.
+    if let Ok(lib_path) = std::env::var("LD_PRELOAD") {
+        for part in lib_path.split(':') {
+            if let Some(parent) = std::path::Path::new(part.trim()).parent() {
+                // Walk up to find the repo root (where the .ptx files are)
+                for ancestor in [parent, parent.parent().unwrap_or(parent),
+                                 parent.parent().and_then(|p| p.parent()).unwrap_or(parent)] {
+                    let candidate = ancestor.to_string_lossy().to_string();
+                    if !ptx_dirs.contains(&candidate) && std::path::Path::new(&candidate).is_dir() {
+                        // Check if this directory actually has .ptx files
+                        if let Ok(entries) = std::fs::read_dir(&candidate) {
+                            let has_ptx = entries
+                                .filter_map(|e| e.ok())
+                                .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("ptx"));
+                            if has_ptx {
+                                eprintln!("[PTX Index] Auto-discovered PTX directory: {}", candidate);
+                                ptx_dirs.push(candidate);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Also search Triton's JIT cache for kernel PTX.
+    // Triton caches compiled kernels with proper PTX (with newlines) in
+    // ~/.triton/cache/<hash>/<kernel_name>.ptx
+    if let Ok(home) = std::env::var("HOME") {
+        let triton_cache = format!("{}/.triton/cache", home);
+        if std::path::Path::new(&triton_cache).is_dir() {
+            // Walk subdirectories (each is a hash)
+            if let Ok(entries) = std::fs::read_dir(&triton_cache) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let subdir = entry.path();
+                    if subdir.is_dir() {
+                        let subdir_str = subdir.to_string_lossy().to_string();
+                        if !ptx_dirs.contains(&subdir_str) {
+                            ptx_dirs.push(subdir_str);
+                        }
+                    }
+                }
+            }
+            eprintln!("[PTX Index] Added Triton cache dirs from {}", triton_cache);
+        }
+    }
 
     for ptx_dir in &ptx_dirs {
         let entries = match std::fs::read_dir(ptx_dir) {
@@ -1101,14 +1203,25 @@ fn build_ptx_index() -> HashMap<String, String> {
             if path.extension().and_then(|e| e.to_str()) != Some("ptx") {
                 continue;
             }
-            let contents = match std::fs::read_to_string(&path) {
-                Ok(c) => c,
+            let path_str = path.to_string_lossy().to_string();
+            // Use BufReader for line-by-line scanning to avoid loading
+            // multi-hundred-MB PTX files entirely into memory.
+            let file = match std::fs::File::open(&path) {
+                Ok(f) => f,
                 Err(_) => continue,
             };
-            let path_str = path.to_string_lossy().to_string();
-            // Scan for .entry declarations
-            for line in contents.lines() {
-                let trimmed = line.trim();
+            let reader = std::io::BufReader::new(file);
+            use std::io::BufRead;
+            for line in reader.lines() {
+                let line = match line {
+                    Ok(l) => l,
+                    Err(_) => break,
+                };
+                let trimmed = line.trim_start();
+                // Fast prefix check to skip the vast majority of lines
+                if !trimmed.starts_with(".entry ") && !trimmed.contains(".entry ") {
+                    continue;
+                }
                 if let Some(entry_pos) = trimmed.find(".entry ") {
                     // Extract kernel name: everything after ".entry " until '(' or whitespace
                     let name_start = entry_pos + 7; // ".entry ".len()
@@ -1123,7 +1236,7 @@ fn build_ptx_index() -> HashMap<String, String> {
             }
         }
     }
-    eprintln!("[PTX Index] Built index with {} kernel entries", index.len());
+    eprintln!("[PTX Index] Built index with {} kernel entries from {} directories", index.len(), ptx_dirs.len());
     index
 }
 
@@ -2245,6 +2358,37 @@ unsafe fn execute_kernel_name_fallback(
         return;
     }
 
+    // Handle Triton BitNet kernels (onebitllms).
+    if name_lower == "partial_max_kernel" || name_lower == "abs_mean_kernel" {
+        execute_triton_reduction_kernel(&name_lower, kernel_params,
+            grid_dim_x, grid_dim_y, grid_dim_z);
+        return;
+    }
+
+    // Handle CatArrayBatchedCopy — triggered by torch.cat() for KV cache.
+    // These kernels copy data from multiple source tensors into a destination tensor.
+    // For the virtual backend, the tensor data is already in host memory,
+    // so the concat is effectively a series of memcpy operations.
+    // The kernel uses a complex parameter struct, but with the virtual backend
+    // the data is already accessible — just treat as a no-op since PyTorch's
+    // CPU fallback code path handles the actual copy before the kernel launch.
+    if name_lower.contains("catarraybatchedcopy") {
+        // CatArrayBatchedCopy is a performance optimization kernel.
+        // In the virtual backend, the copy has already been set up by PyTorch's
+        // tensor infrastructure.  The kernel just does the GPU-side copy.
+        // We need to perform the actual copy here.
+        execute_cat_copy_fallback(kernel_name, kernel_params, grid_dim_x, grid_dim_y, grid_dim_z);
+        return;
+    }
+
+    // Handle DeviceScanInitKernel — CUB tile state initialization.
+    // This initializes tile state for parallel prefix scan.  In single-threaded
+    // execution it's a no-op (scan can proceed sequentially).
+    if name_lower.contains("devicescaninit") {
+        eprintln!("[TMatmul Fallback] DeviceScanInitKernel: no-op (sequential execution)");
+        return;
+    }
+
     // Handle vectorized_elementwise_kernel from PyTorch.
     // Signature: vectorized_elementwise_kernel(int N, Functor f, std::array<char*, K> data)
     // kernel_params[0] = &N (int32)
@@ -2769,13 +2913,44 @@ unsafe fn execute_reduce_kernel_fallback(
         return;
     }
 
-    // Sort pointers by address to infer tensor sizes from gaps.
+    // Sort pointers by address and deduplicate to infer tensor sizes from gaps.
     // With CachingAllocator, get_alloc_size returns remaining bytes in the block,
     // not the individual tensor size. Use pointer gaps instead.
     let mut sorted = found_ptrs.clone();
     sorted.sort_by_key(|&(_, ptr, _)| ptr);
+    // Deduplicate pointers at the same address (same tensor referenced from
+    // multiple struct fields).  Keep the first occurrence.
+    sorted.dedup_by_key(|entry| entry.1);
 
-    // Compute tensor sizes from gaps between consecutive pointers
+    if sorted.len() < 2 {
+        eprintln!("[TMatmul Fallback] reduce_kernel: need >=2 unique pointers, got {}", sorted.len());
+        return;
+    }
+
+    // Detect element size from kernel name.  The mangled name encodes the
+    // scalar type: 'f' = float (4 bytes), 'd' = double (8 bytes),
+    // 'l' = long/int64 (8 bytes), 'e' = half (2 bytes), 'i' = int (4 bytes).
+    // ReduceOp<SCALAR, ...> — the first template parameter after ReduceOp is
+    // the scalar type in the Itanium mangling.
+    let elem_size: usize = if name_lower.contains("reduceop") {
+        // Try to detect from the full (non-lowered) kernel name
+        if kernel_name.contains("ReduceOpId") || kernel_name.contains("ReduceOpIl") {
+            8 // double or long (int64)
+        } else if kernel_name.contains("ReduceOpIe") || kernel_name.contains("ReduceOpIDhE") {
+            2 // half
+        } else {
+            4 // float (default)
+        }
+    } else if kernel_name.contains("ReduceOpIl") || kernel_name.contains("ReduceOpId") {
+        8
+    } else if kernel_name.contains("ReduceOpIe") || kernel_name.contains("ReduceOpIDhE") {
+        2
+    } else {
+        4
+    };
+    eprintln!("[TMatmul Fallback] reduce_kernel: detected elem_size={} bytes", elem_size);
+
+    // Compute tensor sizes from gaps between consecutive unique pointers
     let mut tensor_sizes: Vec<usize> = Vec::new();
     for i in 0..sorted.len() {
         if i + 1 < sorted.len() {
@@ -2784,29 +2959,23 @@ unsafe fn execute_reduce_kernel_fallback(
         } else {
             // Last pointer: use alloc_size (remaining bytes) but cap at a reasonable max
             let remaining = sorted[i].2;
-            // For the last tensor, try to infer from the first tensor's size and expected dimensions
-            // If we have 2 tensors: input (large) and output (small)
-            // The last one is likely the larger (input) if previous gaps are small
             tensor_sizes.push(remaining.min(1024 * 1024)); // cap at 1MB
         }
     }
 
     eprintln!("[TMatmul Fallback] reduce_kernel: pointer gaps: {:?}", tensor_sizes);
 
-    // For CachingAllocator sub-allocations, pointer gaps give the distance between
-    // consecutive allocations (including padding), not the tensor size.
-    // The minimum gap is the input tensor size (output -> input gap).
-    let min_gap = *tensor_sizes.iter().min().unwrap_or(&0);
-    let in_elements = min_gap / 4; // f32 elements in the smaller gap = input tensor
+    // Use the minimum non-zero gap as the input tensor size.
+    let min_gap = *tensor_sizes.iter().filter(|&&g| g > 0).min().unwrap_or(&0);
+    let in_elements = min_gap / elem_size;
 
     // The first pointer (lower address) is typically the output tensor.
     // The second pointer (higher address) is the input tensor.
-    // Input tensor size = min_gap bytes
     let in_ptr = sorted[sorted.len() - 1].1; // higher address = input
     let out_ptr = sorted[0].1; // lower address = output
 
     if in_elements == 0 {
-        eprintln!("[TMatmul Fallback] reduce_kernel: zero input elements");
+        eprintln!("[TMatmul Fallback] reduce_kernel: zero input elements (min_gap={}, elem_size={})", min_gap, elem_size);
         return;
     }
 
@@ -2861,16 +3030,13 @@ unsafe fn execute_reduce_kernel_fallback(
 
     // Safety: cap in_elements by the alloc_size of the input pointer
     let in_alloc_size = sorted[sorted.len() - 1].2;
-    let in_elements = in_elements.min(in_alloc_size / 4);
+    let in_elements = in_elements.min(in_alloc_size / elem_size);
     // Cap out_elements by the alloc_size of the output pointer
     let out_alloc_size = sorted[0].2;
-    let out_elements = out_elements.min(out_alloc_size / 4);
+    let out_elements = out_elements.min(out_alloc_size / elem_size);
 
-    eprintln!("[TMatmul Fallback] reduce_kernel: in_elements={}, out_elements={}, reduce_size={}",
-             in_elements, out_elements, reduce_size);
-
-    let inp = in_ptr as *const f32;
-    let out = out_ptr as *mut f32;
+    eprintln!("[TMatmul Fallback] reduce_kernel: in_elements={}, out_elements={}, reduce_size={}, elem_size={}",
+             in_elements, out_elements, reduce_size, elem_size);
 
     // Determine which reduction operation
     let op_type = if name_lower.contains("sum_functor") || name_lower.contains("sum") {
@@ -2890,63 +3056,291 @@ unsafe fn execute_reduce_kernel_fallback(
     eprintln!("[TMatmul Fallback] reduce_kernel: op={}, in_elements={}, out_elements={}, reduce_size={}",
              op_type, in_elements, out_elements, reduce_size);
 
-    for row in 0..out_elements {
-        let base = row * reduce_size;
-        let end = (base + reduce_size).min(in_elements);
-        let count = end - base;
-        if count == 0 { continue; }
+    // Dispatch based on element size — int64 (long) kernels need integer ops,
+    // while float kernels use f32/f64.
+    if elem_size == 8 && (name_lower.contains("maxnanfunctor") || name_lower.contains("minnanfunctor")
+                          || kernel_name.contains("ReduceOpIl")) {
+        // Integer (i64) reduction — used by argmax/argmin on long tensors
+        let inp = in_ptr as *const i64;
+        let out = out_ptr as *mut i64;
+        for row in 0..out_elements {
+            let base = row * reduce_size;
+            let end = (base + reduce_size).min(in_elements);
+            if end <= base { continue; }
+            match op_type {
+                "max" => {
+                    let mut max_val = i64::MIN;
+                    for i in base..end {
+                        let v = inp.add(i).read_unaligned();
+                        if v > max_val { max_val = v; }
+                    }
+                    out.add(row).write_unaligned(max_val);
+                }
+                "min" => {
+                    let mut min_val = i64::MAX;
+                    for i in base..end {
+                        let v = inp.add(i).read_unaligned();
+                        if v < min_val { min_val = v; }
+                    }
+                    out.add(row).write_unaligned(min_val);
+                }
+                "sum" => {
+                    let mut sum = 0i64;
+                    for i in base..end {
+                        sum = sum.wrapping_add(inp.add(i).read_unaligned());
+                    }
+                    out.add(row).write_unaligned(sum);
+                }
+                _ => {
+                    // For mean/var on integers, cast to f64
+                    let mut sum = 0.0f64;
+                    for i in base..end {
+                        sum += inp.add(i).read_unaligned() as f64;
+                    }
+                    let count = (end - base) as f64;
+                    out.add(row).write_unaligned(if op_type == "mean" { (sum / count) as i64 } else { sum as i64 });
+                }
+            }
+        }
+    } else {
+        // Float (f32) reduction — the common path
+        let inp = in_ptr as *const f32;
+        let out = out_ptr as *mut f32;
+        for row in 0..out_elements {
+            let base = row * reduce_size;
+            let end = (base + reduce_size).min(in_elements);
+            let count = end - base;
+            if count == 0 { continue; }
 
-        match op_type {
-            "sum" => {
-                let mut sum = 0.0f32;
-                for i in base..end {
-                    sum += inp.add(i).read_unaligned();
+            match op_type {
+                "sum" => {
+                    let mut sum = 0.0f32;
+                    for i in base..end {
+                        sum += inp.add(i).read_unaligned();
+                    }
+                    out.add(row).write_unaligned(sum);
                 }
-                out.add(row).write_unaligned(sum);
+                "mean" => {
+                    let mut sum = 0.0f32;
+                    for i in base..end {
+                        sum += inp.add(i).read_unaligned();
+                    }
+                    out.add(row).write_unaligned(sum / count as f32);
+                }
+                "max" => {
+                    let mut max_val = f32::NEG_INFINITY;
+                    for i in base..end {
+                        let v = inp.add(i).read_unaligned();
+                        if v > max_val { max_val = v; }
+                    }
+                    out.add(row).write_unaligned(max_val);
+                }
+                "min" => {
+                    let mut min_val = f32::INFINITY;
+                    for i in base..end {
+                        let v = inp.add(i).read_unaligned();
+                        if v < min_val { min_val = v; }
+                    }
+                    out.add(row).write_unaligned(min_val);
+                }
+                "var" => {
+                    let mut sum = 0.0f32;
+                    for i in base..end {
+                        sum += inp.add(i).read_unaligned();
+                    }
+                    let mean = sum / count as f32;
+                    let mut var_sum = 0.0f32;
+                    for i in base..end {
+                        let diff = inp.add(i).read_unaligned() - mean;
+                        var_sum += diff * diff;
+                    }
+                    // Unbiased variance (Bessel's correction)
+                    let divisor = if count > 1 { (count - 1) as f32 } else { count as f32 };
+                    out.add(row).write_unaligned(var_sum / divisor);
+                }
+                _ => {}
             }
-            "mean" => {
-                let mut sum = 0.0f32;
-                for i in base..end {
-                    sum += inp.add(i).read_unaligned();
-                }
-                out.add(row).write_unaligned(sum / count as f32);
-            }
-            "max" => {
-                let mut max_val = f32::NEG_INFINITY;
-                for i in base..end {
-                    let v = inp.add(i).read_unaligned();
-                    if v > max_val { max_val = v; }
-                }
-                out.add(row).write_unaligned(max_val);
-            }
-            "min" => {
-                let mut min_val = f32::INFINITY;
-                for i in base..end {
-                    let v = inp.add(i).read_unaligned();
-                    if v < min_val { min_val = v; }
-                }
-                out.add(row).write_unaligned(min_val);
-            }
-            "var" => {
-                let mut sum = 0.0f32;
-                for i in base..end {
-                    sum += inp.add(i).read_unaligned();
-                }
-                let mean = sum / count as f32;
-                let mut var_sum = 0.0f32;
-                for i in base..end {
-                    let diff = inp.add(i).read_unaligned() - mean;
-                    var_sum += diff * diff;
-                }
-                // Unbiased variance (Bessel's correction)
-                let divisor = if count > 1 { (count - 1) as f32 } else { count as f32 };
-                out.add(row).write_unaligned(var_sum / divisor);
-            }
-            _ => {}
         }
     }
-    eprintln!("[TMatmul Fallback] reduce_kernel '{}' executed ({} -> {} elements)",
-             op_type, in_elements, out_elements);
+    eprintln!("[TMatmul Fallback] reduce_kernel '{}' executed ({} -> {} elements, elem_size={})",
+             op_type, in_elements, out_elements, elem_size);
+}
+
+/// Execute CatArrayBatchedCopy fallback — performs tensor concatenation.
+///
+/// PyTorch's CatArrayBatchedCopy kernel takes a CatArrInputTensorMetadata struct
+/// containing source tensor pointers, sizes, and a destination pointer.  The struct
+/// is passed as a single parameter.  We scan it for valid allocation pointers and
+/// perform a linear copy of each source into the destination.
+#[cfg(feature = "intel")]
+unsafe fn execute_cat_copy_fallback(
+    kernel_name: &str,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    grid_dim_x: u32, _grid_dim_y: u32, _grid_dim_z: u32,
+) {
+    if kernel_params.is_null() { return; }
+
+    // CatArrayBatchedCopy has parameters:
+    //   param_0: output pointer (char*)
+    //   param_1: CatArrInputTensorMetadata struct (contains src ptrs, offsets, sizes)
+    //   param_2: TensorSizeStride struct
+    //   param_3: numCats (int)
+    //   param_4: catStride
+    //
+    // For the virtual backend, the simplest correct approach is to scan for
+    // allocation pointers.  The first is the destination, the rest are sources.
+    // We copy source data into the destination sequentially.
+
+    let param0 = *kernel_params.add(0);
+    if param0.is_null() { return; }
+
+    // The first parameter is typically a pointer to the output buffer
+    let out_ptr_val = (param0 as *const u64).read_unaligned();
+    let out_ok = super::memory::get_alloc_size(out_ptr_val as usize);
+
+    if let Some(out_size) = out_ok {
+        // Scan remaining params for source pointers
+        let mut src_ptrs: Vec<(u64, usize)> = Vec::new();
+        for i in 1..8 {
+            let param = *kernel_params.add(i);
+            if param.is_null() { break; }
+            // Scan struct for allocation pointers
+            let found = scan_for_alloc_pointers(param as *const u8, 512);
+            for (_, ptr_val, size) in &found {
+                if *ptr_val != out_ptr_val && !src_ptrs.iter().any(|(p, _)| p == ptr_val) {
+                    src_ptrs.push((*ptr_val, *size));
+                }
+            }
+            if !src_ptrs.is_empty() { break; }
+        }
+
+        if src_ptrs.is_empty() {
+            eprintln!("[TMatmul Fallback] CatArrayBatchedCopy '{}': no source pointers found", kernel_name);
+            return;
+        }
+
+        // Copy sources into destination sequentially
+        let dst = out_ptr_val as *mut u8;
+        let mut offset = 0usize;
+        for (src_ptr, src_size) in &src_ptrs {
+            let copy_len = (*src_size).min(out_size.saturating_sub(offset));
+            if copy_len == 0 { break; }
+            std::ptr::copy_nonoverlapping(*src_ptr as *const u8, dst.add(offset), copy_len);
+            offset += copy_len;
+        }
+        eprintln!("[TMatmul Fallback] CatArrayBatchedCopy: copied {} bytes into output", offset);
+    } else {
+        eprintln!("[TMatmul Fallback] CatArrayBatchedCopy: output pointer not in alloc_map");
+    }
+}
+
+/// Execute Triton BitNet reduction kernels (partial_max_kernel, abs_mean_kernel).
+///
+/// These kernels have Triton's standard param layout:
+///   param_0: input_ptr (u64 device pointer)
+///   param_1: output_ptr (u64 device pointer)
+///   param_2: n_elems or first scalar dim (u32)
+///   param_3+: additional dims/strides
+///
+/// Grid dimensions encode the block iteration:
+///   abs_mean_kernel:     grid=(n_blocks, 1, 1)  — 1D reduction
+///   partial_max_kernel:  grid=(batch, seq_len, n_blocks) — 3D, per-row absmax
+///
+/// BLOCK_SIZE is a compile-time constant (typically 256).
+#[cfg(feature = "intel")]
+unsafe fn execute_triton_reduction_kernel(
+    name_lower: &str,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    grid_dim_x: u32, grid_dim_y: u32, grid_dim_z: u32,
+) {
+    // Read param pointers.  kernel_params[i] points to the i-th param value.
+    let inp_ptr_val = (*kernel_params.add(0) as *const u64).read_unaligned();
+    let out_ptr_val = (*kernel_params.add(1) as *const u64).read_unaligned();
+    let dim_val     = (*kernel_params.add(2) as *const u32).read_unaligned() as usize;
+
+    // Validate pointers via alloc_map
+    let inp_ok = super::memory::get_alloc_size(inp_ptr_val as usize).is_some();
+    let out_ok = super::memory::get_alloc_size(out_ptr_val as usize).is_some();
+
+    if !inp_ok || !out_ok {
+        eprintln!("[TMatmul Fallback] {}: invalid pointers (inp={:#x} ok={}, out={:#x} ok={})",
+                 name_lower, inp_ptr_val, inp_ok, out_ptr_val, out_ok);
+        return;
+    }
+
+    // Determine data type from input allocation size and grid.
+    // BitNet uses bfloat16 tensors.  We'll detect element size from the alloc.
+    let inp_alloc_size = super::memory::get_alloc_size(inp_ptr_val as usize).unwrap_or(0);
+
+    // Infer BLOCK_SIZE from the relationship: total_blocks * BLOCK_SIZE ≈ total_elements
+    // For abs_mean_kernel: grid=(n_blocks,1,1), total_elements = n_elems (param_2)
+    // For partial_max_kernel: grid=(batch,seq,n_blocks), hidden_dim is implicit
+    let block_size: usize = 256; // BitNet default, matches Triton autotune config
+
+    if name_lower == "abs_mean_kernel" {
+        // abs_mean_kernel: each grid block computes sum(abs(input[block*BS..(block+1)*BS]))
+        // and stores the scalar result to output[block_id].
+        let n_blocks = grid_dim_x as usize;
+        let n_elems = dim_val;
+        // Elements are bfloat16 (2 bytes) — read as u16, convert to f32
+        let inp = inp_ptr_val as *const u16;
+        let out = out_ptr_val as *mut f32;
+
+        for block_id in 0..n_blocks {
+            let base = block_id * block_size;
+            let end = (base + block_size).min(n_elems);
+            let mut sum = 0.0f32;
+            for i in base..end {
+                let raw = inp.add(i).read_unaligned();
+                let val = bf16_to_f32(raw);
+                sum += val.abs();
+            }
+            out.add(block_id).write_unaligned(sum);
+        }
+        eprintln!("[TMatmul Fallback] abs_mean_kernel executed: {} blocks, {} elems", n_blocks, n_elems);
+    } else if name_lower == "partial_max_kernel" {
+        // partial_max_kernel: grid=(batch, seq_len, n_blocks)
+        // For each (batch, seq, block): max(abs(x[row_offset + block*BS .. +BS]))
+        // → partial_max[(batch*seq_len + seq)*n_blocks + block]
+        //
+        // The Python signature is: partial_max_kernel(x_ptr, partial_max_ptr,
+        //   batch_size, seq_len, hidden_dim, BLOCK_SIZE=constexpr)
+        // But Triton may reorder/add stride params.  Use grid dims directly.
+        let batch_size = grid_dim_x as usize;
+        let seq_len = grid_dim_y as usize;
+        let n_blocks = grid_dim_z as usize;
+        let hidden_dim = n_blocks * block_size; // approximate
+
+        let inp = inp_ptr_val as *const u16; // bfloat16
+        let out = out_ptr_val as *mut f32;   // partial max output is f32
+
+        for batch_idx in 0..batch_size {
+            for seq_idx in 0..seq_len {
+                let row_offset = (batch_idx * seq_len + seq_idx) * hidden_dim;
+                for blk_idx in 0..n_blocks {
+                    let hidden_off = blk_idx * block_size;
+                    let mut max_val = 0.0f32;
+                    for i in 0..block_size {
+                        let idx = row_offset + hidden_off + i;
+                        let raw = inp.add(idx).read_unaligned();
+                        let val = bf16_to_f32(raw).abs();
+                        if val > max_val { max_val = val; }
+                    }
+                    max_val = max_val.max(1e-5); // match Triton kernel: tl.maximum(..., 1e-5)
+                    let pm_offset = (batch_idx * seq_len + seq_idx) * n_blocks + blk_idx;
+                    out.add(pm_offset).write_unaligned(max_val);
+                }
+            }
+        }
+        eprintln!("[TMatmul Fallback] partial_max_kernel executed: {}x{}x{} grid, hidden_dim~{}",
+                 batch_size, seq_len, n_blocks, hidden_dim);
+    }
+}
+
+/// Convert a bfloat16 raw u16 to f32.
+#[inline]
+fn bf16_to_f32(raw: u16) -> f32 {
+    f32::from_bits((raw as u32) << 16)
 }
 
 /// Execute a softmax kernel fallback.

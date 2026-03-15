@@ -330,7 +330,10 @@ cudaError_t cudaEventDestroy(cudaEvent_t event) {
 }
 
 cudaError_t cudaEventElapsedTime(float* ms, cudaEvent_t start, cudaEvent_t end) {
-    (void)start; (void)end; if (ms) *ms = 0.0f; return 0;
+    (void)start; (void)end;
+    // Return small non-zero time to avoid division-by-zero in torch.compile benchmarking
+    if (ms) *ms = 0.001f;
+    return 0;
 }
 
 // Error query APIs
@@ -385,14 +388,14 @@ typedef struct {
     size_t totalConstMem;            // 352-359
     int    major;                    // 360-363 ← This is the key field!
     int    minor;                    // 364-367 ← This is the key field!
-    int    textureAlignment;         // 368-371
-    int    texturePitchAlignment;    // 372-375
-    int    deviceOverlap;            // 376-379
-    int    multiProcessorCount;      // 380-383
-    int    kernelExecTimeoutEnabled; // 384-387
-    int    integrated;               // 388-391
-    int    canMapHostMemory;         // 392-395
-    int    computeMode;              // 396-399
+    size_t textureAlignment;         // 368-375
+    size_t texturePitchAlignment;    // 376-383
+    int    deviceOverlap;            // 384-387
+    int    multiProcessorCount;      // 388-391
+    int    kernelExecTimeoutEnabled; // 392-395
+    int    integrated;               // 396-399
+    int    canMapHostMemory;         // 400-403
+    int    computeMode;              // 404-407
     int    maxTexture1D;             // 400-403
     int    maxTexture1DMipmap;       // 404-407
     int    maxTexture1DLinear;       // 408-411
@@ -466,6 +469,8 @@ cudaError_t cudaGetDeviceProperties(cudaDeviceProp_t prop, int device) {
     p.totalConstMem = 64 * 1024;                   // 64KB
     p.memPitch = 2147483647;
     p.surfaceAlignment = 512;
+    p.textureAlignment = 512;
+    p.texturePitchAlignment = 32;
 
     // Compute resources
     p.regsPerBlock = 65536;

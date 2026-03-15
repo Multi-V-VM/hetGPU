@@ -6,6 +6,17 @@
 
 use std::collections::HashMap;
 
+/// Check if a memory page is mapped and readable (prevents SIGSEGV)
+unsafe fn is_readable(addr: *const u8) -> bool {
+    if addr.is_null() {
+        return false;
+    }
+    let page_size = 4096usize;
+    let page_addr = (addr as usize) & !(page_size - 1);
+    // msync returns 0 if the page is mapped, -1 with ENOMEM if not
+    libc::msync(page_addr as *mut libc::c_void, 1, libc::MS_ASYNC) == 0
+}
+
 /// Memory reference in an instruction
 #[derive(Debug, Clone)]
 pub enum MemRef {
@@ -642,8 +653,8 @@ pub unsafe fn execute_assembly(
         return Ok(()); // Nothing to do
     }
 
-    // Determine how many params we need
-    let num_params_needed = count_param_refs(&instructions);
+    // Determine how many params we need (cap at 16 to avoid reading past kernel_params array)
+    let num_params_needed = count_param_refs(&instructions).min(16);
     if num_params_needed == 0 {
         return Err("No PARAM references found in assembly".to_string());
     }
@@ -659,9 +670,8 @@ pub unsafe fn execute_assembly(
 
     for i in 0..num_params_needed {
         let param_slot = kernel_params.add(i);
-        // Validate param_slot pointer before dereferencing
-        let slot_addr = param_slot as usize;
-        if slot_addr < 0x1000 || slot_addr > 0x7FFF_FFFF_FFFF {
+        // Check that param_slot points to mapped memory before dereferencing
+        if !is_readable(param_slot as *const u8) {
             param_ptrs.push(std::ptr::null_mut());
             param_sizes.push(0);
             continue;
@@ -672,9 +682,8 @@ pub unsafe fn execute_assembly(
             param_sizes.push(0);
             continue;
         }
-        // Validate param_addr before reading from it
-        let param_addr_val = param_addr as usize;
-        if param_addr_val < 0x1000 || param_addr_val > 0x7FFF_FFFF_FFFF {
+        // Check that param_addr points to mapped memory before reading
+        if !is_readable(param_addr as *const u8) {
             param_ptrs.push(std::ptr::null_mut());
             param_sizes.push(0);
             continue;
@@ -1850,20 +1859,40 @@ fn f32_to_f16(val: f32) -> u16 {
 /// Read element from typed buffer as f32
 unsafe fn read_typed_elem(ptr: *const u8, idx: usize, dtype: i32) -> f32 {
     match dtype {
-        2 => f16_to_f32((ptr as *const u16).add(idx).read_unaligned()), // f16
-        0 => (ptr as *const f32).add(idx).read_unaligned(), // f32
-        1 => (ptr as *const f64).add(idx).read_unaligned() as f32, // f64
-        _ => (ptr as *const f32).add(idx).read_unaligned(),
+        2 => f16_to_f32((ptr as *const u16).add(idx).read_unaligned()), // f16 (CUDA_R_16F)
+        14 => bf16_to_f32((ptr as *const u16).add(idx).read_unaligned()), // bf16 (CUDA_R_16BF)
+        0 => (ptr as *const f32).add(idx).read_unaligned(), // f32 (CUDA_R_32F)
+        1 => (ptr as *const f64).add(idx).read_unaligned() as f32, // f64 (CUDA_R_64F)
+        _ => {
+            eprintln!("[TMatmul GEMM] WARNING: unknown dtype {} in read_typed_elem, treating as f32", dtype);
+            (ptr as *const f32).add(idx).read_unaligned()
+        }
     }
+}
+
+/// Convert bf16 (stored as u16) to f32: just shift left by 16 bits
+#[inline]
+fn bf16_to_f32(bits: u16) -> f32 {
+    f32::from_bits((bits as u32) << 16)
+}
+
+/// Convert f32 to bf16: take upper 16 bits (truncation, no rounding)
+#[inline]
+fn f32_to_bf16(val: f32) -> u16 {
+    (val.to_bits() >> 16) as u16
 }
 
 /// Write f32 element to typed buffer
 unsafe fn write_typed_elem(ptr: *mut u8, idx: usize, dtype: i32, val: f32) {
     match dtype {
-        2 => (ptr as *mut u16).add(idx).write_unaligned(f32_to_f16(val)), // f16
-        0 => (ptr as *mut f32).add(idx).write_unaligned(val), // f32
-        1 => (ptr as *mut f64).add(idx).write_unaligned(val as f64), // f64
-        _ => (ptr as *mut f32).add(idx).write_unaligned(val),
+        2 => (ptr as *mut u16).add(idx).write_unaligned(f32_to_f16(val)), // f16 (CUDA_R_16F)
+        14 => (ptr as *mut u16).add(idx).write_unaligned(f32_to_bf16(val)), // bf16 (CUDA_R_16BF)
+        0 => (ptr as *mut f32).add(idx).write_unaligned(val), // f32 (CUDA_R_32F)
+        1 => (ptr as *mut f64).add(idx).write_unaligned(val as f64), // f64 (CUDA_R_64F)
+        _ => {
+            eprintln!("[TMatmul GEMM] WARNING: unknown dtype {} in write_typed_elem, treating as f32", dtype);
+            (ptr as *mut f32).add(idx).write_unaligned(val);
+        }
     }
 }
 

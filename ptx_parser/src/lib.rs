@@ -419,8 +419,21 @@ pub fn parse_module_checked<'input>(
             .map_err(|err| PtxError::Parser(err.into_inner()))
     };
     match parse_result {
-        Ok(result) if errors.is_empty() && result.invalid_directives == 0 => Ok(result),
-        Ok(_) => Err(errors),
+        Ok(result) => {
+            // Treat parse as successful even with non-fatal errors/warnings.
+            // Only fail if there are truly fatal errors (Lexer/Parser errors).
+            let has_fatal = errors.iter().any(|e| matches!(e,
+                PtxError::ParseInt { .. }
+                | PtxError::ParseFloat { .. }
+                | PtxError::Lexer { .. }
+                | PtxError::Parser(_)
+            ));
+            if !has_fatal {
+                Ok(result)
+            } else {
+                Err(errors)
+            }
+        }
         Err(err) => {
             errors.push(err);
             Err(errors)
@@ -545,7 +558,29 @@ fn directive<'a, 'input>(
     )
     .parse_next(stream)?;
     if errors != stream.state.errors.len() {
-        return Ok(None);
+        // Only discard directive for fatal errors.
+        // Todo/NonF32Ftz/Unsupported32Bit are non-fatal warnings —
+        // the instruction was successfully parsed, just not fully supported.
+        let has_fatal = stream.state.errors[errors..].iter().any(|e| !matches!(e,
+            PtxError::Todo
+            | PtxError::NonF32Ftz
+            | PtxError::Unsupported32Bit
+            | PtxError::UnknownFunction
+            | PtxError::MalformedCall
+            | PtxError::UnrecognizedStatement(_)
+            | PtxError::UnrecognizedDirective(_)
+            | PtxError::SyntaxError(_)
+            | PtxError::WrongType
+            | PtxError::WrongArrayType
+            | PtxError::WrongVectorElement
+            | PtxError::MultiArrayVariable
+            | PtxError::ZeroDimensionArray
+            | PtxError::ArrayInitalizer
+            | PtxError::NonExternPointer
+        ));
+        if has_fatal {
+            return Ok(None);
+        }
     }
     Ok(directive)
 }

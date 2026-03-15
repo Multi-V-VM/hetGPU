@@ -153,6 +153,12 @@ macro_rules! from_cuda_object {
 
             impl<'a> FromCuda<'a, <$type_ as ZludaObject>::CudaHandle> for &'a $type_ {
                 fn from_cuda(handle: &'a <$type_ as ZludaObject>::CudaHandle) -> Result<&'a $type_, CUerror> {
+                    // Safety: check that the handle is not null before dereferencing
+                    let ptr_val: usize = unsafe { std::mem::transmute_copy(handle) };
+                    if ptr_val == 0 {
+                        eprintln!("[hetGPU] ERROR: null handle passed to FromCuda for {}", stringify!($type_));
+                        return Err(CUerror::INVALID_VALUE);
+                    }
                     Ok(as_ref(handle).as_result()?)
                 }
             }
@@ -171,6 +177,7 @@ from_cuda_nop!(
     *const ::core::ffi::c_char,
     *mut ::core::ffi::c_void,
     *mut *mut ::core::ffi::c_void,
+    *mut cuda_types::cuda::CUjit_option,
     *mut cuda_types::cuda::CUmoduleLoadingMode,
     *mut cuda_types::cuda::CUdriverProcAddressQueryResult,
     *const cuda_types::cuda::CUlaunchConfig,
