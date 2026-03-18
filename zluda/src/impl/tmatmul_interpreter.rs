@@ -5,6 +5,34 @@
 // instructions element-by-element.
 
 use std::collections::HashMap;
+use std::sync::Mutex;
+
+// Track the last GEMM output (C pointer, M*N elements, dtype)
+// Used by ArgMax to find the logits tensor
+lazy_static::lazy_static! {
+    pub static ref LAST_GEMM_OUTPUT: Mutex<(usize, usize, i32)> = Mutex::new((0, 0, 0));
+}
+
+// Track the last kernel output for dataflow-based parameter resolution.
+// (ptr, size_in_bytes, elem_size)
+// Updated by elementwise, softmax, LayerNorm, and reduce handlers.
+lazy_static::lazy_static! {
+    pub static ref LAST_KERNEL_OUTPUT: Mutex<(usize, usize, usize)> = Mutex::new((0, 0, 0));
+}
+
+pub fn set_last_output(ptr: usize, size_bytes: usize, elem_size: usize) {
+    if let Ok(mut last) = LAST_KERNEL_OUTPUT.lock() {
+        *last = (ptr, size_bytes, elem_size);
+    }
+}
+
+pub fn get_last_output() -> (usize, usize, usize) {
+    if let Ok(last) = LAST_KERNEL_OUTPUT.lock() {
+        *last
+    } else {
+        (0, 0, 0)
+    }
+}
 
 /// Check if a memory page is mapped and readable (prevents SIGSEGV)
 unsafe fn is_readable(addr: *const u8) -> bool {
@@ -1989,7 +2017,7 @@ pub unsafe extern "C" fn hetgpu_tmatmul_gemm(
     c_dtype: i32,
     ldc: i32,
 ) -> i32 {
-    execute_gemm_tmatmul(
+    let result = execute_gemm_tmatmul(
         transa != 0,
         transb != 0,
         m as usize,
@@ -2006,5 +2034,15 @@ pub unsafe extern "C" fn hetgpu_tmatmul_gemm(
         c_ptr as *mut u8,
         c_dtype,
         ldc as usize,
-    )
+    );
+    // Track the last GEMM output for ArgMax and dataflow
+    if result == 0 {
+        let c_elems = (m as usize) * (n as usize);
+        let c_elem_bytes = if c_dtype == 14 { 2 } else { 4 }; // bf16=2, f32=4
+        if let Ok(mut last) = LAST_GEMM_OUTPUT.lock() {
+            *last = (c_ptr as usize, c_elems, c_dtype);
+        }
+        set_last_output(c_ptr as usize, c_elems * c_elem_bytes, c_elem_bytes);
+    }
+    result
 }

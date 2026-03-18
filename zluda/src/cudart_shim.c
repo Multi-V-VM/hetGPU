@@ -1905,10 +1905,14 @@ cudaError_t cudaMalloc(void** devPtr, size_t size) {
     CUresult result = cuMemAlloc_v2(&dptr, size);
     if (result != 0) {
         // Fallback: host allocation (zeroed)
+        // IMPORTANT: register in VIRTUAL_ALLOC_MAP so kernel param scanning can find these pointers
         void* ptr = NULL;
         if (size > 0) {
-            ptr = aligned_alloc(64, ((size + 63) / 64) * 64);
-            if (ptr) memset(ptr, 0, size);
+            size_t aligned_size = ((size + 63) / 64) * 64;
+            ptr = aligned_alloc(64, aligned_size);
+            if (ptr) {
+                memset(ptr, 0, size);
+            }
         } else {
             ptr = (void*)0x1; // sentinel
         }

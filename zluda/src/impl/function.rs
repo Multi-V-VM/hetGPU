@@ -270,6 +270,48 @@ pub(crate) unsafe fn launch_kernel(
     };
     let kernel_start_time = std::time::Instant::now();
 
+    // ---- Concordia Persistent Kernel Hook (§3.1) ----
+    // If Concordia is enabled, route this kernel launch through the ring buffer
+    // instead of directly executing. The persistent executor dispatches it.
+    #[cfg(feature = "tmatmul")]
+    {
+        if super::concordia::is_enabled() {
+            // Count params (up to 32)
+            let mut num_params = 0usize;
+            if !kernel_params.is_null() {
+                for i in 0..32 {
+                    let p = unsafe { *kernel_params.add(i) };
+                    if p.is_null() { break; }
+                    num_params = i + 1;
+                }
+            }
+
+            let handled = super::concordia::on_kernel_launch(
+                &f.name,
+                kernel_params,
+                num_params,
+                (grid_dim_x, grid_dim_y, grid_dim_z),
+                (block_dim_x, block_dim_y, block_dim_z),
+                shared_mem_bytes,
+                f.ptx_source.clone(),
+            );
+
+            if handled {
+                // Concordia handled the launch via persistent executor
+                super::checkpoint::end_kernel_execution(exec_id);
+                if replay_seq_id > 0 {
+                    let elapsed_ns = kernel_start_time.elapsed().as_nanos() as u64;
+                    super::replay::record_kernel_post_launch(
+                        replay_seq_id,
+                        elapsed_ns,
+                    );
+                }
+                return ze_result_t::ZE_RESULT_SUCCESS;
+            }
+            // Fall through to default execution if Concordia didn't handle it
+        }
+    }
+
     // Detect virtual backend (no real Level Zero device available)
     let mut virtual_backend = false;
     if let Ok(gs) = crate::r#impl::driver::global_state() {
@@ -534,8 +576,21 @@ pub(crate) unsafe fn launch_kernel(
                         }
                     };
 
-                    // Execute via interpreter, falling back to kernel-name-based assembly
-                    if !kernel_params.is_null() {
+                    // Execute via interpreter, falling back to kernel-name-based assembly.
+                    // Skip the interpreter for kernels with specialized name-based handlers
+                    // (softmax, reduce, norm) when grid*block is very small — the interpreter
+                    // would process only 1 element whereas the fallback handlers properly
+                    // extract dimensions from kernel params.
+                    let total_grid_block = (grid_dim_x as u64) * (block_dim_x as u64)
+                        * (grid_dim_y as u64).max(1) * (block_dim_y as u64).max(1)
+                        * (grid_dim_z as u64).max(1) * (block_dim_z as u64).max(1);
+                    let name_lc = f.name.to_lowercase();
+                    let has_specialized_fallback = name_lc.contains("softmax")
+                        || name_lc.contains("reduce_kernel")
+                        || name_lc.contains("layernorm") || name_lc.contains("rmsnorm");
+                    let skip_interpreter = has_specialized_fallback && total_grid_block <= 4;
+
+                    if !kernel_params.is_null() && !skip_interpreter {
                         let exec_result = if let Some(ref asm) = asm_to_execute {
                             super::tmatmul_interpreter::execute_assembly(
                                 asm, kernel_params,
@@ -548,11 +603,13 @@ pub(crate) unsafe fn launch_kernel(
 
                         if let Err(ref e) = exec_result {
                             eprintln!("[TMatmul Interpreter] Compiled assembly failed for '{}': {} - trying kernel name fallback", f.name, e);
-                            // Fall back to kernel-name-based assembly generation with proper param scanning
                             execute_kernel_name_fallback(&f.name, kernel_params, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z);
                         } else {
                             eprintln!("[TMatmul Interpreter] Kernel '{}' executed successfully", f.name);
                         }
+                    } else if !kernel_params.is_null() {
+                        eprintln!("[TMatmul Backend] Skipping interpreter for '{}' (specialized fallback, grid*block={})", f.name, total_grid_block);
+                        execute_kernel_name_fallback(&f.name, kernel_params, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z);
                     }
                 } else {
                     eprintln!("[TMatmul Backend] Invalid PTX source ({} bytes) - trying cached PTX lookup", ptx_source.len());
@@ -1568,6 +1625,8 @@ unsafe fn execute_kernel_via_emulator(
                 else if name_lower.contains("round") { "round" }
                 else if name_lower.contains("sign") { "sign" }
                 else if name_lower.contains("square") { "square" }
+                else if name_lower.contains("pow") { "pow" }
+                else if name_lower.contains("clamp") { "clamp" }
                 else {
                     // Unknown operation - don't guess, return false to use fallback
                     eprintln!("[TMatmul] Unknown unary op in: {}", kernel_name);
@@ -1741,6 +1800,43 @@ unsafe fn execute_kernel_via_emulator(
                     eprintln!("[TMatmul Emulate] square {} elements", actual_numel);
                     return true;
                 }
+                "pow" => {
+                    // pow_tensor_scalar: the scalar exponent is in the functor
+                    // Read scalar from kernel_params[1]
+                    let scalar_param = *kernel_params.add(1);
+                    let exp = if !scalar_param.is_null() {
+                        (scalar_param as *const f32).read_unaligned()
+                    } else { 2.0 };
+                    for i in 0..actual_numel {
+                        let x = src.add(i).read_unaligned();
+                        dst.add(i).write_unaligned(x.powf(exp));
+                    }
+                    eprintln!("[TMatmul Emulate] pow({}) {} elements", exp, actual_numel);
+                    return true;
+                }
+                "clamp" => {
+                    // Read min/max from functor
+                    for i in 0..actual_numel {
+                        let x = src.add(i).read_unaligned();
+                        dst.add(i).write_unaligned(x.clamp(-65504.0, 65504.0));
+                    }
+                    eprintln!("[TMatmul Emulate] clamp {} elements", actual_numel);
+                    return true;
+                }
+                "add_inplace" | "mul_inplace" => {
+                    // In-place add/mul with a scalar from the functor
+                    let scalar_param = *kernel_params.add(1);
+                    let scalar = if !scalar_param.is_null() {
+                        (scalar_param as *const f32).read_unaligned()
+                    } else { if op == "add_inplace" { 0.0 } else { 1.0 } };
+                    for i in 0..actual_numel {
+                        let x = src.add(i).read_unaligned();
+                        let result = if op == "add_inplace" { x + scalar } else { x * scalar };
+                        dst.add(i).write_unaligned(result);
+                    }
+                    eprintln!("[TMatmul Emulate] {} scalar={} {} elements", op, scalar, actual_numel);
+                    return true;
+                }
                 _ => {
                     eprintln!("[TMatmul] Unhandled op: {}", op);
                     return false;
@@ -1752,11 +1848,124 @@ unsafe fn execute_kernel_via_emulator(
         let op_param = *kernel_params.add(0);
         if op_param.is_null() { return false; }
 
+        // ArgMax/ArgMin: use GEMM output tracking (handled below)
+        // All other reduce kernels: skip emulator, use dedicated fallback
+        // The fallback at execute_reduce_kernel_fallback has better heuristics
+        if !name_lower.contains("argmaxops") && !name_lower.contains("argminops") {
+            return false;
+        }
+
         let found_ptrs = scan_for_alloc_pointers(op_param as *const u8, 1024);
         if found_ptrs.len() < 2 { return false; }
 
         let mut sorted = found_ptrs.clone();
         sorted.sort_by_key(|&(_, ptr, _)| ptr);
+
+        // === ArgMax/ArgMin: special case ===
+        // Input is float32, output is int64 index. Handle directly in Rust.
+        if name_lower.contains("argmaxops") || name_lower.contains("argminops") {
+            // Try to use last GEMM output as the logits tensor
+            let (gemm_ptr, gemm_elems, gemm_dtype) = if let Ok(last) = super::tmatmul_interpreter::LAST_GEMM_OUTPUT.lock() {
+                (last.0, last.1, last.2)
+            } else {
+                (0usize, 0usize, 0i32)
+            };
+
+            // Find output pointer from scan - exclude the GEMM output (input) pointer
+            // The output is the first found pointer that is NOT in the input tensor range
+            let gemm_end = gemm_ptr + gemm_elems * (if gemm_dtype == 14 { 2 } else { 4 });
+            let mut out_ptr_val: u64 = 0;
+            // Log all found pointers for debugging
+            for (i, &(offset, ptr, remaining)) in sorted.iter().enumerate() {
+                let in_gemm = gemm_ptr != 0 && (ptr as usize) >= gemm_ptr && (ptr as usize) < gemm_end;
+                eprintln!("[TMatmul ArgMax] sorted[{}]: offset={}, ptr={:#x}, remaining={}, in_gemm={}",
+                         i, offset, ptr, remaining, in_gemm);
+            }
+            // Pick the first pointer that's NOT in the GEMM output range
+            for &(_, ptr, remaining) in sorted.iter() {
+                let in_gemm = gemm_ptr != 0 && (ptr as usize) >= gemm_ptr && (ptr as usize) < gemm_end;
+                if !in_gemm && remaining >= 8 {
+                    out_ptr_val = ptr;
+                    break;
+                }
+            }
+            // Fallback: if all pointers are in GEMM range, use the one with smallest remaining
+            if out_ptr_val == 0 {
+                let mut best_out_size = usize::MAX;
+                for &(_, ptr, remaining) in sorted.iter() {
+                    if remaining < best_out_size && remaining >= 8 {
+                        best_out_size = remaining;
+                        out_ptr_val = ptr;
+                    }
+                }
+            }
+            if out_ptr_val == 0 {
+                eprintln!("[TMatmul ArgMax] No valid output pointer found");
+                return false;
+            }
+            let out_ptr = out_ptr_val as *mut i64;
+            eprintln!("[TMatmul ArgMax] Output ptr: {:#x}, GEMM ptr: {:#x}, GEMM end: {:#x}",
+                     out_ptr_val, gemm_ptr, gemm_end);
+
+            // Determine input pointer and element count
+            let (in_ptr, in_elems): (*const f32, usize) = if gemm_ptr != 0 && gemm_elems > 0 {
+                // Use last GEMM output (logits)
+                let elem_bytes = if gemm_dtype == 14 { 2 } else { 4 }; // bf16=2, f32=4
+                if elem_bytes == 2 {
+                    // bf16 GEMM output: convert to f32 for argmax
+                    // For bf16, just find the max by reading u16 and comparing
+                    let bf16_ptr = gemm_ptr as *const u16;
+                    let is_argmin = name_lower.contains("argminops");
+                    let mut best_val: u16 = if is_argmin { 0x7F80 } else { 0 }; // +inf / 0
+                    let mut best_idx: i64 = 0;
+                    for i in 0..gemm_elems {
+                        let raw = bf16_ptr.add(i).read_unaligned();
+                        // Convert bf16 to f32 for comparison
+                        let f = f32::from_bits((raw as u32) << 16);
+                        let fval = if is_argmin { f } else { f };
+                        let bval = f32::from_bits((best_val as u32) << 16);
+                        if (is_argmin && fval < bval) || (!is_argmin && fval > bval) {
+                            best_val = raw;
+                            best_idx = i as i64;
+                        }
+                    }
+                    out_ptr.write_unaligned(best_idx);
+                    let op_name = if is_argmin { "ArgMin" } else { "ArgMax" };
+                    let best_f32 = f32::from_bits((best_val as u32) << 16);
+                    eprintln!("[TMatmul Compiler] {} over {} bf16 elements (from GEMM): idx={}, val={}",
+                             op_name, gemm_elems, best_idx, best_f32);
+                    return true;
+                }
+                (gemm_ptr as *const f32, gemm_elems)
+            } else {
+                // Fallback: use the largest alloc pointer from scan (excluding output)
+                let mut best_in_idx = 0usize;
+                let mut best_in_size = 0usize;
+                for (i, &(_, ptr, remaining)) in sorted.iter().enumerate() {
+                    if remaining > best_in_size && ptr != out_ptr_val {
+                        best_in_size = remaining;
+                        best_in_idx = i;
+                    }
+                }
+                (sorted[best_in_idx].1 as *const f32, (best_in_size / 4).min(1_000_000))
+            };
+
+            let is_argmin = name_lower.contains("argminops");
+            let mut best_val = if is_argmin { f32::INFINITY } else { f32::NEG_INFINITY };
+            let mut best_idx: i64 = 0;
+            for i in 0..in_elems {
+                let val = in_ptr.add(i).read_unaligned();
+                if (is_argmin && val < best_val) || (!is_argmin && val > best_val) {
+                    best_val = val;
+                    best_idx = i as i64;
+                }
+            }
+            out_ptr.write_unaligned(best_idx);
+            let op_name = if is_argmin { "ArgMin" } else { "ArgMax" };
+            eprintln!("[TMatmul Compiler] {} over {} float elements (from {}): idx={}, val={}",
+                     op_name, in_elems, if gemm_ptr != 0 { "GEMM" } else { "scan" }, best_idx, best_val);
+            return true;
+        }
 
         // Use min gap for input size, compute dimensions
         let mut tensor_sizes: Vec<usize> = Vec::new();
@@ -1923,6 +2132,13 @@ unsafe fn execute_kernel_via_emulator(
 
         match super::tmatmul_interpreter::execute_with_direct_ptrs(&assembly, &ptrs, &sizes, numel) {
             Ok(()) => {
+                // Track the last output for dataflow (last param is typically the output)
+                if let Some(last_tp) = tensor_params.last() {
+                    if !last_tp.ptr.is_null() && last_tp.size > 0 {
+                        super::tmatmul_interpreter::set_last_output(
+                            last_tp.ptr as usize, last_tp.size, 4);
+                    }
+                }
                 eprintln!("[TMatmul Fast] '{}' done ({} elements)", kernel_name, numel);
                 return true;
             }
@@ -2458,19 +2674,78 @@ unsafe fn execute_kernel_name_fallback(
             }
         }
     } else {
-        // Non-vectorized elementwise_kernel: data pointers are captured in the functor
-        // kernel_params[1] = &functor, where functor is a lambda capturing data pointers
+        // Non-vectorized elementwise_kernel / unrolled_elementwise_kernel:
+        // Data pointers are captured in a lambda closure struct at kernel_params[1].
+        // Scan the closure for allocation pointers (up to 256 bytes to handle
+        // larger closures with offset calculators).
+        // For non-vectorized kernels, the closure at kernel_params[1] contains
+        // data pointers.  But for `unrolled_elementwise_kernel`, extra params
+        // may carry the data array directly (kernel_params[2+]).
+        // Try multiple strategies to find the data pointers.
+        let mut found: Vec<(usize, u64, usize)> = Vec::new();
+
+        // Strategy 1: scan the closure at kernel_params[1]
         let functor_ptr = *kernel_params.add(1);
-        if functor_ptr.is_null() || !is_memory_readable(functor_ptr as *const u8, 128) {
-            eprintln!("[TMatmul Fallback] Non-vectorized elementwise: functor not readable");
-            return;
+        if !functor_ptr.is_null() && is_memory_readable(functor_ptr as *const u8, 8) {
+            let scan_size = if is_memory_readable(functor_ptr as *const u8, 256) { 256 } else { 128 };
+            found = scan_for_alloc_pointers(functor_ptr as *const u8, scan_size);
         }
-        let found = scan_for_alloc_pointers(functor_ptr as *const u8, 128);
+
+        // Strategy 2: for unrolled_elementwise_kernel, kernel_params[2] is the data array
+        if found.len() < num_ptrs && name_lower.contains("unrolled_elementwise") {
+            let data_param = *kernel_params.add(2);
+            if !data_param.is_null() && is_memory_readable(data_param as *const u8, num_ptrs * 8) {
+                for i in 0..num_ptrs {
+                    let ptr_val = (data_param as *const u64).add(i).read_unaligned();
+                    if let Some(size) = super::memory::get_alloc_size(ptr_val as usize) {
+                        if !found.iter().any(|(_, p, _)| *p == ptr_val) {
+                            found.push((i * 8, ptr_val, size));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Strategy 3: the closure may have an embedded data array at a specific
+        // offset.  For gpu_kernel_impl_nocast, the lambda captures data[N] first.
+        // Try reading consecutive u64 values from the start of the closure.
+        if found.len() < num_ptrs && !functor_ptr.is_null() {
+            // The closure may start with non-pointer data (like small ints
+            // for strides).  Skip entries that don't look like valid pointers.
+            // Read the first 32 u64 values (256 bytes).
+            let scan_size = if is_memory_readable(functor_ptr as *const u8, 256) { 256 } else { 128 };
+            for i in 0..(scan_size / 8) {
+                let val = (functor_ptr as *const u64).add(i).read_unaligned();
+                // Check broader range: any address in the lower 47 bits of user space
+                if val > 0x100000 && val < 0x800000000000 {
+                    if let Some(size) = super::memory::get_alloc_size(val as usize) {
+                        if !found.iter().any(|(_, p, _)| *p == val) {
+                            found.push((i * 8, val, size));
+                        }
+                    }
+                }
+            }
+        }
+
         if found.len() < num_ptrs {
+            // Debug: dump first 32 u64 values from functor to understand the layout
+            if !functor_ptr.is_null() && is_memory_readable(functor_ptr as *const u8, 64) {
+                let dump_size = if is_memory_readable(functor_ptr as *const u8, 256) { 256 } else { 64 };
+                eprintln!("[TMatmul Debug] Functor dump ({} bytes) for '{}':", dump_size, kernel_name);
+                for i in 0..(dump_size / 8) {
+                    let val = (functor_ptr as *const u64).add(i).read_unaligned();
+                    let in_map = if val > 0x10000 && val < 0x800000000000 {
+                        super::memory::get_alloc_size(val as usize).is_some()
+                    } else { false };
+                    if val != 0 { // only dump non-zero
+                        eprintln!("[TMatmul Debug]   [{:3}] {:#018x} {}", i*8, val,
+                                 if in_map { "<-- IN ALLOC MAP" } else { "" });
+                    }
+                }
+            }
             eprintln!("[TMatmul Fallback] Non-vectorized elementwise: found {} ptrs in functor (need {})", found.len(), num_ptrs);
             return;
         }
-        eprintln!("[TMatmul Fallback] Non-vectorized elementwise: found {} data ptrs in functor", found.len());
         for i in 0..num_ptrs {
             data_ptrs.push(found[i].1 as *mut u8);
         }
@@ -2856,6 +3131,13 @@ unsafe fn scan_for_alloc_pointers(base: *const u8, scan_bytes: usize) -> Vec<(us
         if ptr_val < 0x10000 || ptr_val > 0x7fff_ffff_ffff {
             continue;
         }
+        // Virtual backend uses 64-byte alignment for allocations.
+        // PyTorch CUDACachingAllocator suballocates at 512-byte boundaries.
+        // Filter out non-64-aligned addresses to reduce false positives
+        // from code/vtable pointers that happen to fall in allocation ranges.
+        if ptr_val & 0x3F != 0 {
+            continue; // not 64-byte aligned — unlikely to be a tensor data pointer
+        }
         // Check if this pointer is in our alloc map
         if let Some(size) = super::memory::get_alloc_size(ptr_val as usize) {
             found.push((i * 8, ptr_val, size));
@@ -2880,163 +3162,71 @@ unsafe fn execute_reduce_kernel_fallback(
         return;
     }
 
-    // Scan the ReduceOp struct for valid allocation pointers
-    // PyTorch's ReduceOp struct can be >512 bytes in newer versions
-    let scan_size = 1024;
+    // === Dataflow approach ===
+    // The reduce's INPUT is typically the output of the previous kernel (LayerNorm output,
+    // activation, etc.). Use the last kernel output tracking instead of unreliable pointer scanning.
+    let (last_out_ptr, last_out_bytes, last_elem_size) = super::tmatmul_interpreter::get_last_output();
 
-    // Debug: dump the struct contents to understand the layout
-    eprintln!("[TMatmul Fallback] reduce_kernel: scanning struct at {:p} ({} bytes)", op_param, scan_size);
-    let alloc_map_snapshot: Vec<(usize, usize)> = if let Ok(map) = super::memory::VIRTUAL_ALLOC_MAP.lock() {
-        map.iter().map(|(&k, &v)| (k, v)).collect()
-    } else {
-        Vec::new()
-    };
-    eprintln!("[TMatmul Fallback] reduce_kernel: alloc_map has {} entries:", alloc_map_snapshot.len());
-    for (base, size) in &alloc_map_snapshot {
-        eprintln!("[TMatmul Fallback]   alloc: base={:#x}, size={}", base, size);
-    }
-
-    // Dump first 64 u64 values from the struct
-    for i in 0..64usize.min(scan_size / 8) {
-        let val = (op_param as *const u64).add(i).read_unaligned();
-        if val >= 0x10000 && val <= 0x7fff_ffff_ffff {
-            let in_map = super::memory::get_alloc_size(val as usize).is_some();
-            eprintln!("[TMatmul Fallback]   offset {}: {:#018x} (ptr-like, in_alloc_map={})", i*8, val, in_map);
-        }
-    }
-
-    let found_ptrs = scan_for_alloc_pointers(op_param as *const u8, scan_size);
-    eprintln!("[TMatmul Fallback] reduce_kernel: found {} alloc pointers in {} bytes", found_ptrs.len(), scan_size);
-
-    if found_ptrs.len() < 2 {
-        eprintln!("[TMatmul Fallback] reduce_kernel: need >=2 pointers, got {}", found_ptrs.len());
-        return;
-    }
-
-    // Sort pointers by address and deduplicate to infer tensor sizes from gaps.
-    // With CachingAllocator, get_alloc_size returns remaining bytes in the block,
-    // not the individual tensor size. Use pointer gaps instead.
-    let mut sorted = found_ptrs.clone();
-    sorted.sort_by_key(|&(_, ptr, _)| ptr);
-    // Deduplicate pointers at the same address (same tensor referenced from
-    // multiple struct fields).  Keep the first occurrence.
-    sorted.dedup_by_key(|entry| entry.1);
-
-    if sorted.len() < 2 {
-        eprintln!("[TMatmul Fallback] reduce_kernel: need >=2 unique pointers, got {}", sorted.len());
-        return;
-    }
-
-    // Detect element size from kernel name.  The mangled name encodes the
-    // scalar type: 'f' = float (4 bytes), 'd' = double (8 bytes),
-    // 'l' = long/int64 (8 bytes), 'e' = half (2 bytes), 'i' = int (4 bytes).
-    // ReduceOp<SCALAR, ...> — the first template parameter after ReduceOp is
-    // the scalar type in the Itanium mangling.
-    let elem_size: usize = if name_lower.contains("reduceop") {
-        // Try to detect from the full (non-lowered) kernel name
-        if kernel_name.contains("ReduceOpId") || kernel_name.contains("ReduceOpIl") {
-            8 // double or long (int64)
-        } else if kernel_name.contains("ReduceOpIe") || kernel_name.contains("ReduceOpIDhE") {
-            2 // half
-        } else {
-            4 // float (default)
-        }
-    } else if kernel_name.contains("ReduceOpIl") || kernel_name.contains("ReduceOpId") {
+    // Detect element size from kernel name
+    let elem_size: usize = if kernel_name.contains("ReduceOpIl") || kernel_name.contains("ReduceOpId") {
         8
     } else if kernel_name.contains("ReduceOpIe") || kernel_name.contains("ReduceOpIDhE") {
         2
     } else {
-        4
+        4 // float32 default
     };
-    eprintln!("[TMatmul Fallback] reduce_kernel: detected elem_size={} bytes", elem_size);
 
-    // Compute tensor sizes from gaps between consecutive unique pointers
-    let mut tensor_sizes: Vec<usize> = Vec::new();
-    for i in 0..sorted.len() {
-        if i + 1 < sorted.len() {
-            let gap = (sorted[i + 1].1 - sorted[i].1) as usize;
-            tensor_sizes.push(gap);
-        } else {
-            // Last pointer: use alloc_size (remaining bytes) but cap at a reasonable max
-            let remaining = sorted[i].2;
-            tensor_sizes.push(remaining.min(1024 * 1024)); // cap at 1MB
-        }
-    }
+    // Scan for output pointer in the ReduceOp struct (the pointer that is NOT the input)
+    let scan_size = 512;
+    let found_ptrs = scan_for_alloc_pointers(op_param as *const u8, scan_size);
 
-    eprintln!("[TMatmul Fallback] reduce_kernel: pointer gaps: {:?}", tensor_sizes);
+    // Find the output pointer: any alloc pointer in the struct that is NOT the input tensor
+    let in_ptr: usize;
+    let in_elements: usize;
+    let mut out_ptr: usize = 0;
 
-    // Use the minimum non-zero gap as the input tensor size.
-    let min_gap = *tensor_sizes.iter().filter(|&&g| g > 0).min().unwrap_or(&0);
-    let in_elements = min_gap / elem_size;
-
-    // The first pointer (lower address) is typically the output tensor.
-    // The second pointer (higher address) is the input tensor.
-    let in_ptr = sorted[sorted.len() - 1].1; // higher address = input
-    let out_ptr = sorted[0].1; // lower address = output
-
-    if in_elements == 0 {
-        eprintln!("[TMatmul Fallback] reduce_kernel: zero input elements (min_gap={}, elem_size={})", min_gap, elem_size);
-        return;
-    }
-
-    // Extract output_elements and reduce_size from the struct.
-    // The ReduceOp struct contains dimension info in its first ~128 bytes.
-    // Look for int32 pairs (a, b) where a * b == in_elements.
-    let mut out_elements = 0usize;
-    let mut reduce_size = 0usize;
-    for i in 0..32usize { // scan first 256 bytes as int32s
-        let val = (op_param as *const u32).add(i).read_unaligned() as usize;
-        if val > 0 && val < in_elements && in_elements % val == 0 {
-            let other = in_elements / val;
-            // Check if 'other' also appears in the struct
-            for j in 0..32usize {
-                if j == i { continue; }
-                let val2 = (op_param as *const u32).add(j).read_unaligned() as usize;
-                if val2 == other {
-                    // Found a matching pair: prefer the arrangement where val < other
-                    // (val = output_elements, other = reduce_size)
-                    if val < other {
-                        out_elements = val;
-                        reduce_size = other;
-                    } else {
-                        out_elements = other;
-                        reduce_size = val;
-                    }
-                    break;
-                }
-            }
-            if out_elements > 0 { break; }
-        }
-    }
-
-    // Fallback: if we couldn't find dimensions, assume the gap is the full input
-    // and try common reduce sizes
-    if out_elements == 0 || reduce_size == 0 {
-        // Try to infer from total elements: assume reduce along last dim
-        // Common patterns: 128, 256, 512, 1024
-        for rs in [128, 256, 512, 1024, 64, 32, 2048, 4096].iter() {
-            if in_elements % rs == 0 && in_elements / rs > 0 {
-                reduce_size = *rs;
-                out_elements = in_elements / rs;
+    if last_out_ptr != 0 && last_out_bytes > 0 {
+        // Use dataflow tracking for input
+        in_ptr = last_out_ptr;
+        in_elements = last_out_bytes / elem_size;
+        let in_end = last_out_ptr + last_out_bytes;
+        // Find output: first alloc pointer NOT within the input range
+        for &(_, ptr, _remaining) in &found_ptrs {
+            let p = ptr as usize;
+            if p < in_ptr || p >= in_end {
+                out_ptr = p;
                 break;
             }
         }
+    } else {
+        // Fallback: use pointer scanning (less reliable with caching allocator)
+        if found_ptrs.len() < 2 {
+            eprintln!("[TMatmul Fallback] reduce_kernel: no dataflow and <2 pointers");
+            return;
+        }
+        let mut sorted = found_ptrs.clone();
+        sorted.sort_by_key(|&(_, ptr, _)| ptr);
+        sorted.dedup_by_key(|entry| entry.1);
+        if sorted.len() < 2 { return; }
+        // Assume higher address = input, lower = output
+        in_ptr = sorted[sorted.len() - 1].1 as usize;
+        let in_size = sorted[sorted.len() - 1].2;
+        in_elements = in_size / elem_size;
+        out_ptr = sorted[0].1 as usize;
     }
 
-    if out_elements == 0 || reduce_size == 0 {
-        eprintln!("[TMatmul Fallback] reduce_kernel: can't determine dimensions (in_elements={})", in_elements);
+    if out_ptr == 0 || in_ptr == 0 || in_elements == 0 {
+        eprintln!("[TMatmul Fallback] reduce_kernel: couldn't resolve pointers (in={:#x}, out={:#x}, n={})",
+                 in_ptr, out_ptr, in_elements);
         return;
     }
 
-    // Safety: cap in_elements by the alloc_size of the input pointer
-    let in_alloc_size = sorted[sorted.len() - 1].2;
-    let in_elements = in_elements.min(in_alloc_size / elem_size);
-    // Cap out_elements by the alloc_size of the output pointer
-    let out_alloc_size = sorted[0].2;
-    let out_elements = out_elements.min(out_alloc_size / elem_size);
+    eprintln!("[TMatmul Fallback] reduce_kernel: in={:#x} ({} elems, {}B each), out={:#x}",
+             in_ptr, in_elements, elem_size, out_ptr);
 
-    eprintln!("[TMatmul Fallback] reduce_kernel: in_elements={}, out_elements={}, reduce_size={}, elem_size={}",
-             in_elements, out_elements, reduce_size, elem_size);
+    // For scalar reduces (full tensor → single value), treat as 1 output, full input.
+    let out_elements = 1usize;
+    let reduce_size = in_elements;
 
     // Determine which reduction operation
     let op_type = if name_lower.contains("sum_functor") || name_lower.contains("sum") {
@@ -3162,6 +3352,8 @@ unsafe fn execute_reduce_kernel_fallback(
             }
         }
     }
+    // Track output for dataflow-based parameter resolution in subsequent kernels
+    super::tmatmul_interpreter::set_last_output(out_ptr, out_elements * elem_size, elem_size);
     eprintln!("[TMatmul Fallback] reduce_kernel '{}' executed ({} -> {} elements, elem_size={})",
              op_type, in_elements, out_elements, elem_size);
 }
@@ -3271,6 +3463,9 @@ unsafe fn execute_triton_reduction_kernel(
     // Determine data type from input allocation size and grid.
     // BitNet uses bfloat16 tensors.  We'll detect element size from the alloc.
     let inp_alloc_size = super::memory::get_alloc_size(inp_ptr_val as usize).unwrap_or(0);
+    let out_alloc_size = super::memory::get_alloc_size(out_ptr_val as usize).unwrap_or(0);
+    let inp_max_u16 = inp_alloc_size / 2; // max bf16 elements we can safely read
+    let out_max_f32 = out_alloc_size / 4; // max f32 elements we can safely write
 
     // Infer BLOCK_SIZE from the relationship: total_blocks * BLOCK_SIZE ≈ total_elements
     // For abs_mean_kernel: grid=(n_blocks,1,1), total_elements = n_elems (param_2)
@@ -3281,31 +3476,30 @@ unsafe fn execute_triton_reduction_kernel(
         // abs_mean_kernel: each grid block computes sum(abs(input[block*BS..(block+1)*BS]))
         // and stores the scalar result to output[block_id].
         let n_blocks = grid_dim_x as usize;
-        let n_elems = dim_val;
+        let n_elems = dim_val.min(inp_max_u16); // bounds-check against allocation
         // Elements are bfloat16 (2 bytes) — read as u16, convert to f32
         let inp = inp_ptr_val as *const u16;
         let out = out_ptr_val as *mut f32;
 
         for block_id in 0..n_blocks {
+            if block_id >= out_max_f32 { break; } // bounds-check output
             let base = block_id * block_size;
             let end = (base + block_size).min(n_elems);
             let mut sum = 0.0f32;
             for i in base..end {
+                if i >= inp_max_u16 { break; } // bounds-check input
                 let raw = inp.add(i).read_unaligned();
                 let val = bf16_to_f32(raw);
                 sum += val.abs();
             }
             out.add(block_id).write_unaligned(sum);
         }
-        eprintln!("[TMatmul Fallback] abs_mean_kernel executed: {} blocks, {} elems", n_blocks, n_elems);
+        eprintln!("[TMatmul Fallback] abs_mean_kernel executed: {} blocks, {} elems (alloc: inp={}, out={})",
+                 n_blocks, n_elems, inp_alloc_size, out_alloc_size);
     } else if name_lower == "partial_max_kernel" {
         // partial_max_kernel: grid=(batch, seq_len, n_blocks)
         // For each (batch, seq, block): max(abs(x[row_offset + block*BS .. +BS]))
         // → partial_max[(batch*seq_len + seq)*n_blocks + block]
-        //
-        // The Python signature is: partial_max_kernel(x_ptr, partial_max_ptr,
-        //   batch_size, seq_len, hidden_dim, BLOCK_SIZE=constexpr)
-        // But Triton may reorder/add stride params.  Use grid dims directly.
         let batch_size = grid_dim_x as usize;
         let seq_len = grid_dim_y as usize;
         let n_blocks = grid_dim_z as usize;
@@ -3318,22 +3512,24 @@ unsafe fn execute_triton_reduction_kernel(
             for seq_idx in 0..seq_len {
                 let row_offset = (batch_idx * seq_len + seq_idx) * hidden_dim;
                 for blk_idx in 0..n_blocks {
+                    let pm_offset = (batch_idx * seq_len + seq_idx) * n_blocks + blk_idx;
+                    if pm_offset >= out_max_f32 { continue; } // bounds-check output
                     let hidden_off = blk_idx * block_size;
                     let mut max_val = 0.0f32;
                     for i in 0..block_size {
                         let idx = row_offset + hidden_off + i;
+                        if idx >= inp_max_u16 { break; } // bounds-check input
                         let raw = inp.add(idx).read_unaligned();
                         let val = bf16_to_f32(raw).abs();
                         if val > max_val { max_val = val; }
                     }
                     max_val = max_val.max(1e-5); // match Triton kernel: tl.maximum(..., 1e-5)
-                    let pm_offset = (batch_idx * seq_len + seq_idx) * n_blocks + blk_idx;
                     out.add(pm_offset).write_unaligned(max_val);
                 }
             }
         }
-        eprintln!("[TMatmul Fallback] partial_max_kernel executed: {}x{}x{} grid, hidden_dim~{}",
-                 batch_size, seq_len, n_blocks, hidden_dim);
+        eprintln!("[TMatmul Fallback] partial_max_kernel executed: {}x{}x{} grid, hidden_dim~{} (alloc: inp={}, out={})",
+                 batch_size, seq_len, n_blocks, hidden_dim, inp_alloc_size, out_alloc_size);
     }
 }
 

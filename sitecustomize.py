@@ -300,7 +300,7 @@ def _install_torch_cuda_fallbacks() -> None:
 
         def _get_tmatmul_backend():
             """Lazy-load TMatmul backend"""
-            global _tmatmul_backend
+            nonlocal _tmatmul_backend
             if _tmatmul_backend is None and _tmatmul_enabled:
                 try:
                     import tmatmul_cocotb_integration

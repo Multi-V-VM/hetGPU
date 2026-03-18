@@ -481,6 +481,11 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                     ptx_source: Some(Arc::new(text.to_string())),
                     tmatmul_assembly: Some(tmatmul_asm),
                 };
+
+                // Clone assembly before wrapping (wrap moves new_module)
+                #[cfg(feature = "tmatmul")]
+                let concordia_asm = new_module.tmatmul_assembly.clone();
+
                 *module = new_module.wrap();
                 // Register PTX source for checkpoint/restore
                 crate::r#impl::checkpoint::register_module_ptx(
@@ -488,6 +493,31 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                     text,
                 );
                 ensure_virtual_context(ctx_handle, dev_handle);
+
+                // Register all kernels from this module with Concordia dispatch table
+                #[cfg(feature = "tmatmul")]
+                {
+                    if crate::r#impl::concordia::is_enabled() {
+                        let ptx_arc = Some(Arc::new(text.to_string()));
+                        let asm_clone = concordia_asm;
+                        // Extract kernel names from PTX (.entry directives)
+                        for line in text.lines() {
+                            let trimmed = line.trim();
+                            if trimmed.starts_with(".entry") || trimmed.starts_with(".visible .entry") {
+                                if let Some(name) = trimmed.split_whitespace()
+                                    .find(|w| !w.starts_with('.') && !w.starts_with("//") && w.len() > 1)
+                                {
+                                    let clean_name = name.trim_end_matches('(');
+                                    crate::r#impl::concordia::on_module_compiled(
+                                        clean_name,
+                                        asm_clone.clone(),
+                                        ptx_arc.clone(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
 
                 crate::r#impl::hetgpu_debug!(
                     "[TMatmul Backend] TMatmul assembly ready for emulator at /tmp/tmatmul_kernel.S"

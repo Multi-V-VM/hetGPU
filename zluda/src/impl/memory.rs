@@ -47,6 +47,31 @@ pub(crate) fn get_alloc_size(addr: usize) -> Option<usize> {
         None
     }
 }
+
+/// Register an external allocation in the virtual alloc map.
+/// Called from cudart_shim.c when cudaMalloc falls back to aligned_alloc.
+#[cfg(feature = "intel")]
+#[no_mangle]
+pub unsafe extern "C" fn hetgpu_register_alloc(ptr: usize, size: usize) {
+    if ptr != 0 && size > 0 {
+        if let Ok(mut map) = VIRTUAL_ALLOC_MAP.lock() {
+            map.insert(ptr, size);
+        }
+    }
+}
+
+/// Unregister an allocation from the virtual alloc map.
+/// Called from cudart_shim.c when cudaFree frees a fallback allocation.
+#[cfg(feature = "intel")]
+#[no_mangle]
+pub unsafe extern "C" fn hetgpu_unregister_alloc(ptr: usize) {
+    if ptr != 0 {
+        if let Ok(mut map) = VIRTUAL_ALLOC_MAP.lock() {
+            map.remove(&ptr);
+        }
+    }
+}
+
 #[cfg(feature = "amd")]
 pub(crate) fn alloc_v2(dptr: *mut hipDeviceptr_t, bytesize: usize) -> hipError_t {
     unsafe { hipMalloc(dptr.cast(), bytesize) }?;

@@ -61,6 +61,11 @@ pub mod ze_module;
 #[cfg(feature = "intel")]
 pub(crate) mod tmatmul_interpreter;
 
+// Concordia: Unified persistent kernel runtime + delta checkpoint + NCCL fusion
+// Enabled via CONCORDIA_ENABLED=1 environment variable
+#[cfg(feature = "tmatmul")]
+pub(crate) mod concordia;
+
 #[cfg(feature = "cutile")]
 pub mod cutile;
 
