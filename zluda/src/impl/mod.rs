@@ -63,8 +63,12 @@ pub(crate) mod tmatmul_interpreter;
 
 // Concordia: Unified persistent kernel runtime + delta checkpoint + NCCL fusion
 // Enabled via CONCORDIA_ENABLED=1 environment variable
-#[cfg(feature = "tmatmul")]
+#[cfg(any(feature = "tmatmul", feature = "nvidia"))]
 pub(crate) mod concordia;
+
+// Concordia GPU-side persistent kernel (real device-resident worker)
+#[cfg(feature = "nvidia")]
+pub(crate) mod concordia_gpu;
 
 #[cfg(feature = "cutile")]
 pub mod cutile;

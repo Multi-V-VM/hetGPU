@@ -273,7 +273,7 @@ pub(crate) unsafe fn launch_kernel(
     // ---- Concordia Persistent Kernel Hook (§3.1) ----
     // If Concordia is enabled, route this kernel launch through the ring buffer
     // instead of directly executing. The persistent executor dispatches it.
-    #[cfg(feature = "tmatmul")]
+    #[cfg(any(feature = "tmatmul", feature = "nvidia"))]
     {
         if super::concordia::is_enabled() {
             // Count params (up to 32)
@@ -493,6 +493,18 @@ pub(crate) unsafe fn launch_kernel(
             eprintln!("[TMatmul Backend] Found {} kernel parameters total", num_params);
             eprintln!("[TMatmul Backend] Selected output_ptr: {:p}", output_ptr);
         } else if !is_matmul_name {
+            // Skip PTX compilation for reduce_kernel (except ArgMax/ArgMin) — the TMatmul
+            // interpreter's pointer scanning is unreliable with CUDACachingAllocator.
+            // These kernels are handled by execute_reduce_kernel_fallback instead.
+            {
+                let name_lc = f.name.to_lowercase();
+                if name_lc.contains("reduce_kernel") && !name_lc.contains("argmaxops") && !name_lc.contains("argminops") {
+                    eprintln!("[TMatmul Backend] Skipping reduce_kernel '{}' - using fallback", f.name);
+                    execute_kernel_name_fallback(&f.name, kernel_params, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z);
+                    super::checkpoint::end_kernel_execution(exec_id);
+                    return ze_result_t::ZE_RESULT_SUCCESS;
+                }
+            }
             // Non-matmul kernel - compile PTX to tmatmul assembly and run via Python emulator
             eprintln!("[TMatmul Backend] Non-matmul kernel '{}' - compiling PTX for emulator", f.name);
 
@@ -1049,7 +1061,7 @@ fn is_integer_type_kernel(kernel_name: &str) -> bool {
 /// Keeps the module header (.version, .target, .address_size) and extracts only
 /// the function matching the given kernel name.
 /// This avoids compiling hundreds of unrelated kernels in multi-MB PTX modules.
-#[cfg(feature = "intel")]
+#[cfg(any(feature = "intel", feature = "nvidia"))]
 /// Normalize a mangled C++ name by replacing anonymous namespace hashes
 /// (_GLOBAL__N__XXXXXXXX_) with a wildcard pattern so that names compiled
 /// from different TUs can still match.
@@ -2541,14 +2553,24 @@ unsafe fn execute_kernel_name_fallback(
         return;
     }
 
+    let name_lower = kernel_name.to_lowercase();
+
+    // For reduce_kernel (except ArgMax/ArgMin): skip the emulator entirely and use
+    // the dedicated fallback. The emulator's TMatmul compiler uses unreliable pointer
+    // scanning that produces wrong results with PyTorch's CUDACachingAllocator.
+    if name_lower.contains("reduce_kernel") {
+        if !name_lower.contains("argmaxops") && !name_lower.contains("argminops") {
+            execute_reduce_kernel_fallback(kernel_name, &name_lower, kernel_params);
+            return;
+        }
+    }
+
     // Try the Python emulator path first (correct compiler approach)
     if execute_kernel_via_emulator(kernel_name, kernel_params,
                                     grid_dim_x, grid_dim_y, grid_dim_z,
                                     block_dim_x, block_dim_y, block_dim_z) {
         return; // Emulator succeeded
     }
-
-    let name_lower = kernel_name.to_lowercase();
 
     // Handle different kernel types
     if name_lower.contains("reduce_kernel") {
@@ -3131,12 +3153,9 @@ unsafe fn scan_for_alloc_pointers(base: *const u8, scan_bytes: usize) -> Vec<(us
         if ptr_val < 0x10000 || ptr_val > 0x7fff_ffff_ffff {
             continue;
         }
-        // Virtual backend uses 64-byte alignment for allocations.
-        // PyTorch CUDACachingAllocator suballocates at 512-byte boundaries.
-        // Filter out non-64-aligned addresses to reduce false positives
-        // from code/vtable pointers that happen to fall in allocation ranges.
-        if ptr_val & 0x3F != 0 {
-            continue; // not 64-byte aligned — unlikely to be a tensor data pointer
+        // Filter: require even alignment (at least 2-byte for bf16 tensors)
+        if ptr_val & 0x1 != 0 {
+            continue;
         }
         // Check if this pointer is in our alloc map
         if let Some(size) = super::memory::get_alloc_size(ptr_val as usize) {
@@ -3162,11 +3181,6 @@ unsafe fn execute_reduce_kernel_fallback(
         return;
     }
 
-    // === Dataflow approach ===
-    // The reduce's INPUT is typically the output of the previous kernel (LayerNorm output,
-    // activation, etc.). Use the last kernel output tracking instead of unreliable pointer scanning.
-    let (last_out_ptr, last_out_bytes, last_elem_size) = super::tmatmul_interpreter::get_last_output();
-
     // Detect element size from kernel name
     let elem_size: usize = if kernel_name.contains("ReduceOpIl") || kernel_name.contains("ReduceOpId") {
         8
@@ -3176,53 +3190,98 @@ unsafe fn execute_reduce_kernel_fallback(
         4 // float32 default
     };
 
-    // Scan for output pointer in the ReduceOp struct (the pointer that is NOT the input)
-    let scan_size = 512;
-    let found_ptrs = scan_for_alloc_pointers(op_param as *const u8, scan_size);
-
-    // Find the output pointer: any alloc pointer in the struct that is NOT the input tensor
-    let in_ptr: usize;
-    let in_elements: usize;
+    // === Consecutive-pair approach ===
+    // In PyTorch's TensorIterator, the output and input data pointers are stored
+    // at consecutive 8-byte offsets in the ReduceOp struct. Scan for the FIRST
+    // pair of consecutive u64 values that are both valid alloc-map pointers.
+    let scan_size = 2048; // ReduceOp struct can be >1KB in PyTorch 2.10+
+    let num_slots = scan_size / 8;
     let mut out_ptr: usize = 0;
+    let mut in_ptr: usize = 0;
+    let mut in_elements: usize = 0;
 
-    if last_out_ptr != 0 && last_out_bytes > 0 {
-        // Use dataflow tracking for input
-        in_ptr = last_out_ptr;
-        in_elements = last_out_bytes / elem_size;
-        let in_end = last_out_ptr + last_out_bytes;
-        // Find output: first alloc pointer NOT within the input range
-        for &(_, ptr, _remaining) in &found_ptrs {
-            let p = ptr as usize;
-            if p < in_ptr || p >= in_end {
-                out_ptr = p;
+    for i in 0..(num_slots - 1) {
+        let val0 = (op_param as *const u64).add(i).read_unaligned();
+        let val1 = (op_param as *const u64).add(i + 1).read_unaligned();
+        // Both must be valid user-space pointers
+        if val0 < 0x10000 || val0 > 0x7fff_ffff_ffff { continue; }
+        if val1 < 0x10000 || val1 > 0x7fff_ffff_ffff { continue; }
+        // Both must be even-aligned
+        if val0 & 1 != 0 || val1 & 1 != 0 { continue; }
+        // Both must be in the alloc map
+        let size0 = super::memory::get_alloc_size(val0 as usize);
+        let size1 = super::memory::get_alloc_size(val1 as usize);
+        if let (Some(_s0), Some(s1)) = (size0, size1) {
+            // They must be different addresses (output != input)
+            if val0 != val1 {
+                out_ptr = val0 as usize; // first = output (PyTorch convention)
+                in_ptr = val1 as usize;  // second = input
+
+                // Find the reduce dimension from nearby int32 values.
+                // PyTorch stores shape/stride info near the data pointers.
+                // Scan the first ~200 bytes of the struct for a plausible
+                // reduce dimension (power of 2 between 64 and 131072).
+                let mut reduce_dim = 0usize;
+                for j in 0..50usize {
+                    let v = (op_param as *const u32).add(j).read_unaligned() as usize;
+                    if v >= 64 && v <= 131072 && (v & (v - 1)) == 0 {
+                        // Power of 2 between 64 and 131072 - likely a tensor dimension
+                        reduce_dim = v;
+                        break;
+                    }
+                }
+                // Also check for common non-power-of-2 dimensions
+                if reduce_dim == 0 {
+                    for j in 0..50usize {
+                        let v = (op_param as *const u32).add(j).read_unaligned() as usize;
+                        if v >= 128 && v <= 32768 && v % 64 == 0 {
+                            reduce_dim = v;
+                            break;
+                        }
+                    }
+                }
+
+                if reduce_dim > 0 {
+                    in_elements = reduce_dim;
+                } else {
+                    // Fallback: use gap between pointers
+                    let gap = if val1 > val0 { (val1 - val0) as usize } else { (val0 - val1) as usize };
+                    in_elements = if gap > 0 && gap < 10_000_000 { gap / elem_size } else { s1 / elem_size };
+                }
+
+                eprintln!("[TMatmul Fallback] reduce_kernel: found pair at offset {}: out={:#x}, in={:#x} ({} elems, dim={})",
+                         i * 8, out_ptr, in_ptr, in_elements, reduce_dim);
                 break;
             }
         }
-    } else {
-        // Fallback: use pointer scanning (less reliable with caching allocator)
-        if found_ptrs.len() < 2 {
-            eprintln!("[TMatmul Fallback] reduce_kernel: no dataflow and <2 pointers");
-            return;
-        }
-        let mut sorted = found_ptrs.clone();
-        sorted.sort_by_key(|&(_, ptr, _)| ptr);
-        sorted.dedup_by_key(|entry| entry.1);
-        if sorted.len() < 2 { return; }
-        // Assume higher address = input, lower = output
-        in_ptr = sorted[sorted.len() - 1].1 as usize;
-        let in_size = sorted[sorted.len() - 1].2;
-        in_elements = in_size / elem_size;
-        out_ptr = sorted[0].1 as usize;
     }
 
     if out_ptr == 0 || in_ptr == 0 || in_elements == 0 {
-        eprintln!("[TMatmul Fallback] reduce_kernel: couldn't resolve pointers (in={:#x}, out={:#x}, n={})",
-                 in_ptr, out_ptr, in_elements);
+        // Debug: dump first 64 u64 values to find the data pointers
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static DUMP_COUNT: AtomicUsize = AtomicUsize::new(0);
+        let should_dump = name_lower.contains("meanops") || name_lower.contains("sum_functor");
+        if should_dump && DUMP_COUNT.fetch_add(1, Ordering::Relaxed) < 2 {
+            eprintln!("[TMatmul Fallback] reduce_kernel struct dump ({}):", kernel_name);
+            // Show alloc map summary
+            if let Ok(map) = super::memory::VIRTUAL_ALLOC_MAP.lock() {
+                let entries: Vec<_> = map.iter().take(5).map(|(&k,&v)| format!("{:#x}({})", k, v)).collect();
+                eprintln!("  alloc_map: {} entries, first: {:?}", map.len(), entries);
+            }
+            // Show ALL pointer-like values (>4GB, <128TB)
+            for i in 0..128usize {
+                let val = (op_param as *const u64).add(i).read_unaligned();
+                if val > 0x1_0000_0000 && val < 0x7fff_ffff_ffff {
+                    let in_map = super::memory::get_alloc_size(val as usize)
+                        .map(|s| format!("ALLOC(rem={})", s))
+                        .unwrap_or_default();
+                    eprintln!("  [{}] off={}: {:#018x} {}", i, i*8, val, in_map);
+                }
+            }
+        }
+        eprintln!("[TMatmul Fallback] reduce_kernel: no consecutive pointer pair found");
         return;
     }
-
-    eprintln!("[TMatmul Fallback] reduce_kernel: in={:#x} ({} elems, {}B each), out={:#x}",
-             in_ptr, in_elements, elem_size, out_ptr);
 
     // For scalar reduces (full tensor → single value), treat as 1 output, full input.
     let out_elements = 1usize;
@@ -4298,6 +4357,38 @@ pub(crate) fn launch_kernel(
     kernel_params: *mut *mut ::core::ffi::c_void,
     extra: *mut *mut ::core::ffi::c_void,
 ) -> CUresult {
+    // ---- Ctrl+C Checkpoint Hook ----
+    if super::checkpoint::check_checkpoint_at_launch() {
+        return Ok(());
+    }
+
+    // ---- Concordia Hook: track kernel in dispatch table + ring buffer ----
+    if super::concordia::is_enabled() {
+        let kernel_name = &f.function_name;
+        // Count params
+        let mut num_params = 0usize;
+        if !kernel_params.is_null() {
+            for i in 0..32 {
+                let p = unsafe { *kernel_params.add(i) };
+                if p.is_null() { break; }
+                num_params = i + 1;
+            }
+        }
+        // Register kernel in dispatch table and track execution
+        let handled = super::concordia::on_kernel_launch(
+            kernel_name,
+            kernel_params,
+            num_params,
+            (grid_dim_x, grid_dim_y, grid_dim_z),
+            (block_dim_x, block_dim_y, block_dim_z),
+            shared_mem_bytes,
+            None, // No PTX source on nvidia passthrough
+        );
+        // Concordia records the dispatch but still forwards to real CUDA below
+        // (in nvidia mode, we measure overhead; we don't replace execution)
+        let _ = handled;
+    }
+
     let result = nvidia_runtime_sys::cuLaunchKernel(
         f.cuda_function,
         grid_dim_x,

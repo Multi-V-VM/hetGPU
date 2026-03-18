@@ -1131,6 +1131,27 @@ static int g_function_count = 0;
 // symbol is always exported even if the linker tries to fold identical bodies.
 __attribute__((used))
 cudaError_t cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void** args, size_t sharedMem, cudaStream_t stream) {
+    // Concordia checkpoint trigger: check file-based flag on every kernel launch
+    // This enables "touch /tmp/hetgpu_checkpoint" to trigger checkpoint for ANY program
+    {
+        static int check_counter = 0;
+        if (++check_counter >= 10) {  // Check every 10 launches
+            check_counter = 0;
+            FILE* f = fopen("/tmp/hetgpu_checkpoint", "r");
+            if (f) {
+                fclose(f);
+                remove("/tmp/hetgpu_checkpoint");
+                fprintf(stderr, "\n[Concordia] Checkpoint triggered at cudaLaunchKernel! (touch /tmp/hetgpu_checkpoint)\n");
+                // Call into Rust checkpoint handler
+                extern int hetgpu_concordia_checkpoint(void) __attribute__((weak));
+                if (hetgpu_concordia_checkpoint) {
+                    hetgpu_concordia_checkpoint();
+                }
+                fprintf(stderr, "[Concordia] Checkpoint complete, resuming execution.\n");
+            }
+        }
+    }
+
     uintptr_t raw = (uintptr_t)func;
     const void* normalized = (const void*)(raw & ~(uintptr_t)0x7);
     if (normalized != func) {
@@ -1442,6 +1463,21 @@ extern int hetgpu_lz4_decompress(const char* src, char* dst, int compressedSize,
 #define FATBIN_KIND_ELF 0x02
 
 void** __cudaRegisterFatBinary(void* fatCubin) {
+    // NVIDIA passthrough: skip PTX extraction, just return a dummy handle.
+    // The real CUDA driver handles fatbin registration internally.
+    // This prevents the expensive PTX extraction from libtorch_cuda.so.
+    static const char* nvidia_passthrough = NULL;
+    static int checked = 0;
+    if (!checked) {
+        nvidia_passthrough = getenv("CONCORDIA_NVIDIA_PASSTHROUGH");
+        checked = 1;
+    }
+    if (nvidia_passthrough && nvidia_passthrough[0] == '1') {
+        // Return a properly-aligned null-like handle that won't be dereferenced
+        static void* dummy_handle = NULL;
+        return &dummy_handle;
+    }
+
     fprintf(stderr, "[cudart_shim] __cudaRegisterFatBinary called with %p\n", fatCubin);
 
     if (!fatCubin) {

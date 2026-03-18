@@ -74,6 +74,16 @@ type CuDeviceComputeCapabilityFn = unsafe extern "C" fn(*mut c_int, *mut c_int, 
 type CuDeviceGetUuidFn = unsafe extern "C" fn(*mut CUuuid, CUdevice) -> CUresult;
 type CuDeviceGetLuidFn = unsafe extern "C" fn(*mut c_char, *mut c_uint, CUdevice) -> CUresult;
 type CuMemGetAddressRangeFn = unsafe extern "C" fn(*mut CUdeviceptr, *mut size_t, CUdeviceptr) -> CUresult;
+type CuGetProcAddressFn = unsafe extern "C" fn(*const c_char, *mut *mut c_void, c_int, u64) -> CUresult;
+type CuGetProcAddressV2Fn = unsafe extern "C" fn(*const c_char, *mut *mut c_void, c_int, u64, *mut CUdriverProcAddressQueryResult) -> CUresult;
+type CuMemAllocManagedFn = unsafe extern "C" fn(*mut CUdeviceptr, size_t, c_uint) -> CUresult;
+// Async memcpy + stream + pinned memory
+type CuMemcpyDtoHAsyncFn = unsafe extern "C" fn(*mut c_void, CUdeviceptr, size_t, CUstream) -> CUresult;
+type CuMemcpyHtoDAsyncFn = unsafe extern "C" fn(CUdeviceptr, *const c_void, size_t, CUstream) -> CUresult;
+type CuMemAllocHostFn = unsafe extern "C" fn(*mut *mut c_void, size_t) -> CUresult;
+type CuMemFreeHostFn = unsafe extern "C" fn(*mut c_void) -> CUresult;
+type CuStreamCreateFn2 = unsafe extern "C" fn(*mut CUstream, c_uint) -> CUresult;
+type CuStreamSynchronizeFn2 = unsafe extern "C" fn(CUstream) -> CUresult;
 
 // Function pointers struct
 pub struct NvidiaCudaFunctions {
@@ -127,7 +137,24 @@ pub struct NvidiaCudaFunctions {
     pub cuDeviceGetUuid: Option<CuDeviceGetUuidFn>,
     pub cuDeviceGetLuid: Option<CuDeviceGetLuidFn>,
     pub cuMemGetAddressRange_v2: Option<CuMemGetAddressRangeFn>,
+    pub cuGetProcAddress: Option<CuGetProcAddressFn>,
+    pub cuGetProcAddress_v2: Option<CuGetProcAddressV2Fn>,
+    pub cuMemAllocManaged: Option<CuMemAllocManagedFn>,
+    pub cuMemcpyDtoHAsync_v2: Option<CuMemcpyDtoHAsyncFn>,
+    pub cuMemcpyHtoDAsync_v2: Option<CuMemcpyHtoDAsyncFn>,
+    pub cuMemAllocHost_v2: Option<CuMemAllocHostFn>,
+    pub cuMemFreeHost: Option<CuMemFreeHostFn>,
+    pub cuStreamCreate2: Option<CuStreamCreateFn2>,
+    pub cuStreamSynchronize2: Option<CuStreamSynchronizeFn2>,
+    /// Raw library handle for dlsym fallback (wrapped for Send+Sync)
+    pub lib_handle: LibHandleWrapper,
 }
+
+/// Wrapper to make raw library handle Send+Sync (dlopen handles are process-global)
+#[derive(Clone, Copy)]
+pub struct LibHandleWrapper(pub *mut c_void);
+unsafe impl Send for LibHandleWrapper {}
+unsafe impl Sync for LibHandleWrapper {}
 
 static CUDA_FUNCS: OnceLock<NvidiaCudaFunctions> = OnceLock::new();
 
@@ -208,6 +235,16 @@ pub fn init() -> Result<(), String> {
                 cuDeviceGetUuid: load_fn(lib, "cuDeviceGetUuid"),
                 cuDeviceGetLuid: load_fn(lib, "cuDeviceGetLuid"),
                 cuMemGetAddressRange_v2: load_fn(lib, "cuMemGetAddressRange_v2"),
+                cuGetProcAddress: load_fn(lib, "cuGetProcAddress"),
+                cuGetProcAddress_v2: load_fn(lib, "cuGetProcAddress_v2"),
+                cuMemAllocManaged: load_fn(lib, "cuMemAllocManaged"),
+                cuMemcpyDtoHAsync_v2: load_fn(lib, "cuMemcpyDtoHAsync_v2"),
+                cuMemcpyHtoDAsync_v2: load_fn(lib, "cuMemcpyHtoDAsync_v2"),
+                cuMemAllocHost_v2: load_fn(lib, "cuMemAllocHost_v2"),
+                cuMemFreeHost: load_fn(lib, "cuMemFreeHost"),
+                cuStreamCreate2: load_fn(lib, "cuStreamCreate"),
+                cuStreamSynchronize2: load_fn(lib, "cuStreamSynchronize"),
+                lib_handle: LibHandleWrapper(lib),
             }
         }
     });
@@ -299,6 +336,16 @@ impl NvidiaCudaFunctions {
             cuDeviceGetUuid: None,
             cuDeviceGetLuid: None,
             cuMemGetAddressRange_v2: None,
+            cuGetProcAddress: None,
+            cuGetProcAddress_v2: None,
+            cuMemAllocManaged: None,
+            cuMemcpyDtoHAsync_v2: None,
+            cuMemcpyHtoDAsync_v2: None,
+            cuMemAllocHost_v2: None,
+            cuMemFreeHost: None,
+            cuStreamCreate2: None,
+            cuStreamSynchronize2: None,
+            lib_handle: LibHandleWrapper(std::ptr::null_mut()),
         }
     }
 }
@@ -582,6 +629,60 @@ pub fn cuMemcpyDtoH_v2(dst: *mut c_void, src: CUdeviceptr, bytecount: size_t) ->
         if let Some(f) = funcs.cuMemcpyDtoH_v2 {
             let result = unsafe { f(dst, src, bytecount) };
             return cuda_result_to_int(result);
+        }
+    }
+    999
+}
+
+pub fn cuMemAllocManaged(dptr: *mut CUdeviceptr, bytesize: size_t, flags: c_uint) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuMemAllocManaged {
+            return cuda_result_to_int(unsafe { f(dptr, bytesize, flags) });
+        }
+    }
+    999
+}
+
+pub fn cuMemcpyDtoHAsync_v2(dst: *mut c_void, src: CUdeviceptr, bytecount: size_t, stream: CUstream) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuMemcpyDtoHAsync_v2 {
+            return cuda_result_to_int(unsafe { f(dst, src, bytecount, stream) });
+        }
+    }
+    999
+}
+
+pub fn cuMemAllocHost_v2(pp: *mut *mut c_void, bytesize: size_t) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuMemAllocHost_v2 {
+            return cuda_result_to_int(unsafe { f(pp, bytesize) });
+        }
+    }
+    999
+}
+
+pub fn cuMemFreeHost(p: *mut c_void) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuMemFreeHost {
+            return cuda_result_to_int(unsafe { f(p) });
+        }
+    }
+    999
+}
+
+pub fn cuStreamCreate_ckpt(stream: *mut CUstream, flags: c_uint) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuStreamCreate2 {
+            return cuda_result_to_int(unsafe { f(stream, flags) });
+        }
+    }
+    999
+}
+
+pub fn cuStreamSynchronize_ckpt(stream: CUstream) -> i32 {
+    if let Some(funcs) = get_cuda_funcs() {
+        if let Some(f) = funcs.cuStreamSynchronize2 {
+            return cuda_result_to_int(unsafe { f(stream) });
         }
     }
     999

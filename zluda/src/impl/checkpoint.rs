@@ -1190,15 +1190,17 @@ pub fn install_signal_handler() -> Result<(), String> {
         sa.sa_flags = libc::SA_RESTART;
         libc::sigemptyset(&mut sa.sa_mask);
 
-        let ret = libc::sigaction(libc::SIGINT, &sa, std::ptr::null_mut());
+        // Use SIGUSR1 instead of SIGINT — Python overrides SIGINT
+        // Send checkpoint signal: kill -USR1 <pid>
+        let ret = libc::sigaction(libc::SIGUSR1, &sa, std::ptr::null_mut());
         if ret != 0 {
             HANDLER_INSTALLED.store(false, Ordering::SeqCst);
             return Err("Failed to install SIGINT handler".to_string());
         }
     }
 
-    eprintln!("[hetGPU] Checkpoint handler installed (Ctrl+C to checkpoint)");
-    eprintln!("[hetGPU] Note: Checkpoint will be saved at the next GPU sync point");
+    eprintln!("[hetGPU] Checkpoint handler installed (kill -USR1 <pid> to checkpoint)");
+    eprintln!("[hetGPU] Note: Checkpoint triggers at the next cuLaunchKernel call");
     Ok(())
 }
 
@@ -1339,19 +1341,42 @@ pub fn get_current_kernel_state() -> Option<KernelExecutionState> {
 /// Check for checkpoint at kernel launch point
 /// Returns true if execution should be paused
 pub fn check_checkpoint_at_launch() -> bool {
+    // Also check file-based trigger: touch /tmp/hetgpu_checkpoint to trigger
+    if !is_checkpoint_requested() {
+        if std::path::Path::new("/tmp/hetgpu_checkpoint").exists() {
+            CHECKPOINT_REQUESTED.store(true, Ordering::SeqCst);
+            let _ = std::fs::remove_file("/tmp/hetgpu_checkpoint");
+        }
+    }
+
     if is_checkpoint_requested() {
         clear_checkpoint_request();
 
-        eprintln!("[hetGPU] Checkpoint triggered at kernel launch");
+        eprintln!("[hetGPU] Checkpoint triggered at kernel launch (Ctrl+C)");
 
-        // Save checkpoint
+        // 1. Concordia delta checkpoint (fast — only dirty KV-cache pages)
+        #[cfg(any(feature = "tmatmul", feature = "nvidia"))]
+        {
+            if super::concordia::is_enabled() {
+                let mut rt = super::concordia::get_runtime().lock().unwrap();
+                if !rt.checkpoint.regions.is_empty() {
+                    let snap_id = rt.checkpoint.create_delta();
+                    eprintln!("[hetGPU:Concordia] Delta checkpoint #{} saved (Ctrl+C)", snap_id);
+                } else {
+                    eprintln!("[hetGPU:Concordia] No KV-cache regions registered for delta checkpoint");
+                }
+                rt.print_stats();
+            }
+        }
+
+        // 2. Full hetGPU checkpoint (kernel state + PTX sources)
         if let Ok(manager) = get_checkpoint_manager().lock() {
             match manager.save_checkpoint() {
                 Ok(path) => {
-                    eprintln!("[hetGPU] Checkpoint saved to: {:?}", path);
+                    eprintln!("[hetGPU] Full checkpoint saved to: {:?}", path);
                 }
                 Err(e) => {
-                    eprintln!("[hetGPU] Checkpoint failed: {}", e);
+                    eprintln!("[hetGPU] Full checkpoint failed: {}", e);
                 }
             }
         }

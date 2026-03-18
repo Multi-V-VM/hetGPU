@@ -51,11 +51,43 @@ fn get_self_library_handle() -> *mut c_void {
 }
 
 // CUDA driver entry point lookups
+//
+// For the NVIDIA backend: forward to real CUDA's cuGetProcAddress so PyTorch gets
+// real function pointers. Only intercept functions we need (cuLaunchKernel, cuModuleLoadData).
+// For other backends (Intel/AMD/TT): resolve from our own .so.
+
+/// Functions we intercept even on the NVIDIA passthrough backend.
+/// For these, we return our shim's address so Concordia hooks fire.
+#[cfg(all(feature = "nvidia", not(feature = "intel"), not(feature = "tmatmul")))]
+fn is_intercepted_symbol(sym: &str) -> bool {
+    // Only intercept functions we actively need for Concordia.
+    // Everything else goes to real CUDA for maximum compatibility.
+    matches!(sym,
+        "cuInit" |
+        "cuGetProcAddress" | "cuGetProcAddress_v2" |
+        "cuGetExportTable" |
+        "cuGetErrorString" | "cuGetErrorName" |
+        "cuDriverGetVersion" |
+        // Module/kernel functions for Concordia dispatch table
+        "cuModuleLoadData" | "cuModuleLoadDataEx" |
+        "cuModuleLoadFatBinary" | "cuModuleLoad" |
+        "cuModuleGetFunction" | "cuModuleUnload" |
+        "cuLaunchKernel" | "cuLaunchKernelEx" |
+        // Device/context queries (our wrappers work correctly)
+        "cuDeviceGet" | "cuDeviceGetCount" | "cuDeviceGetName" |
+        "cuDeviceGetAttribute" | "cuDeviceTotalMem_v2" |
+        "cuDeviceGetUuid" | "cuDeviceGetUuid_v2" |
+        "cuDeviceGetLuid" | "cuDeviceComputeCapability" |
+        "cuDevicePrimaryCtxRetain" | "cuDevicePrimaryCtxRelease" |
+        "cuDevicePrimaryCtxGetState" | "cuDeviceGetProperties"
+    )
+}
+
 pub(crate) fn get_proc_address(
     symbol: *const c_char,
     pfn: *mut *mut c_void,
-    _cuda_version: c_int,
-    _flags: cuda_types::cuda::cuuint64_t,
+    cuda_version: c_int,
+    flags: cuda_types::cuda::cuuint64_t,
 ) -> Result<(), CUerror> {
     if symbol.is_null() || pfn.is_null() {
         return Err(CUerror::INVALID_VALUE);
@@ -64,18 +96,46 @@ pub(crate) fn get_proc_address(
     #[cfg(unix)]
     unsafe {
         let sym_str = std::ffi::CStr::from_ptr(symbol).to_string_lossy();
-        // First try our own library to avoid resolving to system's libcuda.so.1
+
+        // NVIDIA backend: forward to real CUDA for most functions
+        #[cfg(all(feature = "nvidia", not(feature = "intel"), not(feature = "tmatmul")))]
+        {
+            // Ensure nvidia_runtime_sys is initialized
+            let _ = nvidia_runtime_sys::init();
+
+            if !is_intercepted_symbol(&sym_str) {
+                // Forward to real CUDA's cuGetProcAddress
+                if let Some(funcs) = nvidia_runtime_sys::get_cuda_funcs() {
+                    if let Some(real_gpa) = funcs.cuGetProcAddress {
+                        let result = real_gpa(symbol, pfn, cuda_version, flags);
+                        return match result {
+                            Ok(()) => Ok(()),
+                            Err(_) => Err(CUerror::NOT_FOUND),
+                        };
+                    }
+                    // Fallback: dlsym from real CUDA library
+                    if !funcs.lib_handle.0.is_null() {
+                        let addr = dlsym(funcs.lib_handle.0, symbol);
+                        if !addr.is_null() {
+                            *pfn = addr;
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            // For intercepted functions, fall through to resolve from our .so
+        }
+
+        // Resolve from our own library (shim)
         let self_handle = get_self_library_handle();
         let mut addr = std::ptr::null_mut();
         if !self_handle.is_null() {
             addr = dlsym(self_handle, symbol);
         }
         if addr.is_null() {
-            // Fallback to global search
             addr = dlsym(RTLD_DEFAULT, symbol);
         }
         if addr.is_null() {
-            eprintln!("[hetGPU] cuGetProcAddress: '{}' NOT FOUND", sym_str);
             *pfn = std::ptr::null_mut();
             return Err(CUerror::NOT_FOUND);
         }
@@ -88,8 +148,8 @@ pub(crate) fn get_proc_address(
 pub(crate) fn get_proc_address_v2(
     symbol: *const c_char,
     pfn: *mut *mut c_void,
-    _cuda_version: c_int,
-    _flags: cuda_types::cuda::cuuint64_t,
+    cuda_version: c_int,
+    flags: cuda_types::cuda::cuuint64_t,
     symbol_status: *mut cuda_types::cuda::CUdriverProcAddressQueryResult,
 ) -> Result<(), CUerror> {
     if symbol.is_null() || pfn.is_null() {
@@ -98,14 +158,55 @@ pub(crate) fn get_proc_address_v2(
 
     #[cfg(unix)]
     unsafe {
-        // First try our own library to avoid resolving to system's libcuda.so.1
+        let sym_str = std::ffi::CStr::from_ptr(symbol).to_string_lossy();
+
+        // NVIDIA backend: forward to real CUDA for non-intercepted functions
+        #[cfg(all(feature = "nvidia", not(feature = "intel"), not(feature = "tmatmul")))]
+        {
+            let _ = nvidia_runtime_sys::init();
+
+            if !is_intercepted_symbol(&sym_str) {
+                if let Some(funcs) = nvidia_runtime_sys::get_cuda_funcs() {
+                    if let Some(real_gpa_v2) = funcs.cuGetProcAddress_v2 {
+                        let result = real_gpa_v2(symbol, pfn, cuda_version, flags, symbol_status);
+                        return match result {
+                            Ok(()) => Ok(()),
+                            Err(_) => Err(CUerror::NOT_FOUND),
+                        };
+                    }
+                    // Fallback: use non-v2 or dlsym
+                    if let Some(real_gpa) = funcs.cuGetProcAddress {
+                        let result = real_gpa(symbol, pfn, cuda_version, flags);
+                        if !symbol_status.is_null() {
+                            (*symbol_status).0 = match result { Ok(()) => 0, Err(_) => 1 };
+                        }
+                        return match result {
+                            Ok(()) => Ok(()),
+                            Err(_) => Err(CUerror::NOT_FOUND),
+                        };
+                    }
+                    // Last resort: dlsym from real CUDA
+                    if !funcs.lib_handle.0.is_null() {
+                        let addr = dlsym(funcs.lib_handle.0, symbol);
+                        *pfn = addr;
+                        if !symbol_status.is_null() {
+                            (*symbol_status).0 = if addr.is_null() { 1 } else { 0 };
+                        }
+                        if !addr.is_null() { return Ok(()); }
+                        return Err(CUerror::NOT_FOUND);
+                    }
+                }
+            }
+            // Intercepted functions: resolve from our .so
+        }
+
+        // Resolve from our own library
         let self_handle = get_self_library_handle();
         let mut addr = std::ptr::null_mut();
         if !self_handle.is_null() {
             addr = dlsym(self_handle, symbol);
         }
         if addr.is_null() {
-            // Fallback to global search
             addr = dlsym(RTLD_DEFAULT, symbol);
         }
         *pfn = addr as *mut c_void;

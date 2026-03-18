@@ -1858,6 +1858,55 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     not(feature = "tenstorrent"),
     not(feature = "tmatmul")
 ))]
+pub(crate) fn load(
+    module: &mut CUmodule,
+    fname: *const ::core::ffi::c_char,
+) -> CUresult {
+    let path = unsafe { std::ffi::CStr::from_ptr(fname) }
+        .to_str()
+        .map_err(|_| CUerror::INVALID_VALUE)?;
+    let data = std::fs::read(path).map_err(|_| CUerror::FILE_NOT_FOUND)?;
+    load_data(module, data.as_ptr() as *const std::ffi::c_void)
+}
+
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn load_fat_binary(
+    module: &mut CUmodule,
+    fat_cubin: *const std::ffi::c_void,
+) -> CUresult {
+    load_data(module, fat_cubin)
+}
+
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn load_data_ex(
+    module: &mut CUmodule,
+    image: *const std::ffi::c_void,
+    _num_options: std::ffi::c_uint,
+    _options: *mut cuda_types::cuda::CUjit_option,
+    _option_values: *mut *mut std::ffi::c_void,
+) -> CUresult {
+    load_data(module, image)
+}
+
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn unload(hmod: CUmodule) -> CUresult {
     super::drop_checked::<Module>(hmod)
 }

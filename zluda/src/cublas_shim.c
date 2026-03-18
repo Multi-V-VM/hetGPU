@@ -224,6 +224,24 @@ typedef enum {
 #define DEBUG_LOG(fmt, ...) fprintf(stderr, "[hetGPU cublas_shim] " fmt "\n", ##__VA_ARGS__)
 
 // External Rust function for TMatmul GEMM execution
+// Weak symbol: overridden by tmatmul_interpreter.rs when tmatmul feature is enabled.
+// Without tmatmul, this stub returns -1 (not available).
+__attribute__((weak)) int hetgpu_tmatmul_gemm(
+    int transa, int transb,
+    int m, int n, int k,
+    float alpha,
+    const void *A, int Atype, int lda,
+    const void *B, int Btype, int ldb,
+    float beta,
+    void *C, int Ctype, int ldc
+) {
+    (void)transa; (void)transb; (void)m; (void)n; (void)k;
+    (void)alpha; (void)A; (void)Atype; (void)lda;
+    (void)B; (void)Btype; (void)ldb;
+    (void)beta; (void)C; (void)Ctype; (void)ldc;
+    return -1; // TMatmul not available
+}
+
 extern int hetgpu_tmatmul_gemm(
     int transa, int transb,
     int m, int n, int k,
