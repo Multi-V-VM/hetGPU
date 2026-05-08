@@ -9,12 +9,11 @@ use std::{
     fmt::Write,
     iter,
 };
-use strum::IntoEnumIterator;
-use strum_macros::EnumIter;
 
 pub(crate) mod debug_integration;
 mod deparamize_functions;
 pub(crate) mod emit_llvm;
+pub mod emit_pacc_vcix;
 pub mod emit_tmatmul_asm;
 pub(crate) mod emit_tosa_mlir;
 mod expand_operands;
@@ -34,12 +33,12 @@ mod normalize_identifiers2;
 mod normalize_predicates2;
 pub mod ptx_to_tmatmul;
 mod remove_unreachable_basic_blocks;
-pub mod tmatmul_algorithm_tree;
 mod replace_instructions_with_function_calls;
 mod replace_instructions_with_functions;
 mod replace_instructions_with_functions_fp_required;
 mod replace_known_functions;
 mod resolve_function_pointers;
+pub mod tmatmul_algorithm_tree;
 
 #[cfg(test)]
 mod test;
@@ -51,6 +50,22 @@ static ZLUDA_PTX_IMPL: &'static [u8] = include_bytes!("../../lib/zluda_ptx_ze_im
 #[cfg(not(any(feature = "amd", feature = "intel")))]
 static ZLUDA_PTX_IMPL: &'static [u8] = include_bytes!("../../lib/zluda_ptx_impl.bc");
 const ZLUDA_PTX_PREFIX: &'static str = "__zluda_ptx_impl_";
+
+/// `ggml_*` and `micro_kernel_*` symbols are implemented by the linked PACC
+/// operator bitcode compiled from the llama.cpp-side operator sources. Keep
+/// their names stable so the later ELF/device-side link step can resolve them
+/// directly instead of rewriting them into the generic ZLUDA helper namespace.
+pub(crate) fn is_passthrough_external_symbol(name: &str) -> bool {
+    name.starts_with("ggml_") || name.starts_with("micro_kernel_")
+}
+
+pub(crate) fn lower_external_symbol_name<'input>(name: Cow<'input, str>) -> Cow<'input, str> {
+    if is_passthrough_external_symbol(name.as_ref()) {
+        name
+    } else {
+        Cow::Owned(format!("{}{}", ZLUDA_PTX_PREFIX, name))
+    }
+}
 
 quick_error! {
     #[derive(Debug, strum_macros::AsRefStr)]
@@ -110,8 +125,17 @@ pub fn to_llvm_module<'input>(
     on_pass_end("normalize_basic_blocks");
     let directives = remove_unreachable_basic_blocks::run(directives)?;
     on_pass_end("remove_unreachable_basic_blocks");
-    let directives = instruction_mode_to_global_mode::run(&mut flat_resolver, directives)?;
-    on_pass_end("instruction_mode_to_global_mode");
+    #[cfg(feature = "pacc")]
+    let directives = {
+        on_pass_end("instruction_mode_to_global_mode(skipped_pacc)");
+        directives
+    };
+    #[cfg(not(feature = "pacc"))]
+    let directives = {
+        let directives = instruction_mode_to_global_mode::run(&mut flat_resolver, directives)?;
+        on_pass_end("instruction_mode_to_global_mode");
+        directives
+    };
     let directives = insert_explicit_load_store::run(&mut flat_resolver, directives)?;
     on_pass_end("insert_explicit_load_store");
     let directives = insert_implicit_conversions2::run(&mut flat_resolver, directives)?;
@@ -122,6 +146,8 @@ pub fn to_llvm_module<'input>(
     on_pass_end("hoist_globals");
     let context = llvm::Context::new();
     let llvm_ir = llvm::emit::run(&context, flat_resolver, directives)?;
+    #[cfg(feature = "pacc")]
+    llvm_ir.force_all_function_call_conv(0);
     let attributes_ir = llvm::attributes::run(&context, attributes)?;
     on_pass_end("emit_llvm");
     Ok(Module {
@@ -303,7 +329,7 @@ pub fn to_llvm_module_with_debug_round_trip<'input>(
         // Create memory buffer from the module's bitcode
         let bitcode_data = &*bitcode_buf;
         let mem_buf = LLVMCreateMemoryBufferWithMemoryRangeCopy(
-            bitcode_data.as_ptr() as *const i8,
+            bitcode_data.as_ptr().cast(),
             bitcode_data.len(),
             CString::new("module").unwrap().as_ptr(),
         );
@@ -440,7 +466,7 @@ pub fn to_llvm_module_with_debug_round_trip_and_filename<'input>(
         // Create memory buffer from the module's bitcode
         let bitcode_data = &*bitcode_buf;
         let mem_buf = LLVMCreateMemoryBufferWithMemoryRangeCopy(
-            bitcode_data.as_ptr() as *const i8,
+            bitcode_data.as_ptr().cast(),
             bitcode_data.len(),
             CString::new("module").unwrap().as_ptr(),
         );
@@ -595,19 +621,42 @@ pub fn ptx_ast_to_tmatmul_assembly<'input>(
         .map_err(|e| TranslateError::UnexpectedError(e))
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone, EnumIter)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
 enum PtxSpecialRegister {
     Tid,
     Ntid,
     Ctaid,
     Nctaid,
     Clock,
+    LanemaskEq,
     LanemaskLt,
+    LanemaskLe,
     LanemaskGe,
+    LanemaskGt,
     Laneid,
+    Envreg(u8),
 }
 
 impl PtxSpecialRegister {
+    fn iter() -> impl Iterator<Item = Self> {
+        const FIXED: [PtxSpecialRegister; 11] = [
+            PtxSpecialRegister::Tid,
+            PtxSpecialRegister::Ntid,
+            PtxSpecialRegister::Ctaid,
+            PtxSpecialRegister::Nctaid,
+            PtxSpecialRegister::Clock,
+            PtxSpecialRegister::LanemaskEq,
+            PtxSpecialRegister::LanemaskLt,
+            PtxSpecialRegister::LanemaskLe,
+            PtxSpecialRegister::LanemaskGe,
+            PtxSpecialRegister::LanemaskGt,
+            PtxSpecialRegister::Laneid,
+        ];
+        FIXED
+            .into_iter()
+            .chain((0u8..=31).map(PtxSpecialRegister::Envreg))
+    }
+
     fn as_str(self) -> &'static str {
         match self {
             Self::Tid => "%tid",
@@ -615,9 +664,45 @@ impl PtxSpecialRegister {
             Self::Ctaid => "%ctaid",
             Self::Nctaid => "%nctaid",
             Self::Clock => "%clock",
+            Self::LanemaskEq => "%lanemask_eq",
             Self::LanemaskLt => "%lanemask_lt",
+            Self::LanemaskLe => "%lanemask_le",
             Self::LanemaskGe => "%lanemask_ge",
+            Self::LanemaskGt => "%lanemask_gt",
             Self::Laneid => "%laneid",
+            Self::Envreg(0) => "%envreg0",
+            Self::Envreg(1) => "%envreg1",
+            Self::Envreg(2) => "%envreg2",
+            Self::Envreg(3) => "%envreg3",
+            Self::Envreg(4) => "%envreg4",
+            Self::Envreg(5) => "%envreg5",
+            Self::Envreg(6) => "%envreg6",
+            Self::Envreg(7) => "%envreg7",
+            Self::Envreg(8) => "%envreg8",
+            Self::Envreg(9) => "%envreg9",
+            Self::Envreg(10) => "%envreg10",
+            Self::Envreg(11) => "%envreg11",
+            Self::Envreg(12) => "%envreg12",
+            Self::Envreg(13) => "%envreg13",
+            Self::Envreg(14) => "%envreg14",
+            Self::Envreg(15) => "%envreg15",
+            Self::Envreg(16) => "%envreg16",
+            Self::Envreg(17) => "%envreg17",
+            Self::Envreg(18) => "%envreg18",
+            Self::Envreg(19) => "%envreg19",
+            Self::Envreg(20) => "%envreg20",
+            Self::Envreg(21) => "%envreg21",
+            Self::Envreg(22) => "%envreg22",
+            Self::Envreg(23) => "%envreg23",
+            Self::Envreg(24) => "%envreg24",
+            Self::Envreg(25) => "%envreg25",
+            Self::Envreg(26) => "%envreg26",
+            Self::Envreg(27) => "%envreg27",
+            Self::Envreg(28) => "%envreg28",
+            Self::Envreg(29) => "%envreg29",
+            Self::Envreg(30) => "%envreg30",
+            Self::Envreg(31) => "%envreg31",
+            Self::Envreg(_) => unreachable!(),
         }
     }
 
@@ -638,9 +723,13 @@ impl PtxSpecialRegister {
             PtxSpecialRegister::Ctaid => ast::ScalarType::U32,
             PtxSpecialRegister::Nctaid => ast::ScalarType::U32,
             PtxSpecialRegister::Clock => ast::ScalarType::U32,
+            PtxSpecialRegister::LanemaskEq => ast::ScalarType::U32,
             PtxSpecialRegister::LanemaskLt => ast::ScalarType::U32,
+            PtxSpecialRegister::LanemaskLe => ast::ScalarType::U32,
             PtxSpecialRegister::LanemaskGe => ast::ScalarType::U32,
+            PtxSpecialRegister::LanemaskGt => ast::ScalarType::U32,
             PtxSpecialRegister::Laneid => ast::ScalarType::U32,
+            PtxSpecialRegister::Envreg(_) => ast::ScalarType::U32,
         }
     }
 
@@ -651,9 +740,13 @@ impl PtxSpecialRegister {
             | PtxSpecialRegister::Ctaid
             | PtxSpecialRegister::Nctaid => Some(ast::ScalarType::U8),
             PtxSpecialRegister::Clock
+            | PtxSpecialRegister::LanemaskEq
             | PtxSpecialRegister::LanemaskLt
+            | PtxSpecialRegister::LanemaskLe
             | PtxSpecialRegister::LanemaskGe
-            | PtxSpecialRegister::Laneid => None,
+            | PtxSpecialRegister::LanemaskGt
+            | PtxSpecialRegister::Laneid
+            | PtxSpecialRegister::Envreg(_) => None,
         }
     }
 
@@ -664,16 +757,61 @@ impl PtxSpecialRegister {
             PtxSpecialRegister::Ctaid => "sreg_ctaid",
             PtxSpecialRegister::Nctaid => "sreg_nctaid",
             PtxSpecialRegister::Clock => "sreg_clock",
+            PtxSpecialRegister::LanemaskEq => "sreg_lanemask_eq",
             PtxSpecialRegister::LanemaskLt => "sreg_lanemask_lt",
+            PtxSpecialRegister::LanemaskLe => "sreg_lanemask_le",
             PtxSpecialRegister::LanemaskGe => "sreg_lanemask_ge",
+            PtxSpecialRegister::LanemaskGt => "sreg_lanemask_gt",
             PtxSpecialRegister::Laneid => "sreg_laneid",
+            PtxSpecialRegister::Envreg(0) => "sreg_envreg0",
+            PtxSpecialRegister::Envreg(1) => "sreg_envreg1",
+            PtxSpecialRegister::Envreg(2) => "sreg_envreg2",
+            PtxSpecialRegister::Envreg(3) => "sreg_envreg3",
+            PtxSpecialRegister::Envreg(4) => "sreg_envreg4",
+            PtxSpecialRegister::Envreg(5) => "sreg_envreg5",
+            PtxSpecialRegister::Envreg(6) => "sreg_envreg6",
+            PtxSpecialRegister::Envreg(7) => "sreg_envreg7",
+            PtxSpecialRegister::Envreg(8) => "sreg_envreg8",
+            PtxSpecialRegister::Envreg(9) => "sreg_envreg9",
+            PtxSpecialRegister::Envreg(10) => "sreg_envreg10",
+            PtxSpecialRegister::Envreg(11) => "sreg_envreg11",
+            PtxSpecialRegister::Envreg(12) => "sreg_envreg12",
+            PtxSpecialRegister::Envreg(13) => "sreg_envreg13",
+            PtxSpecialRegister::Envreg(14) => "sreg_envreg14",
+            PtxSpecialRegister::Envreg(15) => "sreg_envreg15",
+            PtxSpecialRegister::Envreg(16) => "sreg_envreg16",
+            PtxSpecialRegister::Envreg(17) => "sreg_envreg17",
+            PtxSpecialRegister::Envreg(18) => "sreg_envreg18",
+            PtxSpecialRegister::Envreg(19) => "sreg_envreg19",
+            PtxSpecialRegister::Envreg(20) => "sreg_envreg20",
+            PtxSpecialRegister::Envreg(21) => "sreg_envreg21",
+            PtxSpecialRegister::Envreg(22) => "sreg_envreg22",
+            PtxSpecialRegister::Envreg(23) => "sreg_envreg23",
+            PtxSpecialRegister::Envreg(24) => "sreg_envreg24",
+            PtxSpecialRegister::Envreg(25) => "sreg_envreg25",
+            PtxSpecialRegister::Envreg(26) => "sreg_envreg26",
+            PtxSpecialRegister::Envreg(27) => "sreg_envreg27",
+            PtxSpecialRegister::Envreg(28) => "sreg_envreg28",
+            PtxSpecialRegister::Envreg(29) => "sreg_envreg29",
+            PtxSpecialRegister::Envreg(30) => "sreg_envreg30",
+            PtxSpecialRegister::Envreg(31) => "sreg_envreg31",
+            PtxSpecialRegister::Envreg(_) => unreachable!(),
         }
     }
 }
 
+#[track_caller]
 #[cfg(debug_assertions)]
 fn error_unreachable() -> TranslateError {
-    unreachable!()
+    let loc = std::panic::Location::caller();
+    let bt = std::backtrace::Backtrace::force_capture();
+    TranslateError::UnexpectedError(format!(
+        "unreachable path at {}:{}:{}\nbacktrace:\n{}",
+        loc.file(),
+        loc.line(),
+        loc.column(),
+        bt
+    ))
 }
 
 #[cfg(not(debug_assertions))]
@@ -681,9 +819,17 @@ fn error_unreachable() -> TranslateError {
     TranslateError::Unreachable
 }
 
+#[track_caller]
 #[cfg(debug_assertions)]
 fn error_todo_msg<T: Into<String>>(msg: T) -> TranslateError {
-    unreachable!("{}", msg.into())
+    let loc = std::panic::Location::caller();
+    TranslateError::Todo(format!(
+        "{} @ {}:{}:{}",
+        msg.into(),
+        loc.file(),
+        loc.line(),
+        loc.column()
+    ))
 }
 
 #[cfg(not(debug_assertions))]
@@ -691,9 +837,16 @@ fn error_todo_msg<T: Into<String>>(msg: T) -> TranslateError {
     TranslateError::Todo(msg.into())
 }
 
+#[track_caller]
 #[cfg(debug_assertions)]
 fn error_todo() -> TranslateError {
-    unreachable!()
+    let loc = std::panic::Location::caller();
+    TranslateError::Todo(format!(
+        "todo path at {}:{}:{}",
+        loc.file(),
+        loc.line(),
+        loc.column()
+    ))
 }
 
 #[cfg(not(debug_assertions))]
@@ -703,7 +856,14 @@ fn error_todo() -> TranslateError {
 
 #[cfg(debug_assertions)]
 fn error_unknown_symbol<T: Into<String>>(symbol: T) -> TranslateError {
-    panic!("Unknown symbol: \"{}\"", symbol.into())
+    let loc = std::panic::Location::caller();
+    TranslateError::UnknownSymbol(format!(
+        "{} (at {}:{}:{})",
+        symbol.into(),
+        loc.file(),
+        loc.line(),
+        loc.column()
+    ))
 }
 
 #[cfg(not(debug_assertions))]
@@ -713,7 +873,7 @@ fn error_unknown_symbol<T: Into<String>>(symbol: T) -> TranslateError {
 
 #[cfg(debug_assertions)]
 fn error_mismatched_type() -> TranslateError {
-    panic!("Mismatched type")
+    TranslateError::MismatchedType
 }
 
 #[cfg(not(debug_assertions))]
@@ -772,7 +932,7 @@ impl<T: ast::Operand<Ident = SpirvWord>> Statement<ast::Instruction<T>, T> {
     ) -> std::result::Result<Statement<ast::Instruction<To>, To>, Err> {
         Ok(match self {
             Statement::Instruction(i) => {
-                return ast::visit_map(i, visitor).map(Statement::Instruction)
+                return ast::visit_map(i, visitor).map(Statement::Instruction);
             }
             Statement::Label(label) => {
                 Statement::Label(visitor.visit_ident(label, None, false, false)?)
@@ -1437,7 +1597,7 @@ impl SpecialRegistersMap {
     }
 
     fn len() -> usize {
-        PtxSpecialRegister::iter().len()
+        11 + 32
     }
 
     fn foreach_declaration<'a, 'input>(

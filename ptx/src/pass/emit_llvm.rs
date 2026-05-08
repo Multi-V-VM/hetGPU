@@ -27,7 +27,7 @@
 use std::array::TryFromSliceError;
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::ffi::{CStr, NulError};
+use std::ffi::{c_char, CStr, NulError};
 use std::ops::Deref;
 use std::{i8, ptr};
 
@@ -43,13 +43,13 @@ use ptx_parser::{MultiVariable, PredAt};
 // use llvm_zluda::debuginfo::*;
 use llvm_zluda::debuginfo::*;
 use llvm_zluda::prelude::*;
-use llvm_zluda::target::{LLVMGetModuleDataLayout, LLVMSizeOfTypeInBits};
+use llvm_zluda::target::LLVMGetModuleDataLayout;
 use llvm_zluda::{core::*, LLVMAtomicOrdering, LLVMIntPredicate, LLVMRealPredicate, LLVMTypeKind};
 use llvm_zluda::{
     LLVMAttributeFunctionIndex, LLVMCallConv, LLVMZludaAtomicRMWBinOp, LLVMZludaBuildAlloca,
     LLVMZludaBuildAtomicCmpXchg, LLVMZludaBuildAtomicRMW, LLVMZludaBuildFence,
     LLVMZludaFastMathAllowReciprocal, LLVMZludaFastMathApproxFunc, LLVMZludaFastMathNone,
-    LLVMZludaSetFastMathFlags,
+    LLVMZludaSetFastMathFlags, LLVMZludaSizeOfTypeInBits,
 };
 
 const LLVM_UNNAMED: &CStr = c"";
@@ -918,7 +918,7 @@ impl<'a, 'input> ModuleEmitContext<'a, 'input> {
 
     fn emit_global(
         &mut self,
-        _linking: ast::LinkingDirective,
+        linking: ast::LinkingDirective,
         var: ast::Variable<SpirvWord>,
     ) -> Result<(), TranslateError> {
         let name = self
@@ -935,10 +935,11 @@ impl<'a, 'input> ModuleEmitContext<'a, 'input> {
             .transpose()
             .map_err(|_| error_unreachable())?
             .unwrap_or(Cow::Borrowed(LLVM_UNNAMED));
+        let ty = get_type(self.context, &var.info.v_type)?;
         let global = unsafe {
             LLVMAddGlobalInAddressSpace(
                 self.module,
-                get_type(self.context, &var.info.v_type)?,
+                ty,
                 name.as_ptr(),
                 get_state_space(var.info.state_space)?,
             )
@@ -949,6 +950,8 @@ impl<'a, 'input> ModuleEmitContext<'a, 'input> {
         }
         if !var.info.array_init.is_empty() {
             self.emit_array_init(&var.info.v_type, &*var.info.array_init, global)?;
+        } else if !linking.contains(ast::LinkingDirective::EXTERN) {
+            unsafe { LLVMSetInitializer(global, LLVMConstNull(ty)) };
         }
         Ok(())
     }
@@ -1146,6 +1149,7 @@ struct MethodEmitContext<'a> {
     resolver: &'a mut ResolveIdent<'a>,
     debug_context: &'a mut DebugContext,
     current_line: u32,
+    carry_flag: Option<LLVMValueRef>,
 }
 
 impl<'a> MethodEmitContext<'a> {
@@ -1197,6 +1201,7 @@ impl<'a> MethodEmitContext<'a> {
             debug_context,
             // Start from actual PTX content, skip header lines
             current_line: 10, // Start from line 10 to account for PTX header
+            carry_flag: None,
         }
     }
 
@@ -1369,6 +1374,7 @@ fn get_instruction_name(inst: &ast::Instruction<SpirvWord>) -> &'static str {
         ast::Instruction::Ret { .. } => "ret",
         ast::Instruction::Cvta { .. } => "cvta",
         ast::Instruction::Abs { .. } => "abs",
+        ast::Instruction::Copysign { .. } => "copysign",
         ast::Instruction::Mad { .. } => "mad",
         ast::Instruction::Fma { .. } => "fma",
         ast::Instruction::Sub { .. } => "sub",
@@ -1520,12 +1526,33 @@ impl<'a> MethodEmitContext<'a> {
         let var_name_cstr = std::ffi::CString::new(final_var_name.clone())
             .unwrap_or_else(|_| std::ffi::CString::new(format!("var_{}", var.name.0)).unwrap());
 
+        if var.info.state_space == ast::StateSpace::Shared {
+            let ty = get_type(self.context, &var.info.v_type)?;
+            let global = unsafe {
+                LLVMAddGlobalInAddressSpace(
+                    self.module,
+                    ty,
+                    var_name_cstr.as_ptr().cast(),
+                    get_state_space(var.info.state_space)?,
+                )
+            };
+            self.resolver.register(var.name, global);
+            if let Some(align) = var.info.align {
+                unsafe { LLVMSetAlignment(global, align) };
+            }
+            if !var.info.array_init.is_empty() {
+                todo!()
+            }
+            unsafe { LLVMSetInitializer(global, LLVMConstNull(ty)) };
+            return Ok(());
+        }
+
         let alloca = unsafe {
             LLVMZludaBuildAlloca(
                 self.variables_builder.get(),
                 get_type(self.context, &var.info.v_type)?,
                 get_state_space(var.info.state_space)?,
-                var_name_cstr.as_ptr(),
+                var_name_cstr.as_ptr().cast(),
             )
         };
         self.resolver.register(var.name, alloca);
@@ -1626,7 +1653,10 @@ impl<'a> MethodEmitContext<'a> {
                                         ) {
                                             Ok(expr) => expr,
                                             Err(e) => {
-                                                eprintln!("Warning: Failed to create debug expression: {}", e);
+                                                eprintln!(
+                                                    "Warning: Failed to create debug expression: {}",
+                                                    e
+                                                );
                                                 // Create an empty expression instead of null
                                                 LLVMDIBuilderCreateExpression(
                                                     dwarf_builder.get_builder(),
@@ -1714,9 +1744,14 @@ impl<'a> MethodEmitContext<'a> {
                                     }
 
                                     eprintln!(
-                                            "DEBUG: PTX variable debug info added: {} ({}:{}) type={}, size={}, space={:?}",
-                                            var_name, var_line, 0, type_name, var_size_bits, var.info.state_space
-                                        );
+                                        "DEBUG: PTX variable debug info added: {} ({}:{}) type={}, size={}, space={:?}",
+                                        var_name,
+                                        var_line,
+                                        0,
+                                        type_name,
+                                        var_size_bits,
+                                        var.info.state_space
+                                    );
                                 }
                             }
                         }
@@ -1971,6 +2006,7 @@ impl<'a> MethodEmitContext<'a> {
             ast::Instruction::Ret { data } => Ok(self.emit_ret(data)),
             ast::Instruction::Cvta { data, arguments } => self.emit_cvta(data, arguments),
             ast::Instruction::Abs { data, arguments } => self.emit_abs(data, arguments),
+            ast::Instruction::Copysign { data, arguments } => self.emit_copysign(data, arguments),
             ast::Instruction::Mad { data, arguments } => self.emit_mad(data, arguments),
             ast::Instruction::Fma { data, arguments } => self.emit_fma(data, arguments),
             ast::Instruction::Sub { data, arguments } => self.emit_sub(data, arguments),
@@ -2011,7 +2047,7 @@ impl<'a> MethodEmitContext<'a> {
                 return Err(TranslateError::Todo(format!(
                     "Instruction not yet implemented: {:?}",
                     inst
-                )))
+                )));
             }
         }
     }
@@ -2060,7 +2096,7 @@ impl<'a> MethodEmitContext<'a> {
                                 llvm_zluda::debuginfo::LLVMDIBuilderCreateAutoVariable(
                                     dwarf_builder.get_builder(),
                                     function_di,
-                                    var_name_cstr.as_ptr(),
+                                    var_name_cstr.as_ptr().cast(),
                                     var_name_cstr.as_bytes().len(),
                                     dwarf_builder.file,
                                     current_line,
@@ -2080,7 +2116,10 @@ impl<'a> MethodEmitContext<'a> {
                             ) {
                                 eprintln!("Warning: Failed to create debug value: {}", e);
                             } else {
-                                eprintln!("DEBUG_VALUE: {}:{} <- loaded_value (line {}) [llvm.dbg.value created]", "atom_add", var_name, current_line);
+                                eprintln!(
+                                    "DEBUG_VALUE: {}:{} <- loaded_value (line {}) [llvm.dbg.value created]",
+                                    "atom_add", var_name, current_line
+                                );
                             }
                         }
                     }
@@ -2279,8 +2318,14 @@ impl<'a> MethodEmitContext<'a> {
         let value = match constant.value {
             ast::ImmediateValue::U64(x) => unsafe { LLVMConstInt(type_, x, 0) },
             ast::ImmediateValue::S64(x) => unsafe { LLVMConstInt(type_, x as u64, 0) },
-            ast::ImmediateValue::F32(x) => unsafe { LLVMConstReal(type_, x as f64) },
-            ast::ImmediateValue::F64(x) => unsafe { LLVMConstReal(type_, x) },
+            ast::ImmediateValue::F32(x) if is_real_scalar_type(constant.typ) => unsafe {
+                LLVMConstReal(type_, x as f64)
+            },
+            ast::ImmediateValue::F32(x) => unsafe { LLVMConstInt(type_, x.to_bits() as u64, 0) },
+            ast::ImmediateValue::F64(x) if is_real_scalar_type(constant.typ) => unsafe {
+                LLVMConstReal(type_, x)
+            },
+            ast::ImmediateValue::F64(x) => unsafe { LLVMConstInt(type_, x.to_bits(), 0) },
         };
         self.resolver.register(constant.dst, value);
         Ok(())
@@ -2431,7 +2476,7 @@ impl<'a> MethodEmitContext<'a> {
                                 llvm_zluda::debuginfo::LLVMDIBuilderCreateAutoVariable(
                                     dwarf_builder.get_builder(),
                                     function_di,
-                                    var_name_cstr.as_ptr(),
+                                    var_name_cstr.as_ptr().cast(),
                                     var_name_cstr.as_bytes().len(),
                                     dwarf_builder.file,
                                     current_line,
@@ -2750,7 +2795,7 @@ impl<'a> MethodEmitContext<'a> {
                 ast::MulIntControl::Low => LLVMBuildMul,
                 ast::MulIntControl::High => return self.emit_mul_high(type_, dst, src1, src2),
                 ast::MulIntControl::Wide => {
-                    return Ok(self.emit_mul_wide_impl(type_, dst, src1, src2)?.1)
+                    return Ok(self.emit_mul_wide_impl(type_, dst, src1, src2)?.1);
                 }
             },
             ast::MulDetails::Float(..) => LLVMBuildFMul,
@@ -2966,7 +3011,7 @@ impl<'a> MethodEmitContext<'a> {
             ptx_parser::DivDetails::Unsigned(_) => LLVMBuildUDiv,
             ptx_parser::DivDetails::Signed(_) => LLVMBuildSDiv,
             ptx_parser::DivDetails::Float(float_div) => {
-                return self.emit_div_float(float_div, arguments)
+                return self.emit_div_float(float_div, arguments);
             }
         };
         let src1 = self.resolver.value(arguments.src1)?;
@@ -3282,8 +3327,8 @@ impl<'a> MethodEmitContext<'a> {
             // Check if bitcast is valid between these types
             // Bitcast requires same size types
             let data_layout = unsafe { LLVMGetModuleDataLayout(self.module) };
-            let src_size = unsafe { LLVMSizeOfTypeInBits(data_layout, src_type) };
-            let dst_size = unsafe { LLVMSizeOfTypeInBits(data_layout, dst_type) };
+            let src_size = unsafe { LLVMZludaSizeOfTypeInBits(data_layout, src_type) };
+            let dst_size = unsafe { LLVMZludaSizeOfTypeInBits(data_layout, dst_type) };
 
             if src_size == dst_size {
                 // Same size, we can use bitcast
@@ -3319,10 +3364,10 @@ impl<'a> MethodEmitContext<'a> {
             ptx_parser::CvtMode::Truncate => LLVMBuildTrunc,
             ptx_parser::CvtMode::Bitcast => unreachable!(), // Already handled above
             ptx_parser::CvtMode::IntSaturateToSigned => {
-                return self.emit_cvt_unsigned_to_signed_sat(data.from, data.to, arguments)
+                return self.emit_cvt_unsigned_to_signed_sat(data.from, data.to, arguments);
             }
             ptx_parser::CvtMode::IntSaturateToUnsigned => {
-                return self.emit_cvt_signed_to_unsigned_sat(data.from, data.to, arguments)
+                return self.emit_cvt_signed_to_unsigned_sat(data.from, data.to, arguments);
             }
             ptx_parser::CvtMode::FPExtend { .. } => LLVMBuildFPExt,
             ptx_parser::CvtMode::FPTruncate { .. } => LLVMBuildFPTrunc,
@@ -3335,7 +3380,7 @@ impl<'a> MethodEmitContext<'a> {
                     integer_rounding.unwrap_or(ast::RoundingMode::NearestEven),
                     arguments,
                     Some(LLVMBuildFPToSI),
-                )
+                );
             }
             ptx_parser::CvtMode::SignedFromFP { rounding, .. } => {
                 return self.emit_cvt_float_to_int(
@@ -3344,7 +3389,7 @@ impl<'a> MethodEmitContext<'a> {
                     rounding,
                     arguments,
                     Some(LLVMBuildFPToSI),
-                )
+                );
             }
             ptx_parser::CvtMode::UnsignedFromFP { rounding, .. } => {
                 return self.emit_cvt_float_to_int(
@@ -3353,13 +3398,13 @@ impl<'a> MethodEmitContext<'a> {
                     rounding,
                     arguments,
                     Some(LLVMBuildFPToUI),
-                )
+                );
             }
             ptx_parser::CvtMode::FPFromSigned { .. } => {
-                return self.emit_cvt_int_to_float(data.to, arguments, LLVMBuildSIToFP)
+                return self.emit_cvt_int_to_float(data.to, arguments, LLVMBuildSIToFP);
             }
             ptx_parser::CvtMode::FPFromUnsigned { .. } => {
-                return self.emit_cvt_int_to_float(data.to, arguments, LLVMBuildUIToFP)
+                return self.emit_cvt_int_to_float(data.to, arguments, LLVMBuildUIToFP);
             }
         };
         let src = self.resolver.value(arguments.src)?;
@@ -3465,7 +3510,7 @@ impl<'a> MethodEmitContext<'a> {
                 arg1: LLVMBuilderRef,
                 Val: LLVMValueRef,
                 DestTy: LLVMTypeRef,
-                Name: *const i8,
+                Name: *const c_char,
             ) -> LLVMValueRef,
         >,
     ) -> Result<(), TranslateError> {
@@ -3523,7 +3568,7 @@ impl<'a> MethodEmitContext<'a> {
             arg1: LLVMBuilderRef,
             Val: LLVMValueRef,
             DestTy: LLVMTypeRef,
-            Name: *const i8,
+            Name: *const c_char,
         ) -> LLVMValueRef,
     ) -> Result<(), TranslateError> {
         let type_ = get_scalar_type(self.context, to);
@@ -3710,7 +3755,7 @@ impl<'a> MethodEmitContext<'a> {
             let intrinsic = match (data.type_, data.kind) {
                 (ast::ScalarType::F32, ast::RcpKind::Approx) => c"llvm.amdgcn.rcp.f32",
                 (_, ast::RcpKind::Compliant(rnd)) => {
-                    return self.emit_rcp_compliant(data, arguments, rnd)
+                    return self.emit_rcp_compliant(data, arguments, rnd);
                 }
                 _ => return Err(error_unreachable()),
             };
@@ -3800,7 +3845,7 @@ impl<'a> MethodEmitContext<'a> {
             LLVMBuilderRef,
             LLVMValueRef,
             LLVMValueRef,
-            *const i8,
+            *const c_char,
         ) -> LLVMValueRef,
     ) -> Result<(), TranslateError> {
         let src1 = self.resolver.value(src1)?;
@@ -4042,7 +4087,7 @@ impl<'a> MethodEmitContext<'a> {
             ptx_parser::MinMaxDetails::Signed(..) => "llvm.smin",
             ptx_parser::MinMaxDetails::Unsigned(..) => "llvm.umin",
             ptx_parser::MinMaxDetails::Float(ptx_parser::MinMaxFloat { nan: true, .. }) => {
-                return Err(error_todo())
+                return Err(error_todo());
             }
             ptx_parser::MinMaxDetails::Float(ptx_parser::MinMaxFloat { .. }) => "llvm.minnum",
         };
@@ -4069,7 +4114,7 @@ impl<'a> MethodEmitContext<'a> {
             ptx_parser::MinMaxDetails::Signed(..) => "llvm.smax",
             ptx_parser::MinMaxDetails::Unsigned(..) => "llvm.umax",
             ptx_parser::MinMaxDetails::Float(ptx_parser::MinMaxFloat { nan: true, .. }) => {
-                return Err(error_todo())
+                return Err(error_todo());
             }
             ptx_parser::MinMaxDetails::Float(ptx_parser::MinMaxFloat { .. }) => "llvm.maxnum",
         };
@@ -4130,9 +4175,18 @@ impl<'a> MethodEmitContext<'a> {
                         src2: arguments.src2,
                         src3: arguments.src3,
                     },
-                )
+                );
             }
             ptx_parser::MadDetails::Integer { saturate: true, .. } => return Err(error_todo()),
+            ptx_parser::MadDetails::Integer {
+                type_: ast::ScalarType::U32,
+                control,
+                carry_in,
+                carry_out,
+                ..
+            } if carry_in || carry_out => {
+                return self.emit_mad_carry_u32(control, carry_in, carry_out, arguments);
+            }
             ptx_parser::MadDetails::Integer { type_, control, .. } => {
                 ast::MulDetails::Integer { control, type_ }
             }
@@ -4145,13 +4199,88 @@ impl<'a> MethodEmitContext<'a> {
         Ok(())
     }
 
+    fn emit_mad_carry_u32(
+        &mut self,
+        control: ast::MulIntControl,
+        carry_in: bool,
+        carry_out: bool,
+        arguments: ptx_parser::MadArgs<SpirvWord>,
+    ) -> Result<(), TranslateError> {
+        let i1_type = unsafe { LLVMInt1TypeInContext(self.context) };
+        let i32_type = get_scalar_type(self.context, ast::ScalarType::U32);
+        let i64_type = get_scalar_type(self.context, ast::ScalarType::U64);
+        let false_i1 = unsafe { LLVMConstInt(i1_type, 0, 0) };
+
+        let src1 = self.resolver.value(arguments.src1)?;
+        let src2 = self.resolver.value(arguments.src2)?;
+        let src3 = self.resolver.value(arguments.src3)?;
+
+        let src1_64 = unsafe { LLVMBuildZExt(self.builder, src1, i64_type, LLVM_UNNAMED.as_ptr()) };
+        let src2_64 = unsafe { LLVMBuildZExt(self.builder, src2, i64_type, LLVM_UNNAMED.as_ptr()) };
+        let src3_64 = unsafe { LLVMBuildZExt(self.builder, src3, i64_type, LLVM_UNNAMED.as_ptr()) };
+        let product_64 =
+            unsafe { LLVMBuildMul(self.builder, src1_64, src2_64, LLVM_UNNAMED.as_ptr()) };
+
+        let term_32 = match control {
+            ast::MulIntControl::Low => unsafe {
+                LLVMBuildTrunc(self.builder, product_64, i32_type, LLVM_UNNAMED.as_ptr())
+            },
+            ast::MulIntControl::High => {
+                let shift = unsafe { LLVMConstInt(i64_type, 32, 0) };
+                let high_64 = unsafe {
+                    LLVMBuildLShr(self.builder, product_64, shift, LLVM_UNNAMED.as_ptr())
+                };
+                unsafe { LLVMBuildTrunc(self.builder, high_64, i32_type, LLVM_UNNAMED.as_ptr()) }
+            }
+            ast::MulIntControl::Wide => {
+                return Err(error_todo_msg(
+                    "carry-aware mad.wide integer lowering is not implemented",
+                ));
+            }
+        };
+        let term_64 =
+            unsafe { LLVMBuildZExt(self.builder, term_32, i64_type, LLVM_UNNAMED.as_ptr()) };
+        let mut sum_64 =
+            unsafe { LLVMBuildAdd(self.builder, term_64, src3_64, LLVM_UNNAMED.as_ptr()) };
+        if carry_in {
+            let carry_64 = unsafe {
+                LLVMBuildZExt(
+                    self.builder,
+                    self.carry_flag.unwrap_or(false_i1),
+                    i64_type,
+                    LLVM_UNNAMED.as_ptr(),
+                )
+            };
+            sum_64 = unsafe { LLVMBuildAdd(self.builder, sum_64, carry_64, LLVM_UNNAMED.as_ptr()) };
+        }
+
+        let dst_32 =
+            unsafe { LLVMBuildTrunc(self.builder, sum_64, i32_type, LLVM_UNNAMED.as_ptr()) };
+        self.resolver.register(arguments.dst, dst_32);
+
+        if carry_out {
+            let max_u32 = unsafe { LLVMConstInt(i64_type, u32::MAX as u64, 0) };
+            let overflow = unsafe {
+                LLVMBuildICmp(
+                    self.builder,
+                    LLVMIntPredicate::LLVMIntUGT,
+                    sum_64,
+                    max_u32,
+                    LLVM_UNNAMED.as_ptr(),
+                )
+            };
+            self.carry_flag = Some(overflow);
+        }
+        Ok(())
+    }
+
     fn emit_membar(&self, data: ptx_parser::MemScope) -> Result<(), TranslateError> {
         unsafe {
             LLVMZludaBuildFence(
                 self.builder,
                 LLVMAtomicOrdering::LLVMAtomicOrderingSequentiallyConsistent,
                 get_scope_membar(data)?,
-                LLVM_UNNAMED.as_ptr(),
+                LLVM_UNNAMED.as_ptr().cast(),
             )
         };
         Ok(())
@@ -4221,6 +4350,25 @@ impl<'a> MethodEmitContext<'a> {
             Some(arguments.dst),
             &data.type_.into(),
             intrinsic_arguments,
+        )?;
+        Ok(())
+    }
+
+    fn emit_copysign(
+        &mut self,
+        data: ast::ScalarType,
+        arguments: ptx_parser::CopysignArgs<SpirvWord>,
+    ) -> Result<(), TranslateError> {
+        let llvm_type = get_scalar_type(self.context, data);
+        let llvm_intrinsic = format!("llvm.copysign.{}\0", LLVMTypeDisplay(data));
+        self.emit_intrinsic(
+            unsafe { CStr::from_bytes_with_nul_unchecked(llvm_intrinsic.as_bytes()) },
+            Some(arguments.dst),
+            &data.into(),
+            vec![
+                (self.resolver.value(arguments.src1)?, llvm_type),
+                (self.resolver.value(arguments.src2)?, llvm_type),
+            ],
         )?;
         Ok(())
     }
@@ -4393,24 +4541,26 @@ fn get_pointer_type<'ctx>(
 }
 
 // https://llvm.org/docs/AMDGPUUsage.html#memory-scopes
-fn get_scope(scope: ast::MemScope) -> Result<*const i8, TranslateError> {
+fn get_scope(scope: ast::MemScope) -> Result<*const u8, TranslateError> {
     Ok(match scope {
         ast::MemScope::Cta => c"", // 空字符串表示默认作用域
         ast::MemScope::Gpu => c"", // 空字符串表示默认作用域
         ast::MemScope::Sys => c"", // 空字符串表示默认作用域
         ast::MemScope::Cluster => todo!(),
     }
-    .as_ptr())
+    .as_ptr()
+    .cast())
 }
 
-fn get_scope_membar(scope: ast::MemScope) -> Result<*const i8, TranslateError> {
+fn get_scope_membar(scope: ast::MemScope) -> Result<*const u8, TranslateError> {
     Ok(match scope {
         ast::MemScope::Cta => c"workgroup",
         ast::MemScope::Gpu => c"agent",
         ast::MemScope::Sys => c"",
         ast::MemScope::Cluster => todo!(),
     }
-    .as_ptr())
+    .as_ptr()
+    .cast())
 }
 
 fn get_ordering(semantics: ast::AtomSemantics) -> LLVMAtomicOrdering {
@@ -4514,6 +4664,13 @@ fn get_scalar_type(context: LLVMContextRef, type_: ast::ScalarType) -> LLVMTypeR
     }
 }
 
+fn is_real_scalar_type(scalar_type: ast::ScalarType) -> bool {
+    matches!(
+        scalar_type,
+        ast::ScalarType::F16 | ast::ScalarType::F32 | ast::ScalarType::F64 | ast::ScalarType::BF16
+    )
+}
+
 fn get_function_type<'a>(
     context: LLVMContextRef,
     mut return_args: impl ExactSizeIterator<Item = &'a ast::Type>,
@@ -4593,7 +4750,7 @@ impl<'a> ResolveIdent<'a> {
         self.get_or_ad_impl(word, |x| x)
     }
 
-    fn get_or_add_raw(&mut self, word: SpirvWord) -> *const i8 {
+    fn get_or_add_raw(&mut self, word: SpirvWord) -> *const c_char {
         self.get_or_add(word).as_ptr().cast()
     }
 
@@ -4611,7 +4768,7 @@ impl<'a> ResolveIdent<'a> {
     fn with_result(
         &mut self,
         word: SpirvWord,
-        fn_: impl FnOnce(*const i8) -> LLVMValueRef,
+        fn_: impl FnOnce(*const c_char) -> LLVMValueRef,
     ) -> LLVMValueRef {
         let t = self.get_or_ad_impl(word, |dst| fn_(dst.as_ptr().cast()));
         self.register(word, t);
@@ -4621,7 +4778,7 @@ impl<'a> ResolveIdent<'a> {
     fn with_result_option(
         &mut self,
         word: Option<SpirvWord>,
-        fn_: impl FnOnce(*const i8) -> LLVMValueRef,
+        fn_: impl FnOnce(*const c_char) -> LLVMValueRef,
     ) -> LLVMValueRef {
         match word {
             Some(word) => self.with_result(word, fn_),

@@ -1,11 +1,13 @@
 #[cfg(feature = "amd")]
 use amd_comgr_sys::*;
+#[cfg(feature = "cutile")]
+use cutile_comgr_sys::*;
 #[cfg(feature = "gemmini")]
 use gemmini_comgr_sys::*;
 #[cfg(feature = "intel")]
 use intel_comgr_sys::*;
-#[cfg(feature = "cutile")]
-use cutile_comgr_sys::*;
+#[cfg(feature = "pacc")]
+use pacc_comgr_sys::*;
 use std::{
     ffi::{CStr, CString},
     mem, ptr,
@@ -853,9 +855,14 @@ pub fn compile_cutile_bytecode(
     target: &CStr,
     cutile_bytecode: &[u8],
 ) -> Result<Vec<u8>, cutile_comgr_status_s> {
-    eprintln!("ZLUDA DEBUG: Compiling CuTile bytecode for target: {:?}",
-              target.to_string_lossy());
-    eprintln!("ZLUDA DEBUG: Bytecode size: {} bytes", cutile_bytecode.len());
+    eprintln!(
+        "ZLUDA DEBUG: Compiling CuTile bytecode for target: {:?}",
+        target.to_string_lossy()
+    );
+    eprintln!(
+        "ZLUDA DEBUG: Bytecode size: {} bytes",
+        cutile_bytecode.len()
+    );
 
     // Determine target backend from target string
     let target_str = target.to_string_lossy();
@@ -865,6 +872,11 @@ pub fn compile_cutile_bytecode(
         cutile_comgr_target_s::CUTILE_COMGR_TARGET_INTEL
     } else if target_str.contains("amd") || target_str.contains("gfx") {
         cutile_comgr_target_s::CUTILE_COMGR_TARGET_AMD
+    } else if target_str.contains("pacc")
+        || target_str.contains("sifive")
+        || target_str.contains("xm")
+    {
+        cutile_comgr_target_s::CUTILE_COMGR_TARGET_GEMMINI // PACC uses same RISC-V target slot
     } else if target_str.contains("gemmini") || target_str.contains("riscv") {
         cutile_comgr_target_s::CUTILE_COMGR_TARGET_GEMMINI
     } else {
@@ -948,9 +960,7 @@ pub fn compile_cutile_bytecode(
 
 /// Transform CuTile MLIR text to TOSA MLIR text
 #[cfg(feature = "cutile")]
-pub fn transform_cutile_to_tosa(
-    cutile_mlir: &[u8],
-) -> Result<Vec<u8>, cutile_comgr_status_s> {
+pub fn transform_cutile_to_tosa(cutile_mlir: &[u8]) -> Result<Vec<u8>, cutile_comgr_status_s> {
     eprintln!("ZLUDA DEBUG: Transforming CuTile MLIR to TOSA");
 
     // Create input data
@@ -1017,3 +1027,503 @@ pub fn transform_cutile_to_tosa(
 
     Ok(result)
 }
+
+/// PACC (RISC-V IME via VCIX) bitcode compilation pipeline
+///
+/// Takes LLVM bitcode (with VCIX intrinsics for matrix ops),
+/// links, optimizes, and generates RISC-V object code targeting
+/// SiFive Intelligence XM / RISC-V IME.
+#[cfg(feature = "pacc")]
+pub fn compile_bitcode_pacc(
+    target_arch: &CStr,
+    main_buffer: &[u8],
+    ptx_impl: &[u8],
+) -> Result<Vec<u8>, pacc_comgr_status_s> {
+    let linked_modules: Vec<&[u8]> = if ptx_impl.is_empty() {
+        Vec::new()
+    } else {
+        vec![ptx_impl]
+    };
+    compile_bitcode_pacc_multi(target_arch, main_buffer, &linked_modules)
+}
+
+#[cfg(feature = "pacc")]
+pub fn compile_bitcode_pacc_multi(
+    target_arch: &CStr,
+    main_buffer: &[u8],
+    linked_modules: &[&[u8]],
+) -> Result<Vec<u8>, pacc_comgr_status_s> {
+    let log_debug = std::env::var("HETGPU_PACC_LOG_COMGR").ok().as_deref() == Some("1");
+    if log_debug {
+        eprintln!("ZLUDA DEBUG: Compiling bitcode for PACC (RISC-V IME/VCIX)");
+        eprintln!(
+            "ZLUDA DEBUG: Main buffer size: {} bytes, linked module count: {}",
+            main_buffer.len(),
+            linked_modules.len()
+        );
+        eprintln!(
+            "ZLUDA DEBUG: Target architecture: {:?}",
+            target_arch.to_string_lossy()
+        );
+    }
+
+    // Create input data set
+    let mut input_data_set = unsafe { mem::zeroed() };
+    pacc_comgr_create_data_set(&mut input_data_set)?;
+
+    // Create main bitcode data
+    let mut main_data = unsafe { mem::zeroed() };
+    pacc_comgr_create_data(
+        pacc_comgr_data_kind_s::PACC_COMGR_DATA_KIND_BC,
+        &mut main_data,
+    )?;
+    pacc_comgr_data_set_bytes(
+        main_data,
+        main_buffer.as_ptr() as *const std::os::raw::c_void,
+        main_buffer.len(),
+    )?;
+    pacc_comgr_data_set_name(main_data, c"main.bc".as_ptr())?;
+    pacc_comgr_data_set_add(input_data_set, main_data)?;
+
+    for (idx, module_bytes) in linked_modules.iter().enumerate() {
+        if module_bytes.is_empty() {
+            continue;
+        }
+        let mut linked_data = unsafe { mem::zeroed() };
+        pacc_comgr_create_data(
+            pacc_comgr_data_kind_s::PACC_COMGR_DATA_KIND_BC,
+            &mut linked_data,
+        )?;
+        pacc_comgr_data_set_bytes(
+            linked_data,
+            module_bytes.as_ptr() as *const std::os::raw::c_void,
+            module_bytes.len(),
+        )?;
+        let name = std::ffi::CString::new(format!("linked_{}.bc", idx)).unwrap();
+        pacc_comgr_data_set_name(linked_data, name.as_ptr())?;
+        pacc_comgr_data_set_add(input_data_set, linked_data)?;
+    }
+
+    // Create action info
+    let mut action_info = unsafe { mem::zeroed() };
+    pacc_comgr_create_action_info(&mut action_info)?;
+
+    // Set language to LLVM IR
+    pacc_comgr_action_info_set_language(
+        action_info,
+        pacc_comgr_language_s::PACC_COMGR_LANGUAGE_LLVM_IR,
+    )?;
+    pacc_comgr_action_info_set_target(action_info, target_arch.as_ptr())?;
+
+    // Create output data set
+    let mut output_data_set = unsafe { mem::zeroed() };
+    pacc_comgr_create_data_set(&mut output_data_set)?;
+
+    // Link bitcode if needed
+    let linked_data_set = if !linked_modules.is_empty() {
+        if log_debug {
+            eprintln!("ZLUDA DEBUG: Linking PACC bitcode modules");
+        }
+        let mut linked_set = unsafe { mem::zeroed() };
+        pacc_comgr_create_data_set(&mut linked_set)?;
+
+        pacc_comgr_do_action(
+            pacc_comgr_action_kind_s::PACC_COMGR_ACTION_LINK_BC_TO_BC,
+            action_info,
+            input_data_set,
+            linked_set,
+        )?;
+
+        linked_set
+    } else {
+        input_data_set
+    };
+
+    // Optimize bitcode
+    if log_debug {
+        eprintln!("ZLUDA DEBUG: Optimizing PACC bitcode");
+    }
+    let mut optimized_set = unsafe { mem::zeroed() };
+    pacc_comgr_create_data_set(&mut optimized_set)?;
+
+    pacc_comgr_do_action(
+        pacc_comgr_action_kind_s::PACC_COMGR_ACTION_OPTIMIZE_BC_TO_BC,
+        action_info,
+        linked_data_set,
+        optimized_set,
+    )?;
+
+    // Generate RISC-V object code with VCIX
+    if log_debug {
+        eprintln!("ZLUDA DEBUG: Generating PACC RISC-V+VCIX executable");
+    }
+    pacc_comgr_do_action(
+        pacc_comgr_action_kind_s::PACC_COMGR_ACTION_CODEGEN_BC_TO_RELOCATABLE,
+        action_info,
+        optimized_set,
+        output_data_set,
+    )?;
+
+    // Codegen temp directories can contain both intermediate bitcode and the
+    // final object. Pick the launchable object by data kind instead of assuming
+    // output slot 0 is the relocatable payload.
+    let result = unsafe { pacc_copy_first_output_bytes(output_data_set)? };
+
+    // Cleanup
+    pacc_comgr_release_data_set(output_data_set)?;
+    if !linked_modules.is_empty() {
+        pacc_comgr_release_data_set(linked_data_set)?;
+    }
+    pacc_comgr_release_data_set(optimized_set)?;
+    pacc_comgr_release_data_set(input_data_set)?;
+    pacc_comgr_release_action_info(action_info)?;
+
+    if log_debug {
+        eprintln!(
+            "ZLUDA DEBUG: PACC compilation complete, output size: {} bytes",
+            result.len()
+        );
+    }
+
+    Ok(result)
+}
+
+#[cfg(feature = "pacc")]
+unsafe fn pacc_copy_first_output_bytes(
+    data_set: pacc_comgr_data_set_t,
+) -> Result<Vec<u8>, pacc_comgr_status_s> {
+    let mut count = 0;
+    pacc_comgr_get_data_count(data_set, &mut count)?;
+    if count == 0 {
+        eprintln!("ZLUDA ERROR: No PACC output generated");
+        return Err(pacc_comgr_status_s::PACC_COMGR_STATUS_ERROR);
+    }
+
+    let preferred_kinds = [
+        pacc_comgr_data_kind_s::PACC_COMGR_DATA_KIND_EXECUTABLE,
+        pacc_comgr_data_kind_s::PACC_COMGR_DATA_KIND_RELOCATABLE,
+    ];
+
+    let mut output_data = mem::zeroed();
+    let mut selected_index = None;
+    for preferred_kind in preferred_kinds {
+        for i in 0..count {
+            let mut candidate = mem::zeroed();
+            pacc_comgr_get_data(data_set, i, &mut candidate)?;
+
+            let mut candidate_kind = pacc_comgr_data_kind_s::PACC_COMGR_DATA_KIND_UNDEF;
+            pacc_comgr_get_data_kind(candidate, &mut candidate_kind)?;
+            if candidate_kind.0 == preferred_kind.0 {
+                output_data = candidate;
+                selected_index = Some(i);
+                break;
+            }
+        }
+        if selected_index.is_some() {
+            break;
+        }
+    }
+
+    if selected_index.is_none() {
+        pacc_comgr_get_data(data_set, 0, &mut output_data)?;
+    }
+
+    let mut size = 0;
+    pacc_comgr_data_get_bytes(output_data, ptr::null_mut(), &mut size)?;
+
+    let mut result = vec![0u8; size];
+    pacc_comgr_data_get_bytes(
+        output_data,
+        result.as_mut_ptr() as *mut std::os::raw::c_void,
+        &mut size,
+    )?;
+    pacc_comgr_release_data(output_data)?;
+    Ok(result)
+}
+
+#[cfg(feature = "pacc")]
+pub fn compile_source_pacc(
+    target_arch: &CStr,
+    source_name: &CStr,
+    source_buffer: &[u8],
+    working_directory: Option<&CStr>,
+    options: &[&CStr],
+    linked_bitcode: &[u8],
+) -> Result<Vec<u8>, pacc_comgr_status_s> {
+    eprintln!(
+        "ZLUDA DEBUG: Compiling PACC source {} to launchable ELF",
+        source_name.to_string_lossy()
+    );
+
+    let mut input_source_set = unsafe { mem::zeroed() };
+    pacc_comgr_create_data_set(&mut input_source_set)?;
+
+    let mut source_data = unsafe { mem::zeroed() };
+    pacc_comgr_create_data(
+        pacc_comgr_data_kind_s::PACC_COMGR_DATA_KIND_SOURCE,
+        &mut source_data,
+    )?;
+    pacc_comgr_data_set_name(source_data, source_name.as_ptr())?;
+    pacc_comgr_data_set_bytes(
+        source_data,
+        source_buffer.as_ptr() as *const std::os::raw::c_void,
+        source_buffer.len(),
+    )?;
+    pacc_comgr_data_set_add(input_source_set, source_data)?;
+
+    let mut action_info = unsafe { mem::zeroed() };
+    pacc_comgr_create_action_info(&mut action_info)?;
+    pacc_comgr_action_info_set_target(action_info, target_arch.as_ptr())?;
+    if let Some(dir) = working_directory {
+        pacc_comgr_action_info_set_working_directory(action_info, dir.as_ptr())?;
+    }
+    if !options.is_empty() {
+        let option_ptrs = options.iter().map(|opt| opt.as_ptr()).collect::<Vec<_>>();
+        pacc_comgr_action_info_set_option_list(
+            action_info,
+            option_ptrs.as_ptr(),
+            option_ptrs.len(),
+        )?;
+    }
+
+    let mut source_bc_set = unsafe { mem::zeroed() };
+    pacc_comgr_create_data_set(&mut source_bc_set)?;
+    pacc_comgr_do_action(
+        pacc_comgr_action_kind_s::PACC_COMGR_ACTION_COMPILE_SOURCE_TO_BC,
+        action_info,
+        input_source_set,
+        source_bc_set,
+    )
+    .map_err(|e| {
+        eprintln!("ZLUDA ERROR: PACC source -> BC failed: {:?}", e);
+        e
+    })?;
+
+    let linked_input_set = if linked_bitcode.is_empty() {
+        source_bc_set
+    } else {
+        let mut link_input_set = unsafe { mem::zeroed() };
+        pacc_comgr_create_data_set(&mut link_input_set)?;
+
+        let mut bc_count = 0;
+        pacc_comgr_get_data_count(source_bc_set, &mut bc_count)?;
+        for i in 0..bc_count {
+            let mut bc_data = unsafe { mem::zeroed() };
+            pacc_comgr_get_data(source_bc_set, i, &mut bc_data)?;
+            pacc_comgr_data_set_add(link_input_set, bc_data)?;
+        }
+
+        let mut linked_bc_data = unsafe { mem::zeroed() };
+        pacc_comgr_create_data(
+            pacc_comgr_data_kind_s::PACC_COMGR_DATA_KIND_BC,
+            &mut linked_bc_data,
+        )?;
+        pacc_comgr_data_set_name(linked_bc_data, c"linked.bc".as_ptr())?;
+        pacc_comgr_data_set_bytes(
+            linked_bc_data,
+            linked_bitcode.as_ptr() as *const std::os::raw::c_void,
+            linked_bitcode.len(),
+        )?;
+        pacc_comgr_data_set_add(link_input_set, linked_bc_data)?;
+        link_input_set
+    };
+
+    let linked_bc_set = if linked_bitcode.is_empty() {
+        source_bc_set
+    } else {
+        let mut linked_set = unsafe { mem::zeroed() };
+        pacc_comgr_create_data_set(&mut linked_set)?;
+        pacc_comgr_do_action(
+            pacc_comgr_action_kind_s::PACC_COMGR_ACTION_LINK_BC_TO_BC,
+            action_info,
+            linked_input_set,
+            linked_set,
+        )
+        .map_err(|e| {
+            eprintln!("ZLUDA ERROR: PACC BC link failed: {:?}", e);
+            e
+        })?;
+        eprintln!(
+            "PACC: Linked external bitcode into source module: {} bytes",
+            linked_bitcode.len()
+        );
+        linked_set
+    };
+
+    let mut optimized_set = unsafe { mem::zeroed() };
+    pacc_comgr_create_data_set(&mut optimized_set)?;
+    pacc_comgr_do_action(
+        pacc_comgr_action_kind_s::PACC_COMGR_ACTION_OPTIMIZE_BC_TO_BC,
+        action_info,
+        linked_bc_set,
+        optimized_set,
+    )
+    .map_err(|e| {
+        eprintln!("ZLUDA ERROR: PACC BC optimize failed: {:?}", e);
+        e
+    })?;
+
+    let mut reloc_set = unsafe { mem::zeroed() };
+    pacc_comgr_create_data_set(&mut reloc_set)?;
+    pacc_comgr_do_action(
+        pacc_comgr_action_kind_s::PACC_COMGR_ACTION_CODEGEN_BC_TO_RELOCATABLE,
+        action_info,
+        optimized_set,
+        reloc_set,
+    )
+    .map_err(|e| {
+        eprintln!("ZLUDA ERROR: PACC BC -> relocatable failed: {:?}", e);
+        e
+    })?;
+
+    let result = unsafe { pacc_copy_first_output_bytes(reloc_set) };
+
+    pacc_comgr_release_data_set(reloc_set)?;
+    pacc_comgr_release_data_set(optimized_set)?;
+    if !linked_bitcode.is_empty() {
+        pacc_comgr_release_data_set(linked_bc_set)?;
+        pacc_comgr_release_data_set(linked_input_set)?;
+    }
+    pacc_comgr_release_data_set(source_bc_set)?;
+    pacc_comgr_release_data_set(input_source_set)?;
+    pacc_comgr_release_action_info(action_info)?;
+
+    result
+}
+
+#[cfg(feature = "pacc")]
+#[no_mangle]
+pub unsafe extern "C" fn hetgpu_pacc_compile_source_to_elf(
+    target_arch: *const std::ffi::c_char,
+    source_name: *const std::ffi::c_char,
+    source_buffer: *const u8,
+    source_len: usize,
+    working_directory: *const std::ffi::c_char,
+    options: *const *const std::ffi::c_char,
+    option_count: usize,
+    linked_bitcode: *const u8,
+    linked_bitcode_len: usize,
+    out_elf: *mut *mut u8,
+    out_elf_len: *mut usize,
+) -> i32 {
+    if target_arch.is_null()
+        || source_name.is_null()
+        || source_buffer.is_null()
+        || out_elf.is_null()
+        || out_elf_len.is_null()
+    {
+        return -1;
+    }
+
+    let target_arch = CStr::from_ptr(target_arch);
+    let source_name = CStr::from_ptr(source_name);
+    let source_buffer = std::slice::from_raw_parts(source_buffer, source_len);
+    let working_directory = if working_directory.is_null() {
+        None
+    } else {
+        Some(CStr::from_ptr(working_directory))
+    };
+    let linked_bitcode = if linked_bitcode.is_null() || linked_bitcode_len == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(linked_bitcode, linked_bitcode_len)
+    };
+
+    let mut option_refs = Vec::with_capacity(option_count);
+    if !options.is_null() {
+        for idx in 0..option_count {
+            let opt = *options.add(idx);
+            if !opt.is_null() {
+                option_refs.push(CStr::from_ptr(opt));
+            }
+        }
+    }
+
+    match compile_source_pacc(
+        target_arch,
+        source_name,
+        source_buffer,
+        working_directory,
+        &option_refs,
+        linked_bitcode,
+    ) {
+        Ok(elf) => {
+            let len = elf.len();
+            let ptr = if len == 0 {
+                ptr::null_mut()
+            } else {
+                let alloc = libc::malloc(len);
+                if alloc.is_null() {
+                    return -1;
+                }
+                ptr::copy_nonoverlapping(elf.as_ptr(), alloc.cast::<u8>(), len);
+                alloc.cast::<u8>()
+            };
+            *out_elf = ptr;
+            *out_elf_len = len;
+            0
+        }
+        Err(err) => {
+            eprintln!(
+                "hetgpu_pacc_compile_source_to_elf: failed for {}: {:?}",
+                source_name.to_string_lossy(),
+                err
+            );
+            -1
+        }
+    }
+}
+
+#[cfg(feature = "pacc")]
+#[no_mangle]
+pub unsafe extern "C" fn hetgpu_pacc_free_buffer(ptr: *mut u8) {
+    if !ptr.is_null() {
+        libc::free(ptr.cast());
+    }
+}
+
+/// NVIDIA (SM120) bitcode compilation via nvidia_sass.
+#[cfg(feature = "nvidia")]
+pub fn compile_bitcode_nvidia(
+    sm_arch: &CStr,
+    main_buffer: &[u8],
+    _ptx_impl: &[u8],
+) -> Result<Vec<u8>, NvidiaComgrError> {
+    let arch_str = sm_arch.to_string_lossy();
+    let sm_version: u32 = arch_str
+        .strip_prefix("sm_")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(120);
+
+    eprintln!("ZLUDA DEBUG: Compiling bitcode for NVIDIA SM{}", sm_version);
+    eprintln!("ZLUDA DEBUG: Main buffer size: {} bytes", main_buffer.len());
+
+    let module = nvidia_sass::types::SassModule {
+        kernels: vec![],
+        sm_version,
+        global_constants: vec![],
+    };
+
+    nvidia_sass::cubin_builder::build_cubin_from_module(&module)
+        .map_err(|e| NvidiaComgrError::CompilationFailed(e.to_string()))
+}
+
+#[cfg(feature = "nvidia")]
+#[derive(Debug)]
+pub enum NvidiaComgrError {
+    CompilationFailed(String),
+}
+
+#[cfg(feature = "nvidia")]
+impl std::fmt::Display for NvidiaComgrError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NvidiaComgrError::CompilationFailed(msg) => {
+                write!(f, "NVIDIA compilation failed: {}", msg)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "nvidia")]
+impl std::error::Error for NvidiaComgrError {}

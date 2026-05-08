@@ -511,12 +511,7 @@ impl DirtyPageTracker {
     }
 
     /// Track a new allocation
-    pub fn track_allocation(
-        &mut self,
-        device_addr: u64,
-        size: u64,
-        alloc_type: AllocationType,
-    ) {
+    pub fn track_allocation(&mut self, device_addr: u64, size: u64, alloc_type: AllocationType) {
         let mut allocation = TrackedAllocation::new(device_addr, size, alloc_type);
 
         // Initialize shadow copy if using software shadow method
@@ -893,7 +888,9 @@ impl RecordingSession {
     /// Register PTX source
     pub fn register_ptx(&self, module_handle: u64, ptx_source: &str) {
         if let Ok(mut trace) = self.trace.lock() {
-            trace.ptx_sources.insert(module_handle, ptx_source.to_string());
+            trace
+                .ptx_sources
+                .insert(module_handle, ptx_source.to_string());
         }
     }
 
@@ -904,11 +901,9 @@ impl RecordingSession {
         }
 
         if let Ok(mut trace) = self.trace.lock() {
-            trace.allocations.push(TrackedAllocation::new(
-                device_addr,
-                size,
-                alloc_type,
-            ));
+            trace
+                .allocations
+                .push(TrackedAllocation::new(device_addr, size, alloc_type));
         }
     }
 
@@ -988,8 +983,14 @@ impl RecordingSession {
         let tracker = self.dirty_tracker.lock().ok();
 
         RecordingStats {
-            kernels_recorded: trace.as_ref().map(|t| t.kernel_launches.len() as u64).unwrap_or(0),
-            allocations_tracked: tracker.as_ref().map(|t| t.get_allocations().len() as u64).unwrap_or(0),
+            kernels_recorded: trace
+                .as_ref()
+                .map(|t| t.kernel_launches.len() as u64)
+                .unwrap_or(0),
+            allocations_tracked: tracker
+                .as_ref()
+                .map(|t| t.get_allocations().len() as u64)
+                .unwrap_or(0),
             recording_duration_ns: self.elapsed_ns(),
             is_active: self.is_active(),
         }
@@ -1039,9 +1040,7 @@ pub fn start_recording(source_backend: Backend, device_name: &str) -> Result<(),
     let session = RecordingSession::new(config, source_backend, device_name);
     session.start();
 
-    let mut guard = get_recording_session()
-        .lock()
-        .map_err(|e| e.to_string())?;
+    let mut guard = get_recording_session().lock().map_err(|e| e.to_string())?;
     *guard = Some(session);
 
     Ok(())
@@ -1049,9 +1048,7 @@ pub fn start_recording(source_backend: Backend, device_name: &str) -> Result<(),
 
 /// Stop recording and save trace
 pub fn stop_recording() -> Result<PathBuf, String> {
-    let guard = get_recording_session()
-        .lock()
-        .map_err(|e| e.to_string())?;
+    let guard = get_recording_session().lock().map_err(|e| e.to_string())?;
 
     if let Some(session) = &*guard {
         session.stop()
@@ -1537,7 +1534,9 @@ impl ReplayEngine {
 
         // Find all input memory snapshots from the first kernel launch
         // and apply them to initialize memory
-        let snapshots: Vec<MemorySnapshot> = self.trace.kernel_launches
+        let snapshots: Vec<MemorySnapshot> = self
+            .trace
+            .kernel_launches
             .first()
             .map(|launch| launch.input_memory.clone())
             .unwrap_or_default();
@@ -1552,10 +1551,15 @@ impl ReplayEngine {
     /// Apply a memory snapshot to reconstructed memory
     fn apply_snapshot(&mut self, snapshot: &MemorySnapshot) -> Result<(), String> {
         let original_addr = snapshot.device_addr;
-        let new_addr = self.address_map.get(&original_addr).copied()
+        let new_addr = self
+            .address_map
+            .get(&original_addr)
+            .copied()
             .ok_or_else(|| format!("No address mapping for 0x{:x}", original_addr))?;
 
-        let memory = self.memory_state.get_mut(&new_addr)
+        let memory = self
+            .memory_state
+            .get_mut(&new_addr)
             .ok_or_else(|| format!("No memory state for 0x{:x}", new_addr))?;
 
         match &snapshot.snapshot_type {
@@ -1688,7 +1692,9 @@ impl ReplayEngine {
         _remapped_args: &[KernelArgument],
     ) -> Result<(), String> {
         // Get compiled module
-        let _module = self.compiled_modules.get(&launch.module_handle)
+        let _module = self
+            .compiled_modules
+            .get(&launch.module_handle)
             .ok_or_else(|| format!("Module 0x{:x} not compiled", launch.module_handle))?;
 
         // In real implementation, this would:
@@ -1703,8 +1709,12 @@ impl ReplayEngine {
                 eprintln!(
                     "  [NVIDIA] Launch {}<<<({},{},{}), ({},{},{})>>>",
                     launch.kernel_name,
-                    launch.grid_dim.0, launch.grid_dim.1, launch.grid_dim.2,
-                    launch.block_dim.0, launch.block_dim.1, launch.block_dim.2
+                    launch.grid_dim.0,
+                    launch.grid_dim.1,
+                    launch.grid_dim.2,
+                    launch.block_dim.0,
+                    launch.block_dim.1,
+                    launch.block_dim.2
                 );
             }
             Backend::Amd => {
@@ -1712,8 +1722,12 @@ impl ReplayEngine {
                 eprintln!(
                     "  [AMD/HIP] Launch {}<<<({},{},{}), ({},{},{})>>>",
                     launch.kernel_name,
-                    launch.grid_dim.0, launch.grid_dim.1, launch.grid_dim.2,
-                    launch.block_dim.0, launch.block_dim.1, launch.block_dim.2
+                    launch.grid_dim.0,
+                    launch.grid_dim.1,
+                    launch.grid_dim.2,
+                    launch.block_dim.0,
+                    launch.block_dim.1,
+                    launch.block_dim.2
                 );
             }
             Backend::Intel => {
@@ -1734,10 +1748,7 @@ impl ReplayEngine {
             }
             Backend::Virtual => {
                 // No actual execution
-                eprintln!(
-                    "  [Virtual] Simulated launch {}",
-                    launch.kernel_name
-                );
+                eprintln!("  [Virtual] Simulated launch {}", launch.kernel_name);
             }
         }
 
@@ -1869,10 +1880,14 @@ impl ReplayEngine {
         }
 
         // Collect allocation info first
-        let alloc_info: Vec<(u64, u64)> = self.trace.allocations
+        let alloc_info: Vec<(u64, u64)> = self
+            .trace
+            .allocations
             .iter()
             .filter_map(|a| {
-                self.address_map.get(&a.device_addr).map(|&new_addr| (new_addr, a.size))
+                self.address_map
+                    .get(&a.device_addr)
+                    .map(|&new_addr| (new_addr, a.size))
             })
             .collect();
 
@@ -2163,11 +2178,10 @@ impl DebugSession {
                 BreakpointType::KernelSequence(seq) => launch.sequence_id == *seq,
                 BreakpointType::KernelName(name) => launch.kernel_name.contains(name),
                 BreakpointType::KernelCount(count) => position as u64 >= *count,
-                BreakpointType::MemoryAccess(addr) => {
-                    launch.arguments.iter().any(|arg| {
-                        arg.device_addr.map_or(false, |a| a == *addr)
-                    })
-                }
+                BreakpointType::MemoryAccess(addr) => launch
+                    .arguments
+                    .iter()
+                    .any(|arg| arg.device_addr.map_or(false, |a| a == *addr)),
             };
 
             if should_break {
@@ -2187,7 +2201,10 @@ impl DebugSession {
 
     /// Get current kernel info
     pub fn current_kernel(&self) -> Option<&RecordedKernelLaunch> {
-        self.engine.trace.kernel_launches.get(self.engine.current_position())
+        self.engine
+            .trace
+            .kernel_launches
+            .get(self.engine.current_position())
     }
 
     /// Print memory at address
@@ -2199,7 +2216,12 @@ impl DebugSession {
         }
 
         let slice = &data[offset..end];
-        let mut output = format!("Memory at 0x{:x}+0x{:x} ({} bytes):\n", original_addr, offset, end - offset);
+        let mut output = format!(
+            "Memory at 0x{:x}+0x{:x} ({} bytes):\n",
+            original_addr,
+            offset,
+            end - offset
+        );
 
         // Hex dump
         for (i, chunk) in slice.chunks(16).enumerate() {
@@ -2233,15 +2255,13 @@ impl ReplayEngine {
         let mut entries = Vec::new();
 
         for launch in &self.trace.kernel_launches {
-            let input_bytes: u64 = launch.input_memory.iter()
-                .map(|s| s.allocation_size)
-                .sum();
-            let output_bytes: u64 = launch.output_memory.iter()
-                .map(|s| s.allocation_size)
-                .sum();
+            let input_bytes: u64 = launch.input_memory.iter().map(|s| s.allocation_size).sum();
+            let output_bytes: u64 = launch.output_memory.iter().map(|s| s.allocation_size).sum();
 
             // Find validation status if available
-            let validation_status = self.validation_results.iter()
+            let validation_status = self
+                .validation_results
+                .iter()
                 .find(|r| r.kernel_sequence == launch.sequence_id)
                 .map(|r| r.passed);
 
@@ -2261,7 +2281,10 @@ impl ReplayEngine {
         }
 
         // Build allocation events
-        let allocations: Vec<AllocationEvent> = self.trace.allocations.iter()
+        let allocations: Vec<AllocationEvent> = self
+            .trace
+            .allocations
+            .iter()
             .map(|a| AllocationEvent {
                 event_type: "alloc".to_string(),
                 device_addr: a.device_addr,
@@ -2270,7 +2293,8 @@ impl ReplayEngine {
             })
             .collect();
 
-        let total_time_ns = entries.iter()
+        let total_time_ns = entries
+            .iter()
             .map(|e| e.start_time_ns + e.duration_ns)
             .max()
             .unwrap_or(0);
@@ -2288,8 +2312,7 @@ impl ReplayEngine {
     /// Export timeline to JSON file
     pub fn export_timeline_json(&self, path: &str) -> Result<(), String> {
         let timeline = self.generate_timeline();
-        let file = File::create(path)
-            .map_err(|e| format!("Failed to create file: {}", e))?;
+        let file = File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
         let writer = BufWriter::new(file);
         serde_json::to_writer_pretty(writer, &timeline)
             .map_err(|e| format!("Failed to write JSON: {}", e))?;
@@ -2305,11 +2328,8 @@ impl ReplayEngine {
     ) -> Option<MemoryDiffReport> {
         let actual = self.read_memory(original_addr)?;
 
-        let allocation = TrackedAllocation::new(
-            original_addr,
-            actual.len() as u64,
-            AllocationType::Device,
-        );
+        let allocation =
+            TrackedAllocation::new(original_addr, actual.len() as u64, AllocationType::Device);
         let dirty_regions = detect_dirty_regions_static(actual, expected, &allocation);
 
         let mut diff_regions = Vec::new();
@@ -2372,7 +2392,11 @@ impl ReplayEngine {
             if failed > 0 {
                 eprintln!("\nFailed Kernels:");
                 for result in self.validation_results.iter().filter(|r| !r.passed) {
-                    eprintln!("  - {}: {} mismatches", result.kernel_name, result.mismatches.len());
+                    eprintln!(
+                        "  - {}: {} mismatches",
+                        result.kernel_name,
+                        result.mismatches.len()
+                    );
                 }
             }
         }

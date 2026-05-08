@@ -26,15 +26,15 @@ use std::path::PathBuf;
 
 use llvm_zluda::core::*;
 use llvm_zluda::{
-    LLVM_InitializeAllTargetInfos, LLVM_InitializeAllTargets, LLVM_InitializeAllTargetMCs,
-    LLVM_InitializeAllAsmPrinters, LLVM_InitializeAllAsmParsers,
-    LLVMVerifyModule, LLVMVerifierFailureAction, LLVMWriteBitcodeToMemoryBuffer,
+    LLVMVerifierFailureAction, LLVMVerifyModule, LLVMWriteBitcodeToMemoryBuffer,
+    LLVM_InitializeAllAsmParsers, LLVM_InitializeAllAsmPrinters, LLVM_InitializeAllTargetInfos,
+    LLVM_InitializeAllTargetMCs, LLVM_InitializeAllTargets,
 };
 
 use ptx::sass::{
-    CubinParser, ControlFlowAnalyzer, EnhancedSassInstruction, SassDisassembler,
-    SassInlineConfig, SassInlineStrategy, SassInliner, SassKernelBuilder,
-    TextDisassemblyParser, PtxRecoveryEngine, PtxReconstructor,
+    ControlFlowAnalyzer, CubinParser, EnhancedSassInstruction, PtxReconstructor, PtxRecoveryEngine,
+    SassDisassembler, SassInlineConfig, SassInlineStrategy, SassInliner, SassKernelBuilder,
+    TextDisassemblyParser,
 };
 
 /// CLI arguments
@@ -120,7 +120,9 @@ fn parse_args() -> Result<Args, String> {
                 }
                 args.strategy = match argv[i].as_str() {
                     "asm" | "inline-asm" | "assembly" => SassInlineStrategy::InlineAssembly,
-                    "ptx" | "reconstruct" | "reconstruction" | "ptx-reconstruction" => SassInlineStrategy::PtxReconstruction,
+                    "ptx" | "reconstruct" | "reconstruction" | "ptx-reconstruction" => {
+                        SassInlineStrategy::PtxReconstruction
+                    }
                     "meta" | "metadata" | "metadata-only" => SassInlineStrategy::MetadataOnly,
                     "hybrid" => SassInlineStrategy::Hybrid,
                     other => return Err(format!("Unknown strategy: {}", other)),
@@ -284,7 +286,11 @@ fn run() -> Result<(), String> {
     };
 
     if args.verbose {
-        eprintln!("Loaded {} instructions from kernel '{}'", instructions.len(), kernel_name);
+        eprintln!(
+            "Loaded {} instructions from kernel '{}'",
+            instructions.len(),
+            kernel_name
+        );
     }
 
     // Dump SASS if requested
@@ -311,11 +317,13 @@ fn run() -> Result<(), String> {
 
                 // Add PTX source if provided
                 if let Some(ref ptx_path) = args.ptx_source {
-                    engine.add_ptx_source(ptx_path)
+                    engine
+                        .add_ptx_source(ptx_path)
                         .map_err(|e| format!("Failed to add PTX source: {}", e))?;
                 }
 
-                let result = engine.recover_all()
+                let result = engine
+                    .recover_all()
                     .map_err(|e| format!("Failed to recover PTX: {}", e))?;
 
                 // Output recovered PTX
@@ -332,7 +340,10 @@ fn run() -> Result<(), String> {
                         .map_err(|e| format!("Failed to write PTX output: {}", e))?;
                     eprintln!("Recovered PTX written to {:?}", ptx_out);
                     eprintln!("  Functions: {}", result.functions.len());
-                    eprintln!("  Total SASS instructions: {}", result.stats.total_sass_instructions);
+                    eprintln!(
+                        "  Total SASS instructions: {}",
+                        result.stats.total_sass_instructions
+                    );
                     eprintln!("  Mapped to PTX: {}", result.stats.mapped_instructions);
                 } else {
                     println!("{}", ptx_content);
@@ -344,7 +355,10 @@ fn run() -> Result<(), String> {
 
         // Fallback: reconstruct PTX from SASS semantics
         let mut reconstructor = PtxReconstructor::new(args.target_sm);
-        let mut ptx_content = format!(".version 7.0\n.target sm_{}\n.address_size 64\n\n", args.target_sm);
+        let mut ptx_content = format!(
+            ".version 7.0\n.target sm_{}\n.address_size 64\n\n",
+            args.target_sm
+        );
         ptx_content.push_str(&format!(".visible .entry {} ()\n{{\n", kernel_name));
         ptx_content.push_str("    .reg .b32 %r<256>;\n");
         ptx_content.push_str("    .reg .pred %p<8>;\n\n");
@@ -415,7 +429,7 @@ fn run() -> Result<(), String> {
 
         // Verify module
         if args.verify {
-            let mut error_msg: *mut i8 = std::ptr::null_mut();
+            let mut error_msg: *mut std::os::raw::c_char = std::ptr::null_mut();
             if LLVMVerifyModule(
                 module,
                 LLVMVerifierFailureAction::LLVMReturnStatusAction,
@@ -423,7 +437,9 @@ fn run() -> Result<(), String> {
             ) != 0
             {
                 let error = if !error_msg.is_null() {
-                    let s = std::ffi::CStr::from_ptr(error_msg).to_string_lossy().to_string();
+                    let s = std::ffi::CStr::from_ptr(error_msg)
+                        .to_string_lossy()
+                        .to_string();
                     LLVMDisposeMessage(error_msg);
                     s
                 } else {
@@ -457,8 +473,7 @@ fn run() -> Result<(), String> {
 
         // Write output
         if let Some(ref path) = args.output {
-            fs::write(path, &output_data)
-                .map_err(|e| format!("Failed to write output: {}", e))?;
+            fs::write(path, &output_data).map_err(|e| format!("Failed to write output: {}", e))?;
             if args.verbose {
                 eprintln!("Wrote output to {:?}", path);
             }
@@ -477,8 +492,8 @@ fn run() -> Result<(), String> {
 }
 
 fn load_from_cubin(args: &Args) -> Result<(Vec<EnhancedSassInstruction>, String), String> {
-    let cubin_data = fs::read(&args.input)
-        .map_err(|e| format!("Failed to read CUBIN file: {}", e))?;
+    let cubin_data =
+        fs::read(&args.input).map_err(|e| format!("Failed to read CUBIN file: {}", e))?;
 
     if args.verbose {
         eprintln!("Read {} bytes from {}", cubin_data.len(), args.input);
@@ -503,8 +518,12 @@ fn load_from_cubin(args: &Args) -> Result<(Vec<EnhancedSassInstruction>, String)
     let kernel_name = kernel.name.clone();
 
     if args.verbose {
-        eprintln!("Processing kernel '{}' (SM {}, {} bytes code)",
-            kernel.name, kernel.sm_version, kernel.code.len());
+        eprintln!(
+            "Processing kernel '{}' (SM {}, {} bytes code)",
+            kernel.name,
+            kernel.sm_version,
+            kernel.code.len()
+        );
     }
 
     // Disassemble
@@ -568,10 +587,14 @@ fn dump_sass_instructions(instructions: &[EnhancedSassInstruction]) {
         print!("{:08x}: {:12}", inst.address, inst.opcode);
 
         // Operands
-        let dest_str: Vec<String> = inst.dest_operands.iter()
+        let dest_str: Vec<String> = inst
+            .dest_operands
+            .iter()
             .map(|op| format!("{:?}", op))
             .collect();
-        let src_str: Vec<String> = inst.src_operands.iter()
+        let src_str: Vec<String> = inst
+            .src_operands
+            .iter()
             .map(|op| format!("{:?}", op))
             .collect();
 
@@ -592,9 +615,15 @@ fn dump_sass_instructions(instructions: &[EnhancedSassInstruction]) {
 
         // Control codes
         let cc = &inst.control_codes;
-        if cc.stall_count > 0 || cc.write_barrier > 0 || cc.read_barrier > 0 || cc.wait_barrier_mask > 0 {
-            println!("          [stall:{} wb:{} rb:{} wait:0x{:x}]",
-                cc.stall_count, cc.write_barrier, cc.read_barrier, cc.wait_barrier_mask);
+        if cc.stall_count > 0
+            || cc.write_barrier > 0
+            || cc.read_barrier > 0
+            || cc.wait_barrier_mask > 0
+        {
+            println!(
+                "          [stall:{} wb:{} rb:{} wait:0x{:x}]",
+                cc.stall_count, cc.write_barrier, cc.read_barrier, cc.wait_barrier_mask
+            );
         }
 
         // PTX mapping
@@ -648,8 +677,15 @@ fn dump_cubin_structure(parsed: &ptx::sass::ParsedCubin) {
     if !parsed.constants.is_empty() {
         println!("\n--- Constants ---");
         for constant in &parsed.constants {
-            println!("  {} (bank {})", constant.name.as_deref().unwrap_or("<unnamed>"), constant.bank);
-            println!("    Offset: 0x{:x}, Size: {} bytes", constant.offset, constant.size);
+            println!(
+                "  {} (bank {})",
+                constant.name.as_deref().unwrap_or("<unnamed>"),
+                constant.bank
+            );
+            println!(
+                "    Offset: 0x{:x}, Size: {} bytes",
+                constant.offset, constant.size
+            );
         }
     }
 

@@ -27,7 +27,7 @@ fn replace_with_ptx_impl<'input>(
     }) = resolver.ident_map.get_mut(&fn_name)
     {
         if known_names.contains(&&**name) {
-            *name = Cow::Owned(format!("__zluda_ptx_impl_{}", name));
+            *name = super::lower_external_symbol_name(name.clone());
         }
     }
 }

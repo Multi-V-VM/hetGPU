@@ -18,11 +18,60 @@ const COMPONENTS: &[&'static str] = &[
     "LLVMNVPTXCodeGen",
     "LLVMNVPTXDesc",
     "LLVMNVPTXInfo",
+    // RISC-V target support for PACC codegen.
+    "LLVMRISCVCodeGen",
+    "LLVMRISCVAsmParser",
+    "LLVMRISCVDesc",
+    "LLVMRISCVDisassembler",
+    "LLVMRISCVInfo",
 ];
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=LLVM_ZLUDA_PREBUILT");
+    println!("cargo:rerun-if-env-changed=LLVM_ZLUDA_CMAKE_PROFILE");
+    println!("cargo:rerun-if-env-changed=LLVM_ZLUDA_COMPILER_LAUNCHER");
+    println!("cargo:rerun-if-env-changed=CMAKE_C_COMPILER_LAUNCHER");
+    println!("cargo:rerun-if-env-changed=CMAKE_CXX_COMPILER_LAUNCHER");
+    println!("cargo:rerun-if-env-changed=CMAKE_ASM_COMPILER_LAUNCHER");
+
+    // Allow using a pre-built LLVM installation via environment variable.
+    // Set LLVM_ZLUDA_PREBUILT to the LLVM prefix directory (e.g. /usr/lib/llvm-18).
+    if let Ok(prebuilt) = std::env::var("LLVM_ZLUDA_PREBUILT") {
+        let llvm_prefix = PathBuf::from(&prebuilt);
+        let llvm_config_path = llvm_prefix.join("bin").join("llvm-config");
+        println!("cargo:warning=Using pre-built LLVM from: {}", prebuilt);
+
+        let (cxxflags, ldflags, libdir, lib_names, system_libs) =
+            llvm_config_from_path(&llvm_config_path).expect("Failed to run llvm-config");
+
+        compile_cxx_lib_with_include(
+            cxxflags,
+            llvm_prefix.join("include").to_str().unwrap().to_string(),
+        );
+        println!("cargo:rustc-link-arg={ldflags}");
+        println!("cargo:rustc-link-search=native={libdir}");
+        link_llvm_components(lib_names);
+        for lib in system_libs.split_ascii_whitespace() {
+            println!("cargo:rustc-link-arg={lib}");
+        }
+
+        let llc_path = llvm_prefix.join("bin").join("llc");
+        let llvm_dis_path = llvm_prefix.join("bin").join("llvm-dis");
+        if llc_path.exists() {
+            println!("cargo:rustc-env=LLC_PATH={}", llc_path.display());
+        }
+        if llvm_dis_path.exists() {
+            println!("cargo:rustc-env=LLVM_DIS_PATH={}", llvm_dis_path.display());
+        }
+        return;
+    }
+
     let mut cmake = Config::new(r"../ext/llvm-project/llvm");
     try_use_ninja(&mut cmake);
+    configure_compiler_launcher(&mut cmake);
+    let cmake_profile =
+        std::env::var("LLVM_ZLUDA_CMAKE_PROFILE").unwrap_or_else(|_| "Release".to_string());
+    cmake.profile(&cmake_profile);
     cmake
         // It's not like we can do anything about the warnings
         .define("LLVM_ENABLE_WARNINGS", "OFF")
@@ -36,29 +85,36 @@ fn main() {
         .define("LLVM_INCLUDE_EXAMPLES", "OFF")
         .define("LLVM_INCLUDE_TESTS", "OFF")
         .define("LLVM_BUILD_TOOLS", "ON")
-        // Build X86 for linking and NVPTX for PTX generation with debug info
-        .define("LLVM_TARGETS_TO_BUILD", "X86;NVPTX")
-        .define("LLVM_ENABLE_PROJECTS", "");
+        // Build X86 for host-side helpers, NVPTX for PTX/debug flows, and
+        // RISCV for PACC object generation. Clang is built from the same
+        // LLVM tree so PACC never has to fall back to system clang.
+        .define("LLVM_TARGETS_TO_BUILD", "X86;NVPTX;RISCV")
+        .define("LLVM_ENABLE_PROJECTS", "clang");
 
     // For some reason Rust always links to release MSVCRT
     #[cfg(windows)]
     cmake.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
 
-    // Override problematic Windows-specific C++ flags on non-Windows platforms
+    // Override problematic Windows-specific C++ flags on non-Windows platforms.
     #[cfg(not(windows))]
-    cmake.define(
-        "CMAKE_CXX_FLAGS",
-        "-ffunction-sections -fdata-sections -fPIC -m64",
-    );
+    {
+        let mut cxx_flags = "-ffunction-sections -fdata-sections -fPIC".to_string();
+        if matches!(std::env::consts::ARCH, "x86" | "x86_64") {
+            cxx_flags.push_str(" -m64");
+        }
+        cmake.define("CMAKE_CXX_FLAGS", cxx_flags);
+    }
 
     cmake.build_target("llvm-config");
     let llvm_dir = cmake.build();
 
-    // Build llc and llvm-dis tools for debug round-trip
-    cmake.build_target("llc");
-    cmake.build();
-    cmake.build_target("llvm-dis");
-    cmake.build();
+    // Build the tools PACC uses from this LLVM tree. Keeping llvm-link/opt/
+    // clang in lockstep with llvm-sys avoids mixing system tools with
+    // the llvm_zluda LLVM 21 libraries.
+    for tool in ["llc", "llvm-dis", "llvm-link", "opt", "clang"] {
+        cmake.build_target(tool);
+        cmake.build();
+    }
 
     for c in COMPONENTS {
         cmake.build_target(c);
@@ -69,22 +125,24 @@ fn main() {
         llvm_config(&llvm_dir, &["build", "bin", "llvm-config"])
             .or_else(|_| llvm_config(&llvm_dir, &["build", cmake_profile, "bin", "llvm-config"]))
             .unwrap();
+    compile_cxx_lib(cxxflags);
     println!("cargo:rustc-link-arg={ldflags}");
     println!("cargo:rustc-link-search=native={libdir}");
     println!(
         "cargo:rustc-link-search=native={libdir}/../../../../../../../ext/llvm-project/build/lib"
     );
+    link_llvm_components(lib_names);
     for lib in system_libs.split_ascii_whitespace() {
         println!("cargo:rustc-link-arg={lib}");
     }
-    link_llvm_components(lib_names);
-    compile_cxx_lib(cxxflags);
 
     // Export LLVM tool paths for debug round-trip testing
     // Try multiple possible locations for the built tools
     let tool_paths = [
         llvm_dir.join("build").join("bin"),
+        llvm_dir.join("build").join("tools"),
         llvm_dir.join("build").join(cmake_profile).join("bin"),
+        llvm_dir.join("build").join(cmake_profile).join("tools"),
         llvm_dir.join("bin"),
     ];
 
@@ -111,13 +169,50 @@ fn try_use_ninja(cmake: &mut Config) {
     }
 }
 
+fn configure_compiler_launcher(cmake: &mut Config) {
+    let launcher = std::env::var("LLVM_ZLUDA_COMPILER_LAUNCHER")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(find_default_compiler_launcher);
+
+    if let Some(launcher) = launcher {
+        println!("cargo:warning=Using LLVM compiler launcher: {launcher}");
+        cmake.define("CMAKE_C_COMPILER_LAUNCHER", &launcher);
+        cmake.define("CMAKE_CXX_COMPILER_LAUNCHER", &launcher);
+        cmake.define("CMAKE_ASM_COMPILER_LAUNCHER", &launcher);
+    }
+}
+
+fn find_default_compiler_launcher() -> Option<String> {
+    for candidate in ["sccache", "ccache"] {
+        if command_available(candidate) {
+            return Some(candidate.to_string());
+        }
+    }
+    None
+}
+
+fn command_available(cmd: &str) -> bool {
+    Command::new(cmd)
+        .arg("--version")
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 fn llvm_config(
     llvm_build_dir: &PathBuf,
     path_to_llvm_config: &[&str],
 ) -> io::Result<(String, String, String, String, String)> {
     let mut llvm_build_path = llvm_build_dir.clone();
     llvm_build_path.extend(path_to_llvm_config);
-    let mut cmd = Command::new(llvm_build_path);
+    llvm_config_from_path(&llvm_build_path)
+}
+
+fn llvm_config_from_path(
+    llvm_config_path: &PathBuf,
+) -> io::Result<(String, String, String, String, String)> {
+    let mut cmd = Command::new(llvm_config_path);
     cmd.args([
         "--link-static",
         "--cxxflags",
@@ -150,6 +245,10 @@ fn llvm_config(
 }
 
 fn compile_cxx_lib(cxxflags: String) {
+    compile_cxx_lib_with_include(cxxflags, "../ext/llvm-project/llvm/include".to_string());
+}
+
+fn compile_cxx_lib_with_include(cxxflags: String, include_path: String) {
     println!(
         "cargo:warning=Compiling C++ library with CXXFLAGS: {}",
         cxxflags
@@ -196,13 +295,15 @@ fn compile_cxx_lib(cxxflags: String) {
         cc.archiver("ar");
     }
 
+    let forced_include = format!("-I{include_path}");
+    cc.flag(&forced_include);
     for flag in cxxflags.split_whitespace() {
+        if flag == forced_include {
+            continue;
+        }
         cc.flag(flag);
     }
     cc.cpp(true).file("src/lib.cpp");
-
-    // Add required includes for LLVM
-    cc.include("../ext/llvm-project/llvm/include");
 
     println!("cargo:warning=About to compile lib.cpp");
     cc.compile("llvm_zluda_cpp");

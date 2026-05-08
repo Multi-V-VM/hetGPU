@@ -3,9 +3,9 @@
 //! Usage: cargo run -p ptx --bin test_sass_mapping
 
 use ptx::{
-    SassPtxMapper, HetGpuDebugInterface, GpuTrapHandler, GpuCheckpointState,
-    TrapReason, ExecutionContext, PtxSourceLocation, ResumeInfo, CheckpointManager,
-    PtxReconstructor, MemoryRegion, MemorySpace, ThreadCheckpointState,
+    CheckpointManager, ExecutionContext, GpuCheckpointState, GpuTrapHandler, HetGpuDebugInterface,
+    MemoryRegion, MemorySpace, PtxReconstructor, PtxSourceLocation, ResumeInfo, SassPtxMapper,
+    ThreadCheckpointState, TrapReason,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -65,7 +65,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // PTX → SASS lookup
     if let Some(addrs) = mapper.ptx_to_sass_addresses("kernel.ptx", 22) {
-        println!("PTX line 22 → SASS: {:?}", addrs.iter().map(|a| format!("0x{:04x}", a)).collect::<Vec<_>>());
+        println!(
+            "PTX line 22 → SASS: {:?}",
+            addrs
+                .iter()
+                .map(|a| format!("0x{:04x}", a))
+                .collect::<Vec<_>>()
+        );
     }
 
     // Test 3: HetGPU Debug Interface
@@ -78,7 +84,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Simulate breakpoint hit
     if let Some(bp) = debug_iface.is_breakpoint(0x0050) {
-        println!("Breakpoint hit at SASS 0x0050, PTX line {}", bp.ptx_location.line);
+        println!(
+            "Breakpoint hit at SASS 0x0050, PTX line {}",
+            bp.ptx_location.line
+        );
     }
 
     // Test 4: PTX Reconstructor
@@ -88,7 +97,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Add mappings to reconstructor
     for (file, line) in debug_iface.get_mapper().get_mapped_ptx_lines() {
         if let Some(addr) = debug_iface.get_mapper().ptx_to_sass_address(&file, line) {
-            reconstructor.get_mapper_mut().add_mapping(addr, &file, line, "SASS");
+            reconstructor
+                .get_mapper_mut()
+                .add_mapping(addr, &file, line, "SASS");
         }
     }
 
@@ -105,19 +116,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("R1".to_string(), 0xDEADBEEF),
         ("R2".to_string(), 0x00007FFF00000000),
         ("R3".to_string(), 0x00000000000000FF),
-    ].into_iter().collect();
+    ]
+    .into_iter()
+    .collect();
 
-    let predicates: HashMap<String, bool> = [
-        ("P0".to_string(), true),
-        ("P1".to_string(), false),
-    ].into_iter().collect();
+    let predicates: HashMap<String, bool> = [("P0".to_string(), true), ("P1".to_string(), false)]
+        .into_iter()
+        .collect();
 
     // Add mapper to trap handler's debug interface
     {
         let debug_iface_arc = trap_handler.get_debug_interface();
         let mut debug_iface = debug_iface_arc.write().unwrap();
-        debug_iface.get_mapper_mut().parse_cuobjdump_output(sample_cuobjdump)?;
-        debug_iface.get_mapper_mut().set_ptx_source(ptx_source.clone());
+        debug_iface
+            .get_mapper_mut()
+            .parse_cuobjdump_output(sample_cuobjdump)?;
+        debug_iface
+            .get_mapper_mut()
+            .set_ptx_source(ptx_source.clone());
     }
 
     // Handle trap
@@ -126,10 +142,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         0x0050,
         registers.clone(),
         predicates.clone(),
-        (0, 0, 0),  // thread_id
-        (0, 0, 0),  // block_id
-        0,          // warp_id
-        0,          // lane_id
+        (0, 0, 0), // thread_id
+        (0, 0, 0), // block_id
+        0,         // warp_id
+        0,         // lane_id
         "atom_add",
     )?;
 
@@ -145,9 +161,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let loaded_checkpoint = GpuCheckpointState::load_from_file(checkpoint_path)?;
     println!("Loaded checkpoint:");
     println!("  Kernel: {}", loaded_checkpoint.kernel_name);
-    println!("  SASS address: 0x{:08x}", loaded_checkpoint.execution_context.sass_address);
-    println!("  PTX line: {}", loaded_checkpoint.execution_context.ptx_location.line);
-    println!("  Registers: {:?}", loaded_checkpoint.execution_context.registers.len());
+    println!(
+        "  SASS address: 0x{:08x}",
+        loaded_checkpoint.execution_context.sass_address
+    );
+    println!(
+        "  PTX line: {}",
+        loaded_checkpoint.execution_context.ptx_location.line
+    );
+    println!(
+        "  Registers: {:?}",
+        loaded_checkpoint.execution_context.registers.len()
+    );
 
     // Test 7: Resume Info
     println!("\n--- Test 7: Resume Info ---");
@@ -156,7 +181,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Resume at SASS: 0x{:08x}", resume_info.sass_address);
     println!("  Resume at PTX line: {}", resume_info.ptx_line);
     println!("  Register restoration commands:");
-    for cmd in resume_info.get_register_restoration_commands().iter().take(2) {
+    for cmd in resume_info
+        .get_register_restoration_commands()
+        .iter()
+        .take(2)
+    {
         println!("    {}", cmd);
     }
 
@@ -185,7 +214,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let mut ckpt = GpuCheckpointState::new(
-            TrapReason::CheckpointRequest { label: format!("step_{}", i) },
+            TrapReason::CheckpointRequest {
+                label: format!("step_{}", i),
+            },
             ctx,
             "atom_add".to_string(),
         );
@@ -241,7 +272,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             registers: [
                 (format!("R0"), 0x12345678 + tid as u64),
                 (format!("R1"), 0xDEADBEEF),
-            ].into_iter().collect(),
+            ]
+            .into_iter()
+            .collect(),
             predicates: [("P0".to_string(), true)].into_iter().collect(),
             local_memory: vec![],
             active: true,
@@ -270,9 +303,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify
     let loaded_full = GpuCheckpointState::load_from_file(full_checkpoint_path)?;
-    println!("  Verified load: {} threads, {} memory regions",
+    println!(
+        "  Verified load: {} threads, {} memory regions",
         loaded_full.thread_states.len(),
-        loaded_full.memory_regions.len());
+        loaded_full.memory_regions.len()
+    );
 
     println!("\n=== All tests passed! ===");
     Ok(())

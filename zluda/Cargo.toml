@@ -6,24 +6,25 @@ edition = "2021"
 
 [lib]
 name = "nvcuda"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "staticlib"]
 
 [features]
 default = ["intel"]
-intel = ["flate2"]
-amd = []
-tenstorrent = []
+intel = ["flate2", "ptx_backend"]
+amd = ["ptx_backend"]
+tenstorrent = ["ptx_backend"]
 gemmini = []
 nvidia = []
-tmatmul = []
-cutile = []
+tmatmul = ["ptx_backend"]
+cutile = ["comgr/cutile", "ptx_backend"]
 embed_cudart = []
 flate2 = ["dep:flate2"]
+ptx_backend = ["dep:ptx", "dep:ptx_parser"]
 
 [dependencies]
 comgr = { path = "../comgr" }
-ptx_parser = { path = "../ptx_parser" }
-ptx = { path = "../ptx" }
+ptx_parser = { path = "../ptx_parser", optional = true }
+ptx = { path = "../ptx", optional = true }
 cuda_types = { path = "../cuda_types" }
 cuda_base = { path = "../cuda_base" }
 lazy_static = "1.4"
@@ -42,7 +43,6 @@ libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 flate2 = { version = "1.0", optional = true }
-bitflags = "2.4"
 
 [build-dependencies]
 cc = "1"

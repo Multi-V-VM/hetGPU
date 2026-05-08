@@ -91,10 +91,7 @@ impl Default for CuTileTarget {
 /// 2. Transforms it to CuTile MLIR dialect
 /// 3. Converts CuTile MLIR to TOSA
 /// 4. Lowers TOSA to target backend
-pub fn cutile_module_create(
-    module: *mut CUtileModule,
-    desc: *const CUtileModuleDesc,
-) -> CUresult {
+pub fn cutile_module_create(module: *mut CUtileModule, desc: *const CUtileModuleDesc) -> CUresult {
     if module.is_null() || desc.is_null() {
         return Err(CUerror::INVALID_VALUE);
     }
@@ -106,9 +103,9 @@ pub fn cutile_module_create(
     }
 
     // Copy bytecode
-    let bytecode = unsafe {
-        std::slice::from_raw_parts(desc.bytecode as *const u8, desc.bytecodeSize)
-    }.to_vec();
+    let bytecode =
+        unsafe { std::slice::from_raw_parts(desc.bytecode as *const u8, desc.bytecodeSize) }
+            .to_vec();
 
     crate::r#impl::hetgpu_debug!(
         "[CuTile] Creating module from {} bytes of bytecode (format: {:?})",
@@ -324,18 +321,10 @@ pub fn cutile_launch_kernel(
         CuTileTarget::Tenstorrent => {
             execute_on_tenstorrent(&module_data, &kernel_data, config, args)
         }
-        CuTileTarget::Intel => {
-            execute_on_intel(&module_data, &kernel_data, config, args)
-        }
-        CuTileTarget::AMD => {
-            execute_on_amd(&module_data, &kernel_data, config, args)
-        }
-        CuTileTarget::Gemmini => {
-            execute_on_gemmini(&module_data, &kernel_data, config, args)
-        }
-        CuTileTarget::CPU => {
-            execute_on_cpu(&module_data, &kernel_data, config, args)
-        }
+        CuTileTarget::Intel => execute_on_intel(&module_data, &kernel_data, config, args),
+        CuTileTarget::AMD => execute_on_amd(&module_data, &kernel_data, config, args),
+        CuTileTarget::Gemmini => execute_on_gemmini(&module_data, &kernel_data, config, args),
+        CuTileTarget::CPU => execute_on_cpu(&module_data, &kernel_data, config, args),
     }
 }
 
@@ -439,10 +428,7 @@ fn execute_on_tenstorrent(
     _config: &CUtileLaunchConfig,
     _args: *mut *mut ::core::ffi::c_void,
 ) -> CUresult {
-    crate::r#impl::hetgpu_debug!(
-        "[CuTile] Executing kernel '{}' on Tenstorrent",
-        kernel.name
-    );
+    crate::r#impl::hetgpu_debug!("[CuTile] Executing kernel '{}' on Tenstorrent", kernel.name);
 
     #[cfg(feature = "tenstorrent")]
     {
@@ -460,10 +446,7 @@ fn execute_on_intel(
     _config: &CUtileLaunchConfig,
     _args: *mut *mut ::core::ffi::c_void,
 ) -> CUresult {
-    crate::r#impl::hetgpu_debug!(
-        "[CuTile] Executing kernel '{}' on Intel",
-        kernel.name
-    );
+    crate::r#impl::hetgpu_debug!("[CuTile] Executing kernel '{}' on Intel", kernel.name);
 
     #[cfg(feature = "intel")]
     {
@@ -481,10 +464,7 @@ fn execute_on_amd(
     _config: &CUtileLaunchConfig,
     _args: *mut *mut ::core::ffi::c_void,
 ) -> CUresult {
-    crate::r#impl::hetgpu_debug!(
-        "[CuTile] Executing kernel '{}' on AMD",
-        kernel.name
-    );
+    crate::r#impl::hetgpu_debug!("[CuTile] Executing kernel '{}' on AMD", kernel.name);
 
     #[cfg(feature = "amd")]
     {
@@ -502,10 +482,7 @@ fn execute_on_gemmini(
     _config: &CUtileLaunchConfig,
     _args: *mut *mut ::core::ffi::c_void,
 ) -> CUresult {
-    crate::r#impl::hetgpu_debug!(
-        "[CuTile] Executing kernel '{}' on Gemmini",
-        kernel.name
-    );
+    crate::r#impl::hetgpu_debug!("[CuTile] Executing kernel '{}' on Gemmini", kernel.name);
 
     #[cfg(feature = "gemmini")]
     {
@@ -523,10 +500,7 @@ fn execute_on_cpu(
     _config: &CUtileLaunchConfig,
     _args: *mut *mut ::core::ffi::c_void,
 ) -> CUresult {
-    crate::r#impl::hetgpu_debug!(
-        "[CuTile] Executing kernel '{}' on CPU",
-        kernel.name
-    );
+    crate::r#impl::hetgpu_debug!("[CuTile] Executing kernel '{}' on CPU", kernel.name);
 
     // TODO: Implement CPU execution (JIT compile and run)
     crate::r#impl::hetgpu_debug!("[CuTile] CPU execution not yet implemented");

@@ -160,10 +160,13 @@ fn run_instruction<'input>(
         | ast::Instruction::Mul24 { .. }
         | ast::Instruction::Nanosleep { .. }
         | ast::Instruction::Neg { .. }
+        | ast::Instruction::Copysign { .. }
         | ast::Instruction::Not { .. }
         | ast::Instruction::Or { .. }
         | ast::Instruction::Popc { .. }
         | ast::Instruction::Prmt { .. }
+        | ast::Instruction::VSub4 { .. }
+        | ast::Instruction::VSet4 { .. }
         | ast::Instruction::Rcp { .. }
         | ast::Instruction::Rem { .. }
         | ast::Instruction::Ret { .. }

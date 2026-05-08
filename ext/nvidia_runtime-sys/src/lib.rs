@@ -21,7 +21,8 @@ type CuDeviceGetCountFn = unsafe extern "C" fn(*mut c_int) -> CUresult;
 type CuDeviceGetFn = unsafe extern "C" fn(*mut CUdevice, c_int) -> CUresult;
 type CuDeviceGetNameFn = unsafe extern "C" fn(*mut c_char, c_int, CUdevice) -> CUresult;
 type CuDeviceTotalMemFn = unsafe extern "C" fn(*mut size_t, CUdevice) -> CUresult;
-type CuDeviceGetAttributeFn = unsafe extern "C" fn(*mut c_int, CUdevice_attribute, CUdevice) -> CUresult;
+type CuDeviceGetAttributeFn =
+    unsafe extern "C" fn(*mut c_int, CUdevice_attribute, CUdevice) -> CUresult;
 type CuCtxCreateFn = unsafe extern "C" fn(*mut CUcontext, c_uint, CUdevice) -> CUresult;
 type CuCtxDestroyFn = unsafe extern "C" fn(CUcontext) -> CUresult;
 type CuCtxSynchronizeFn = unsafe extern "C" fn() -> CUresult;
@@ -37,18 +38,30 @@ type CuMemcpyDtoDFn = unsafe extern "C" fn(CUdeviceptr, CUdeviceptr, size_t) -> 
 type CuMemsetD8Fn = unsafe extern "C" fn(CUdeviceptr, u8, size_t) -> CUresult;
 type CuMemsetD32Fn = unsafe extern "C" fn(CUdeviceptr, u32, size_t) -> CUresult;
 type CuModuleLoadDataFn = unsafe extern "C" fn(*mut CUmodule, *const c_void) -> CUresult;
-type CuModuleLoadDataExFn = unsafe extern "C" fn(*mut CUmodule, *const c_void, c_uint, *mut CUjit_option, *mut *mut c_void) -> CUresult;
+type CuModuleLoadDataExFn = unsafe extern "C" fn(
+    *mut CUmodule,
+    *const c_void,
+    c_uint,
+    *mut CUjit_option,
+    *mut *mut c_void,
+) -> CUresult;
 type CuModuleUnloadFn = unsafe extern "C" fn(CUmodule) -> CUresult;
-type CuModuleGetFunctionFn = unsafe extern "C" fn(*mut CUfunction, CUmodule, *const c_char) -> CUresult;
-type CuModuleGetGlobalFn = unsafe extern "C" fn(*mut CUdeviceptr, *mut size_t, CUmodule, *const c_char) -> CUresult;
+type CuModuleGetFunctionFn =
+    unsafe extern "C" fn(*mut CUfunction, CUmodule, *const c_char) -> CUresult;
+type CuModuleGetGlobalFn =
+    unsafe extern "C" fn(*mut CUdeviceptr, *mut size_t, CUmodule, *const c_char) -> CUresult;
 type CuLaunchKernelFn = unsafe extern "C" fn(
     CUfunction,
-    c_uint, c_uint, c_uint,  // grid
-    c_uint, c_uint, c_uint,  // block
-    c_uint,                   // shared mem
-    CUstream,                 // stream
-    *mut *mut c_void,         // kernel params
-    *mut *mut c_void,         // extra
+    c_uint,
+    c_uint,
+    c_uint, // grid
+    c_uint,
+    c_uint,
+    c_uint,           // block
+    c_uint,           // shared mem
+    CUstream,         // stream
+    *mut *mut c_void, // kernel params
+    *mut *mut c_void, // extra
 ) -> CUresult;
 type CuStreamCreateFn = unsafe extern "C" fn(*mut CUstream, c_uint) -> CUresult;
 type CuStreamDestroyFn = unsafe extern "C" fn(CUstream) -> CUresult;
@@ -61,29 +74,25 @@ type CuEventElapsedTimeFn = unsafe extern "C" fn(*mut f32, CUevent, CUevent) -> 
 type CuGetErrorStringFn = unsafe extern "C" fn(CUresult, *mut *const c_char) -> CUresult;
 type CuGetErrorNameFn = unsafe extern "C" fn(CUresult, *mut *const c_char) -> CUresult;
 type CuDriverGetVersionFn = unsafe extern "C" fn(*mut c_int) -> CUresult;
-type CuFuncGetAttributeFn = unsafe extern "C" fn(*mut c_int, CUfunction_attribute, CUfunction) -> CUresult;
-type CuFuncSetAttributeFn = unsafe extern "C" fn(CUfunction, CUfunction_attribute, c_int) -> CUresult;
+type CuFuncGetAttributeFn =
+    unsafe extern "C" fn(*mut c_int, CUfunction_attribute, CUfunction) -> CUresult;
+type CuFuncSetAttributeFn =
+    unsafe extern "C" fn(CUfunction, CUfunction_attribute, c_int) -> CUresult;
 type CuDevicePrimaryCtxRetainFn = unsafe extern "C" fn(*mut CUcontext, CUdevice) -> CUresult;
 type CuDevicePrimaryCtxReleaseFn = unsafe extern "C" fn(CUdevice) -> CUresult;
-type CuDevicePrimaryCtxGetStateFn = unsafe extern "C" fn(CUdevice, *mut c_uint, *mut c_int) -> CUresult;
-type CuPointerGetAttributeFn = unsafe extern "C" fn(*mut c_void, CUpointer_attribute, CUdeviceptr) -> CUresult;
+type CuDevicePrimaryCtxGetStateFn =
+    unsafe extern "C" fn(CUdevice, *mut c_uint, *mut c_int) -> CUresult;
+type CuPointerGetAttributeFn =
+    unsafe extern "C" fn(*mut c_void, CUpointer_attribute, CUdeviceptr) -> CUresult;
 type CuCtxGetDeviceFn = unsafe extern "C" fn(*mut CUdevice) -> CUresult;
 type CuCtxSetLimitFn = unsafe extern "C" fn(CUlimit, size_t) -> CUresult;
 type CuCtxGetLimitFn = unsafe extern "C" fn(*mut size_t, CUlimit) -> CUresult;
-type CuDeviceComputeCapabilityFn = unsafe extern "C" fn(*mut c_int, *mut c_int, CUdevice) -> CUresult;
+type CuDeviceComputeCapabilityFn =
+    unsafe extern "C" fn(*mut c_int, *mut c_int, CUdevice) -> CUresult;
 type CuDeviceGetUuidFn = unsafe extern "C" fn(*mut CUuuid, CUdevice) -> CUresult;
 type CuDeviceGetLuidFn = unsafe extern "C" fn(*mut c_char, *mut c_uint, CUdevice) -> CUresult;
-type CuMemGetAddressRangeFn = unsafe extern "C" fn(*mut CUdeviceptr, *mut size_t, CUdeviceptr) -> CUresult;
-type CuGetProcAddressFn = unsafe extern "C" fn(*const c_char, *mut *mut c_void, c_int, u64) -> CUresult;
-type CuGetProcAddressV2Fn = unsafe extern "C" fn(*const c_char, *mut *mut c_void, c_int, u64, *mut CUdriverProcAddressQueryResult) -> CUresult;
-type CuMemAllocManagedFn = unsafe extern "C" fn(*mut CUdeviceptr, size_t, c_uint) -> CUresult;
-// Async memcpy + stream + pinned memory
-type CuMemcpyDtoHAsyncFn = unsafe extern "C" fn(*mut c_void, CUdeviceptr, size_t, CUstream) -> CUresult;
-type CuMemcpyHtoDAsyncFn = unsafe extern "C" fn(CUdeviceptr, *const c_void, size_t, CUstream) -> CUresult;
-type CuMemAllocHostFn = unsafe extern "C" fn(*mut *mut c_void, size_t) -> CUresult;
-type CuMemFreeHostFn = unsafe extern "C" fn(*mut c_void) -> CUresult;
-type CuStreamCreateFn2 = unsafe extern "C" fn(*mut CUstream, c_uint) -> CUresult;
-type CuStreamSynchronizeFn2 = unsafe extern "C" fn(CUstream) -> CUresult;
+type CuMemGetAddressRangeFn =
+    unsafe extern "C" fn(*mut CUdeviceptr, *mut size_t, CUdeviceptr) -> CUresult;
 
 // Function pointers struct
 pub struct NvidiaCudaFunctions {
@@ -137,24 +146,7 @@ pub struct NvidiaCudaFunctions {
     pub cuDeviceGetUuid: Option<CuDeviceGetUuidFn>,
     pub cuDeviceGetLuid: Option<CuDeviceGetLuidFn>,
     pub cuMemGetAddressRange_v2: Option<CuMemGetAddressRangeFn>,
-    pub cuGetProcAddress: Option<CuGetProcAddressFn>,
-    pub cuGetProcAddress_v2: Option<CuGetProcAddressV2Fn>,
-    pub cuMemAllocManaged: Option<CuMemAllocManagedFn>,
-    pub cuMemcpyDtoHAsync_v2: Option<CuMemcpyDtoHAsyncFn>,
-    pub cuMemcpyHtoDAsync_v2: Option<CuMemcpyHtoDAsyncFn>,
-    pub cuMemAllocHost_v2: Option<CuMemAllocHostFn>,
-    pub cuMemFreeHost: Option<CuMemFreeHostFn>,
-    pub cuStreamCreate2: Option<CuStreamCreateFn2>,
-    pub cuStreamSynchronize2: Option<CuStreamSynchronizeFn2>,
-    /// Raw library handle for dlsym fallback (wrapped for Send+Sync)
-    pub lib_handle: LibHandleWrapper,
 }
-
-/// Wrapper to make raw library handle Send+Sync (dlopen handles are process-global)
-#[derive(Clone, Copy)]
-pub struct LibHandleWrapper(pub *mut c_void);
-unsafe impl Send for LibHandleWrapper {}
-unsafe impl Sync for LibHandleWrapper {}
 
 static CUDA_FUNCS: OnceLock<NvidiaCudaFunctions> = OnceLock::new();
 
@@ -235,16 +227,6 @@ pub fn init() -> Result<(), String> {
                 cuDeviceGetUuid: load_fn(lib, "cuDeviceGetUuid"),
                 cuDeviceGetLuid: load_fn(lib, "cuDeviceGetLuid"),
                 cuMemGetAddressRange_v2: load_fn(lib, "cuMemGetAddressRange_v2"),
-                cuGetProcAddress: load_fn(lib, "cuGetProcAddress"),
-                cuGetProcAddress_v2: load_fn(lib, "cuGetProcAddress_v2"),
-                cuMemAllocManaged: load_fn(lib, "cuMemAllocManaged"),
-                cuMemcpyDtoHAsync_v2: load_fn(lib, "cuMemcpyDtoHAsync_v2"),
-                cuMemcpyHtoDAsync_v2: load_fn(lib, "cuMemcpyHtoDAsync_v2"),
-                cuMemAllocHost_v2: load_fn(lib, "cuMemAllocHost_v2"),
-                cuMemFreeHost: load_fn(lib, "cuMemFreeHost"),
-                cuStreamCreate2: load_fn(lib, "cuStreamCreate"),
-                cuStreamSynchronize2: load_fn(lib, "cuStreamSynchronize"),
-                lib_handle: LibHandleWrapper(lib),
             }
         }
     });
@@ -336,16 +318,6 @@ impl NvidiaCudaFunctions {
             cuDeviceGetUuid: None,
             cuDeviceGetLuid: None,
             cuMemGetAddressRange_v2: None,
-            cuGetProcAddress: None,
-            cuGetProcAddress_v2: None,
-            cuMemAllocManaged: None,
-            cuMemcpyDtoHAsync_v2: None,
-            cuMemcpyHtoDAsync_v2: None,
-            cuMemAllocHost_v2: None,
-            cuMemFreeHost: None,
-            cuStreamCreate2: None,
-            cuStreamSynchronize2: None,
-            lib_handle: LibHandleWrapper(std::ptr::null_mut()),
         }
     }
 }
@@ -371,7 +343,7 @@ pub fn cuInit(flags: c_uint) -> i32 {
 fn cuda_result_to_int(result: CUresult) -> i32 {
     match result {
         Ok(()) => 0,
-        Err(e) => e.0.get() as i32,  // Return the actual error code
+        Err(e) => e.0.get() as i32, // Return the actual error code
     }
 }
 
@@ -383,7 +355,10 @@ pub fn cuDeviceGetCount(count: *mut c_int) -> i32 {
             eprintln!("[hetGPU-nvidia] calling real cuDeviceGetCount");
             let result = unsafe { f(count) };
             let count_val = unsafe { *count };
-            eprintln!("[hetGPU-nvidia] cuDeviceGetCount returned {:?}, count={}", result, count_val);
+            eprintln!(
+                "[hetGPU-nvidia] cuDeviceGetCount returned {:?}, count={}",
+                result, count_val
+            );
             return cuda_result_to_int(result);
         } else {
             eprintln!("[hetGPU-nvidia] cuDeviceGetCount function not loaded");
@@ -495,15 +470,24 @@ pub fn cuCtxGetLimit(pvalue: *mut size_t, limit: CUlimit) -> i32 {
 }
 
 pub fn cuCtxCreate_v2(pctx: *mut CUcontext, flags: c_uint, dev: CUdevice) -> i32 {
-    eprintln!("[hetGPU-nvidia] cuCtxCreate_v2 called: flags={}, dev={}", flags, dev);
+    eprintln!(
+        "[hetGPU-nvidia] cuCtxCreate_v2 called: flags={}, dev={}",
+        flags, dev
+    );
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuCtxCreate_v2 {
             let result = unsafe { f(pctx, flags, dev) };
             if !pctx.is_null() {
                 let ctx_val = unsafe { (*pctx).0 };
-                eprintln!("[hetGPU-nvidia] cuCtxCreate_v2 result: {:?}, ctx={:?}", result, ctx_val);
+                eprintln!(
+                    "[hetGPU-nvidia] cuCtxCreate_v2 result: {:?}, ctx={:?}",
+                    result, ctx_val
+                );
             } else {
-                eprintln!("[hetGPU-nvidia] cuCtxCreate_v2 result: {:?}, pctx was null", result);
+                eprintln!(
+                    "[hetGPU-nvidia] cuCtxCreate_v2 result: {:?}, pctx was null",
+                    result
+                );
             }
             return cuda_result_to_int(result);
         } else {
@@ -515,7 +499,13 @@ pub fn cuCtxCreate_v2(pctx: *mut CUcontext, flags: c_uint, dev: CUdevice) -> i32
     999
 }
 
-pub fn cuCtxCreate_v3(pctx: *mut CUcontext, params: *mut c_void, num_params: c_int, flags: c_uint, dev: CUdevice) -> i32 {
+pub fn cuCtxCreate_v3(
+    pctx: *mut CUcontext,
+    params: *mut c_void,
+    num_params: c_int,
+    flags: c_uint,
+    dev: CUdevice,
+) -> i32 {
     eprintln!("[hetGPU-nvidia] cuCtxCreate_v3 called, falling back to v2");
     cuCtxCreate_v2(pctx, flags, dev)
 }
@@ -589,7 +579,10 @@ pub fn cuMemAlloc_v2(dptr: *mut CUdeviceptr, bytesize: size_t) -> i32 {
             let result = unsafe { f(dptr, bytesize) };
             let int_result = cuda_result_to_int(result);
             if int_result != 0 {
-                eprintln!("[nvidia-sys] cuMemAlloc_v2 FAILED: result={:?}, int_result={}", result, int_result);
+                eprintln!(
+                    "[nvidia-sys] cuMemAlloc_v2 FAILED: result={:?}, int_result={}",
+                    result, int_result
+                );
             } else if !dptr.is_null() {
                 let ptr_val = unsafe { *dptr };
                 eprintln!("[nvidia-sys] cuMemAlloc_v2 OK: ptr={:?}", ptr_val);
@@ -634,61 +627,11 @@ pub fn cuMemcpyDtoH_v2(dst: *mut c_void, src: CUdeviceptr, bytecount: size_t) ->
     999
 }
 
-pub fn cuMemAllocManaged(dptr: *mut CUdeviceptr, bytesize: size_t, flags: c_uint) -> i32 {
-    if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuMemAllocManaged {
-            return cuda_result_to_int(unsafe { f(dptr, bytesize, flags) });
-        }
-    }
-    999
-}
-
-pub fn cuMemcpyDtoHAsync_v2(dst: *mut c_void, src: CUdeviceptr, bytecount: size_t, stream: CUstream) -> i32 {
-    if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuMemcpyDtoHAsync_v2 {
-            return cuda_result_to_int(unsafe { f(dst, src, bytecount, stream) });
-        }
-    }
-    999
-}
-
-pub fn cuMemAllocHost_v2(pp: *mut *mut c_void, bytesize: size_t) -> i32 {
-    if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuMemAllocHost_v2 {
-            return cuda_result_to_int(unsafe { f(pp, bytesize) });
-        }
-    }
-    999
-}
-
-pub fn cuMemFreeHost(p: *mut c_void) -> i32 {
-    if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuMemFreeHost {
-            return cuda_result_to_int(unsafe { f(p) });
-        }
-    }
-    999
-}
-
-pub fn cuStreamCreate_ckpt(stream: *mut CUstream, flags: c_uint) -> i32 {
-    if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuStreamCreate2 {
-            return cuda_result_to_int(unsafe { f(stream, flags) });
-        }
-    }
-    999
-}
-
-pub fn cuStreamSynchronize_ckpt(stream: CUstream) -> i32 {
-    if let Some(funcs) = get_cuda_funcs() {
-        if let Some(f) = funcs.cuStreamSynchronize2 {
-            return cuda_result_to_int(unsafe { f(stream) });
-        }
-    }
-    999
-}
-
-pub fn cuMemGetAddressRange_v2(pbase: *mut CUdeviceptr, psize: *mut size_t, dptr: CUdeviceptr) -> i32 {
+pub fn cuMemGetAddressRange_v2(
+    pbase: *mut CUdeviceptr,
+    psize: *mut size_t,
+    dptr: CUdeviceptr,
+) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuMemGetAddressRange_v2 {
             let result = unsafe { f(pbase, psize, dptr) };
@@ -773,7 +716,21 @@ pub fn cuLaunchKernel(
 ) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(func) = funcs.cuLaunchKernel {
-            let result = unsafe { func(f, gridDimX, gridDimY, gridDimZ, blockDimX, blockDimY, blockDimZ, sharedMemBytes, hStream, kernelParams, extra) };
+            let result = unsafe {
+                func(
+                    f,
+                    gridDimX,
+                    gridDimY,
+                    gridDimZ,
+                    blockDimX,
+                    blockDimY,
+                    blockDimZ,
+                    sharedMemBytes,
+                    hStream,
+                    kernelParams,
+                    extra,
+                )
+            };
             return cuda_result_to_int(result);
         }
     }
@@ -829,7 +786,11 @@ pub fn cuDriverGetVersion(version: *mut c_int) -> i32 {
     999
 }
 
-pub fn cuPointerGetAttribute(data: *mut c_void, attrib: CUpointer_attribute, ptr: CUdeviceptr) -> i32 {
+pub fn cuPointerGetAttribute(
+    data: *mut c_void,
+    attrib: CUpointer_attribute,
+    ptr: CUdeviceptr,
+) -> i32 {
     if let Some(funcs) = get_cuda_funcs() {
         if let Some(f) = funcs.cuPointerGetAttribute {
             let result = unsafe { f(data, attrib, ptr) };

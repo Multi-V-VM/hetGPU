@@ -38,11 +38,13 @@ static void* get_real_cublaslt() {
 
 // Data type enums (must be defined before structs that use them)
 typedef enum {
-    CUDA_R_16F = 2,
     CUDA_R_32F = 0,
     CUDA_R_64F = 1,
+    CUDA_R_16F = 2,
     CUDA_R_8I = 3,
-    CUDA_R_32I = 10
+    CUDA_R_8U = 8,
+    CUDA_R_32I = 10,
+    CUDA_R_16BF = 14
 } cudaDataType_t;
 
 typedef enum {
@@ -244,9 +246,11 @@ cublasLtStatus_t cublasLtMatmulAlgoGetHeuristic(cublasLtHandle_t handle,
 static size_t get_lt_element_size(cudaDataType_t dtype) {
     switch (dtype) {
         case CUDA_R_16F: return 2;
+        case CUDA_R_16BF: return 2;
         case CUDA_R_32F: return 4;
         case CUDA_R_64F: return 8;
         case CUDA_R_8I: return 1;
+        case CUDA_R_8U: return 1;
         case CUDA_R_32I: return 4;
         default: return 4;
     }

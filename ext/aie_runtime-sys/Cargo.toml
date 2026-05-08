@@ -1,0 +1,15 @@
+[package]
+name = "aie_runtime_sys"
+version = "0.1.0"
+edition = "2021"
+description = "Rust bindings for Xilinx XRT C API (Strix NPU / AIE-ML execution)"
+license = "MIT OR Apache-2.0"
+build = "build.rs"
+
+[lib]
+name = "aie_runtime_sys"
+path = "src/lib.rs"
+
+[build-dependencies]
+bindgen = "0.69"
+pkg-config = "0.3"

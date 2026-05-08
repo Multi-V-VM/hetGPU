@@ -11,16 +11,16 @@
 //! - `llvm_inline`: SASS inlining to LLVM IR for profiling/replay
 //! - `ptx_recovery`: PTX source recovery from SASS using debug info
 
-pub mod instruction;
 pub mod cubin_parser;
-pub mod dwarf_parser;
 pub mod disassembler;
+pub mod dwarf_parser;
+pub mod instruction;
 pub mod llvm_inline;
 pub mod ptx_recovery;
 
-pub use instruction::*;
 pub use cubin_parser::*;
-pub use dwarf_parser::*;
 pub use disassembler::*;
+pub use dwarf_parser::*;
+pub use instruction::*;
 pub use llvm_inline::*;
 pub use ptx_recovery::*;

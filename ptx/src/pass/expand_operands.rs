@@ -255,6 +255,12 @@ impl<'a, 'input> FlattenArguments<'a, 'input> {
                     immediate_value,
                     Some((&ast::Type::Scalar(scalar_t), state_space)),
                 ),
+                ast::RegOrImmediate::Discard if is_dst => Ok(self
+                    .resolver
+                    .register_unnamed(Some((ast::Type::Scalar(scalar_t), state_space)))),
+                ast::RegOrImmediate::Discard => Err(TranslateError::Todo(
+                    "discard operand '_' is only supported in destination vector packs".to_string(),
+                )),
             })
             .collect::<Result<Vec<_>, _>>()?;
         let temporary_vector = self

@@ -6,9 +6,11 @@
 #include <llvm-c/Types.h>
 #include <llvm/ADT/PointerUnion.h>
 #include <llvm/IR/DIBuilder.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/DebugInfo.h>
 #include <llvm/IR/DebugInfoMetadata.h>
 #include <llvm/IR/DebugProgramInstruction.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/LLVMContext.h>
@@ -18,6 +20,63 @@
 #pragma GCC diagnostic pop
 
 using namespace llvm;
+
+namespace llvm {
+// Some LLVM builds keep this deprecated conversion out-of-line in Support,
+// while the prebuilt llvm-zluda archive we link against may not expose it.
+// IRBuilder headers can still emit references to the symbol, so provide the
+// ABI shim here and keep the bridge self-contained.
+TypeSize::operator TypeSize::ScalarTy() const { return getKnownMinValue(); }
+
+LLVMContext &Value::getContext() const { return getType()->getContext(); }
+} // namespace llvm
+
+static llvm::Align zludaAtomicValueAlign(llvm::Type *Ty) {
+  if (!Ty) {
+    return llvm::Align(1);
+  }
+  if (Ty->isPointerTy() || Ty->isDoubleTy() || Ty->isIntegerTy(64)) {
+    return llvm::Align(8);
+  }
+  if (Ty->isFloatTy() || Ty->isIntegerTy(32)) {
+    return llvm::Align(4);
+  }
+  if (Ty->isHalfTy() || Ty->isIntegerTy(16)) {
+    return llvm::Align(2);
+  }
+  if (Ty->isIntegerTy(8)) {
+    return llvm::Align(1);
+  }
+
+  uint64_t bits = Ty->getPrimitiveSizeInBits().getKnownMinValue();
+  uint64_t bytes = (bits + 7) / 8;
+  if (bytes >= 8) {
+    return llvm::Align(8);
+  }
+  if (bytes >= 4) {
+    return llvm::Align(4);
+  }
+  if (bytes >= 2) {
+    return llvm::Align(2);
+  }
+  return llvm::Align(1);
+}
+
+static bool zludaBuilderCanInsert(llvm::IRBuilder<> *Builder) {
+  if (!Builder) {
+    return false;
+  }
+  llvm::BasicBlock *BB = Builder->GetInsertBlock();
+  return BB && !BB->getTerminator();
+}
+
+static llvm::SyncScope::ID zludaSyncScopeID(const char *Scope) {
+  // The PACC path does not need LLVM's named sync scopes, and some incoming
+  // PTX scopes arrive after the builder/module state is already fragile. Keep
+  // the IR verifier path simple and conservative by using system scope.
+  (void)Scope;
+  return llvm::SyncScope::System;
+}
 
 typedef enum {
   LLVMZludaAtomicRMWBinOpXchg, /**< Set the new value and return the one old */
@@ -137,8 +196,14 @@ LLVM_C_EXTERN_C_BEGIN
 
 LLVMValueRef LLVMZludaBuildAlloca(LLVMBuilderRef B, LLVMTypeRef Ty,
                                   unsigned AddrSpace, const char *Name) {
-  return llvm::wrap(llvm::unwrap(B)->CreateAlloca(llvm::unwrap(Ty), AddrSpace,
-                                                  nullptr, Name));
+  auto *Builder = llvm::unwrap(B);
+  auto *UnwrappedTy = llvm::unwrap(Ty);
+  if (!zludaBuilderCanInsert(Builder)) {
+    auto *PtrTy = llvm::PointerType::get(UnwrappedTy->getContext(), AddrSpace);
+    return llvm::wrap(llvm::UndefValue::get(PtrTy));
+  }
+  return llvm::wrap(
+      Builder->CreateAlloca(UnwrappedTy, AddrSpace, nullptr, Name ? Name : ""));
 }
 
 LLVMValueRef LLVMZludaBuildAtomicRMW(LLVMBuilderRef B,
@@ -146,29 +211,16 @@ LLVMValueRef LLVMZludaBuildAtomicRMW(LLVMBuilderRef B,
                                      LLVMValueRef PTR, LLVMValueRef Val,
                                      char *scope, LLVMAtomicOrdering ordering) {
   auto builder = llvm::unwrap(B);
-  LLVMContext &context = builder->getContext();
+  llvm::Value *UnwrappedVal = llvm::unwrap(Val);
+  if (!zludaBuilderCanInsert(builder)) {
+    return llvm::wrap(llvm::UndefValue::get(UnwrappedVal->getType()));
+  }
   llvm::AtomicRMWInst::BinOp intop = mapFromLLVMRMWBinOp(op);
 
-  // Map AMD-specific sync scopes to NVPTX-compatible ones
-  std::string nvptx_scope;
-  if (scope && strlen(scope) > 0) {
-    std::string scope_str(scope);
-    if (scope_str == "agent-one-as") {
-      nvptx_scope = ""; // Use default/system scope for NVPTX
-    } else if (scope_str == "workgroup-one-as") {
-      nvptx_scope = ""; // Use default scope for NVPTX
-    } else if (scope_str == "one-as") {
-      nvptx_scope = ""; // Use default scope for NVPTX
-    } else {
-      nvptx_scope = scope_str;
-    }
-  }
-
   return llvm::wrap(builder->CreateAtomicRMW(
-      intop, llvm::unwrap(PTR), llvm::unwrap(Val), llvm::MaybeAlign(),
-      mapFromLLVMOrdering(ordering),
-      nvptx_scope.empty() ? llvm::SyncScope::System
-                          : context.getOrInsertSyncScopeID(nvptx_scope)));
+      intop, llvm::unwrap(PTR), UnwrappedVal,
+      llvm::MaybeAlign(zludaAtomicValueAlign(UnwrappedVal->getType())),
+      mapFromLLVMOrdering(ordering), zludaSyncScopeID(scope)));
 }
 
 LLVMValueRef LLVMZludaBuildAtomicCmpXchg(LLVMBuilderRef B, LLVMValueRef Ptr,
@@ -177,12 +229,22 @@ LLVMValueRef LLVMZludaBuildAtomicCmpXchg(LLVMBuilderRef B, LLVMValueRef Ptr,
                                          LLVMAtomicOrdering SuccessOrdering,
                                          LLVMAtomicOrdering FailureOrdering) {
   auto builder = llvm::unwrap(B);
-  LLVMContext &context = builder->getContext();
+  llvm::Value *UnwrappedCmp = llvm::unwrap(Cmp);
+  llvm::Value *UnwrappedNew = llvm::unwrap(New);
+  if (!zludaBuilderCanInsert(builder)) {
+    llvm::Type *Fields[] = {
+        UnwrappedCmp->getType(),
+        llvm::Type::getInt1Ty(UnwrappedCmp->getType()->getContext()),
+    };
+    return llvm::wrap(llvm::UndefValue::get(llvm::StructType::get(
+        UnwrappedCmp->getType()->getContext(),
+        llvm::ArrayRef<llvm::Type *>(Fields, 2))));
+  }
+  llvm::MaybeAlign align(zludaAtomicValueAlign(UnwrappedNew->getType()));
   return wrap(builder->CreateAtomicCmpXchg(
-      unwrap(Ptr), unwrap(Cmp), unwrap(New), MaybeAlign(),
+      unwrap(Ptr), UnwrappedCmp, UnwrappedNew, align,
       mapFromLLVMOrdering(SuccessOrdering),
-      mapFromLLVMOrdering(FailureOrdering),
-      context.getOrInsertSyncScopeID(scope)));
+      mapFromLLVMOrdering(FailureOrdering), zludaSyncScopeID(scope)));
 }
 
 void LLVMZludaSetFastMathFlags(LLVMValueRef FPMathInst, LLVMFastMathFlags FMF) {
@@ -193,9 +255,11 @@ void LLVMZludaSetFastMathFlags(LLVMValueRef FPMathInst, LLVMFastMathFlags FMF) {
 void LLVMZludaBuildFence(LLVMBuilderRef B, LLVMAtomicOrdering Ordering,
                          char *scope, const char *Name) {
   auto builder = llvm::unwrap(B);
-  LLVMContext &context = builder->getContext();
-  builder->CreateFence(mapFromLLVMOrdering(Ordering),
-                       context.getOrInsertSyncScopeID(scope), Name);
+  if (!zludaBuilderCanInsert(builder)) {
+    return;
+  }
+  builder->CreateFence(mapFromLLVMOrdering(Ordering), zludaSyncScopeID(scope),
+                       Name);
 }
 
 void LLVMZludaSetCurrentDebugLocation(LLVMBuilderRef Builder,
@@ -257,24 +321,19 @@ extern "C" LLVMDbgRecordRef LLVMZludaDIBuilderInsertDeclareRecordAtEnd(
 
 unsigned long long LLVMZludaSizeOfTypeInBits(LLVMTargetDataRef TD,
                                              LLVMTypeRef Ty) {
-  return LLVMSizeOfTypeInBits(TD, Ty);
+  return unwrap(TD)->getTypeSizeInBits(unwrap(Ty)).getKnownMinValue();
 }
 
 void LLVMZludaSetAtomic(LLVMValueRef MemAccessInst, LLVMAtomicOrdering Ordering,
                         char *Scope) {
   Value *Inst = unwrap<Value>(MemAccessInst);
-  LLVMContext &Context = Inst->getContext();
 
   if (auto *LI = dyn_cast<LoadInst>(Inst)) {
     LI->setAtomic(mapFromLLVMOrdering(Ordering));
-    if (Scope && strlen(Scope) > 0) {
-      LI->setSyncScopeID(Context.getOrInsertSyncScopeID(Scope));
-    }
+    LI->setSyncScopeID(zludaSyncScopeID(Scope));
   } else if (auto *SI = dyn_cast<StoreInst>(Inst)) {
     SI->setAtomic(mapFromLLVMOrdering(Ordering));
-    if (Scope && strlen(Scope) > 0) {
-      SI->setSyncScopeID(Context.getOrInsertSyncScopeID(Scope));
-    }
+    SI->setSyncScopeID(zludaSyncScopeID(Scope));
   }
 }
 

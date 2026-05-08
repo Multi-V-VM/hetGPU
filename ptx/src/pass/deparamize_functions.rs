@@ -32,6 +32,7 @@ fn run_method<'input>(
             match arg.info.state_space {
                 ptx_parser::StateSpace::Param => {
                     arg.info.state_space = ptx_parser::StateSpace::Reg;
+                    arg.info.align = None;
                     let old_name = arg.name;
                     arg.name = resolver
                         .register_unnamed(Some((arg.info.v_type.clone(), arg.info.state_space)));
@@ -57,6 +58,7 @@ fn run_method<'input>(
             match arg.info.state_space {
                 ptx_parser::StateSpace::Param => {
                     arg.info.state_space = ptx_parser::StateSpace::Reg;
+                    arg.info.align = None;
                     let old_name = arg.name;
                     arg.name = resolver
                         .register_unnamed(Some((arg.info.v_type.clone(), arg.info.state_space)));

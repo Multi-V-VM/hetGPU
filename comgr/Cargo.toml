@@ -11,8 +11,10 @@ intel = []
 tenstorrent = []
 gemmini = []
 cutile = []
+nvidia = ["dep:nvidia_sass"]
 
 [lib]
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 amd_comgr_sys = { path = "../ext/amd_comgr-sys"  }
@@ -20,5 +22,7 @@ intel_comgr_sys = { path = "../ext/intel_comgr-sys"  }
 tt_comgr_sys = { path = "../ext/tt_comgr-sys" }
 gemmini_comgr_sys = { path = "../ext/gemmini_comgr-sys" }
 cutile_comgr_sys = { path = "../ext/cutile_comgr-sys" }
+nvidia_sass = { path = "../nvidia_sass", optional = true }
 hip_runtime_sys = { path = "../ext/hip_runtime-sys"  }
 ze_runtime_sys = { path = "../ext/ze_runtime-sys"  }
+libc = "0.2"

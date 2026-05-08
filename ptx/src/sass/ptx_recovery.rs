@@ -15,9 +15,9 @@ use std::fs;
 use std::path::Path;
 
 use super::cubin_parser::{CubinParser, DebugLineInfo, ParsedCubin};
-use super::dwarf_parser::{DwarfParser, ParsedDebugInfo, DebugFunctionInfo};
-use super::instruction::{EnhancedSassInstruction, SassOpcodeClass, SassOperand, SassDataType};
 use super::disassembler::SassDisassembler;
+use super::dwarf_parser::{DebugFunctionInfo, DwarfParser, ParsedDebugInfo};
+use super::instruction::{EnhancedSassInstruction, SassDataType, SassOpcodeClass, SassOperand};
 
 // ============================================================================
 // PTX Recovery Structures
@@ -126,11 +126,17 @@ impl PtxReconstructor {
             SassOpcodeClass::SharedLoad => self.reconstruct_shared_load(inst),
             SassOpcodeClass::SharedStore => self.reconstruct_shared_store(inst),
             SassOpcodeClass::Move => self.reconstruct_move(inst),
-            SassOpcodeClass::IntegerComparison | SassOpcodeClass::FloatComparison => self.reconstruct_compare(inst),
-            SassOpcodeClass::Branch | SassOpcodeClass::ConditionalBranch => self.reconstruct_branch(inst),
+            SassOpcodeClass::IntegerComparison | SassOpcodeClass::FloatComparison => {
+                self.reconstruct_compare(inst)
+            }
+            SassOpcodeClass::Branch | SassOpcodeClass::ConditionalBranch => {
+                self.reconstruct_branch(inst)
+            }
             SassOpcodeClass::Barrier => self.reconstruct_barrier(inst),
             SassOpcodeClass::SpecialRegRead => self.reconstruct_special_reg(inst),
-            SassOpcodeClass::IntegerConversion | SassOpcodeClass::FloatConversion => self.reconstruct_conversion(inst),
+            SassOpcodeClass::IntegerConversion | SassOpcodeClass::FloatConversion => {
+                self.reconstruct_conversion(inst)
+            }
             SassOpcodeClass::Exit => "ret;".to_string(),
             _ => format!("// SASS: {} {}", inst.opcode, self.format_operands(inst)),
         }
@@ -140,7 +146,13 @@ impl PtxReconstructor {
         let op = match inst.opcode.as_str() {
             "IADD" | "IADD3" => "add",
             "ISUB" => "sub",
-            "IMUL" | "IMAD" => if inst.opcode.contains("MAD") { "mad" } else { "mul" },
+            "IMUL" | "IMAD" => {
+                if inst.opcode.contains("MAD") {
+                    "mad"
+                } else {
+                    "mul"
+                }
+            }
             "IAND" | "LOP3" => "and",
             "IOR" => "or",
             "IXOR" => "xor",
@@ -154,9 +166,15 @@ impl PtxReconstructor {
         let sources = self.format_sources(inst);
 
         if op == "mad" && sources.len() >= 3 {
-            format!("{}.{} {}, {}, {}, {};", op, data_type, dest, sources[0], sources[1], sources[2])
+            format!(
+                "{}.{} {}, {}, {}, {};",
+                op, data_type, dest, sources[0], sources[1], sources[2]
+            )
         } else if sources.len() >= 2 {
-            format!("{}.{} {}, {}, {};", op, data_type, dest, sources[0], sources[1])
+            format!(
+                "{}.{} {}, {}, {};",
+                op, data_type, dest, sources[0], sources[1]
+            )
         } else if !sources.is_empty() {
             format!("{}.{} {}, {};", op, data_type, dest, sources[0])
         } else {
@@ -168,7 +186,13 @@ impl PtxReconstructor {
         let op = match inst.opcode.as_str() {
             "FADD" => "add",
             "FSUB" => "sub",
-            "FMUL" | "FFMA" => if inst.opcode.contains("FMA") { "fma" } else { "mul" },
+            "FMUL" | "FFMA" => {
+                if inst.opcode.contains("FMA") {
+                    "fma"
+                } else {
+                    "mul"
+                }
+            }
             "FDIV" => "div",
             "FABS" => "abs",
             "FNEG" => "neg",
@@ -187,9 +211,15 @@ impl PtxReconstructor {
         let sources = self.format_sources(inst);
 
         if op == "fma" && sources.len() >= 3 {
-            format!("{}.rn.{} {}, {}, {}, {};", op, data_type, dest, sources[0], sources[1], sources[2])
+            format!(
+                "{}.rn.{} {}, {}, {}, {};",
+                op, data_type, dest, sources[0], sources[1], sources[2]
+            )
         } else if sources.len() >= 2 {
-            format!("{}.{} {}, {}, {};", op, data_type, dest, sources[0], sources[1])
+            format!(
+                "{}.{} {}, {}, {};",
+                op, data_type, dest, sources[0], sources[1]
+            )
         } else if !sources.is_empty() {
             format!("{}.{} {}, {};", op, data_type, dest, sources[0])
         } else {
@@ -250,7 +280,9 @@ impl PtxReconstructor {
     }
 
     fn reconstruct_compare(&mut self, inst: &EnhancedSassInstruction) -> String {
-        let cmp_op = inst.modifiers.iter()
+        let cmp_op = inst
+            .modifiers
+            .iter()
             .find(|m| ["LT", "LE", "GT", "GE", "EQ", "NE"].contains(&m.as_str()))
             .map(|s| s.to_lowercase())
             .unwrap_or_else(|| "eq".to_string());
@@ -260,7 +292,10 @@ impl PtxReconstructor {
         let sources = self.format_sources(inst);
 
         if sources.len() >= 2 {
-            format!("setp.{}.{} {}, {}, {};", cmp_op, data_type, dest, sources[0], sources[1])
+            format!(
+                "setp.{}.{} {}, {}, {};",
+                cmp_op, data_type, dest, sources[0], sources[1]
+            )
         } else {
             format!("// CMP: {} {}", inst.opcode, self.format_operands(inst))
         }
@@ -268,18 +303,22 @@ impl PtxReconstructor {
 
     fn reconstruct_branch(&mut self, inst: &EnhancedSassInstruction) -> String {
         // Check for predicate
-        let pred = inst.predicate.as_ref().map(|p| {
-            match p {
+        let pred = inst
+            .predicate
+            .as_ref()
+            .map(|p| match p {
                 SassOperand::Predicate { register, negated } => {
                     let neg = if *negated { "!" } else { "" };
                     format!("@{}%p{} ", neg, register.number)
                 }
                 _ => String::new(),
-            }
-        }).unwrap_or_default();
+            })
+            .unwrap_or_default();
 
         // Get target
-        let target = inst.src_operands.iter()
+        let target = inst
+            .src_operands
+            .iter()
             .find_map(|op| {
                 if let SassOperand::Immediate(imm) = op {
                     Some(format!("L_{:x}", imm))
@@ -308,7 +347,9 @@ impl PtxReconstructor {
         let dest = self.format_dest(inst);
 
         // Map SASS special register names to PTX
-        let special_reg = inst.src_operands.iter()
+        let special_reg = inst
+            .src_operands
+            .iter()
             .find_map(|op| {
                 if let SassOperand::SpecialRegister(name) = op {
                     Some(self.map_special_register(name))
@@ -383,7 +424,8 @@ impl PtxReconstructor {
                 SassDataType::B128 => "b128",
                 SassDataType::Pred => "pred",
                 SassDataType::Unknown => "b32",
-            }.to_string()
+            }
+            .to_string()
         } else {
             // Infer from opcode class
             match inst.opcode_class {
@@ -391,19 +433,28 @@ impl PtxReconstructor {
                 SassOpcodeClass::IntegerArithmetic => "s32",
                 SassOpcodeClass::IntegerComparison | SassOpcodeClass::FloatComparison => "pred",
                 _ => "b32",
-            }.to_string()
+            }
+            .to_string()
         }
     }
 
     fn get_conversion_types(&self, inst: &EnhancedSassInstruction) -> (String, String) {
         // Parse from modifiers like I2F, F2I, etc.
-        let src_type = inst.modifiers.iter()
+        let src_type = inst
+            .modifiers
+            .iter()
             .find_map(|m| {
-                if m.starts_with("F32") || m == "F" { Some("f32") }
-                else if m.starts_with("F64") { Some("f64") }
-                else if m.starts_with("S32") || m == "S" { Some("s32") }
-                else if m.starts_with("U32") || m == "U" { Some("u32") }
-                else { None }
+                if m.starts_with("F32") || m == "F" {
+                    Some("f32")
+                } else if m.starts_with("F64") {
+                    Some("f64")
+                } else if m.starts_with("S32") || m == "S" {
+                    Some("s32")
+                } else if m.starts_with("U32") || m == "U" {
+                    Some("u32")
+                } else {
+                    None
+                }
             })
             .unwrap_or("s32");
 
@@ -427,16 +478,21 @@ impl PtxReconstructor {
     }
 
     fn format_sources(&self, inst: &EnhancedSassInstruction) -> Vec<String> {
-        inst.src_operands.iter()
+        inst.src_operands
+            .iter()
             .map(|op| self.format_operand(op))
             .collect()
     }
 
     fn format_operands(&self, inst: &EnhancedSassInstruction) -> String {
-        let dests: Vec<String> = inst.dest_operands.iter()
+        let dests: Vec<String> = inst
+            .dest_operands
+            .iter()
             .map(|op| self.format_operand(op))
             .collect();
-        let srcs: Vec<String> = inst.src_operands.iter()
+        let srcs: Vec<String> = inst
+            .src_operands
+            .iter()
             .map(|op| self.format_operand(op))
             .collect();
 
@@ -459,13 +515,20 @@ impl PtxReconstructor {
                     format!("%r{}", reg.number)
                 }
             }
-            SassOperand::Predicate { register, negated: _ } => format!("%p{}", register.number),
+            SassOperand::Predicate {
+                register,
+                negated: _,
+            } => format!("%p{}", register.number),
             SassOperand::Immediate(imm) => format!("{}", imm),
             SassOperand::FloatImmediate(f) => format!("{}", f),
             SassOperand::ConstantBank { bank, offset } => format!("c[{}][{}]", bank, offset),
             SassOperand::Memory { base, offset, .. } => {
                 if *offset != 0 {
-                    format!("[%r{}+{}]", base.as_ref().map(|r| r.number).unwrap_or(0), offset)
+                    format!(
+                        "[%r{}+{}]",
+                        base.as_ref().map(|r| r.number).unwrap_or(0),
+                        offset
+                    )
                 } else {
                     format!("[%r{}]", base.as_ref().map(|r| r.number).unwrap_or(0))
                 }
@@ -481,7 +544,10 @@ impl PtxReconstructor {
         // Find memory operand in sources or destinations
         for op in inst.src_operands.iter().chain(inst.dest_operands.iter()) {
             if let SassOperand::Memory { base, offset, .. } = op {
-                let base_reg = base.as_ref().map(|r| format!("%r{}", r.number)).unwrap_or_default();
+                let base_reg = base
+                    .as_ref()
+                    .map(|r| format!("%r{}", r.number))
+                    .unwrap_or_default();
                 return if *offset != 0 {
                     format!("{}+{}", base_reg, offset)
                 } else {
@@ -521,7 +587,8 @@ impl PtxRecoveryEngine {
     /// Create a new PTX recovery engine from CUBIN data
     pub fn new(cubin_data: Vec<u8>) -> Result<Self, PtxRecoveryError> {
         let parser = CubinParser::new(cubin_data.clone());
-        let parsed_cubin = parser.parse()
+        let parsed_cubin = parser
+            .parse()
             .map_err(|e| PtxRecoveryError::CubinParse(e.to_string()))?;
 
         let dwarf_parser = DwarfParser::new(&cubin_data);
@@ -540,8 +607,7 @@ impl PtxRecoveryEngine {
 
     /// Create from CUBIN file path
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, PtxRecoveryError> {
-        let data = fs::read(path.as_ref())
-            .map_err(|e| PtxRecoveryError::IoError(e.to_string()))?;
+        let data = fs::read(path.as_ref()).map_err(|e| PtxRecoveryError::IoError(e.to_string()))?;
         Self::new(data)
     }
 
@@ -549,7 +615,9 @@ impl PtxRecoveryEngine {
     pub fn add_ptx_source<P: AsRef<Path>>(&mut self, path: P) -> Result<(), PtxRecoveryError> {
         let content = fs::read_to_string(path.as_ref())
             .map_err(|e| PtxRecoveryError::IoError(e.to_string()))?;
-        let name = path.as_ref().file_name()
+        let name = path
+            .as_ref()
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown.ptx")
             .to_string();
@@ -564,13 +632,17 @@ impl PtxRecoveryEngine {
 
     /// Recover PTX for all kernels
     pub fn recover_all(&mut self) -> Result<PtxRecoveryResult, PtxRecoveryError> {
-        let cubin = self.parsed_cubin.as_ref()
+        let cubin = self
+            .parsed_cubin
+            .as_ref()
             .ok_or_else(|| PtxRecoveryError::NoCubin)?;
 
         let sm_version = cubin.sm_version;
 
         // Collect kernel info first to avoid borrow issues
-        let kernel_info: Vec<(String, u64, Vec<u8>)> = cubin.kernels.iter()
+        let kernel_info: Vec<(String, u64, Vec<u8>)> = cubin
+            .kernels
+            .iter()
             .map(|k| (k.name.clone(), k.address, k.code.clone()))
             .collect();
 
@@ -599,8 +671,8 @@ impl PtxRecoveryEngine {
             result.functions.push(recovered);
         }
 
-        result.stats.unmapped_instructions = result.stats.total_sass_instructions
-            - result.stats.mapped_instructions;
+        result.stats.unmapped_instructions =
+            result.stats.total_sass_instructions - result.stats.mapped_instructions;
 
         Ok(result)
     }
@@ -616,7 +688,10 @@ impl PtxRecoveryEngine {
             name: name.to_string(),
             linkage_name: None,
             start_address,
-            end_address: instructions.last().map(|i| i.address).unwrap_or(start_address),
+            end_address: instructions
+                .last()
+                .map(|i| i.address)
+                .unwrap_or(start_address),
             ptx_lines: BTreeMap::new(),
             sass_to_ptx: HashMap::new(),
             reconstructed_ptx: None,
@@ -640,13 +715,15 @@ impl PtxRecoveryEngine {
 
                     // Try to get source line
                     if let Some(source) = self.get_source_line(&line_info.file, line_info.line) {
-                        func.ptx_lines.entry(line_info.line).or_insert(PtxSourceLine {
-                            line_number: line_info.line,
-                            source,
-                            file: line_info.file.clone(),
-                            is_statement: line_info.is_statement,
-                            column: line_info.column,
-                        });
+                        func.ptx_lines
+                            .entry(line_info.line)
+                            .or_insert(PtxSourceLine {
+                                line_number: line_info.line,
+                                source,
+                                file: line_info.file.clone(),
+                                is_statement: line_info.is_statement,
+                                column: line_info.column,
+                            });
                     }
                 }
             }
@@ -666,11 +743,16 @@ impl PtxRecoveryEngine {
             let ptx = self.reconstructor.reconstruct_instruction(inst);
 
             // Add comment with original SASS
-            let comment = format!("    // 0x{:04x}: {} {}", inst.address, inst.opcode,
-                inst.src_operands.iter()
+            let comment = format!(
+                "    // 0x{:04x}: {} {}",
+                inst.address,
+                inst.opcode,
+                inst.src_operands
+                    .iter()
                     .map(|op| format!("{:?}", op))
                     .collect::<Vec<_>>()
-                    .join(", "));
+                    .join(", ")
+            );
             reconstructed_lines.push(comment);
             reconstructed_lines.push(format!("    {}", ptx));
         }
@@ -685,7 +767,10 @@ impl PtxRecoveryEngine {
     fn get_source_line(&self, file: &str, line: u32) -> Option<String> {
         // Try exact match first
         if let Some(content) = self.ptx_source_cache.get(file) {
-            return content.lines().nth((line - 1) as usize).map(|s| s.to_string());
+            return content
+                .lines()
+                .nth((line - 1) as usize)
+                .map(|s| s.to_string());
         }
 
         // Try matching by filename only
@@ -701,7 +786,10 @@ impl PtxRecoveryEngine {
                 .unwrap_or(cached_name);
 
             if cached_basename == basename {
-                return content.lines().nth((line - 1) as usize).map(|s| s.to_string());
+                return content
+                    .lines()
+                    .nth((line - 1) as usize)
+                    .map(|s| s.to_string());
             }
         }
 
@@ -780,9 +868,12 @@ pub fn recover_ptx_from_cubin<P: AsRef<Path>>(
 }
 
 /// Get SASS to PTX mapping from CUBIN
-pub fn get_sass_ptx_mapping(cubin_data: &[u8]) -> Result<HashMap<u64, DebugLineInfo>, PtxRecoveryError> {
+pub fn get_sass_ptx_mapping(
+    cubin_data: &[u8],
+) -> Result<HashMap<u64, DebugLineInfo>, PtxRecoveryError> {
     let parser = DwarfParser::new(cubin_data);
-    let info = parser.parse()
+    let info = parser
+        .parse()
         .map_err(|e| PtxRecoveryError::CubinParse(e.to_string()))?;
     Ok(info.line_mappings)
 }
@@ -805,11 +896,13 @@ mod tests {
             opcode_class: SassOpcodeClass::FloatArithmetic,
             modifiers: vec![],
             data_type: Some(SassDataType::F32),
-            dest_operands: vec![SassOperand::Register(super::super::instruction::SassRegister {
-                prefix: "R".to_string(),
-                number: 0,
-                is_64bit: false,
-            })],
+            dest_operands: vec![SassOperand::Register(
+                super::super::instruction::SassRegister {
+                    prefix: "R".to_string(),
+                    number: 0,
+                    is_64bit: false,
+                },
+            )],
             src_operands: vec![
                 SassOperand::Register(super::super::instruction::SassRegister {
                     prefix: "R".to_string(),

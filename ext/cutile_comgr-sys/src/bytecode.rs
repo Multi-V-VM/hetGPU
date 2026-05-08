@@ -4,9 +4,8 @@
 //! into MLIR CuTile dialect representation.
 
 use crate::{
-    cutile_comgr_status_s, cutile_comgr_status_t, cutile_comgr_data_set_t,
-    cutile_comgr_data_kind_s, cutile_comgr_data_t, DATA_STORE, DATA_SET_STORE,
-    DataContent, get_next_handle,
+    cutile_comgr_data_kind_s, cutile_comgr_data_set_t, cutile_comgr_data_t, cutile_comgr_status_s,
+    cutile_comgr_status_t, get_next_handle, DataContent, DATA_SET_STORE, DATA_STORE,
 };
 
 /// CuTile bytecode magic number (first 4 bytes)
@@ -70,8 +69,8 @@ pub struct BytecodeDeserializer<'a> {
 impl<'a> BytecodeDeserializer<'a> {
     /// Create a new deserializer
     pub fn new(data: &'a [u8]) -> Result<Self, &'static str> {
-        let header = CuTileBytecodeHeader::from_bytes(data)
-            .ok_or("Failed to parse bytecode header")?;
+        let header =
+            CuTileBytecodeHeader::from_bytes(data).ok_or("Failed to parse bytecode header")?;
 
         if !header.validate() {
             return Err("Invalid bytecode header");
@@ -115,7 +114,9 @@ impl<'a> BytecodeDeserializer<'a> {
             // Parse operation count
             if self.position + 4 <= self.data.len() {
                 let op_count = u32::from_le_bytes(
-                    self.data[self.position..self.position + 4].try_into().unwrap()
+                    self.data[self.position..self.position + 4]
+                        .try_into()
+                        .unwrap(),
                 );
                 self.position += 4;
 
@@ -206,11 +207,14 @@ pub fn load_bytecode(
         let output_handle = get_next_handle();
         {
             let mut store = DATA_STORE.lock().unwrap();
-            store.insert(output_handle, DataContent {
-                kind: cutile_comgr_data_kind_s::CUTILE_COMGR_DATA_KIND_MLIR_CUTILE,
-                content: mlir_content.into_bytes(),
-                name: input_content.name.map(|n| format!("{}.mlir", n)),
-            });
+            store.insert(
+                output_handle,
+                DataContent {
+                    kind: cutile_comgr_data_kind_s::CUTILE_COMGR_DATA_KIND_MLIR_CUTILE,
+                    content: mlir_content.into_bytes(),
+                    name: input_content.name.map(|n| format!("{}.mlir", n)),
+                },
+            );
         }
 
         // Add to output set
@@ -235,9 +239,9 @@ fn deserialize_bytecode(data: &[u8]) -> Result<String, String> {
 
     // Check for CuTile bytecode magic
     if data.len() >= 4 && &data[0..4] == CUTILE_BYTECODE_MAGIC {
-        let mut deserializer = BytecodeDeserializer::new(data)
-            .map_err(|e| e.to_string())?;
-        return deserializer.deserialize_to_mlir()
+        let mut deserializer = BytecodeDeserializer::new(data).map_err(|e| e.to_string())?;
+        return deserializer
+            .deserialize_to_mlir()
             .map_err(|e| e.to_string());
     }
 
@@ -262,7 +266,8 @@ fn generate_placeholder_mlir() -> String {
     return %0 : tensor<4xf32>
   }
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 #[cfg(test)]

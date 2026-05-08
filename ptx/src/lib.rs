@@ -21,103 +21,98 @@ pub use pass::TranslateError;
 
 // Export SASS ↔ PTX mapping types for hetGPU runtime integration
 pub use debug::{
-    // Core mapping types
-    SassInstruction,
-    SassLineMapping,
-    SassPtxMapper,
+    CheckpointBreakpoint,
+    CheckpointManager,
     // CUBIN debug info
     CubinDebugInfo,
     CubinSymbol,
     CubinSymbolType,
     DebugLineEntry,
-    // hetGPU runtime interface
-    HetGpuDebugInterface,
-    RuntimeBreakpoint,
-    Watchpoint,
-    WatchType,
-    StepMode,
-    ExecutionContext,
-    StackFrame,
-    // PTX reconstruction
-    PtxReconstructor,
-    PtxExecutionState,
-    // Original types
-    PtxSourceLocation,
-    TargetInstruction,
     DwarfMappingEntry,
-    VariableLocation,
-    PtxDwarfBuilder,
-    PtxStateRecovery,
-    // GPU trap and checkpoint types
-    TrapReason,
+    ExecutionContext,
     GpuCheckpointState,
     GpuTrapHandler,
-    CheckpointBreakpoint,
-    ThreadCheckpointState,
+    // hetGPU runtime interface
+    HetGpuDebugInterface,
+    KernelArgument,
     MemoryRegion,
     MemorySpace,
-    KernelArgument,
+    PtxDwarfBuilder,
+    PtxExecutionState,
+    // PTX reconstruction
+    PtxReconstructor,
+    // Original types
+    PtxSourceLocation,
+    PtxStateRecovery,
     ResumeInfo,
-    CheckpointManager,
+    RuntimeBreakpoint,
+    // Core mapping types
+    SassInstruction,
+    SassLineMapping,
+    SassPtxMapper,
+    StackFrame,
+    StepMode,
+    TargetInstruction,
+    ThreadCheckpointState,
+    // GPU trap and checkpoint types
+    TrapReason,
+    VariableLocation,
+    WatchType,
+    Watchpoint,
 };
 
 pub use state_recovery::{
-    PtxStateRecoveryManager,
-    ExecutionState,
+    Breakpoint, CallFrame, ExecutionState, MemorySnapshot, PtxStateRecoveryManager, ThreadState,
     VariableValue,
-    ThreadState,
-    MemorySnapshot,
-    Breakpoint,
-    CallFrame,
 };
 
 // Export enhanced SASS analysis types
 pub use sass::{
-    // Enhanced SASS instruction with full semantics
-    EnhancedSassInstruction,
-    SassOpcodeClass,
-    SassMemorySpace,
-    SassDataType,
-    SassRegister,
-    SassOperand,
-    SassControlCodes,
-    PtxTemplate,
-    PtxEquivalent,
-    MappingConfidence,
+    // Helper functions
+    classify_opcode,
+    get_memory_space,
+    get_ptx_template,
+    is_cubin,
+    CompilationUnitInfo,
+    ControlFlowAnalyzer,
+    CubinConstant,
+    CubinKernel,
+    CubinParseError,
     // CUBIN parser
     CubinParser,
     CubinParserBuilder,
-    ParsedCubin,
-    CubinKernel,
-    CubinConstant,
     CubinSection,
-    CubinParseError,
-    // DWARF parser
-    DwarfParser,
-    ParsedDebugInfo,
     DebugFunctionInfo,
     DebugVariableInfo,
-    VariableLocationExpr,
-    CompilationUnitInfo,
+    DisassemblerError,
     DwarfParseError,
+    // DWARF parser
+    DwarfParser,
+    // Enhanced SASS instruction with full semantics
+    EnhancedSassInstruction,
+    InlineStats,
+    MappingConfidence,
+    ParsedCubin,
+    ParsedDebugInfo,
+    PtxEquivalent,
+    PtxTemplate,
+    SassControlCodes,
+    SassDataType,
     // SASS disassembler
     SassDisassembler,
-    SmVersion,
-    TextDisassemblyParser,
-    ControlFlowAnalyzer,
-    DisassemblerError,
-    // SASS → LLVM inlining
-    SassInliner,
     SassInlineConfig,
     SassInlineStrategy,
+    // SASS → LLVM inlining
+    SassInliner,
     SassKernelBuilder,
+    SassMemorySpace,
     SassMetadataExtractor,
-    InlineStats,
-    // Helper functions
-    classify_opcode,
-    get_ptx_template,
-    get_memory_space,
-    is_cubin,
+    SassOpcodeClass,
+    SassOperand,
+    SassRegister,
+    SmVersion,
+    TextDisassemblyParser,
+    VariableLocationExpr,
 };
 
 use std::collections::HashMap;
@@ -139,7 +134,8 @@ pub fn ptx_to_llvm_to_ptx_with_sass_mapping(
         .map_err(|e| TranslateError::Todo(format!("PTX parse error: {:?}", e)))?;
 
     // Compile to LLVM with debug info, then back to PTX
-    let (module, regenerated_ptx, debug_mappings) = pass::to_llvm_module_with_debug_round_trip(ast)?;
+    let (module, regenerated_ptx, debug_mappings) =
+        pass::to_llvm_module_with_debug_round_trip(ast)?;
 
     // Convert debug mappings to SASS address → PTX line format
     // Each entry maps SASS address to (line << 32 | column)
@@ -350,10 +346,12 @@ impl EnhancedSassMapper {
 
             // Build address index
             for (idx, inst) in instructions.iter().enumerate() {
-                self.address_index.insert(inst.address, (kernel.name.clone(), idx));
+                self.address_index
+                    .insert(inst.address, (kernel.name.clone(), idx));
             }
 
-            self.kernel_instructions.insert(kernel.name.clone(), instructions);
+            self.kernel_instructions
+                .insert(kernel.name.clone(), instructions);
         }
 
         self.parsed_cubin = Some(parsed);
@@ -381,14 +379,17 @@ impl EnhancedSassMapper {
 
     /// Get PTX source line content
     pub fn get_ptx_line(&self, line: u32) -> Option<&str> {
-        self.ptx_source.as_ref().and_then(|source| {
-            source.lines().nth((line.saturating_sub(1)) as usize)
-        })
+        self.ptx_source
+            .as_ref()
+            .and_then(|source| source.lines().nth((line.saturating_sub(1)) as usize))
     }
 
     /// Get all kernel names
     pub fn get_kernel_names(&self) -> Vec<&str> {
-        self.kernel_instructions.keys().map(|s| s.as_str()).collect()
+        self.kernel_instructions
+            .keys()
+            .map(|s| s.as_str())
+            .collect()
     }
 
     /// Get parsed CUBIN info
@@ -397,7 +398,11 @@ impl EnhancedSassMapper {
     }
 
     /// Find instructions at a PTX line
-    pub fn find_instructions_at_ptx_line(&self, file: &str, line: u32) -> Vec<&sass::EnhancedSassInstruction> {
+    pub fn find_instructions_at_ptx_line(
+        &self,
+        file: &str,
+        line: u32,
+    ) -> Vec<&sass::EnhancedSassInstruction> {
         let mut results = Vec::new();
         for instructions in self.kernel_instructions.values() {
             for inst in instructions {
@@ -418,7 +423,10 @@ impl EnhancedSassMapper {
         let mut output = String::new();
         let instructions = self.get_kernel_instructions(kernel_name);
 
-        output.push_str(&format!("// PTX reconstruction for kernel: {}\n", kernel_name));
+        output.push_str(&format!(
+            "// PTX reconstruction for kernel: {}\n",
+            kernel_name
+        ));
         output.push_str("// Generated from SASS analysis\n\n");
 
         let mut current_line = 0u32;

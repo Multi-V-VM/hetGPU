@@ -117,6 +117,7 @@ fn run_variable<'input, 'b>(
                         .add_or_get_in_current_scope_untyped(name)
                         .map(ast::RegOrImmediate::Reg),
                     ast::RegOrImmediate::Imm(imm) => Ok(ast::RegOrImmediate::Imm(imm)),
+                    ast::RegOrImmediate::Discard => Ok(ast::RegOrImmediate::Discard),
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         },
@@ -191,6 +192,7 @@ fn convert_array_init<'input, 'b>(
                 .add_or_get_in_current_scope_untyped(name)
                 .map(ast::RegOrImmediate::Reg),
             ast::RegOrImmediate::Imm(imm) => Ok(ast::RegOrImmediate::Imm(*imm)),
+            ast::RegOrImmediate::Discard => Ok(ast::RegOrImmediate::Discard),
         })
         .collect::<Result<Vec<_>, _>>()
 }

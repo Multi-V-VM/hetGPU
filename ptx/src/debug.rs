@@ -1128,7 +1128,10 @@ impl SassPtxMapper {
                 }
                 // Also extract line number from same line
                 if let Some(line_part) = line.split("line ").nth(1) {
-                    if let Ok(line_num) = line_part.trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<u32>() {
+                    if let Ok(line_num) = line_part
+                        .trim_end_matches(|c: char| !c.is_ascii_digit())
+                        .parse::<u32>()
+                    {
                         pending_line = Some(line_num);
                     }
                 }
@@ -1156,7 +1159,11 @@ impl SassPtxMapper {
                         ptx_file: current_file.clone(),
                         ptx_line,
                         ptx_column: 0,
-                        function_name: if current_function.is_empty() { None } else { Some(current_function.clone()) },
+                        function_name: if current_function.is_empty() {
+                            None
+                        } else {
+                            Some(current_function.clone())
+                        },
                     };
 
                     // Add to bidirectional maps
@@ -1191,7 +1198,11 @@ impl SassPtxMapper {
         let address = u64::from_str_radix(addr_str, 16).ok()?;
 
         // Get rest of line after address
-        let rest = line.get(addr_end + 2..)?.trim().trim_end_matches(';').trim();
+        let rest = line
+            .get(addr_end + 2..)?
+            .trim()
+            .trim_end_matches(';')
+            .trim();
 
         // Check for predicate (@P0, @!P1, etc.)
         let (predicate, instruction_part) = if rest.starts_with('@') {
@@ -1212,7 +1223,10 @@ impl SassPtxMapper {
         // Split opcode from modifiers (e.g., "LDG.E.U32" -> "LDG", [".E", ".U32"])
         let opcode_parts: Vec<&str> = opcode_full.split('.').collect();
         let opcode = opcode_parts[0].to_string();
-        let control_codes: Vec<String> = opcode_parts[1..].iter().map(|s| format!(".{}", s)).collect();
+        let control_codes: Vec<String> = opcode_parts[1..]
+            .iter()
+            .map(|s| format!(".{}", s))
+            .collect();
 
         // Parse operands
         let operands_str = parts[1..].join(" ");
@@ -1254,7 +1268,11 @@ impl SassPtxMapper {
     }
 
     /// Query PTX location from SASS address with address range tolerance
-    pub fn sass_to_ptx_location_nearest(&self, sass_address: u64, tolerance: u64) -> Option<&PtxSourceLocation> {
+    pub fn sass_to_ptx_location_nearest(
+        &self,
+        sass_address: u64,
+        tolerance: u64,
+    ) -> Option<&PtxSourceLocation> {
         // First try exact match
         if let Some(loc) = self.sass_to_ptx.get(&sass_address) {
             return Some(loc);
@@ -1263,12 +1281,20 @@ impl SassPtxMapper {
         // Find nearest address within tolerance
         let mut best_match: Option<(u64, &PtxSourceLocation)> = None;
         for (addr, loc) in &self.sass_to_ptx {
-            let diff = if *addr > sass_address { *addr - sass_address } else { sass_address - *addr };
+            let diff = if *addr > sass_address {
+                *addr - sass_address
+            } else {
+                sass_address - *addr
+            };
             if diff <= tolerance {
                 match best_match {
                     None => best_match = Some((*addr, loc)),
                     Some((best_addr, _)) => {
-                        let best_diff = if best_addr > sass_address { best_addr - sass_address } else { sass_address - best_addr };
+                        let best_diff = if best_addr > sass_address {
+                            best_addr - sass_address
+                        } else {
+                            sass_address - best_addr
+                        };
                         if diff < best_diff {
                             best_match = Some((*addr, loc));
                         }
@@ -1304,9 +1330,9 @@ impl SassPtxMapper {
 
     /// Get PTX source line content
     pub fn get_ptx_source_line(&self, line: u32) -> Option<&str> {
-        self.ptx_source.as_ref().and_then(|source| {
-            source.lines().nth((line.saturating_sub(1)) as usize)
-        })
+        self.ptx_source
+            .as_ref()
+            .and_then(|source| source.lines().nth((line.saturating_sub(1)) as usize))
     }
 
     /// Get context around a PTX line (for displaying in debugger)
@@ -1335,7 +1361,13 @@ impl SassPtxMapper {
     }
 
     /// Add a mapping entry directly
-    pub fn add_mapping(&mut self, sass_addr: u64, ptx_file: &str, ptx_line: u32, instruction: &str) {
+    pub fn add_mapping(
+        &mut self,
+        sass_addr: u64,
+        ptx_file: &str,
+        ptx_line: u32,
+        instruction: &str,
+    ) {
         let ptx_loc = PtxSourceLocation {
             file: ptx_file.to_string(),
             line: ptx_line,
@@ -1352,7 +1384,11 @@ impl SassPtxMapper {
 
         // Create minimal SASS instruction
         let sass_inst = SassInstruction {
-            opcode: instruction.split_whitespace().next().unwrap_or("").to_string(),
+            opcode: instruction
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string(),
             instruction: instruction.to_string(),
             address: sass_addr,
             predicate: None,
@@ -1378,7 +1414,8 @@ impl SassPtxMapper {
 
     /// Get all PTX lines that have SASS mappings
     pub fn get_mapped_ptx_lines(&self) -> Vec<(String, u32)> {
-        self.ptx_to_sass.keys()
+        self.ptx_to_sass
+            .keys()
             .filter_map(|key| {
                 let parts: Vec<&str> = key.rsplitn(2, ':').collect();
                 if parts.len() == 2 {
@@ -1456,7 +1493,8 @@ impl SassPtxMapper {
         // Build function ranges from kernels
         for kernel in &parsed.kernels {
             let end_addr = kernel.address + kernel.size as u64;
-            self.function_ranges.insert(kernel.name.clone(), (kernel.address, end_addr));
+            self.function_ranges
+                .insert(kernel.name.clone(), (kernel.address, end_addr));
         }
     }
 
@@ -1492,8 +1530,16 @@ impl SassPtxMapper {
                     instruction: inst.instruction_text.clone(),
                     address: inst.address,
                     predicate: inst.predicate.as_ref().map(|p| format!("{:?}", p)),
-                    dest_operands: inst.dest_operands.iter().map(|r| format!("{:?}", r)).collect(),
-                    src_operands: inst.src_operands.iter().map(|r| format!("{:?}", r)).collect(),
+                    dest_operands: inst
+                        .dest_operands
+                        .iter()
+                        .map(|r| format!("{:?}", r))
+                        .collect(),
+                    src_operands: inst
+                        .src_operands
+                        .iter()
+                        .map(|r| format!("{:?}", r))
+                        .collect(),
                     control_codes: inst.modifiers.clone(),
                     stall_count: Some(inst.control_codes.stall_count),
                     wait_barrier: Some(inst.control_codes.wait_barrier_mask),
@@ -1517,13 +1563,16 @@ impl SassPtxMapper {
         if let (Some(first), Some(last)) = (instructions.first(), instructions.last()) {
             let start = first.address;
             let end = last.address + last.size as u64;
-            self.function_ranges.insert(kernel_name.to_string(), (start, end));
+            self.function_ranges
+                .insert(kernel_name.to_string(), (start, end));
         }
     }
 
     /// Get instruction details at a SASS address
     pub fn get_instruction_at(&self, sass_addr: u64) -> Option<&SassLineMapping> {
-        self.line_mappings.iter().find(|m| m.sass_address == sass_addr)
+        self.line_mappings
+            .iter()
+            .find(|m| m.sass_address == sass_addr)
     }
 
     /// Find all SASS addresses within a function
@@ -1600,7 +1649,11 @@ impl CubinDebugInfo {
 
     /// Parse CUBIN file using system tools (cuobjdump, readelf)
     #[cfg(unix)]
-    pub fn parse_cubin_file(&mut self, cubin_path: &str, ptx_source: Option<String>) -> Result<(), String> {
+    pub fn parse_cubin_file(
+        &mut self,
+        cubin_path: &str,
+        ptx_source: Option<String>,
+    ) -> Result<(), String> {
         use std::process::Command;
 
         if let Some(source) = ptx_source {
@@ -1634,7 +1687,11 @@ impl CubinDebugInfo {
     }
 
     #[cfg(not(unix))]
-    pub fn parse_cubin_file(&mut self, _cubin_path: &str, _ptx_source: Option<String>) -> Result<(), String> {
+    pub fn parse_cubin_file(
+        &mut self,
+        _cubin_path: &str,
+        _ptx_source: Option<String>,
+    ) -> Result<(), String> {
         Err("CUBIN parsing only supported on Unix systems".to_string())
     }
 
@@ -1647,11 +1704,19 @@ impl CubinDebugInfo {
             if parts.len() >= 4 {
                 // Try to extract symbol info
                 if let Some(name) = parts.get(1) {
-                    if name.starts_with("_") || name.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) {
-                        let addr = parts.get(0)
+                    if name.starts_with("_")
+                        || name
+                            .chars()
+                            .next()
+                            .map(|c| c.is_alphabetic())
+                            .unwrap_or(false)
+                    {
+                        let addr = parts
+                            .get(0)
                             .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
                             .unwrap_or(0);
-                        let size = parts.get(2)
+                        let size = parts
+                            .get(2)
                             .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
                             .unwrap_or(0);
 
@@ -1680,7 +1745,11 @@ impl CubinDebugInfo {
     ///
     /// This method uses the built-in CUBIN/ELF parser and DWARF extractor
     /// to parse debug information directly from the binary.
-    pub fn parse_cubin_native(&mut self, cubin_data: &[u8], ptx_source: Option<String>) -> Result<(), String> {
+    pub fn parse_cubin_native(
+        &mut self,
+        cubin_data: &[u8],
+        ptx_source: Option<String>,
+    ) -> Result<(), String> {
         if let Some(source) = ptx_source {
             self.mapper.ptx_source = Some(source);
         }
@@ -1723,7 +1792,8 @@ impl CubinDebugInfo {
                 crate::sass::ControlFlowAnalyzer::analyze_data_flow(&mut instructions);
 
                 // Load into mapper
-                self.mapper.load_from_enhanced_instructions(&kernel.name, &instructions);
+                self.mapper
+                    .load_from_enhanced_instructions(&kernel.name, &instructions);
             }
         }
 
@@ -1731,16 +1801,24 @@ impl CubinDebugInfo {
     }
 
     /// Parse CUBIN from file path using native parser
-    pub fn parse_cubin_file_native(&mut self, cubin_path: &str, ptx_source: Option<String>) -> Result<(), String> {
-        let cubin_data = std::fs::read(cubin_path)
-            .map_err(|e| format!("Failed to read CUBIN file: {}", e))?;
+    pub fn parse_cubin_file_native(
+        &mut self,
+        cubin_path: &str,
+        ptx_source: Option<String>,
+    ) -> Result<(), String> {
+        let cubin_data =
+            std::fs::read(cubin_path).map_err(|e| format!("Failed to read CUBIN file: {}", e))?;
 
         self.mapper.cubin_path = Some(cubin_path.to_string());
         self.parse_cubin_native(&cubin_data, ptx_source)
     }
 
     /// Parse cuobjdump text output and enhance with semantic analysis
-    pub fn parse_cuobjdump_enhanced(&mut self, output: &str, ptx_source: Option<String>) -> Result<(), String> {
+    pub fn parse_cuobjdump_enhanced(
+        &mut self,
+        output: &str,
+        ptx_source: Option<String>,
+    ) -> Result<(), String> {
         if let Some(source) = ptx_source {
             self.mapper.ptx_source = Some(source);
         }
@@ -1749,11 +1827,16 @@ impl CubinDebugInfo {
         let instructions = crate::sass::TextDisassemblyParser::parse_cuobjdump_output(output);
 
         // Group by function
-        let mut by_function: std::collections::HashMap<String, Vec<crate::sass::EnhancedSassInstruction>> =
-            std::collections::HashMap::new();
+        let mut by_function: std::collections::HashMap<
+            String,
+            Vec<crate::sass::EnhancedSassInstruction>,
+        > = std::collections::HashMap::new();
 
         for inst in instructions {
-            let func = inst.function_name.clone().unwrap_or_else(|| "unknown".to_string());
+            let func = inst
+                .function_name
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string());
             by_function.entry(func).or_default().push(inst);
         }
 
@@ -1761,7 +1844,8 @@ impl CubinDebugInfo {
         for (func_name, mut insts) in by_function {
             crate::sass::ControlFlowAnalyzer::find_basic_blocks(&mut insts);
             crate::sass::ControlFlowAnalyzer::analyze_data_flow(&mut insts);
-            self.mapper.load_from_enhanced_instructions(&func_name, &insts);
+            self.mapper
+                .load_from_enhanced_instructions(&func_name, &insts);
         }
 
         Ok(())
@@ -1926,7 +2010,11 @@ impl HetGpuDebugInterface {
 
     /// Load mappings from CUBIN file
     #[cfg(unix)]
-    pub fn load_from_cubin(&mut self, cubin_path: &str, ptx_source: Option<String>) -> Result<(), String> {
+    pub fn load_from_cubin(
+        &mut self,
+        cubin_path: &str,
+        ptx_source: Option<String>,
+    ) -> Result<(), String> {
         let mut debug_info = CubinDebugInfo::new();
         debug_info.parse_cubin_file(cubin_path, ptx_source)?;
         self.mapper = debug_info.mapper;
@@ -1934,7 +2022,11 @@ impl HetGpuDebugInterface {
     }
 
     #[cfg(not(unix))]
-    pub fn load_from_cubin(&mut self, _cubin_path: &str, _ptx_source: Option<String>) -> Result<(), String> {
+    pub fn load_from_cubin(
+        &mut self,
+        _cubin_path: &str,
+        _ptx_source: Option<String>,
+    ) -> Result<(), String> {
         Err("CUBIN loading only supported on Unix systems".to_string())
     }
 
@@ -1942,7 +2034,11 @@ impl HetGpuDebugInterface {
     ///
     /// This method uses the built-in CUBIN/ELF parser, DWARF extractor, and SASS
     /// disassembler to build mappings without external tool dependencies.
-    pub fn load_from_cubin_native(&mut self, cubin_path: &str, ptx_source: Option<String>) -> Result<(), String> {
+    pub fn load_from_cubin_native(
+        &mut self,
+        cubin_path: &str,
+        ptx_source: Option<String>,
+    ) -> Result<(), String> {
         let mut debug_info = CubinDebugInfo::new();
         debug_info.parse_cubin_file_native(cubin_path, ptx_source)?;
         self.mapper = debug_info.mapper;
@@ -1950,7 +2046,11 @@ impl HetGpuDebugInterface {
     }
 
     /// Load mappings from CUBIN data bytes using native parser
-    pub fn load_from_cubin_data(&mut self, cubin_data: &[u8], ptx_source: Option<String>) -> Result<(), String> {
+    pub fn load_from_cubin_data(
+        &mut self,
+        cubin_data: &[u8],
+        ptx_source: Option<String>,
+    ) -> Result<(), String> {
         let mut debug_info = CubinDebugInfo::new();
         debug_info.parse_cubin_native(cubin_data, ptx_source)?;
         self.mapper = debug_info.mapper;
@@ -1958,7 +2058,11 @@ impl HetGpuDebugInterface {
     }
 
     /// Load mappings from cuobjdump output with enhanced semantic analysis
-    pub fn load_from_cuobjdump_enhanced(&mut self, output: &str, ptx_source: Option<String>) -> Result<(), String> {
+    pub fn load_from_cuobjdump_enhanced(
+        &mut self,
+        output: &str,
+        ptx_source: Option<String>,
+    ) -> Result<(), String> {
         let mut debug_info = CubinDebugInfo::new();
         debug_info.parse_cuobjdump_enhanced(output, ptx_source)?;
         self.mapper = debug_info.mapper;
@@ -1967,14 +2071,21 @@ impl HetGpuDebugInterface {
 
     /// Set breakpoint at PTX line
     pub fn set_breakpoint_at_ptx_line(&mut self, file: &str, line: u32) -> Result<u32, String> {
-        let sass_addr = self.mapper.ptx_to_sass_address(file, line)
+        let sass_addr = self
+            .mapper
+            .ptx_to_sass_address(file, line)
             .ok_or_else(|| format!("No SASS address found for {}:{}", file, line))?;
 
         self.set_breakpoint_at_sass_address(sass_addr, file, line)
     }
 
     /// Set breakpoint at SASS address
-    pub fn set_breakpoint_at_sass_address(&mut self, sass_addr: u64, file: &str, line: u32) -> Result<u32, String> {
+    pub fn set_breakpoint_at_sass_address(
+        &mut self,
+        sass_addr: u64,
+        file: &str,
+        line: u32,
+    ) -> Result<u32, String> {
         let id = self.breakpoints.len() as u32;
 
         let bp = RuntimeBreakpoint {
@@ -1998,7 +2109,9 @@ impl HetGpuDebugInterface {
 
     /// Remove breakpoint
     pub fn remove_breakpoint(&mut self, id: u32) -> bool {
-        let addr = self.breakpoints.iter()
+        let addr = self
+            .breakpoints
+            .iter()
             .find(|(_, bp)| bp.id == id)
             .map(|(addr, _)| *addr);
 
@@ -2016,7 +2129,10 @@ impl HetGpuDebugInterface {
     }
 
     /// Handle breakpoint hit - returns PTX location and context
-    pub fn handle_breakpoint_hit(&mut self, sass_addr: u64) -> Option<(&PtxSourceLocation, &RuntimeBreakpoint)> {
+    pub fn handle_breakpoint_hit(
+        &mut self,
+        sass_addr: u64,
+    ) -> Option<(&PtxSourceLocation, &RuntimeBreakpoint)> {
         if let Some(bp) = self.breakpoints.get_mut(&sass_addr) {
             if bp.enabled {
                 bp.hit_count += 1;
@@ -2032,8 +2148,13 @@ impl HetGpuDebugInterface {
     }
 
     /// Query PTX location with tolerance for address matching
-    pub fn query_ptx_location_nearest(&self, sass_addr: u64, tolerance: u64) -> Option<&PtxSourceLocation> {
-        self.mapper.sass_to_ptx_location_nearest(sass_addr, tolerance)
+    pub fn query_ptx_location_nearest(
+        &self,
+        sass_addr: u64,
+        tolerance: u64,
+    ) -> Option<&PtxSourceLocation> {
+        self.mapper
+            .sass_to_ptx_location_nearest(sass_addr, tolerance)
     }
 
     /// Get PTX source line content
@@ -2157,10 +2278,14 @@ impl HetGpuDebugInterface {
                 report.push_str(&format!("  Source: {}\n", line_content.trim()));
             }
 
-            report.push_str(&format!("\nThread: ({}, {}, {})\n",
-                ctx.thread_id.0, ctx.thread_id.1, ctx.thread_id.2));
-            report.push_str(&format!("Block: ({}, {}, {})\n",
-                ctx.block_id.0, ctx.block_id.1, ctx.block_id.2));
+            report.push_str(&format!(
+                "\nThread: ({}, {}, {})\n",
+                ctx.thread_id.0, ctx.thread_id.1, ctx.thread_id.2
+            ));
+            report.push_str(&format!(
+                "Block: ({}, {}, {})\n",
+                ctx.block_id.0, ctx.block_id.1, ctx.block_id.2
+            ));
             report.push_str(&format!("Warp: {}, Lane: {}\n", ctx.warp_id, ctx.lane_id));
             report.push_str(&format!("Active Mask: 0x{:08x}\n", ctx.active_mask));
 
@@ -2176,9 +2301,14 @@ impl HetGpuDebugInterface {
 
             report.push_str("\nCall Stack:\n");
             for (i, frame) in ctx.call_stack.iter().enumerate() {
-                report.push_str(&format!("  #{} {} at {}:{} (0x{:08x})\n",
-                    i, frame.function_name, frame.ptx_location.file,
-                    frame.ptx_location.line, frame.sass_address));
+                report.push_str(&format!(
+                    "  #{} {} at {}:{} (0x{:08x})\n",
+                    i,
+                    frame.function_name,
+                    frame.ptx_location.file,
+                    frame.ptx_location.line,
+                    frame.sass_address
+                ));
             }
         } else {
             report.push_str("No execution context available\n");
@@ -2187,9 +2317,15 @@ impl HetGpuDebugInterface {
         report.push_str(&format!("\nBreakpoints ({}):\n", self.breakpoints.len()));
         for bp in self.breakpoints.values() {
             let status = if bp.enabled { "enabled" } else { "disabled" };
-            report.push_str(&format!("  #{} 0x{:08x} → {}:{} ({}, {} hits)\n",
-                bp.id, bp.sass_address, bp.ptx_location.file, bp.ptx_location.line,
-                status, bp.hit_count));
+            report.push_str(&format!(
+                "  #{} 0x{:08x} → {}:{} ({}, {} hits)\n",
+                bp.id,
+                bp.sass_address,
+                bp.ptx_location.file,
+                bp.ptx_location.line,
+                status,
+                bp.hit_count
+            ));
         }
 
         report.push_str(&format!("\nWatchpoints ({}):\n", self.watchpoints.len()));
@@ -2200,8 +2336,10 @@ impl HetGpuDebugInterface {
                 WatchType::Write => "write",
                 WatchType::ReadWrite => "rw",
             };
-            report.push_str(&format!("  #{} 0x{:08x} size {} {} ({})\n",
-                wp.id, wp.address, wp.size, wtype, status));
+            report.push_str(&format!(
+                "  #{} 0x{:08x} size {} {} ({})\n",
+                wp.id, wp.address, wp.size, wtype, status
+            ));
         }
 
         report
@@ -2252,7 +2390,9 @@ impl PtxReconstructor {
 
     /// Get PTX instruction at line
     pub fn get_ptx_instruction(&self, line: u32) -> Option<&str> {
-        self.ptx_lines.get((line.saturating_sub(1)) as usize).map(|s| s.as_str())
+        self.ptx_lines
+            .get((line.saturating_sub(1)) as usize)
+            .map(|s| s.as_str())
     }
 
     /// Get PTX context window
@@ -2263,7 +2403,11 @@ impl PtxReconstructor {
 
         for (i, ptx_line) in self.ptx_lines[start..end].iter().enumerate() {
             let line_num = start + i + 1;
-            let marker = if line_num == line as usize { ">>>" } else { "   " };
+            let marker = if line_num == line as usize {
+                ">>>"
+            } else {
+                "   "
+            };
             result.push_str(&format!("{} {:4}: {}\n", marker, line_num, ptx_line));
         }
         result
@@ -2373,7 +2517,12 @@ impl PtxDwarfBuilder {
 
         for mapping in &self.source_mappings {
             for target_inst in &mapping.target_instructions {
-                if let TargetInstruction::Sass { instruction, address, .. } = target_inst {
+                if let TargetInstruction::Sass {
+                    instruction,
+                    address,
+                    ..
+                } = target_inst
+                {
                     mapper.add_mapping(
                         *address,
                         &mapping.ptx_location.file,
@@ -2398,7 +2547,9 @@ impl PtxDwarfBuilder {
         self.source_mappings
             .iter()
             .filter(|m| {
-                m.target_instructions.iter().any(|t| matches!(t, TargetInstruction::Sass { .. }))
+                m.target_instructions
+                    .iter()
+                    .any(|t| matches!(t, TargetInstruction::Sass { .. }))
             })
             .collect()
     }
@@ -2408,11 +2559,11 @@ impl PtxDwarfBuilder {
 // GPU Trap Handler and State Checkpoint/Resume
 // ============================================================================
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 
 /// Global flag for trap signal
 static TRAP_REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -2428,7 +2579,11 @@ pub enum TrapReason {
     /// Breakpoint hit
     Breakpoint { id: u32, sass_address: u64 },
     /// Watchpoint triggered
-    Watchpoint { id: u32, address: u64, access_type: String },
+    Watchpoint {
+        id: u32,
+        address: u64,
+        access_type: String,
+    },
     /// Exception (e.g., illegal instruction, memory fault)
     Exception { code: u32, message: String },
     /// Checkpoint requested programmatically
@@ -2578,14 +2733,22 @@ impl GpuCheckpointState {
         let mut writer = BufWriter::new(file);
 
         // Write magic header
-        writer.write_all(b"HETGPU_CKPT").map_err(|e| format!("Write error: {}", e))?;
-        writer.write_all(&self.version.to_le_bytes()).map_err(|e| format!("Write error: {}", e))?;
+        writer
+            .write_all(b"HETGPU_CKPT")
+            .map_err(|e| format!("Write error: {}", e))?;
+        writer
+            .write_all(&self.version.to_le_bytes())
+            .map_err(|e| format!("Write error: {}", e))?;
 
         // Serialize as JSON for now (could use bincode for production)
         let json = serde_json::to_vec(self).map_err(|e| format!("Serialize error: {}", e))?;
         let len = json.len() as u64;
-        writer.write_all(&len.to_le_bytes()).map_err(|e| format!("Write error: {}", e))?;
-        writer.write_all(&json).map_err(|e| format!("Write error: {}", e))?;
+        writer
+            .write_all(&len.to_le_bytes())
+            .map_err(|e| format!("Write error: {}", e))?;
+        writer
+            .write_all(&json)
+            .map_err(|e| format!("Write error: {}", e))?;
 
         writer.flush().map_err(|e| format!("Flush error: {}", e))?;
         Ok(())
@@ -2601,7 +2764,8 @@ impl GpuCheckpointState {
         if state.version > Self::VERSION {
             return Err(format!(
                 "Checkpoint version {} is newer than supported version {}",
-                state.version, Self::VERSION
+                state.version,
+                Self::VERSION
             ));
         }
 
@@ -2615,43 +2779,53 @@ impl GpuCheckpointState {
 
         // Read and verify magic header
         let mut magic = [0u8; 11];
-        reader.read_exact(&mut magic).map_err(|e| format!("Read error: {}", e))?;
+        reader
+            .read_exact(&mut magic)
+            .map_err(|e| format!("Read error: {}", e))?;
         if &magic != b"HETGPU_CKPT" {
             return Err("Invalid checkpoint file format".to_string());
         }
 
         // Read version
         let mut version_bytes = [0u8; 4];
-        reader.read_exact(&mut version_bytes).map_err(|e| format!("Read error: {}", e))?;
+        reader
+            .read_exact(&mut version_bytes)
+            .map_err(|e| format!("Read error: {}", e))?;
         let version = u32::from_le_bytes(version_bytes);
         if version > Self::VERSION {
             return Err(format!(
                 "Checkpoint version {} is newer than supported version {}",
-                version, Self::VERSION
+                version,
+                Self::VERSION
             ));
         }
 
         // Read JSON length and data
         let mut len_bytes = [0u8; 8];
-        reader.read_exact(&mut len_bytes).map_err(|e| format!("Read error: {}", e))?;
+        reader
+            .read_exact(&mut len_bytes)
+            .map_err(|e| format!("Read error: {}", e))?;
         let len = u64::from_le_bytes(len_bytes) as usize;
 
         let mut json_data = vec![0u8; len];
-        reader.read_exact(&mut json_data).map_err(|e| format!("Read error: {}", e))?;
+        reader
+            .read_exact(&mut json_data)
+            .map_err(|e| format!("Read error: {}", e))?;
 
         serde_json::from_slice(&json_data).map_err(|e| format!("Deserialize error: {}", e))
     }
 
     /// Get PTX context at current execution point
     pub fn get_ptx_context(&self, lines_before: u32, lines_after: u32) -> String {
-        self.sass_ptx_mappings.get_ptx_context(
-            self.execution_context.ptx_location.line,
-            lines_before.max(lines_after),
-        )
-        .iter()
-        .map(|(num, line)| format!("{:4}: {}", num, line))
-        .collect::<Vec<_>>()
-        .join("\n")
+        self.sass_ptx_mappings
+            .get_ptx_context(
+                self.execution_context.ptx_location.line,
+                lines_before.max(lines_after),
+            )
+            .iter()
+            .map(|(num, line)| format!("{:4}: {}", num, line))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Generate human-readable summary
@@ -2661,12 +2835,25 @@ impl GpuCheckpointState {
         s.push_str(&format!("Kernel: {}\n", self.kernel_name));
         s.push_str(&format!("Timestamp: {}\n", self.timestamp));
         s.push_str(&format!("Trap Reason: {:?}\n", self.trap_reason));
-        s.push_str(&format!("Grid: {:?}, Block: {:?}\n", self.grid_dim, self.block_dim));
+        s.push_str(&format!(
+            "Grid: {:?}, Block: {:?}\n",
+            self.grid_dim, self.block_dim
+        ));
         s.push_str(&format!("\nCurrent PTX Location:\n"));
-        s.push_str(&format!("  File: {}\n", self.execution_context.ptx_location.file));
-        s.push_str(&format!("  Line: {}\n", self.execution_context.ptx_location.line));
-        s.push_str(&format!("  SASS Address: 0x{:08x}\n", self.execution_context.sass_address));
-        s.push_str(&format!("\nThread: ({}, {}, {}), Block: ({}, {}, {})\n",
+        s.push_str(&format!(
+            "  File: {}\n",
+            self.execution_context.ptx_location.file
+        ));
+        s.push_str(&format!(
+            "  Line: {}\n",
+            self.execution_context.ptx_location.line
+        ));
+        s.push_str(&format!(
+            "  SASS Address: 0x{:08x}\n",
+            self.execution_context.sass_address
+        ));
+        s.push_str(&format!(
+            "\nThread: ({}, {}, {}), Block: ({}, {}, {})\n",
             self.execution_context.thread_id.0,
             self.execution_context.thread_id.1,
             self.execution_context.thread_id.2,
@@ -2674,9 +2861,10 @@ impl GpuCheckpointState {
             self.execution_context.block_id.1,
             self.execution_context.block_id.2,
         ));
-        s.push_str(&format!("Warp: {}, Lane: {}\n",
-            self.execution_context.warp_id,
-            self.execution_context.lane_id));
+        s.push_str(&format!(
+            "Warp: {}, Lane: {}\n",
+            self.execution_context.warp_id, self.execution_context.lane_id
+        ));
         s.push_str(&format!("\nThread States: {}\n", self.thread_states.len()));
         s.push_str(&format!("Memory Regions: {}\n", self.memory_regions.len()));
         s.push_str(&format!("Breakpoints: {}\n", self.breakpoints.len()));
@@ -2727,12 +2915,10 @@ impl GpuTrapHandler {
         }
 
         unsafe {
-            let handler = libc::sigaction {
-                sa_sigaction: sigint_handler as usize,
-                sa_mask: std::mem::zeroed(),
-                sa_flags: 0,
-                sa_restorer: None,
-            };
+            let mut handler: libc::sigaction = std::mem::zeroed();
+            handler.sa_sigaction = sigint_handler as usize;
+            handler.sa_flags = 0;
+            libc::sigemptyset(&mut handler.sa_mask);
 
             if libc::sigaction(libc::SIGINT, &handler, std::ptr::null_mut()) != 0 {
                 return Err("Failed to install SIGINT handler".to_string());
@@ -2779,10 +2965,13 @@ impl GpuTrapHandler {
         Self::clear_trap_request();
 
         // Get PTX location from SASS address
-        let debug_iface = self.debug_interface.read()
+        let debug_iface = self
+            .debug_interface
+            .read()
             .map_err(|e| format!("Lock error: {}", e))?;
 
-        let ptx_location = debug_iface.query_ptx_location(sass_address)
+        let ptx_location = debug_iface
+            .query_ptx_location(sass_address)
             .cloned()
             .unwrap_or_else(|| PtxSourceLocation {
                 file: "unknown.ptx".to_string(),
@@ -2806,11 +2995,8 @@ impl GpuTrapHandler {
         };
 
         // Create checkpoint state
-        let mut checkpoint = GpuCheckpointState::new(
-            reason,
-            execution_context,
-            kernel_name.to_string(),
-        );
+        let mut checkpoint =
+            GpuCheckpointState::new(reason, execution_context, kernel_name.to_string());
 
         // Copy mappings from debug interface
         checkpoint.sass_ptx_mappings = debug_iface.get_mapper().clone();
@@ -2843,17 +3029,25 @@ impl GpuTrapHandler {
 
     /// Print trap information
     fn print_trap_info(&self, checkpoint: &GpuCheckpointState) {
-        eprintln!("\n=== GPU Trap at SASS 0x{:08x} ===", checkpoint.execution_context.sass_address);
-        eprintln!("PTX: {}:{}", checkpoint.execution_context.ptx_location.file,
-                 checkpoint.execution_context.ptx_location.line);
+        eprintln!(
+            "\n=== GPU Trap at SASS 0x{:08x} ===",
+            checkpoint.execution_context.sass_address
+        );
+        eprintln!(
+            "PTX: {}:{}",
+            checkpoint.execution_context.ptx_location.file,
+            checkpoint.execution_context.ptx_location.line
+        );
         eprintln!("Reason: {:?}", checkpoint.trap_reason);
-        eprintln!("Thread: ({},{},{}), Block: ({},{},{})",
+        eprintln!(
+            "Thread: ({},{},{}), Block: ({},{},{})",
             checkpoint.execution_context.thread_id.0,
             checkpoint.execution_context.thread_id.1,
             checkpoint.execution_context.thread_id.2,
             checkpoint.execution_context.block_id.0,
             checkpoint.execution_context.block_id.1,
-            checkpoint.execution_context.block_id.2);
+            checkpoint.execution_context.block_id.2
+        );
 
         // Print PTX source context if available
         if checkpoint.sass_ptx_mappings.ptx_source.is_some() {
@@ -2939,7 +3133,8 @@ impl ResumeInfo {
 
     /// Get restoration commands for registers
     pub fn get_register_restoration_commands(&self) -> Vec<String> {
-        self.registers.iter()
+        self.registers
+            .iter()
             .map(|(name, value)| format!("mov.u64 {}, 0x{:016x};", name, value))
             .collect()
     }
@@ -2981,9 +3176,12 @@ impl CheckpointManager {
 
     /// List all checkpoints
     pub fn list_checkpoints(&self) -> Vec<(String, u64, usize)> {
-        self.checkpoints.iter()
+        self.checkpoints
+            .iter()
             .flat_map(|(kernel, ckpts)| {
-                ckpts.iter().map(move |c| (kernel.clone(), c.timestamp, c.thread_states.len()))
+                ckpts
+                    .iter()
+                    .map(move |c| (kernel.clone(), c.timestamp, c.thread_states.len()))
             })
             .collect()
     }
@@ -2995,8 +3193,10 @@ impl CheckpointManager {
 
         for (kernel, checkpoints) in &self.checkpoints {
             for (i, checkpoint) in checkpoints.iter().enumerate() {
-                let filename = format!("{}/{}_{}_{}.json",
-                    self.checkpoint_dir, kernel, checkpoint.timestamp, i);
+                let filename = format!(
+                    "{}/{}_{}_{}.json",
+                    self.checkpoint_dir, kernel, checkpoint.timestamp, i
+                );
                 checkpoint.save_to_file(&filename)?;
             }
         }
@@ -3054,7 +3254,9 @@ mod tests {
     #[test]
     fn test_sass_ptx_mapper_parse_cuobjdump() {
         let mut mapper = SassPtxMapper::new();
-        mapper.parse_cuobjdump_output(SAMPLE_CUOBJDUMP_OUTPUT).unwrap();
+        mapper
+            .parse_cuobjdump_output(SAMPLE_CUOBJDUMP_OUTPUT)
+            .unwrap();
 
         // Test SASS → PTX lookup
         let loc = mapper.sass_to_ptx_location(0x0000).unwrap();
@@ -3077,7 +3279,9 @@ mod tests {
     #[test]
     fn test_sass_ptx_mapper_reverse_lookup() {
         let mut mapper = SassPtxMapper::new();
-        mapper.parse_cuobjdump_output(SAMPLE_CUOBJDUMP_OUTPUT).unwrap();
+        mapper
+            .parse_cuobjdump_output(SAMPLE_CUOBJDUMP_OUTPUT)
+            .unwrap();
 
         // Test PTX → SASS lookup
         let addrs = mapper.ptx_to_sass_addresses("kernel.ptx", 16).unwrap();
@@ -3094,7 +3298,9 @@ mod tests {
     #[test]
     fn test_sass_ptx_mapper_nearest_match() {
         let mut mapper = SassPtxMapper::new();
-        mapper.parse_cuobjdump_output(SAMPLE_CUOBJDUMP_OUTPUT).unwrap();
+        mapper
+            .parse_cuobjdump_output(SAMPLE_CUOBJDUMP_OUTPUT)
+            .unwrap();
 
         // Test nearest match with tolerance
         // Address 0x0015 should match 0x0010 (line 18) with tolerance 8
@@ -3209,12 +3415,20 @@ mod tests {
         let mut iface = HetGpuDebugInterface::new();
 
         // Add mappings manually
-        iface.get_mapper_mut().add_mapping(0x0, "kernel.ptx", 10, "MOV");
-        iface.get_mapper_mut().add_mapping(0x10, "kernel.ptx", 11, "ADD");
-        iface.get_mapper_mut().add_mapping(0x20, "kernel.ptx", 12, "MUL");
+        iface
+            .get_mapper_mut()
+            .add_mapping(0x0, "kernel.ptx", 10, "MOV");
+        iface
+            .get_mapper_mut()
+            .add_mapping(0x10, "kernel.ptx", 11, "ADD");
+        iface
+            .get_mapper_mut()
+            .add_mapping(0x20, "kernel.ptx", 12, "MUL");
 
         // Set breakpoint
-        let bp_id = iface.set_breakpoint_at_sass_address(0x10, "kernel.ptx", 11).unwrap();
+        let bp_id = iface
+            .set_breakpoint_at_sass_address(0x10, "kernel.ptx", 11)
+            .unwrap();
         assert_eq!(bp_id, 0);
 
         // Check breakpoint
@@ -3288,14 +3502,8 @@ mod tests {
                 column: 0,
                 instruction_offset: 0x100,
             },
-            registers: HashMap::from([
-                ("R0".to_string(), 123),
-                ("R1".to_string(), 456),
-            ]),
-            predicates: HashMap::from([
-                ("P0".to_string(), true),
-                ("P1".to_string(), false),
-            ]),
+            registers: HashMap::from([("R0".to_string(), 123), ("R1".to_string(), 456)]),
+            predicates: HashMap::from([("P0".to_string(), true), ("P1".to_string(), false)]),
             thread_id: (0, 0, 0),
             block_id: (0, 0, 0),
             warp_id: 0,
@@ -3326,9 +3534,15 @@ mod tests {
 }"#;
 
         let mut reconstructor = PtxReconstructor::new(ptx_source.to_string());
-        reconstructor.get_mapper_mut().add_mapping(0x0, "kernel.ptx", 5, "MOV");
-        reconstructor.get_mapper_mut().add_mapping(0x10, "kernel.ptx", 6, "ADD");
-        reconstructor.get_mapper_mut().add_mapping(0x20, "kernel.ptx", 7, "MUL");
+        reconstructor
+            .get_mapper_mut()
+            .add_mapping(0x0, "kernel.ptx", 5, "MOV");
+        reconstructor
+            .get_mapper_mut()
+            .add_mapping(0x10, "kernel.ptx", 6, "ADD");
+        reconstructor
+            .get_mapper_mut()
+            .add_mapping(0x20, "kernel.ptx", 7, "MUL");
 
         // Test instruction retrieval
         let inst = reconstructor.get_ptx_instruction(5).unwrap();
@@ -3389,10 +3603,18 @@ Function : kernel_b
     fn test_hetgpu_debug_next_ptx_line() {
         let mut iface = HetGpuDebugInterface::new();
 
-        iface.get_mapper_mut().add_mapping(0x0, "kernel.ptx", 10, "MOV");
-        iface.get_mapper_mut().add_mapping(0x10, "kernel.ptx", 10, "ADD");
-        iface.get_mapper_mut().add_mapping(0x20, "kernel.ptx", 11, "MUL");
-        iface.get_mapper_mut().add_mapping(0x30, "kernel.ptx", 12, "STG");
+        iface
+            .get_mapper_mut()
+            .add_mapping(0x0, "kernel.ptx", 10, "MOV");
+        iface
+            .get_mapper_mut()
+            .add_mapping(0x10, "kernel.ptx", 10, "ADD");
+        iface
+            .get_mapper_mut()
+            .add_mapping(0x20, "kernel.ptx", 11, "MUL");
+        iface
+            .get_mapper_mut()
+            .add_mapping(0x30, "kernel.ptx", 12, "STG");
 
         // From address 0x0 (line 10), next PTX line should be at 0x20 (line 11)
         let next = iface.get_next_ptx_line_address(0x0);

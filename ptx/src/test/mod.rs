@@ -198,3 +198,158 @@ fn llvm_ir_contains_debug_metadata() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn ggml_extern_symbol_is_preserved_for_pacc_link() -> Result<(), Box<dyn std::error::Error>> {
+    let ptx_source = r#"
+.version 6.5
+.target sm_80
+.address_size 64
+
+.extern .func (.param .u64 output) ggml_vec_dot_f16(
+    .param .u64 input
+);
+
+.visible .entry ggml_call_kernel(
+    .param .u64 input,
+    .param .u64 output
+)
+{
+    .reg .u64 in_addr;
+    .reg .u64 out_addr;
+    .reg .u64 temp;
+
+    ld.param.u64 in_addr, [input];
+    ld.param.u64 out_addr, [output];
+    ld.global.u64 temp, [in_addr];
+
+    .param .u64 ggml_in;
+    .param .u64 ggml_out;
+    st.param.b64 [ggml_in], temp;
+    call (ggml_out), ggml_vec_dot_f16, (ggml_in);
+    ld.param.u64 temp, [ggml_out];
+    st.global.u64 [out_addr], temp;
+    ret;
+}
+    "#;
+
+    let ast = ast::parse_module_checked(ptx_source)
+        .map_err(|e| format!("PTX parsing failed: {:?}", e))?;
+
+    let module = crate::to_llvm_module(
+        ast,
+        pass::Attributes {
+            clock_rate: 2124000,
+            emit_debug_info: false,
+        },
+        |_| {},
+    )?;
+
+    let llvm_ir = module.llvm_ir.print_module_to_string();
+    let llvm_ir = llvm_ir.to_str();
+
+    assert!(
+        llvm_ir.contains("@ggml_vec_dot_f16("),
+        "LLVM IR should keep the ggml operator symbol name intact.\n{}",
+        llvm_ir
+    );
+    assert!(
+        !llvm_ir.contains("@__zluda_ptx_impl_ggml_vec_dot_f16("),
+        "ggml operator symbols must not be rewritten to the PTX helper namespace.\n{}",
+        llvm_ir
+    );
+    assert!(
+        !llvm_ir.contains("declare hidden i64 @ggml_vec_dot_f16"),
+        "ggml operator symbols should stay externally visible for later PACC linking.\n{}",
+        llvm_ir
+    );
+
+    Ok(())
+}
+
+#[test]
+fn micro_kernel_symbol_is_preserved_for_pacc_link() -> Result<(), Box<dyn std::error::Error>> {
+    let ptx_source = r#"
+.version 6.5
+.target sm_80
+.address_size 64
+
+.extern .func micro_kernel_bf16bf16fp32_tile_k1_tile_n_gemv(
+    .param .u32 m_v,
+    .param .u32 n_v,
+    .param .u32 k_v,
+    .param .u64 a_ptr,
+    .param .u64 b_ptr,
+    .param .u64 c_ptr
+);
+
+.visible .entry micro_kernel_call_kernel(
+    .param .u64 a_ptr,
+    .param .u64 b_ptr,
+    .param .u64 c_ptr
+)
+{
+    .reg .u32 m_v;
+    .reg .u32 n_v;
+    .reg .u32 k_v;
+    .reg .u64 a_addr;
+    .reg .u64 b_addr;
+    .reg .u64 c_addr;
+
+    ld.param.u64 a_addr, [a_ptr];
+    ld.param.u64 b_addr, [b_ptr];
+    ld.param.u64 c_addr, [c_ptr];
+    mov.u32 m_v, 1;
+    mov.u32 n_v, 32;
+    mov.u32 k_v, 128;
+
+    .param .u32 p_m;
+    .param .u32 p_n;
+    .param .u32 p_k;
+    .param .u64 p_a;
+    .param .u64 p_b;
+    .param .u64 p_c;
+    st.param.b32 [p_m], m_v;
+    st.param.b32 [p_n], n_v;
+    st.param.b32 [p_k], k_v;
+    st.param.b64 [p_a], a_addr;
+    st.param.b64 [p_b], b_addr;
+    st.param.b64 [p_c], c_addr;
+    call micro_kernel_bf16bf16fp32_tile_k1_tile_n_gemv, (p_m, p_n, p_k, p_a, p_b, p_c);
+    ret;
+}
+    "#;
+
+    let ast = ast::parse_module_checked(ptx_source)
+        .map_err(|e| format!("PTX parsing failed: {:?}", e))?;
+
+    let module = crate::to_llvm_module(
+        ast,
+        pass::Attributes {
+            clock_rate: 2124000,
+            emit_debug_info: false,
+        },
+        |_| {},
+    )?;
+
+    let llvm_ir = module.llvm_ir.print_module_to_string();
+    let llvm_ir = llvm_ir.to_str();
+
+    assert!(
+        llvm_ir.contains("@micro_kernel_bf16bf16fp32_tile_k1_tile_n_gemv("),
+        "LLVM IR should keep the PACC micro-kernel symbol name intact.\n{}",
+        llvm_ir
+    );
+    assert!(
+        !llvm_ir.contains("@__zluda_ptx_impl_micro_kernel_bf16bf16fp32_tile_k1_tile_n_gemv("),
+        "micro_kernel symbols must not be rewritten to the PTX helper namespace.\n{}",
+        llvm_ir
+    );
+    assert!(
+        !llvm_ir.contains("declare hidden void @micro_kernel_bf16bf16fp32_tile_k1_tile_n_gemv"),
+        "micro_kernel symbols should stay externally visible for later PACC linking.\n{}",
+        llvm_ir
+    );
+
+    Ok(())
+}
