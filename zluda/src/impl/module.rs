@@ -48,13 +48,42 @@ pub(crate) struct Module {
     kernels: Vec<(String, tt_runtime_sys::Kernel)>,
 }
 
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) struct Module {
+    module_id: u64,
+    ptx_source: Arc<String>,
+    kernels: Vec<(String, u64)>,
+}
+
 #[cfg(any(feature = "amd", feature = "intel", feature = "tenstorrent"))]
 unsafe impl Send for Module {}
 #[cfg(any(feature = "amd", feature = "intel", feature = "tenstorrent"))]
 unsafe impl Sync for Module {}
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Send for Module {}
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Sync for Module {}
 #[cfg(feature = "amd")]
 impl ZludaObject for Module {
-    const COOKIE: usize = 0xe9138bd040487d4a;
+    const COOKIE: usize = 0x40487d4a;
 
     type CudaHandle = CUmodule;
 
@@ -72,7 +101,8 @@ impl ZludaObject for Module {
     feature = "tenstorrent",
     feature = "tmatmul",
     feature = "nvidia",
-    feature = "pacc"
+    feature = "pacc",
+    feature = "webgpu"
 ))]
 pub(crate) fn get_loading_mode(mode: *mut cuda_types::cuda::CUmoduleLoadingMode) -> CUresult {
     if mode.is_null() {
@@ -86,7 +116,7 @@ pub(crate) fn get_loading_mode(mode: *mut cuda_types::cuda::CUmoduleLoadingMode)
 
 #[cfg(feature = "intel")]
 impl ZludaObject for Module {
-    const COOKIE: usize = 0xe9138bd040487d4a;
+    const COOKIE: usize = 0x40487d4a;
 
     type CudaHandle = CUmodule;
 
@@ -113,9 +143,27 @@ impl ZludaObject for Module {
     }
 }
 
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl ZludaObject for Module {
+    const COOKIE: usize = 0x40487d4a;
+
+    type CudaHandle = CUmodule;
+
+    fn drop_checked(&mut self) -> CUresult {
+        self.kernels.clear();
+        Ok(())
+    }
+}
+
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 impl ZludaObject for Module {
-    const COOKIE: usize = 0xe9138bd040487d4a;
+    const COOKIE: usize = 0x40487d4a;
 
     type CudaHandle = CUmodule;
 
@@ -863,7 +911,7 @@ unsafe impl Send for ZeKernel {}
 unsafe impl Sync for ZeKernel {}
 #[cfg(feature = "intel")]
 impl ZludaObject for ZeKernel {
-    const COOKIE: usize = 0xad74ceadb9b2d51c;
+    const COOKIE: usize = 0xb9b2d51c;
 
     type CudaHandle = CUfunction;
 
@@ -994,7 +1042,7 @@ unsafe impl Sync for TtKernel {}
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 impl ZludaObject for TtKernel {
-    const COOKIE: usize = 0xad74ceadb9b2d51c;
+    const COOKIE: usize = 0xb9b2d51c;
 
     type CudaHandle = CUfunction;
 
@@ -1046,7 +1094,7 @@ unsafe impl Sync for Module {}
     not(feature = "tenstorrent")
 ))]
 impl ZludaObject for Module {
-    const COOKIE: usize = 0xe9138bd040487d4a;
+    const COOKIE: usize = 0x40487d4a;
 
     type CudaHandle = CUmodule;
 
@@ -1194,7 +1242,7 @@ unsafe impl Sync for TMatmulKernel {}
     not(feature = "tenstorrent")
 ))]
 impl ZludaObject for TMatmulKernel {
-    const COOKIE: usize = 0xad74ceadb9b2d51c;
+    const COOKIE: usize = 0xb9b2d51c;
 
     type CudaHandle = CUfunction;
 
@@ -1845,7 +1893,7 @@ unsafe impl Sync for Module {}
     not(feature = "tmatmul")
 ))]
 impl ZludaObject for Module {
-    const COOKIE: usize = 0xe9138bd040487d4a;
+    const COOKIE: usize = 0x40487d4a;
 
     type CudaHandle = CUmodule;
 
@@ -2043,12 +2091,133 @@ unsafe impl Sync for NvidiaKernel {}
     not(feature = "tmatmul")
 ))]
 impl ZludaObject for NvidiaKernel {
-    const COOKIE: usize = 0xad74ceadb9b2d51c;
+    const COOKIE: usize = 0xb9b2d51c;
 
     type CudaHandle = CUfunction;
 
     fn drop_checked(&mut self) -> CUresult {
         // CUDA functions don't need explicit cleanup - they're cleaned up with the module
+        Ok(())
+    }
+}
+
+// ============================================================================
+// WebGPU backend module implementations
+// ============================================================================
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -> CUresult {
+    if image.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let text = unsafe { CStr::from_ptr(image.cast()) }
+        .to_str()
+        .map_err(|_| CUerror::INVALID_VALUE)?;
+    let module_id =
+        crate::r#impl::webgpu::load_module(text.as_bytes()).map_err(|_| CUerror::UNKNOWN)?;
+    let new_module = Module {
+        module_id,
+        ptx_source: Arc::new(text.to_string()),
+        kernels: Vec::new(),
+    };
+    *module = new_module.wrap();
+    crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, text);
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn unload(hmod: CUmodule) -> CUresult {
+    super::drop_checked::<Module>(hmod)
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_function(
+    hfunc: &mut CUfunction,
+    hmod: &Module,
+    name: *const ::core::ffi::c_char,
+) -> CUresult {
+    if name.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let function_name = unsafe {
+        CStr::from_ptr(name)
+            .to_str()
+            .map_err(|_| CUerror::INVALID_VALUE)?
+    };
+    let kernel_id = crate::r#impl::webgpu::get_function(hmod.module_id, function_name)
+        .map_err(|_| CUerror::NOT_FOUND)?;
+    let kernel = WebGpuKernel {
+        module_id: hmod.module_id,
+        kernel_id,
+        function_name: function_name.to_string(),
+        ptx_source: hmod.ptx_source.clone(),
+    };
+    *hfunc = kernel.wrap();
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) struct WebGpuKernel {
+    pub module_id: u64,
+    pub kernel_id: u64,
+    pub function_name: String,
+    pub ptx_source: Arc<String>,
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Send for WebGpuKernel {}
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Sync for WebGpuKernel {}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl ZludaObject for WebGpuKernel {
+    const COOKIE: usize = 0x2ae60777;
+
+    type CudaHandle = CUfunction;
+
+    fn drop_checked(&mut self) -> CUresult {
         Ok(())
     }
 }
@@ -2111,7 +2280,7 @@ fn current_pacc_device_id() -> Result<i32, CUerror> {
     not(feature = "tenstorrent")
 ))]
 impl ZludaObject for Module {
-    const COOKIE: usize = 0xe9138bd040487d4a;
+    const COOKIE: usize = 0x40487d4a;
 
     type CudaHandle = CUmodule;
 
@@ -2369,7 +2538,7 @@ unsafe impl Sync for PaccKernel {}
     not(feature = "tenstorrent")
 ))]
 impl ZludaObject for PaccKernel {
-    const COOKIE: usize = 0xad74ceadb9b2d51c;
+    const COOKIE: usize = 0xb9b2d51c;
 
     type CudaHandle = CUfunction;
 

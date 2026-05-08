@@ -1,4 +1,6 @@
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #define _XOPEN_SOURCE
 #include <stddef.h>
 #include <stdint.h>
@@ -8,12 +10,17 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
+#if !defined(HETGPU_WASM)
 #include <execinfo.h>
+#endif
 #include <sys/stat.h>
 #include <sys/wait.h>
+#if !defined(HETGPU_WASM)
 #include <ucontext.h>
+#endif
 #include <dlfcn.h>
 
+#if !defined(HETGPU_WASM)
 // SIGFPE handler - log first occurrence then disable FP exceptions to continue
 static int sigfpe_count = 0;
 
@@ -85,6 +92,7 @@ static void install_sigfpe_handler(void) {
         fprintf(stderr, "[hetGPU] SIGFPE handler installed (non-fatal)\n");
     }
 }
+#endif
 
 static int hetgpu_cudart_debug_logs_enabled(void) {
     static int enabled = -1;

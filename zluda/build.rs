@@ -3,6 +3,7 @@ fn main() {
     // We ship cudart/cublas/cublasLt shims so PyTorch can start even if the
     // system libraries are absent (e.g. missing cublasGetMathMode).
     let embed = std::env::var("CARGO_FEATURE_EMBED_CUDART").is_ok();
+    let webgpu = std::env::var("CARGO_FEATURE_WEBGPU").is_ok();
     if embed {
         println!("cargo:rerun-if-changed=src/cudart_shim.c");
         println!("cargo:rerun-if-changed=src/cublas_shim.c");
@@ -12,6 +13,9 @@ fn main() {
         println!("cargo:rerun-if-changed=src/nccl_shim.c");
         println!("cargo:rerun-if-changed=src/torch_abi_shim.c");
         println!("cargo:rerun-if-changed=src/pacc_disabled_stubs.c");
+        if webgpu {
+            println!("cargo:rerun-if-changed=src/webgpu_bridge.c");
+        }
 
         let cargo_manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let tools_dir = std::path::Path::new(&cargo_manifest_dir).parent().unwrap();
@@ -61,6 +65,10 @@ fn main() {
                 .define("_GNU_SOURCE", None)
                 .define("_GLIBCXX_USE_CXX11_ABI", Some("0"))
                 .define("HETGPU_STATIC_CUDART", None);
+            if webgpu {
+                build.file("src/webgpu_bridge.c");
+                build.define("HETGPU_WEBGPU", None);
+            }
             if target_os == "emscripten" || target_arch == "wasm32" {
                 build.define("HETGPU_WASM", None);
             }

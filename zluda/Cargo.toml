@@ -10,19 +10,20 @@ crate-type = ["cdylib", "staticlib"]
 
 [features]
 default = ["intel"]
-intel = ["flate2", "ptx_backend"]
-amd = ["ptx_backend"]
-tenstorrent = ["ptx_backend"]
+intel = ["dep:ze_runtime_sys", "flate2", "ptx_backend"]
+amd = ["dep:hip_runtime_sys", "ptx_backend"]
+tenstorrent = ["dep:tt_runtime_sys", "dep:tt_comgr_sys", "ptx_backend"]
 gemmini = []
-nvidia = []
+nvidia = ["dep:nvidia_runtime_sys"]
+webgpu = []
 tmatmul = ["ptx_backend"]
-cutile = ["comgr/cutile", "ptx_backend"]
+cutile = ["dep:cutile_comgr_sys", "comgr/cutile", "ptx_backend"]
 embed_cudart = []
 flate2 = ["dep:flate2"]
-ptx_backend = ["dep:ptx", "dep:ptx_parser"]
+ptx_backend = ["dep:comgr", "dep:ptx", "dep:ptx_parser"]
 
 [dependencies]
-comgr = { path = "../comgr" }
+comgr = { path = "../comgr", optional = true }
 ptx_parser = { path = "../ptx_parser", optional = true }
 ptx = { path = "../ptx", optional = true }
 cuda_types = { path = "../cuda_types" }
@@ -33,12 +34,12 @@ lz4-sys = "1.9"
 tempfile = "3"
 paste = "1.0"
 rustc-hash = "1.1"
-ze_runtime_sys = { path = "../ext/ze_runtime-sys" }
-hip_runtime_sys = { path = "../ext/hip_runtime-sys" }
-tt_runtime_sys = { path = "../ext/tt_runtime-sys" }
-tt_comgr_sys = { path = "../ext/tt_comgr-sys" }
-cutile_comgr_sys = { path = "../ext/cutile_comgr-sys" }
-nvidia_runtime_sys = { path = "../ext/nvidia_runtime-sys" }
+ze_runtime_sys = { path = "../ext/ze_runtime-sys", optional = true }
+hip_runtime_sys = { path = "../ext/hip_runtime-sys", optional = true }
+tt_runtime_sys = { path = "../ext/tt_runtime-sys", optional = true }
+tt_comgr_sys = { path = "../ext/tt_comgr-sys", optional = true }
+cutile_comgr_sys = { path = "../ext/cutile_comgr-sys", optional = true }
+nvidia_runtime_sys = { path = "../ext/nvidia_runtime-sys", optional = true }
 libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

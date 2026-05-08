@@ -67,6 +67,9 @@ pub mod cutile;
 #[cfg(feature = "pacc")]
 pub mod pacc;
 
+#[cfg(feature = "webgpu")]
+pub(crate) mod webgpu;
+
 // In both debug and release builds, return SUCCESS for unimplemented functions
 // to allow frameworks like PyTorch to proceed with virtual device
 pub(crate) fn unimplemented() -> CUresult {
@@ -363,7 +366,8 @@ impl<'a> FromCuda<'a, CUdeviceptr_v2> for () {
     feature = "tenstorrent",
     feature = "tmatmul",
     feature = "nvidia",
-    feature = "pacc"
+    feature = "pacc",
+    feature = "webgpu"
 ))]
 from_cuda_object!(module::Module);
 
@@ -391,6 +395,17 @@ from_cuda_object!(module::NvidiaKernel);
     not(feature = "tenstorrent")
 ))]
 from_cuda_object!(module::PaccKernel);
+
+// WebGPU kernel is only for the WebGPU wasm backend.
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia")
+))]
+from_cuda_object!(module::WebGpuKernel);
 
 #[cfg(feature = "amd")]
 impl<'a> FromCuda<'a, CUlimit> for hipLimit_t {
@@ -506,6 +521,107 @@ impl<'a> FromCuda<'a, *const CUlaunchConfig> for &'a CUlaunchConfig {
     not(feature = "intel"),
     not(feature = "tenstorrent"),
     not(feature = "tmatmul")
+))]
+impl<'a> FromCuda<'a, CUdeviceptr> for CUdeviceptr {
+    fn from_cuda(ptr: &'a CUdeviceptr) -> Result<Self, CUerror> {
+        Ok(*ptr)
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, CUlimit> for CUlimit {
+    fn from_cuda(limit: &'a CUlimit) -> Result<Self, CUerror> {
+        Ok(*limit)
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, CUfunction_attribute> for CUfunction_attribute {
+    fn from_cuda(attr: &'a CUfunction_attribute) -> Result<Self, CUerror> {
+        Ok(*attr)
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, CUpointer_attribute> for CUpointer_attribute {
+    fn from_cuda(attr: &'a CUpointer_attribute) -> Result<Self, CUerror> {
+        Ok(*attr)
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, CUstream> for CUstream {
+    fn from_cuda(stream: &'a CUstream) -> Result<Self, CUerror> {
+        Ok(*stream)
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, *mut CUuuid> for *mut CUuuid {
+    fn from_cuda(uuid: &'a *mut CUuuid) -> Result<Self, CUerror> {
+        Ok(*uuid)
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, *const CUlaunchConfig> for &'a CUlaunchConfig {
+    fn from_cuda(config: &'a *const CUlaunchConfig) -> Result<Self, CUerror> {
+        if config.is_null() {
+            return Err(CUerror::INVALID_VALUE);
+        }
+        Ok(unsafe { &**config })
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia")
 ))]
 impl<'a> FromCuda<'a, CUdeviceptr> for CUdeviceptr {
     fn from_cuda(ptr: &'a CUdeviceptr) -> Result<Self, CUerror> {
@@ -758,6 +874,71 @@ impl<'a> FromCuda<'a, *mut CUcontext> for *mut CUcontext {
 impl<'a> FromCuda<'a, *mut CUfunction> for *mut CUfunction {
     fn from_cuda(x: &'a *mut CUfunction) -> Result<Self, CUerror> {
         Ok(*x)
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl<'a> FromCuda<'a, *mut CUuuid_st> for *mut [u8; 16] {
+    fn from_cuda(x: &'a *mut CUuuid_st) -> Result<Self, CUerror> {
+        Ok(x.cast::<[u8; 16]>())
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl<'a> FromCuda<'a, *mut i8> for *mut [u8; 8] {
+    fn from_cuda(x: &'a *mut i8) -> Result<Self, CUerror> {
+        Ok(x.cast::<[u8; 8]>())
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl<'a> FromCuda<'a, *mut u32> for *mut u32 {
+    fn from_cuda(x: &'a *mut u32) -> Result<Self, CUerror> {
+        Ok(*x)
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl<'a> FromCuda<'a, CUfunction> for *mut module::WebGpuKernel {
+    fn from_cuda(handle: &'a CUfunction) -> Result<Self, CUerror> {
+        Ok(handle.0 as *mut module::WebGpuKernel)
+    }
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl<'a> FromCuda<'a, CUstream> for *mut ::core::ffi::c_void {
+    fn from_cuda(x: &'a CUstream) -> Result<Self, CUerror> {
+        Ok(x.0 as *mut ::core::ffi::c_void)
     }
 }
 

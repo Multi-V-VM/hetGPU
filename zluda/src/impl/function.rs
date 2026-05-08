@@ -2707,6 +2707,111 @@ pub(crate) fn launch_kernel_ex(
 }
 
 // ============================================================================
+// WebGPU function implementations
+// ============================================================================
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_attribute(
+    pi: *mut i32,
+    attrib: cuda_types::cuda::CUfunction_attribute,
+    func: *mut crate::r#impl::module::WebGpuKernel,
+) -> cuda_types::cuda::CUresult {
+    use cuda_types::cuda::*;
+    if pi.is_null() || func.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let result = match attrib {
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK => 256,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES => 0,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_CONST_SIZE_BYTES => 0,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES => 0,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_NUM_REGS => 32,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_PTX_VERSION => 75,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_BINARY_VERSION => 75,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_CACHE_MODE_CA => 0,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES => 0,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT => 0,
+        _ => return Err(CUerror::INVALID_VALUE),
+    };
+    unsafe { *pi = result };
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn launch_kernel(
+    f: *mut crate::r#impl::module::WebGpuKernel,
+    grid_dim_x: ::core::ffi::c_uint,
+    grid_dim_y: ::core::ffi::c_uint,
+    grid_dim_z: ::core::ffi::c_uint,
+    block_dim_x: ::core::ffi::c_uint,
+    block_dim_y: ::core::ffi::c_uint,
+    block_dim_z: ::core::ffi::c_uint,
+    shared_mem_bytes: ::core::ffi::c_uint,
+    _stream: *mut ::core::ffi::c_void,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    _extra: *mut *mut ::core::ffi::c_void,
+) -> cuda_types::cuda::CUresult {
+    use cuda_types::cuda::*;
+    if f.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let kernel = unsafe { &*f };
+    crate::r#impl::webgpu::launch_kernel(
+        kernel.kernel_id,
+        &kernel.function_name,
+        grid_dim_x,
+        grid_dim_y,
+        grid_dim_z,
+        block_dim_x,
+        block_dim_y,
+        block_dim_z,
+        shared_mem_bytes,
+        kernel_params,
+    )
+    .map_err(|_| CUerror::UNKNOWN)
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn launch_kernel_ex(
+    config: &cuda_types::cuda::CUlaunchConfig,
+    f: &super::module::WebGpuKernel,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    extra: *mut *mut ::core::ffi::c_void,
+) -> cuda_types::cuda::CUresult {
+    launch_kernel(
+        f as *const _ as *mut _,
+        config.gridDimX,
+        config.gridDimY,
+        config.gridDimZ,
+        config.blockDimX,
+        config.blockDimY,
+        config.blockDimZ,
+        config.sharedMemBytes,
+        config.hStream.0 as *mut _,
+        kernel_params,
+        extra,
+    )
+}
+
+// ============================================================================
 // PACC function implementations (SiFive Intelligence XM / RISC-V IME)
 // ============================================================================
 

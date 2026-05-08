@@ -95,7 +95,7 @@ thread_local! {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -136,7 +136,7 @@ pub(crate) struct OwnedByContext {
 
 #[cfg(feature = "amd")]
 impl ZludaObject for Context {
-    const COOKIE: usize = 0x1c9a63e0bfb35ca4;
+    const COOKIE: usize = 0xbfb35ca4;
     type CudaHandle = CUcontext;
 
     fn drop_checked(&mut self) -> CUresult {
@@ -289,7 +289,7 @@ impl Context {
 
 #[cfg(all(feature = "intel", not(feature = "amd")))]
 impl ZludaObject for Context {
-    const COOKIE: usize = 0x1c9a63e0bfb35ca4;
+    const COOKIE: usize = 0xbfb35ca4;
     type CudaHandle = CUcontext;
 
     fn drop_checked(&mut self) -> CUresult {
@@ -380,7 +380,7 @@ impl Context {
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 impl ZludaObject for Context {
-    const COOKIE: usize = 0x1c9a63e0bfb35ca4;
+    const COOKIE: usize = 0xbfb35ca4;
     type CudaHandle = CUcontext;
 
     fn drop_checked(&mut self) -> CUresult {
@@ -498,7 +498,7 @@ impl Context {
     not(feature = "tenstorrent")
 ))]
 impl ZludaObject for Context {
-    const COOKIE: usize = 0x1c9a63e0bfb35ca4;
+    const COOKIE: usize = 0xbfb35ca4;
     type CudaHandle = CUcontext;
 
     fn drop_checked(&mut self) -> CUresult {
@@ -599,7 +599,7 @@ impl Context {
     not(feature = "tenstorrent")
 ))]
 impl ZludaObject for Context {
-    const COOKIE: usize = 0x1c9a63e0bfb35ca4;
+    const COOKIE: usize = 0xbfb35ca4;
     type CudaHandle = CUcontext;
 
     fn drop_checked(&mut self) -> CUresult {
@@ -1226,7 +1226,7 @@ pub(crate) fn peek_current() -> Option<CUcontext> {
         })
     }
     #[cfg(all(
-        feature = "pacc",
+        any(feature = "pacc", feature = "webgpu"),
         not(feature = "amd"),
         not(feature = "intel"),
         not(feature = "tenstorrent")
@@ -1421,7 +1421,7 @@ pub(crate) fn pop_current_v2(pctx: *mut CUcontext) -> CUresult {
 // ============================================================================
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1432,7 +1432,7 @@ pub(crate) struct Context {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1444,7 +1444,7 @@ pub(crate) struct PaccOwnedByContext {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1452,7 +1452,7 @@ pub(crate) struct PaccOwnedByContext {
 unsafe impl Send for Context {}
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1460,7 +1460,7 @@ unsafe impl Send for Context {}
 unsafe impl Sync for Context {}
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1480,7 +1480,7 @@ impl Clone for Context {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1524,13 +1524,13 @@ impl Context {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
 ))]
 impl ZludaObject for Context {
-    const COOKIE: usize = 0x1c9a63e0bfb35ca4;
+    const COOKIE: usize = 0xbfb35ca4;
     type CudaHandle = CUcontext;
 
     fn drop_checked(&mut self) -> CUresult {
@@ -1539,18 +1539,31 @@ impl ZludaObject for Context {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
 ))]
 pub(crate) fn get_primary_pacc(device_id: i32) -> Result<(&'static Context, CUcontext), CUerror> {
+    #[cfg(feature = "pacc")]
     let dev = driver::device_pacc(device_id)?;
+    #[cfg(all(not(feature = "pacc"), feature = "webgpu"))]
+    let dev = driver::device_webgpu(device_id)?;
     Ok(dev.primary_context())
 }
 
 #[cfg(all(
-    feature = "pacc",
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_primary_webgpu(device_id: i32) -> Result<(&'static Context, CUcontext), CUerror> {
+    get_primary_pacc(device_id)
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1561,7 +1574,7 @@ pub(crate) fn synchronize() -> Result<(), String> {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1589,7 +1602,7 @@ pub(crate) fn set_current(raw_ctx: CUcontext) -> CUresult {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1602,7 +1615,7 @@ pub(crate) fn push(ctx: CUcontext, device_id: i32) {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1614,7 +1627,17 @@ pub(crate) fn get_current_pacc() -> Result<&'static Context, CUerror> {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_current_webgpu() -> Result<&'static Context, CUerror> {
+    get_current_pacc()
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1627,7 +1650,7 @@ pub(crate) fn get_limit(_pvalue: *mut usize, _limit: std::ffi::c_uint) -> Result
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1638,7 +1661,7 @@ pub(crate) fn set_limit(_limit: std::ffi::c_uint, _value: usize) -> Result<(), S
 
 // ─── PACC context API functions ───────────────────────────────────────────────
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1658,7 +1681,7 @@ pub(crate) fn get_device(
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1683,7 +1706,7 @@ pub(crate) fn create_v2(
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1701,7 +1724,7 @@ pub(crate) fn destroy_v2(ctx: cuda_types::cuda::CUcontext) -> cuda_types::cuda::
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -1718,7 +1741,7 @@ pub(crate) fn push_current_v2(ctx: cuda_types::cuda::CUcontext) -> cuda_types::c
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")

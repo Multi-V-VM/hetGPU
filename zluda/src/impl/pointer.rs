@@ -414,7 +414,7 @@ pub(crate) unsafe fn get_attribute(
 
 // ─── PACC pointer attribute stub ──────────────────────────────────────────────
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")

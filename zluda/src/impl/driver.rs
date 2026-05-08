@@ -21,6 +21,8 @@ use std::os::raw::{c_char, c_int, c_void};
 use std::{cell::RefCell, collections::HashMap, ptr::NonNull};
 
 use crate::r#impl::context;
+#[cfg(feature = "webgpu")]
+use crate::r#impl::webgpu;
 
 use super::LiveCheck;
 
@@ -904,6 +906,101 @@ pub(crate) fn device_nvidia(dev_id: i32) -> Result<&'static Device, CUerror> {
 ))]
 thread_local! {
     static NVIDIA_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
+}
+
+// WebGPU backend - wasm/browser bridge.
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
+    static GLOBAL_STATE: OnceLock<Result<GlobalState, CUerror>> = OnceLock::new();
+
+    GLOBAL_STATE
+        .get_or_init(|| {
+            webgpu::init().map_err(|_| CUerror::NOT_INITIALIZED)?;
+            let visible_devices = webgpu::device_count().clamp(1, 1);
+            let comgr_isa = CString::new("webgpu-wgsl").map_err(|_| CUerror::UNKNOWN)?;
+            let mut devices = Vec::with_capacity(visible_devices);
+
+            WEBGPU_DEVICES.with(|map| {
+                let mut map = map.borrow_mut();
+                for dev_id in 0..visible_devices {
+                    let device = Device {
+                        _comgr_isa: comgr_isa.clone(),
+                        primary_context: LiveCheck::new(context::Context::new(dev_id as i32)),
+                    };
+                    let device_ptr =
+                        unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(device.clone()))) };
+                    map.insert(dev_id as i32, device_ptr);
+                    devices.push(device);
+                }
+            });
+
+            eprintln!("[WebGPU Backend] exposing {} CUDA-visible device(s)", visible_devices);
+            Ok(GlobalState { devices })
+        })
+        .as_ref()
+        .map_err(|e| *e)
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
+    let _ = flags;
+    global_state()?;
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
+    *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn device_webgpu(dev_id: i32) -> Result<&'static Device, CUerror> {
+    if dev_id < 0 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    WEBGPU_DEVICES.with(|map| {
+        let map_ref = map.borrow();
+        map_ref
+            .get(&dev_id)
+            .ok_or(CUerror::INVALID_DEVICE)
+            .map(|dev_ptr| unsafe { dev_ptr.as_ref() })
+    })
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+thread_local! {
+    static WEBGPU_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
 }
 
 // ============================================================================

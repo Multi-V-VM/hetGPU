@@ -1,7 +1,7 @@
 use crate::r#impl::context;
 #[cfg(feature = "intel")]
 use crate::r#impl::ze_to_cuda_result;
-#[cfg(any(feature = "intel", feature = "nvidia"))]
+#[cfg(any(feature = "intel", feature = "nvidia", feature = "webgpu"))]
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
@@ -858,6 +858,176 @@ pub(crate) fn set_d32_v2(dst_device: CUdeviceptr, ui: u32, n: usize) -> CUresult
     if result != 0 {
         return Err(CUerror::UNKNOWN);
     }
+    Ok(())
+}
+
+// WebGPU backend memory API. Until the JS bridge owns GPUBuffer lifetime
+// directly, expose CUDA device pointers as host-side wasm allocations.
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+lazy_static::lazy_static! {
+    static ref WEBGPU_ALLOC_MAP: std::sync::Mutex<std::collections::HashMap<usize, (usize, usize)>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
+    if dptr.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let size = bytesize.max(1);
+    let layout = std::alloc::Layout::from_size_align(size, 64).map_err(|_| CUerror::OUT_OF_MEMORY)?;
+    let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+    if ptr.is_null() {
+        return Err(CUerror::OUT_OF_MEMORY);
+    }
+    WEBGPU_ALLOC_MAP
+        .lock()
+        .map_err(|_| CUerror::UNKNOWN)?
+        .insert(ptr as usize, (bytesize, 64));
+    unsafe {
+        *dptr = CUdeviceptr_v2(ptr as *mut _);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn free_v2(dptr: CUdeviceptr) -> CUresult {
+    let addr = dptr.0 as usize;
+    let Some((size, align)) = WEBGPU_ALLOC_MAP
+        .lock()
+        .map_err(|_| CUerror::UNKNOWN)?
+        .remove(&addr)
+    else {
+        return Err(CUerror::INVALID_VALUE);
+    };
+    let layout = std::alloc::Layout::from_size_align(size.max(1), align)
+        .map_err(|_| CUerror::INVALID_VALUE)?;
+    unsafe {
+        std::alloc::dealloc(dptr.0 as *mut u8, layout);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn copy_dto_h_v2(
+    dst_host: *mut ::core::ffi::c_void,
+    src_device: CUdeviceptr,
+    byte_count: usize,
+) -> CUresult {
+    if dst_host.is_null() || src_device.0.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    unsafe {
+        std::ptr::copy_nonoverlapping(src_device.0 as *const u8, dst_host as *mut u8, byte_count);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn copy_hto_d_v2(
+    dst_device: CUdeviceptr,
+    src_host: *const ::core::ffi::c_void,
+    byte_count: usize,
+) -> CUresult {
+    if dst_device.0.is_null() || src_host.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    unsafe {
+        std::ptr::copy_nonoverlapping(src_host as *const u8, dst_device.0 as *mut u8, byte_count);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_address_range_v2(
+    pbase: *mut CUdeviceptr,
+    psize: *mut usize,
+    dptr: CUdeviceptr,
+) -> CUresult {
+    let addr = dptr.0 as usize;
+    let map = WEBGPU_ALLOC_MAP.lock().map_err(|_| CUerror::UNKNOWN)?;
+    for (&base, &(size, _)) in map.iter() {
+        if addr >= base && addr < base.saturating_add(size.max(1)) {
+            unsafe {
+                if !pbase.is_null() {
+                    *pbase = CUdeviceptr_v2(base as *mut _);
+                }
+                if !psize.is_null() {
+                    *psize = size;
+                }
+            }
+            return Ok(());
+        }
+    }
+    Err(CUerror::INVALID_VALUE)
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn set_d8_v2(dst_device: CUdeviceptr, uc: u8, n: usize) -> CUresult {
+    if dst_device.0.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    unsafe {
+        std::ptr::write_bytes(dst_device.0 as *mut u8, uc, n);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn set_d32_v2(dst_device: CUdeviceptr, ui: u32, n: usize) -> CUresult {
+    if dst_device.0.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let slice = unsafe { std::slice::from_raw_parts_mut(dst_device.0 as *mut u32, n) };
+    slice.fill(ui);
     Ok(())
 }
 

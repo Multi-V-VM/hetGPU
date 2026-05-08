@@ -2144,7 +2144,7 @@ pub(crate) fn primary_context_get_state(dev: i32, flags: &mut u32, active: &mut 
 // ============================================================================
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2156,7 +2156,7 @@ pub(crate) fn compute_capability(major: &mut i32, minor: &mut i32, _dev: i32) ->
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2171,7 +2171,7 @@ pub(crate) fn get(device: *mut i32, ordinal: i32) -> CUresult {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2183,7 +2183,7 @@ pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> CUresult {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2210,7 +2210,7 @@ pub(crate) fn get_name(
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2232,7 +2232,7 @@ pub(crate) fn get_uuid(uuid: *mut [u8; 16], dev: i32) -> CUresult {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2242,7 +2242,7 @@ pub(crate) fn get_uuid_v2(uuid: *mut [u8; 16], dev: i32) -> CUresult {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2270,7 +2270,7 @@ pub(crate) fn get_luid(
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2283,12 +2283,12 @@ pub(crate) fn total_mem_v2(bytes: *mut usize, dev: i32) -> CUresult {
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
     }
-    unsafe { *bytes = 4 * 1024 * 1024 * 1024 };
+    unsafe { *bytes = 512 * 1024 * 1024 };
     Ok(())
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2312,7 +2312,7 @@ pub(crate) fn get_properties(prop: &mut CUdevprop, dev: i32) -> CUresult {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2328,7 +2328,7 @@ pub(crate) fn primary_context_retain(pctx: *mut CUcontext, dev: i32) -> CUresult
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2343,7 +2343,7 @@ pub(crate) fn primary_context_release(dev: i32) -> CUresult {
 }
 
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2409,7 +2409,7 @@ pub(crate) fn get_attribute(
 
 // ─── PACC primary_context_get_state ──────────────────────────────────────────
 #[cfg(all(
-    feature = "pacc",
+    any(feature = "pacc", feature = "webgpu"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
