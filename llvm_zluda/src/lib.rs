@@ -1,5 +1,6 @@
 #![allow(non_upper_case_globals)]
 use llvm_sys::prelude::*;
+use llvm_sys::target::LLVMTargetDataRef;
 pub use llvm_sys::*;
 
 // 添加LLVMDbgRecordRef类型
@@ -47,11 +48,17 @@ pub const LLVMZludaFastMathAll: ::std::ffi::c_uint = LLVMZludaFastMathAllowReass
 pub type LLVMZludaFastMathFlags = std::ffi::c_uint;
 
 extern "C" {
+    pub fn LLVMParseCommandLineOptions(
+        argc: ::std::os::raw::c_int,
+        argv: *const *const ::std::os::raw::c_char,
+        overview: *const ::std::os::raw::c_char,
+    );
+
     pub fn LLVMZludaBuildAlloca(
         B: LLVMBuilderRef,
         Ty: LLVMTypeRef,
         AddrSpace: u32,
-        Name: *const i8,
+        Name: *const u8,
     ) -> LLVMValueRef;
 
     pub fn LLVMZludaBuildAtomicRMW(
@@ -59,7 +66,7 @@ extern "C" {
         op: LLVMZludaAtomicRMWBinOp,
         PTR: LLVMValueRef,
         Val: LLVMValueRef,
-        scope: *const i8,
+        scope: *const u8,
         ordering: LLVMAtomicOrdering,
     ) -> LLVMValueRef;
 
@@ -68,7 +75,7 @@ extern "C" {
         Ptr: LLVMValueRef,
         Cmp: LLVMValueRef,
         New: LLVMValueRef,
-        scope: *const i8,
+        scope: *const u8,
         SuccessOrdering: LLVMAtomicOrdering,
         FailureOrdering: LLVMAtomicOrdering,
     ) -> LLVMValueRef;
@@ -78,8 +85,8 @@ extern "C" {
     pub fn LLVMZludaBuildFence(
         B: LLVMBuilderRef,
         ordering: LLVMAtomicOrdering,
-        scope: *const i8,
-        Name: *const i8,
+        scope: *const u8,
+        Name: *const u8,
     ) -> LLVMValueRef;
 
     // DWARF Debug Info functions
@@ -103,12 +110,12 @@ extern "C" {
         InsertAtEnd: LLVMBasicBlockRef,
     ) -> LLVMDbgRecordRef;
 
-    pub fn LLVMZludaSizeOfTypeInBits(TD: LLVMContextRef, Ty: LLVMTypeRef) -> u64;
+    pub fn LLVMZludaSizeOfTypeInBits(TD: LLVMTargetDataRef, Ty: LLVMTypeRef) -> u64;
 
     pub fn LLVMZludaSetAtomic(
         MemAccessInst: LLVMValueRef,
         Ordering: LLVMAtomicOrdering,
-        Scope: *const i8,
+        Scope: *const u8,
     );
 
     // LLVM Target initialization functions (for standalone binaries)

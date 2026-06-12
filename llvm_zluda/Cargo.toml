@@ -9,7 +9,7 @@ edition = "2021"
 bitflags = "2.4"
 
 [dependencies.llvm-sys]
-version = "201.0.1"
+path = "../ext/llvm-project/llvm-sys"
 features = [ "disable-alltargets-init", "no-llvm-linking" ]
 
 [build-dependencies]

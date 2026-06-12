@@ -4,14 +4,14 @@
 //! and provides execution interfaces for non-CUDA backends.
 
 use crate::{
-    cutile_comgr_status_s, cutile_comgr_status_t, cutile_comgr_data_set_t,
-    cutile_comgr_data_kind_s, cutile_comgr_target_s, DATA_STORE, DATA_SET_STORE,
-    DataContent, get_next_handle,
+    cutile_comgr_data_kind_s, cutile_comgr_data_set_t, cutile_comgr_status_s,
+    cutile_comgr_status_t, cutile_comgr_target_s, get_next_handle, DataContent, DATA_SET_STORE,
+    DATA_STORE,
 };
-use std::process::Command;
-use tempfile::TempDir;
 use std::fs;
 use std::io::Write;
+use std::process::Command;
+use tempfile::TempDir;
 
 /// Lower TOSA MLIR to target-specific executable
 pub fn lower_tosa_to_target(
@@ -19,8 +19,11 @@ pub fn lower_tosa_to_target(
     output_set: cutile_comgr_data_set_t,
     target: cutile_comgr_target_s,
 ) -> cutile_comgr_status_t {
-    eprintln!("TOSA->Target: Lowering {} input(s) to target {:?}",
-              input_handles.len(), target.0);
+    eprintln!(
+        "TOSA->Target: Lowering {} input(s) to target {:?}",
+        input_handles.len(),
+        target.0
+    );
 
     for &handle in input_handles {
         // Get input data
@@ -70,11 +73,14 @@ pub fn lower_tosa_to_target(
         let output_handle = get_next_handle();
         {
             let mut store = DATA_STORE.lock().unwrap();
-            store.insert(output_handle, DataContent {
-                kind: cutile_comgr_data_kind_s::CUTILE_COMGR_DATA_KIND_EXECUTABLE,
-                content: executable,
-                name: input_content.name.map(|n| n.replace("_tosa.mlir", ".bin")),
-            });
+            store.insert(
+                output_handle,
+                DataContent {
+                    kind: cutile_comgr_data_kind_s::CUTILE_COMGR_DATA_KIND_EXECUTABLE,
+                    content: executable,
+                    name: input_content.name.map(|n| n.replace("_tosa.mlir", ".bin")),
+                },
+            );
         }
 
         // Add to output set
@@ -126,8 +132,10 @@ fn lower_to_tenstorrent(tosa_mlir: &[u8]) -> Result<Vec<u8>, cutile_comgr_status
     match ttmlir_opt_result {
         Ok(output) => {
             if !output.status.success() {
-                eprintln!("TOSA->TT: ttmlir-opt failed: {}",
-                         String::from_utf8_lossy(&output.stderr));
+                eprintln!(
+                    "TOSA->TT: ttmlir-opt failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
                 // Return the TOSA MLIR as-is for debugging
                 return Ok(tosa_mlir.to_vec());
             }
@@ -177,8 +185,10 @@ fn lower_to_intel(tosa_mlir: &[u8]) -> Result<Vec<u8>, cutile_comgr_status_s> {
     match mlir_opt_result {
         Ok(output) => {
             if !output.status.success() {
-                eprintln!("TOSA->Intel: mlir-opt failed: {}",
-                         String::from_utf8_lossy(&output.stderr));
+                eprintln!(
+                    "TOSA->Intel: mlir-opt failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
                 return Ok(generate_spirv_placeholder(tosa_mlir));
             }
         }
@@ -190,10 +200,7 @@ fn lower_to_intel(tosa_mlir: &[u8]) -> Result<Vec<u8>, cutile_comgr_status_s> {
 
     // Convert to SPIRV using mlir-translate
     let translate_result = Command::new("mlir-translate")
-        .args([
-            "--mlir-to-llvmir",
-            llvm_path.to_str().unwrap(),
-        ])
+        .args(["--mlir-to-llvmir", llvm_path.to_str().unwrap()])
         .output();
 
     match translate_result {
@@ -273,10 +280,7 @@ fn lower_to_gemmini(tosa_mlir: &[u8]) -> Result<Vec<u8>, cutile_comgr_status_s> 
 
     // Try to use Gemmini-specific tooling
     let gemmini_result = Command::new("gemmini-opt")
-        .args([
-            "--tosa-to-gemmini",
-            input_path.to_str().unwrap(),
-        ])
+        .args(["--tosa-to-gemmini", input_path.to_str().unwrap()])
         .output();
 
     match gemmini_result {
@@ -378,7 +382,8 @@ fn generate_ttnn_placeholder(tosa_mlir: &[u8]) -> Vec<u8> {
          {}\n\
          // TODO: Implement actual TTNN lowering\n",
         mlir_str
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn generate_spirv_placeholder(tosa_mlir: &[u8]) -> Vec<u8> {
@@ -388,7 +393,8 @@ fn generate_spirv_placeholder(tosa_mlir: &[u8]) -> Vec<u8> {
          ; Original TOSA MLIR:\n\
          ; {}\n",
         mlir_str.replace("\n", "\n; ")
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn generate_amdgpu_placeholder(tosa_mlir: &[u8]) -> Vec<u8> {
@@ -398,7 +404,8 @@ fn generate_amdgpu_placeholder(tosa_mlir: &[u8]) -> Vec<u8> {
          ; Original TOSA MLIR:\n\
          ; {}\n",
         mlir_str.replace("\n", "\n; ")
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn generate_gemmini_placeholder(tosa_mlir: &[u8]) -> Vec<u8> {
@@ -408,7 +415,8 @@ fn generate_gemmini_placeholder(tosa_mlir: &[u8]) -> Vec<u8> {
          # Original TOSA MLIR:\n\
          # {}\n",
         mlir_str.replace("\n", "\n# ")
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn generate_cpu_placeholder(tosa_mlir: &[u8]) -> Vec<u8> {
@@ -422,7 +430,8 @@ fn generate_cpu_placeholder(tosa_mlir: &[u8]) -> Vec<u8> {
            ret void\n\
          }}\n",
         mlir_str.replace("\n", "\n; ")
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 /// Execute compiled kernel on target
@@ -451,31 +460,46 @@ pub fn execute_kernel(
     }
 }
 
-fn execute_on_tenstorrent(_executable: &[u8], _args: &[*mut std::ffi::c_void]) -> Result<(), cutile_comgr_status_s> {
+fn execute_on_tenstorrent(
+    _executable: &[u8],
+    _args: &[*mut std::ffi::c_void],
+) -> Result<(), cutile_comgr_status_s> {
     eprintln!("Runtime: Tenstorrent execution not yet implemented");
     // Would use tt_runtime_sys here
     Ok(())
 }
 
-fn execute_on_intel(_executable: &[u8], _args: &[*mut std::ffi::c_void]) -> Result<(), cutile_comgr_status_s> {
+fn execute_on_intel(
+    _executable: &[u8],
+    _args: &[*mut std::ffi::c_void],
+) -> Result<(), cutile_comgr_status_s> {
     eprintln!("Runtime: Intel execution not yet implemented");
     // Would use ze_runtime_sys here
     Ok(())
 }
 
-fn execute_on_amd(_executable: &[u8], _args: &[*mut std::ffi::c_void]) -> Result<(), cutile_comgr_status_s> {
+fn execute_on_amd(
+    _executable: &[u8],
+    _args: &[*mut std::ffi::c_void],
+) -> Result<(), cutile_comgr_status_s> {
     eprintln!("Runtime: AMD execution not yet implemented");
     // Would use hip_runtime_sys here
     Ok(())
 }
 
-fn execute_on_gemmini(_executable: &[u8], _args: &[*mut std::ffi::c_void]) -> Result<(), cutile_comgr_status_s> {
+fn execute_on_gemmini(
+    _executable: &[u8],
+    _args: &[*mut std::ffi::c_void],
+) -> Result<(), cutile_comgr_status_s> {
     eprintln!("Runtime: Gemmini execution not yet implemented");
     // Would use gemmini_runtime_sys here
     Ok(())
 }
 
-fn execute_on_cpu(_executable: &[u8], _args: &[*mut std::ffi::c_void]) -> Result<(), cutile_comgr_status_s> {
+fn execute_on_cpu(
+    _executable: &[u8],
+    _args: &[*mut std::ffi::c_void],
+) -> Result<(), cutile_comgr_status_s> {
     eprintln!("Runtime: CPU execution not yet implemented");
     // Would JIT compile and execute on CPU
     Ok(())

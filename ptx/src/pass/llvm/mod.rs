@@ -5,6 +5,7 @@ use std::ffi::CStr;
 use std::mem;
 use std::ops::Deref;
 use std::ptr;
+use std::sync::Once;
 
 use crate::pass::*;
 use llvm_zluda::analysis::{LLVMVerifierFailureAction, LLVMVerifyModule};
@@ -22,10 +23,31 @@ const SHARED_ADDRESS_SPACE: u32 = 3;
 const CONSTANT_ADDRESS_SPACE: u32 = 4;
 const PRIVATE_ADDRESS_SPACE: u32 = 5;
 
+/// NVPTX kernel calling convention (LLVM CC 71)
+#[cfg(feature = "nvidia")]
+pub(super) const NVPTX_KERNEL_CC: u32 = 71;
+
 pub(super) struct Context(LLVMContextRef);
+
+static LLVM_NAME_LIMIT_INIT: Once = Once::new();
+
+fn configure_llvm_name_limit() {
+    LLVM_NAME_LIMIT_INIT.call_once(|| unsafe {
+        let argv = [
+            c"hetgpu-ptx".as_ptr(),
+            c"-non-global-value-max-name-size=16384".as_ptr(),
+        ];
+        llvm_zluda::LLVMParseCommandLineOptions(
+            argv.len() as i32,
+            argv.as_ptr(),
+            c"hetGPU PTX LLVM options".as_ptr(),
+        );
+    });
+}
 
 impl Context {
     pub fn new() -> Self {
+        configure_llvm_name_limit();
         Self(unsafe { LLVMContextCreate() })
     }
 
@@ -51,6 +73,16 @@ impl Module {
 
     fn get(&self) -> LLVMModuleRef {
         self.0
+    }
+
+    pub(crate) fn force_all_function_call_conv(&self, call_conv: u32) {
+        unsafe {
+            let mut func = LLVMGetFirstFunction(self.get());
+            while !func.is_null() {
+                LLVMSetFunctionCallConv(func, call_conv);
+                func = LLVMGetNextFunction(func);
+            }
+        }
     }
 
     fn verify(&self) -> Result<(), Message> {
@@ -89,9 +121,12 @@ impl Drop for Module {
 }
 
 pub fn bitcode_to_ir(bitcode: Vec<u8>) -> Vec<u8> {
-    let bitcode: Vec<i8> = bitcode.iter().map(|&v| i8::from_ne_bytes([v])).collect();
     let memory_buffer: LLVMMemoryBufferRef = unsafe {
-        LLVMCreateMemoryBufferWithMemoryRangeCopy(bitcode.as_ptr(), bitcode.len(), ptr::null())
+        LLVMCreateMemoryBufferWithMemoryRangeCopy(
+            bitcode.as_ptr().cast(),
+            bitcode.len(),
+            ptr::null(),
+        )
     };
     let context = Context::new();
     let mut module: LLVMModuleRef = unsafe { mem::zeroed() };

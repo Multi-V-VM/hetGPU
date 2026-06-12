@@ -13,6 +13,7 @@ gemmini = ["dep:gemmini_comgr_sys"]
 cutile = ["dep:cutile_comgr_sys"]
 
 [lib]
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 amd_comgr_sys = { path = "../ext/amd_comgr-sys", optional = true }

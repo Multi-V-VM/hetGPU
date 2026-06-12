@@ -4,19 +4,19 @@
 //! transforming it to TOSA dialect, and executing on non-CUDA backends.
 
 mod bytecode;
-mod tosa_transform;
 mod runtime;
+mod tosa_transform;
 
 pub use bytecode::*;
-pub use tosa_transform::*;
 pub use runtime::*;
+pub use tosa_transform::*;
 
-use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_void};
+use lazy_static::lazy_static;
+use std::collections::HashMap;
+use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
 use std::num::NonZeroU32;
 use std::os::raw;
-use lazy_static::lazy_static;
 use std::sync::Mutex;
-use std::collections::HashMap;
 
 // Version constants
 pub const CUTILE_COMGR_INTERFACE_VERSION_MAJOR: u32 = 1;
@@ -32,11 +32,16 @@ pub type cutile_comgr_status_t = Result<(), cutile_comgr_status_s>;
 impl cutile_comgr_status_s {
     pub const CUTILE_COMGR_STATUS_SUCCESS: u32 = 0;
     pub const CUTILE_COMGR_STATUS_ERROR: cutile_comgr_status_s = cutile_comgr_status_s(1);
-    pub const CUTILE_COMGR_STATUS_ERROR_INVALID_ARGUMENT: cutile_comgr_status_s = cutile_comgr_status_s(2);
-    pub const CUTILE_COMGR_STATUS_ERROR_OUT_OF_RESOURCES: cutile_comgr_status_s = cutile_comgr_status_s(3);
-    pub const CUTILE_COMGR_STATUS_ERROR_INVALID_BYTECODE: cutile_comgr_status_s = cutile_comgr_status_s(4);
-    pub const CUTILE_COMGR_STATUS_ERROR_TRANSFORMATION_FAILED: cutile_comgr_status_s = cutile_comgr_status_s(5);
-    pub const CUTILE_COMGR_STATUS_ERROR_EXECUTION_FAILED: cutile_comgr_status_s = cutile_comgr_status_s(6);
+    pub const CUTILE_COMGR_STATUS_ERROR_INVALID_ARGUMENT: cutile_comgr_status_s =
+        cutile_comgr_status_s(2);
+    pub const CUTILE_COMGR_STATUS_ERROR_OUT_OF_RESOURCES: cutile_comgr_status_s =
+        cutile_comgr_status_s(3);
+    pub const CUTILE_COMGR_STATUS_ERROR_INVALID_BYTECODE: cutile_comgr_status_s =
+        cutile_comgr_status_s(4);
+    pub const CUTILE_COMGR_STATUS_ERROR_TRANSFORMATION_FAILED: cutile_comgr_status_s =
+        cutile_comgr_status_s(5);
+    pub const CUTILE_COMGR_STATUS_ERROR_EXECUTION_FAILED: cutile_comgr_status_s =
+        cutile_comgr_status_s(6);
 }
 
 // Data kinds for CuTile pipeline
@@ -46,10 +51,14 @@ pub struct cutile_comgr_data_kind_s(pub c_uint);
 
 impl cutile_comgr_data_kind_s {
     pub const CUTILE_COMGR_DATA_KIND_UNDEF: cutile_comgr_data_kind_s = cutile_comgr_data_kind_s(0);
-    pub const CUTILE_COMGR_DATA_KIND_BYTECODE: cutile_comgr_data_kind_s = cutile_comgr_data_kind_s(1);
-    pub const CUTILE_COMGR_DATA_KIND_MLIR_CUTILE: cutile_comgr_data_kind_s = cutile_comgr_data_kind_s(2);
-    pub const CUTILE_COMGR_DATA_KIND_MLIR_TOSA: cutile_comgr_data_kind_s = cutile_comgr_data_kind_s(3);
-    pub const CUTILE_COMGR_DATA_KIND_EXECUTABLE: cutile_comgr_data_kind_s = cutile_comgr_data_kind_s(4);
+    pub const CUTILE_COMGR_DATA_KIND_BYTECODE: cutile_comgr_data_kind_s =
+        cutile_comgr_data_kind_s(1);
+    pub const CUTILE_COMGR_DATA_KIND_MLIR_CUTILE: cutile_comgr_data_kind_s =
+        cutile_comgr_data_kind_s(2);
+    pub const CUTILE_COMGR_DATA_KIND_MLIR_TOSA: cutile_comgr_data_kind_s =
+        cutile_comgr_data_kind_s(3);
+    pub const CUTILE_COMGR_DATA_KIND_EXECUTABLE: cutile_comgr_data_kind_s =
+        cutile_comgr_data_kind_s(4);
     pub const CUTILE_COMGR_DATA_KIND_LOG: cutile_comgr_data_kind_s = cutile_comgr_data_kind_s(5);
 }
 
@@ -60,13 +69,17 @@ pub struct cutile_comgr_action_kind_s(pub c_uint);
 
 impl cutile_comgr_action_kind_s {
     /// Load CuTile bytecode and deserialize to MLIR
-    pub const CUTILE_COMGR_ACTION_LOAD_BYTECODE: cutile_comgr_action_kind_s = cutile_comgr_action_kind_s(0);
+    pub const CUTILE_COMGR_ACTION_LOAD_BYTECODE: cutile_comgr_action_kind_s =
+        cutile_comgr_action_kind_s(0);
     /// Transform CuTile MLIR to TOSA MLIR
-    pub const CUTILE_COMGR_ACTION_CUTILE_TO_TOSA: cutile_comgr_action_kind_s = cutile_comgr_action_kind_s(1);
+    pub const CUTILE_COMGR_ACTION_CUTILE_TO_TOSA: cutile_comgr_action_kind_s =
+        cutile_comgr_action_kind_s(1);
     /// Lower TOSA to target-specific code (e.g., for Tenstorrent, Intel, etc.)
-    pub const CUTILE_COMGR_ACTION_TOSA_TO_TARGET: cutile_comgr_action_kind_s = cutile_comgr_action_kind_s(2);
+    pub const CUTILE_COMGR_ACTION_TOSA_TO_TARGET: cutile_comgr_action_kind_s =
+        cutile_comgr_action_kind_s(2);
     /// Full pipeline: bytecode -> CuTile -> TOSA -> target executable
-    pub const CUTILE_COMGR_ACTION_FULL_PIPELINE: cutile_comgr_action_kind_s = cutile_comgr_action_kind_s(3);
+    pub const CUTILE_COMGR_ACTION_FULL_PIPELINE: cutile_comgr_action_kind_s =
+        cutile_comgr_action_kind_s(3);
 }
 
 // Target backend types
@@ -148,11 +161,14 @@ pub fn cutile_comgr_create_data(
     let data_obj = cutile_comgr_data_t { handle };
 
     let mut store = DATA_STORE.lock().unwrap();
-    store.insert(handle, DataContent {
-        kind,
-        content: Vec::new(),
-        name: None,
-    });
+    store.insert(
+        handle,
+        DataContent {
+            kind,
+            content: Vec::new(),
+            name: None,
+        },
+    );
 
     unsafe {
         *data = data_obj;
@@ -247,7 +263,9 @@ pub fn cutile_comgr_data_get_bytes(
 }
 
 /// Create a data set
-pub fn cutile_comgr_create_data_set(data_set: *mut cutile_comgr_data_set_t) -> cutile_comgr_status_t {
+pub fn cutile_comgr_create_data_set(
+    data_set: *mut cutile_comgr_data_set_t,
+) -> cutile_comgr_status_t {
     if data_set.is_null() {
         return Err(cutile_comgr_status_s::CUTILE_COMGR_STATUS_ERROR_INVALID_ARGUMENT);
     }
@@ -322,7 +340,9 @@ pub fn cutile_comgr_get_data(
             return Err(cutile_comgr_status_s::CUTILE_COMGR_STATUS_ERROR_INVALID_ARGUMENT);
         }
         unsafe {
-            *data = cutile_comgr_data_t { handle: handles[index] };
+            *data = cutile_comgr_data_t {
+                handle: handles[index],
+            };
         }
         Ok(())
     } else {
@@ -331,7 +351,9 @@ pub fn cutile_comgr_get_data(
 }
 
 /// Create action info
-pub fn cutile_comgr_create_action_info(action_info: *mut cutile_comgr_action_info_t) -> cutile_comgr_status_t {
+pub fn cutile_comgr_create_action_info(
+    action_info: *mut cutile_comgr_action_info_t,
+) -> cutile_comgr_status_t {
     if action_info.is_null() {
         return Err(cutile_comgr_status_s::CUTILE_COMGR_STATUS_ERROR_INVALID_ARGUMENT);
     }
@@ -350,7 +372,9 @@ pub fn cutile_comgr_create_action_info(action_info: *mut cutile_comgr_action_inf
 }
 
 /// Release action info
-pub fn cutile_comgr_release_action_info(action_info: cutile_comgr_action_info_t) -> cutile_comgr_status_t {
+pub fn cutile_comgr_release_action_info(
+    action_info: cutile_comgr_action_info_t,
+) -> cutile_comgr_status_t {
     let mut store = ACTION_INFO_STORE.lock().unwrap();
     store.remove(&action_info.handle);
     Ok(())
@@ -438,12 +462,14 @@ pub fn cutile_comgr_do_action(
             tosa_transform::transform_to_tosa(&input_handles, output_set)
         }
         k if k == cutile_comgr_action_kind_s::CUTILE_COMGR_ACTION_TOSA_TO_TARGET => {
-            let target = action_info_data.target
+            let target = action_info_data
+                .target
                 .unwrap_or(cutile_comgr_target_s::CUTILE_COMGR_TARGET_CPU);
             runtime::lower_tosa_to_target(&input_handles, output_set, target)
         }
         k if k == cutile_comgr_action_kind_s::CUTILE_COMGR_ACTION_FULL_PIPELINE => {
-            let target = action_info_data.target
+            let target = action_info_data
+                .target
                 .unwrap_or(cutile_comgr_target_s::CUTILE_COMGR_TARGET_CPU);
             full_pipeline(&input_handles, output_set, target)
         }
@@ -470,7 +496,10 @@ fn full_pipeline(
     // Get handles from intermediate set
     let cutile_handles = {
         let store = DATA_SET_STORE.lock().unwrap();
-        store.get(&cutile_mlir_set.handle).cloned().unwrap_or_default()
+        store
+            .get(&cutile_mlir_set.handle)
+            .cloned()
+            .unwrap_or_default()
     };
 
     // Step 3: Create intermediate data set for TOSA MLIR
@@ -484,7 +513,10 @@ fn full_pipeline(
     // Get handles from TOSA set
     let tosa_handles = {
         let store = DATA_SET_STORE.lock().unwrap();
-        store.get(&tosa_mlir_set.handle).cloned().unwrap_or_default()
+        store
+            .get(&tosa_mlir_set.handle)
+            .cloned()
+            .unwrap_or_default()
     };
 
     // Step 5: Lower TOSA to target

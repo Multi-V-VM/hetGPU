@@ -1,0 +1,15 @@
+[package]
+name = "aie_comgr_sys"
+version = "0.1.0"
+edition = "2021"
+description = "TOSA-MLIR to AMD AIE XCLBIN compilation driver (shells out to mlir-aie)"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "aie_comgr_sys"
+path = "src/lib.rs"
+
+[dependencies]
+tempfile = "3.4"
+which = "8.0"
+thiserror = "1.0"

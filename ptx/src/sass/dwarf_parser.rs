@@ -9,12 +9,11 @@
 //! CUDA uses DWARF v2 format with some NVIDIA-specific extensions.
 
 use gimli::{
-    DebugLine, DebugLineOffset, EndianSlice, LittleEndian,
-    DebugAbbrev, DebugInfo, DebugStr,
-    UnitHeader, AttributeValue, DebuggingInformationEntry,
+    AttributeValue, DebugAbbrev, DebugInfo, DebugLine, DebugLineOffset, DebugStr,
+    DebuggingInformationEntry, EndianSlice, LittleEndian, UnitHeader,
 };
 use object::{Object, ObjectSection};
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
 use super::cubin_parser::DebugLineInfo;
@@ -129,8 +128,7 @@ impl<'a> DwarfParser<'a> {
 
         // Get section data helper
         let get_section = |name: &str| -> Option<&[u8]> {
-            object.section_by_name(name)
-                .and_then(|s| s.data().ok())
+            object.section_by_name(name).and_then(|s| s.data().ok())
         };
 
         // Parse .debug_line section for line number mappings
@@ -147,7 +145,7 @@ impl<'a> DwarfParser<'a> {
                 debug_info_data,
                 debug_abbrev_data,
                 debug_str_data,
-                &mut result
+                &mut result,
             )?;
         }
 
@@ -180,7 +178,10 @@ impl<'a> DwarfParser<'a> {
         while offset + 4 <= data.len() {
             // Read unit_length (4 bytes for 32-bit DWARF)
             let unit_length = u32::from_le_bytes([
-                data[offset], data[offset + 1], data[offset + 2], data[offset + 3]
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
             ]) as usize;
 
             if unit_length == 0 || offset + unit_length + 4 > data.len() {
@@ -196,7 +197,10 @@ impl<'a> DwarfParser<'a> {
             if offset + 10 <= data.len() {
                 let version = u16::from_le_bytes([data[offset + 4], data[offset + 5]]);
                 let header_length = u32::from_le_bytes([
-                    data[offset + 6], data[offset + 7], data[offset + 8], data[offset + 9]
+                    data[offset + 6],
+                    data[offset + 7],
+                    data[offset + 8],
+                    data[offset + 9],
                 ]) as usize;
 
                 // For DWARF 2/3, parse the simple state machine format
@@ -320,10 +324,14 @@ impl<'a> DwarfParser<'a> {
                             // DW_LNE_set_address
                             if offset + 1 + 8 <= data.len() {
                                 address = u64::from_le_bytes([
-                                    data[offset + 1], data[offset + 2],
-                                    data[offset + 3], data[offset + 4],
-                                    data[offset + 5], data[offset + 6],
-                                    data[offset + 7], data[offset + 8],
+                                    data[offset + 1],
+                                    data[offset + 2],
+                                    data[offset + 3],
+                                    data[offset + 4],
+                                    data[offset + 5],
+                                    data[offset + 6],
+                                    data[offset + 7],
+                                    data[offset + 8],
                                 ]);
                             }
                         }
@@ -336,18 +344,23 @@ impl<'a> DwarfParser<'a> {
                 }
                 1 => {
                     // DW_LNS_copy - emit row
-                    let file_name = result.file_table.get(&file)
+                    let file_name = result
+                        .file_table
+                        .get(&file)
                         .cloned()
                         .unwrap_or_else(|| "unknown".to_string());
 
-                    result.line_mappings.insert(address, DebugLineInfo {
+                    result.line_mappings.insert(
                         address,
-                        file: file_name,
-                        line,
-                        column,
-                        is_statement: is_stmt,
-                        discriminator: 0,
-                    });
+                        DebugLineInfo {
+                            address,
+                            file: file_name,
+                            line,
+                            column,
+                            is_statement: is_stmt,
+                            discriminator: 0,
+                        },
+                    );
                 }
                 2 => {
                     // DW_LNS_advance_pc
@@ -402,18 +415,23 @@ impl<'a> DwarfParser<'a> {
                     address += address_increment;
 
                     // Emit row
-                    let file_name = result.file_table.get(&file)
+                    let file_name = result
+                        .file_table
+                        .get(&file)
                         .cloned()
                         .unwrap_or_else(|| "unknown".to_string());
 
-                    result.line_mappings.insert(address, DebugLineInfo {
+                    result.line_mappings.insert(
                         address,
-                        file: file_name,
-                        line,
-                        column,
-                        is_statement: is_stmt,
-                        discriminator: 0,
-                    });
+                        DebugLineInfo {
+                            address,
+                            file: file_name,
+                            line,
+                            column,
+                            is_statement: is_stmt,
+                            discriminator: 0,
+                        },
+                    );
                 }
             }
         }
@@ -503,8 +521,13 @@ impl<'a> DwarfParser<'a> {
                 self.parse_subprogram(header, entry, debug_str, result);
             }
             gimli::DW_TAG_variable | gimli::DW_TAG_formal_parameter => {
-                self.parse_variable(header, entry, debug_str, result,
-                    entry.tag() == gimli::DW_TAG_formal_parameter);
+                self.parse_variable(
+                    header,
+                    entry,
+                    debug_str,
+                    result,
+                    entry.tag() == gimli::DW_TAG_formal_parameter,
+                );
             }
             _ => {}
         }
@@ -550,13 +573,11 @@ impl<'a> DwarfParser<'a> {
                         cu.low_pc = addr;
                     }
                 }
-                gimli::DW_AT_high_pc => {
-                    match attr.value() {
-                        AttributeValue::Addr(addr) => cu.high_pc = addr,
-                        AttributeValue::Udata(size) => cu.high_pc = cu.low_pc + size,
-                        _ => {}
-                    }
-                }
+                gimli::DW_AT_high_pc => match attr.value() {
+                    AttributeValue::Addr(addr) => cu.high_pc = addr,
+                    AttributeValue::Udata(size) => cu.high_pc = cu.low_pc + size,
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -598,13 +619,11 @@ impl<'a> DwarfParser<'a> {
                         func.low_pc = addr;
                     }
                 }
-                gimli::DW_AT_high_pc => {
-                    match attr.value() {
-                        AttributeValue::Addr(addr) => func.high_pc = addr,
-                        AttributeValue::Udata(size) => func.high_pc = func.low_pc + size,
-                        _ => {}
-                    }
-                }
+                gimli::DW_AT_high_pc => match attr.value() {
+                    AttributeValue::Addr(addr) => func.high_pc = addr,
+                    AttributeValue::Udata(size) => func.high_pc = func.low_pc + size,
+                    _ => {}
+                },
                 gimli::DW_AT_decl_line => {
                     if let AttributeValue::Udata(line) = attr.value() {
                         func.line = line as u32;
@@ -670,16 +689,13 @@ impl<'a> DwarfParser<'a> {
         debug_str: &DebugStr<EndianSlice<'_, LittleEndian>>,
     ) -> String {
         match value {
-            AttributeValue::String(s) => {
-                std::str::from_utf8(s.slice()).unwrap_or("").to_string()
-            }
-            AttributeValue::DebugStrRef(offset) => {
-                debug_str.get_str(*offset)
-                    .ok()
-                    .and_then(|s| std::str::from_utf8(s.slice()).ok())
-                    .unwrap_or("")
-                    .to_string()
-            }
+            AttributeValue::String(s) => std::str::from_utf8(s.slice()).unwrap_or("").to_string(),
+            AttributeValue::DebugStrRef(offset) => debug_str
+                .get_str(*offset)
+                .ok()
+                .and_then(|s| std::str::from_utf8(s.slice()).ok())
+                .unwrap_or("")
+                .to_string(),
             _ => String::new(),
         }
     }
@@ -717,8 +733,8 @@ impl<'a> DwarfParser<'a> {
                         // DW_OP_addr
                         if bytes.len() >= 9 {
                             let addr = u64::from_le_bytes([
-                                bytes[1], bytes[2], bytes[3], bytes[4],
-                                bytes[5], bytes[6], bytes[7], bytes[8],
+                                bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
+                                bytes[7], bytes[8],
                             ]);
                             VariableLocationExpr::Address(addr)
                         } else {
@@ -759,7 +775,9 @@ impl<'a> DwarfParser<'a> {
 // ============================================================================
 
 /// Parse debug line information from CUBIN data
-pub fn parse_debug_lines(cubin_data: &[u8]) -> Result<HashMap<u64, DebugLineInfo>, DwarfParseError> {
+pub fn parse_debug_lines(
+    cubin_data: &[u8],
+) -> Result<HashMap<u64, DebugLineInfo>, DwarfParseError> {
     let parser = DwarfParser::new(cubin_data);
     let info = parser.parse()?;
     Ok(info.line_mappings)
@@ -772,11 +790,14 @@ pub fn parse_all_debug_info(cubin_data: &[u8]) -> Result<ParsedDebugInfo, DwarfP
 }
 
 /// Get function boundaries from debug information
-pub fn get_function_boundaries(cubin_data: &[u8]) -> Result<Vec<(String, u64, u64)>, DwarfParseError> {
+pub fn get_function_boundaries(
+    cubin_data: &[u8],
+) -> Result<Vec<(String, u64, u64)>, DwarfParseError> {
     let parser = DwarfParser::new(cubin_data);
     let info = parser.parse()?;
 
-    Ok(info.functions
+    Ok(info
+        .functions
         .into_iter()
         .map(|f| (f.name, f.low_pc, f.high_pc))
         .collect())

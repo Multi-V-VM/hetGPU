@@ -281,7 +281,8 @@ impl PtxToTMatmulCompiler {
         for (idx, var) in function.func_directive.input_arguments.iter().enumerate() {
             let param_name = var.name.to_string();
             self.param_name_to_index.insert(param_name.clone(), idx);
-            self.codegen.add_comment(&format!("BIND PARAM_{} {}", idx, param_name));
+            self.codegen
+                .add_comment(&format!("BIND PARAM_{} {}", idx, param_name));
         }
         if !function.func_directive.input_arguments.is_empty() {
             self.codegen.add_comment("END_BINDINGS");
@@ -331,7 +332,9 @@ impl PtxToTMatmulCompiler {
 
         match inst {
             // Arithmetic instructions - only emit for float types (skip integer index/address math)
-            ast::Instruction::Add { data, arguments, .. } => {
+            ast::Instruction::Add {
+                data, arguments, ..
+            } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src1_name = Self::operand_to_string(&arguments.src1);
                 let src2_name = Self::operand_to_string(&arguments.src2);
@@ -346,56 +349,78 @@ impl PtxToTMatmulCompiler {
                     if let Some(mem_region) = self.ptx_to_memory.get(ptr_name).cloned() {
                         self.ptx_to_memory.insert(dst_name.clone(), mem_region);
                     }
-                    self.codegen.add_comment(&format!("PTX add (pointer arithmetic, propagating {})", ptr_name));
-                    let src_ssa = self.map_ptx_to_ssa(if src1_is_ptr { &src1_name } else { &src2_name });
+                    self.codegen.add_comment(&format!(
+                        "PTX add (pointer arithmetic, propagating {})",
+                        ptr_name
+                    ));
+                    let src_ssa =
+                        self.map_ptx_to_ssa(if src1_is_ptr { &src1_name } else { &src2_name });
                     self.ptx_to_ssa.insert(dst_name, src_ssa);
                 } else if matches!(data, ast::ArithDetails::Float(_)) {
                     // Float data add - emit tmatmul instruction
                     let dst_ssa = self.map_ptx_to_ssa(&dst_name);
                     let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
                     let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
-                    self.codegen
-                        .emit_operation("tmatmul.add", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                    self.codegen.emit_operation(
+                        "tmatmul.add",
+                        &[&src1_ssa, &src2_ssa],
+                        &[&dst_ssa],
+                    )?;
                 } else {
                     // Integer add (index/address computation) - just track SSA, don't emit
                     let dst_ssa = self.map_ptx_to_ssa(&dst_name);
                 }
             }
-            ast::Instruction::Sub { data, arguments, .. } => {
+            ast::Instruction::Sub {
+                data, arguments, ..
+            } => {
                 if matches!(data, ast::ArithDetails::Float(_)) {
                     let dst_name = Self::operand_to_string(&arguments.dst);
                     let dst_ssa = self.map_ptx_to_ssa(&dst_name);
                     let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
                     let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
-                    self.codegen
-                        .emit_operation("tmatmul.sub", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                    self.codegen.emit_operation(
+                        "tmatmul.sub",
+                        &[&src1_ssa, &src2_ssa],
+                        &[&dst_ssa],
+                    )?;
                 } else {
                     let dst_name = Self::operand_to_string(&arguments.dst);
                     let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
                 }
             }
-            ast::Instruction::Mul { data, arguments, .. } => {
+            ast::Instruction::Mul {
+                data, arguments, ..
+            } => {
                 let is_float = matches!(data, ast::MulDetails::Float(_));
                 if is_float {
                     let dst_name = Self::operand_to_string(&arguments.dst);
                     let dst_ssa = self.map_ptx_to_ssa(&dst_name);
                     let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
                     let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
-                    self.codegen
-                        .emit_operation("tmatmul.mul", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                    self.codegen.emit_operation(
+                        "tmatmul.mul",
+                        &[&src1_ssa, &src2_ssa],
+                        &[&dst_ssa],
+                    )?;
                 } else {
                     let dst_name = Self::operand_to_string(&arguments.dst);
                     let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
                 }
             }
-            ast::Instruction::Div { data, arguments, .. } => {
+            ast::Instruction::Div {
+                data, arguments, ..
+            } => {
                 if matches!(data, ast::DivDetails::Float(_)) {
                     let dst_name = Self::operand_to_string(&arguments.dst);
                     let dst_ssa = self.map_ptx_to_ssa(&dst_name);
                     let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
                     let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
-                    self.codegen
-                        .emit_operation("tmatmul.div", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                    self.codegen.emit_operation(
+                        "tmatmul.div",
+                        &[&src1_ssa, &src2_ssa],
+                        &[&dst_ssa],
+                    )?;
                 } else {
                     let dst_name = Self::operand_to_string(&arguments.dst);
                     let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
@@ -403,7 +428,9 @@ impl PtxToTMatmulCompiler {
             }
 
             // Fused multiply-add - only emit for float
-            ast::Instruction::Mad { data, arguments, .. } => {
+            ast::Instruction::Mad {
+                data, arguments, ..
+            } => {
                 let is_float = matches!(data, ast::MadDetails::Float(_));
                 if is_float {
                     let dst_name = Self::operand_to_string(&arguments.dst);
@@ -417,8 +444,11 @@ impl PtxToTMatmulCompiler {
                         &[&src1_ssa, &src2_ssa],
                         &[&temp_ssa],
                     )?;
-                    self.codegen
-                        .emit_operation("tmatmul.add", &[&temp_ssa, &src3_ssa], &[&dst_ssa])?;
+                    self.codegen.emit_operation(
+                        "tmatmul.add",
+                        &[&temp_ssa, &src3_ssa],
+                        &[&dst_ssa],
+                    )?;
                 } else {
                     let dst_name = Self::operand_to_string(&arguments.dst);
                     let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
@@ -457,13 +487,18 @@ impl PtxToTMatmulCompiler {
                 if let Some(&param_idx) = self.param_name_to_index.get(&base_name) {
                     // This is loading a kernel parameter address - just record the binding
                     let param_ref = format!("PARAM_{}", param_idx);
-                    self.ptx_to_memory.insert(dst_name.clone(), param_ref.clone());
-                    self.codegen.add_comment(&format!("ld.param {} = {} (PARAM_{})", dst_name, base_name, param_idx));
+                    self.ptx_to_memory
+                        .insert(dst_name.clone(), param_ref.clone());
+                    self.codegen.add_comment(&format!(
+                        "ld.param {} = {} (PARAM_{})",
+                        dst_name, base_name, param_idx
+                    ));
                     // Map the SSA value too so it can be used in later instructions
                     let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
                 } else {
                     // This is a global/generic memory load - resolve base to PARAM_N
-                    let resolved_mem = if let Some(mem_region) = self.ptx_to_memory.get(&base_name) {
+                    let resolved_mem = if let Some(mem_region) = self.ptx_to_memory.get(&base_name)
+                    {
                         mem_region.clone()
                     } else {
                         // Fallback: check named mappings
@@ -507,7 +542,9 @@ impl PtxToTMatmulCompiler {
             }
 
             // Move operations
-            ast::Instruction::Mov { data, arguments, .. } => {
+            ast::Instruction::Mov {
+                data, arguments, ..
+            } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
 
@@ -520,7 +557,11 @@ impl PtxToTMatmulCompiler {
                     if is_float_type {
                         // Float immediate - emit load (e.g., mov.f32 %f1, 0.0)
                         let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                        self.codegen.emit_operation("tmatmul.ldv", &[&format!("CONST_{}", src_name)], &[&dst_ssa])?;
+                        self.codegen.emit_operation(
+                            "tmatmul.ldv",
+                            &[&format!("CONST_{}", src_name)],
+                            &[&dst_ssa],
+                        )?;
                     } else {
                         // Integer immediate (thread index, constant) - just track SSA, no emission
                         let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
@@ -545,20 +586,37 @@ impl PtxToTMatmulCompiler {
             ast::Instruction::Abs { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
-                let src_ssa = self.map_ptx_to_ssa(&src_name);
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen.add_comment(&format!("PTX abs: {} = |{}|", dst_name, src_name));
-                self.codegen.emit_operation("tmatmul.abs", &[&src_ssa], &[&dst_ssa])?;
+                let src_ssa = self.map_ptx_to_ssa(&src_name);
+                // Emit as a pass-through for now (abs not directly supported)
+                self.codegen
+                    .add_comment(&format!("PTX abs: {} = |{}|", dst_name, src_name));
+                // Copy src to dst (approximation - real abs would need special handling)
+                self.ptx_to_ssa.insert(dst_name, src_ssa);
+            }
+            ast::Instruction::Copysign { arguments, .. } => {
+                let dst_name = Self::operand_to_string(&arguments.dst);
+                let src1_name = Self::operand_to_string(&arguments.src1);
+                let src2_name = Self::operand_to_string(&arguments.src2);
+                let _dst_ssa = self.map_ptx_to_ssa(&dst_name);
+                let src1_ssa = self.map_ptx_to_ssa(&src1_name);
+                self.codegen.add_comment(&format!(
+                    "PTX copysign: {} = copysign({}, {})",
+                    dst_name, src1_name, src2_name
+                ));
+                self.ptx_to_ssa.insert(dst_name, src1_ssa);
             }
             ast::Instruction::Neg { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-                self.codegen.add_comment(&format!("PTX neg: {} = -{}", dst_name, src_name));
+                self.codegen
+                    .add_comment(&format!("PTX neg: {} = -{}", dst_name, src_name));
                 // For tmatmul, implement as 0 - src
                 let zero_ssa = self.new_ssa();
-                self.codegen.emit_operation("tmatmul.ldv", &["CONST_0"], &[&zero_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.ldv", &["CONST_0"], &[&zero_ssa])?;
                 self.codegen
                     .emit_operation("tmatmul.sub", &[&zero_ssa, &src_ssa], &[&dst_ssa])?;
             }
@@ -567,7 +625,10 @@ impl PtxToTMatmulCompiler {
                 let src_name = Self::operand_to_string(&arguments.src);
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-                self.codegen.add_comment(&format!("PTX not: {} = ~{} (passthrough)", dst_name, src_name));
+                self.codegen.add_comment(&format!(
+                    "PTX not: {} = ~{} (passthrough)",
+                    dst_name, src_name
+                ));
                 self.ptx_to_ssa.insert(dst_name, src_ssa);
             }
 
@@ -618,7 +679,8 @@ impl PtxToTMatmulCompiler {
             ast::Instruction::Setp { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst1);
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen.add_comment(&format!("PTX setp (predicate set)"));
+                self.codegen
+                    .add_comment(&format!("PTX setp (predicate set)"));
                 // Predicates don't need actual values for control flow in tmatmul
             }
 
@@ -628,14 +690,16 @@ impl PtxToTMatmulCompiler {
                 let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
                 let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen.emit_operation("tmatmul.min", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                self.codegen.add_comment(&format!("PTX min (passthrough)"));
+                self.ptx_to_ssa.insert(dst_name, src1_ssa);
             }
             ast::Instruction::Max { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src1_ssa = self.handle_operand_with_immediate(&arguments.src1)?;
                 let src2_ssa = self.handle_operand_with_immediate(&arguments.src2)?;
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen.emit_operation("tmatmul.max", &[&src1_ssa, &src2_ssa], &[&dst_ssa])?;
+                self.codegen.add_comment(&format!("PTX max (passthrough)"));
+                self.ptx_to_ssa.insert(dst_name, src1_ssa);
             }
 
             // Type conversion
@@ -643,7 +707,8 @@ impl PtxToTMatmulCompiler {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-                self.codegen.add_comment(&format!("PTX cvt: {} = convert({})", dst_name, src_name));
+                self.codegen
+                    .add_comment(&format!("PTX cvt: {} = convert({})", dst_name, src_name));
                 // Pass through for now
                 self.ptx_to_ssa.insert(dst_name.clone(), src_ssa);
                 // Propagate memory bindings through type conversions
@@ -662,16 +727,23 @@ impl PtxToTMatmulCompiler {
                 // Check if predicate is a constant
                 let result_ssa = if pred_str == "0" {
                     // Predicate is false, select src2
-                    self.codegen.add_comment(&format!("PTX selp: pred=0, selecting second operand"));
+                    self.codegen
+                        .add_comment(&format!("PTX selp: pred=0, selecting second operand"));
                     src2_ssa
                 } else if pred_str.parse::<i64>().is_ok() {
                     // Predicate is a non-zero constant, select src1
-                    self.codegen.add_comment(&format!("PTX selp: pred={}, selecting first operand", pred_str));
+                    self.codegen.add_comment(&format!(
+                        "PTX selp: pred={}, selecting first operand",
+                        pred_str
+                    ));
                     src1_ssa
                 } else {
                     // Predicate is a register - for single-thread, check if it's mapped to a known value
                     // Default to src1 (true path) for single-threaded simulation
-                    self.codegen.add_comment(&format!("PTX selp: pred={} (runtime), defaulting to first operand", pred_str));
+                    self.codegen.add_comment(&format!(
+                        "PTX selp: pred={} (runtime), defaulting to first operand",
+                        pred_str
+                    ));
                     src1_ssa
                 };
                 self.ptx_to_ssa.insert(dst_name, result_ssa);
@@ -690,7 +762,9 @@ impl PtxToTMatmulCompiler {
             // ============================================================
             // ATOMIC OPERATIONS - Emulated as load-modify-store sequences
             // ============================================================
-            ast::Instruction::Atom { data, arguments, .. } => {
+            ast::Instruction::Atom {
+                data, arguments, ..
+            } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let addr_name = Self::operand_to_string(&arguments.src1);
 
@@ -703,16 +777,22 @@ impl PtxToTMatmulCompiler {
                 let old_ssa = self.new_ssa();
                 let new_ssa = self.new_ssa();
 
-                self.codegen.add_comment(&format!("PTX atom: {} (emulated)", dst_name));
+                self.codegen
+                    .add_comment(&format!("PTX atom: {} (emulated)", dst_name));
 
                 // Load old value from address
-                self.codegen.emit_operation("tmatmul.ldv", &[&addr_name], &[&old_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.ldv", &[&addr_name], &[&old_ssa])?;
 
                 // Perform the atomic operation based on type
                 let op_name = format!("{:?}", data.op).to_lowercase();
                 match op_name.as_str() {
                     "add" => {
-                        self.codegen.emit_operation("tmatmul.add", &[&old_ssa, &val_ssa], &[&new_ssa])?;
+                        self.codegen.emit_operation(
+                            "tmatmul.add",
+                            &[&old_ssa, &val_ssa],
+                            &[&new_ssa],
+                        )?;
                     }
                     "min" => {
                         // Emulate min: use old value (approximation)
@@ -726,14 +806,24 @@ impl PtxToTMatmulCompiler {
                     "inc" => {
                         // Increment: old + 1
                         let one_ssa = self.new_ssa();
-                        self.codegen.emit_operation("tmatmul.ldv", &["CONST_1"], &[&one_ssa])?;
-                        self.codegen.emit_operation("tmatmul.add", &[&old_ssa, &one_ssa], &[&new_ssa])?;
+                        self.codegen
+                            .emit_operation("tmatmul.ldv", &["CONST_1"], &[&one_ssa])?;
+                        self.codegen.emit_operation(
+                            "tmatmul.add",
+                            &[&old_ssa, &one_ssa],
+                            &[&new_ssa],
+                        )?;
                     }
                     "dec" => {
                         // Decrement: old - 1
                         let one_ssa = self.new_ssa();
-                        self.codegen.emit_operation("tmatmul.ldv", &["CONST_1"], &[&one_ssa])?;
-                        self.codegen.emit_operation("tmatmul.sub", &[&old_ssa, &one_ssa], &[&new_ssa])?;
+                        self.codegen
+                            .emit_operation("tmatmul.ldv", &["CONST_1"], &[&one_ssa])?;
+                        self.codegen.emit_operation(
+                            "tmatmul.sub",
+                            &[&old_ssa, &one_ssa],
+                            &[&new_ssa],
+                        )?;
                     }
                     "and" => {
                         self.codegen.add_comment("atom.and emulated as passthrough");
@@ -752,13 +842,19 @@ impl PtxToTMatmulCompiler {
                         self.ptx_to_ssa.insert(new_ssa.clone(), val_ssa.clone());
                     }
                     _ => {
-                        self.codegen.add_comment(&format!("atom.{} emulated as add", op_name));
-                        self.codegen.emit_operation("tmatmul.add", &[&old_ssa, &val_ssa], &[&new_ssa])?;
+                        self.codegen
+                            .add_comment(&format!("atom.{} emulated as add", op_name));
+                        self.codegen.emit_operation(
+                            "tmatmul.add",
+                            &[&old_ssa, &val_ssa],
+                            &[&new_ssa],
+                        )?;
                     }
                 }
 
                 // Store new value back
-                self.codegen.emit_operation("tmatmul.sv", &[&new_ssa, &addr_name], &[])?;
+                self.codegen
+                    .emit_operation("tmatmul.sv", &[&new_ssa, &addr_name], &[])?;
 
                 // Return old value
                 self.ptx_to_ssa.insert(dst_name, old_ssa);
@@ -773,13 +869,16 @@ impl PtxToTMatmulCompiler {
                 let val_ssa = self.handle_operand_with_immediate(&arguments.src3)?;
                 let old_ssa = self.new_ssa();
 
-                self.codegen.add_comment(&format!("PTX atom.cas: {} (emulated)", dst_name));
+                self.codegen
+                    .add_comment(&format!("PTX atom.cas: {} (emulated)", dst_name));
 
                 // Load old value
-                self.codegen.emit_operation("tmatmul.ldv", &[&addr_name], &[&old_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.ldv", &[&addr_name], &[&old_ssa])?;
 
                 // For single-threaded: if old == cmp, store val (assume comparison succeeds)
-                self.codegen.emit_operation("tmatmul.sv", &[&val_ssa, &addr_name], &[])?;
+                self.codegen
+                    .emit_operation("tmatmul.sv", &[&val_ssa, &addr_name], &[])?;
 
                 // Return old value
                 self.ptx_to_ssa.insert(dst_name, old_ssa);
@@ -789,7 +888,8 @@ impl PtxToTMatmulCompiler {
             // THREAD SYNCHRONIZATION - No-ops for single-threaded tmatmul
             // ============================================================
             ast::Instruction::Bar { .. } => {
-                self.codegen.add_comment("PTX: bar.sync (no-op for single-threaded)");
+                self.codegen
+                    .add_comment("PTX: bar.sync (no-op for single-threaded)");
             }
 
             ast::Instruction::BarRed { arguments, .. } => {
@@ -798,16 +898,19 @@ impl PtxToTMatmulCompiler {
                 let pred_name = Self::operand_to_string(&arguments.src_predicate);
                 let pred_ssa = self.map_ptx_to_ssa(&pred_name);
 
-                self.codegen.add_comment("PTX: bar.red (single-thread: result = input predicate)");
+                self.codegen
+                    .add_comment("PTX: bar.red (single-thread: result = input predicate)");
                 self.ptx_to_ssa.insert(dst_name, pred_ssa);
             }
 
             ast::Instruction::BarWarp { .. } => {
-                self.codegen.add_comment("PTX: bar.warp (no-op for single-threaded)");
+                self.codegen
+                    .add_comment("PTX: bar.warp (no-op for single-threaded)");
             }
 
             ast::Instruction::Membar { .. } => {
-                self.codegen.add_comment("PTX: membar (no-op for single-threaded)");
+                self.codegen
+                    .add_comment("PTX: membar (no-op for single-threaded)");
             }
 
             // ============================================================
@@ -819,8 +922,10 @@ impl PtxToTMatmulCompiler {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
 
-                self.codegen.add_comment("PTX: activemask (single-thread: 0x1)");
-                self.codegen.emit_operation("tmatmul.ldv", &["CONST_1"], &[&dst_ssa])?;
+                self.codegen
+                    .add_comment("PTX: activemask (single-thread: 0x1)");
+                self.codegen
+                    .emit_operation("tmatmul.ldv", &["CONST_1"], &[&dst_ssa])?;
             }
 
             // Vote instructions - warp-level collective operations
@@ -829,7 +934,8 @@ impl PtxToTMatmulCompiler {
                 let src_name = Self::operand_to_string(&arguments.src1);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
 
-                self.codegen.add_comment("PTX: vote (single-thread: result = input)");
+                self.codegen
+                    .add_comment("PTX: vote (single-thread: result = input)");
                 self.ptx_to_ssa.insert(dst_name, src_ssa);
             }
 
@@ -847,10 +953,23 @@ impl PtxToTMatmulCompiler {
                 let quotient_ssa = self.new_ssa();
                 let product_ssa = self.new_ssa();
 
-                self.codegen.add_comment("PTX: rem (emulated as a - (a/b)*b)");
-                self.codegen.emit_operation("tmatmul.div", &[&src1_ssa, &src2_ssa], &[&quotient_ssa])?;
-                self.codegen.emit_operation("tmatmul.mul", &[&quotient_ssa, &src2_ssa], &[&product_ssa])?;
-                self.codegen.emit_operation("tmatmul.sub", &[&src1_ssa, &product_ssa], &[&dst_ssa])?;
+                self.codegen
+                    .add_comment("PTX: rem (emulated as a - (a/b)*b)");
+                self.codegen.emit_operation(
+                    "tmatmul.div",
+                    &[&src1_ssa, &src2_ssa],
+                    &[&quotient_ssa],
+                )?;
+                self.codegen.emit_operation(
+                    "tmatmul.mul",
+                    &[&quotient_ssa, &src2_ssa],
+                    &[&product_ssa],
+                )?;
+                self.codegen.emit_operation(
+                    "tmatmul.sub",
+                    &[&src1_ssa, &product_ssa],
+                    &[&dst_ssa],
+                )?;
             }
 
             ast::Instruction::Rcp { arguments, .. } => {
@@ -862,8 +981,10 @@ impl PtxToTMatmulCompiler {
 
                 let one_ssa = self.new_ssa();
                 self.codegen.add_comment("PTX: rcp (1/x)");
-                self.codegen.emit_operation("tmatmul.ldv", &["CONST_1"], &[&one_ssa])?;
-                self.codegen.emit_operation("tmatmul.div", &[&one_ssa, &src_ssa], &[&dst_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.ldv", &["CONST_1"], &[&one_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.div", &[&one_ssa, &src_ssa], &[&dst_ssa])?;
             }
 
             ast::Instruction::Rsqrt { arguments, .. } => {
@@ -873,39 +994,45 @@ impl PtxToTMatmulCompiler {
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
                 let dst_ssa = self.map_ptx_to_ssa(&dst_name);
 
-                self.codegen.emit_operation("tmatmul.rsqrt", &[&src_ssa], &[&dst_ssa])?;
+                self.codegen
+                    .add_comment("PTX: rsqrt (passthrough - needs sqrt support)");
+                self.ptx_to_ssa.insert(dst_name, src_ssa);
             }
 
             ast::Instruction::Sqrt { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen.emit_operation("tmatmul.sqrt", &[&src_ssa], &[&dst_ssa])?;
+
+                self.codegen.add_comment("PTX: sqrt (passthrough)");
+                self.ptx_to_ssa.insert(dst_name, src_ssa);
             }
 
             ast::Instruction::Sin { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen.emit_operation("tmatmul.sin", &[&src_ssa], &[&dst_ssa])?;
+
+                self.codegen.add_comment("PTX: sin (passthrough)");
+                self.ptx_to_ssa.insert(dst_name, src_ssa);
             }
 
             ast::Instruction::Cos { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen.emit_operation("tmatmul.cos", &[&src_ssa], &[&dst_ssa])?;
+
+                self.codegen.add_comment("PTX: cos (passthrough)");
+                self.ptx_to_ssa.insert(dst_name, src_ssa);
             }
 
             ast::Instruction::Tanh { arguments, .. } => {
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                self.codegen.emit_operation("tmatmul.tanh", &[&src_ssa], &[&dst_ssa])?;
+
+                self.codegen.add_comment("PTX: tanh (passthrough)");
+                self.ptx_to_ssa.insert(dst_name, src_ssa);
             }
 
             // ============================================================
@@ -985,17 +1112,13 @@ impl PtxToTMatmulCompiler {
             // ADDRESS SPACE OPERATIONS
             // ============================================================
             ast::Instruction::Cvta { arguments, .. } => {
-                // Convert address to/from generic - propagate pointer bindings
+                // Convert address to/from generic
                 let dst_name = Self::operand_to_string(&arguments.dst);
                 let src_name = Self::operand_to_string(&arguments.src);
                 let src_ssa = self.map_ptx_to_ssa(&src_name);
 
                 self.codegen.add_comment("PTX: cvta (address passthrough)");
-                self.ptx_to_ssa.insert(dst_name.clone(), src_ssa);
-                // Propagate memory bindings through address space conversions
-                if let Some(mem_region) = self.ptx_to_memory.get(&src_name).cloned() {
-                    self.ptx_to_memory.insert(dst_name, mem_region);
-                }
+                self.ptx_to_ssa.insert(dst_name, src_ssa);
             }
 
             // ============================================================
@@ -1006,13 +1129,17 @@ impl PtxToTMatmulCompiler {
                 let src_to_name = Self::operand_to_string(&arguments.src_to);
 
                 let src_ssa = self.new_ssa();
-                self.codegen.add_comment("PTX: cp.async (emulated as load+store)");
-                self.codegen.emit_operation("tmatmul.ldv", &[&src_from_name], &[&src_ssa])?;
-                self.codegen.emit_operation("tmatmul.sv", &[&src_ssa, &src_to_name], &[])?;
+                self.codegen
+                    .add_comment("PTX: cp.async (emulated as load+store)");
+                self.codegen
+                    .emit_operation("tmatmul.ldv", &[&src_from_name], &[&src_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.sv", &[&src_ssa, &src_to_name], &[])?;
             }
 
             ast::Instruction::CpAsyncCommitGroup { .. } => {
-                self.codegen.add_comment("PTX: cp.async.commit_group (no-op)");
+                self.codegen
+                    .add_comment("PTX: cp.async.commit_group (no-op)");
             }
 
             ast::Instruction::CpAsyncWaitGroup { .. } => {
@@ -1032,7 +1159,8 @@ impl PtxToTMatmulCompiler {
 
                 self.codegen.add_comment("PTX: set (comparison to value)");
                 // Set result to 0 or 1 based on comparison - default to 1
-                self.codegen.emit_operation("tmatmul.ldv", &["CONST_1"], &[&dst_ssa])?;
+                self.codegen
+                    .emit_operation("tmatmul.ldv", &["CONST_1"], &[&dst_ssa])?;
             }
 
             // ============================================================
@@ -1046,43 +1174,10 @@ impl PtxToTMatmulCompiler {
                 self.codegen.add_comment("PTX: nanosleep (no-op)");
             }
 
-            // Matrix multiply-accumulate (tensor core) -> tmatmul sequence
-            ast::Instruction::Mma { arguments, .. } => {
-                self.codegen.add_comment("PTX: mma (tensor core -> tmatmul)");
-
-                // MMA has: dst, src1 (A matrix), src2 (B matrix), src3 (C accumulator)
-                // We translate to: tmatmul_import(A), tmatmul_go(B), tmatmul_export(dst), add(dst, dst, C)
-
-                let dst_name = Self::operand_to_string(&arguments.dst);
-                let a_name = Self::operand_to_string(&arguments.src1);
-                let b_name = Self::operand_to_string(&arguments.src2);
-                let c_name = Self::operand_to_string(&arguments.src3);
-
-                let dst_ssa = self.map_ptx_to_ssa(&dst_name);
-                let a_ssa = self.map_ptx_to_ssa(&a_name);
-                let c_ssa = self.map_ptx_to_ssa(&c_name);
-
-                // Resolve B matrix to memory location
-                let b_mem = if let Some(mem) = self.ptx_to_memory.get(&b_name) {
-                    mem.clone()
-                } else {
-                    format!("PARAM_B_{}", b_name)
-                };
-
-                // Emit tmatmul sequence
-                self.codegen.add_comment("tmatmul: import A matrix data");
-                self.codegen.emit_operation("tmatmul_import", &[&a_ssa], &[])?;
-
-                self.codegen.add_comment("tmatmul: matrix multiply with B weights");
-                self.codegen.emit_operation("tmatmul_go", &[&b_mem], &[])?;
-
-                let mma_result = self.new_ssa();
-                self.codegen.add_comment("tmatmul: export result");
-                self.codegen.emit_operation("tmatmul_export", &[], &[&mma_result])?;
-
-                // Add C accumulator: dst = mma_result + C
-                self.codegen.add_comment("tmatmul: add accumulator");
-                self.codegen.emit_operation("tmatmul.add", &[&mma_result, &c_ssa], &[&dst_ssa])?;
+            // Matrix multiply-accumulate (tensor core)
+            ast::Instruction::Mma { .. } => {
+                self.codegen
+                    .add_comment("PTX: mma (tensor core - needs special handling)");
             }
 
             // Other instructions - passthrough with comment
@@ -1120,7 +1215,8 @@ impl PtxToTMatmulCompiler {
             let imm_name = Self::operand_to_string(op);
             let imm_ssa = self.new_ssa();
             // Load immediate as constant (use CONST memory location)
-            self.codegen.add_comment(&format!("Load immediate: {}", imm_name));
+            self.codegen
+                .add_comment(&format!("Load immediate: {}", imm_name));
             self.codegen.emit_operation(
                 "tmatmul.ldv",
                 &[&format!("CONST_{}", imm_name)],
@@ -1136,6 +1232,7 @@ impl PtxToTMatmulCompiler {
     fn inst_name(inst: &ast::Instruction<ast::ParsedOperand<&str>>) -> &'static str {
         match inst {
             ast::Instruction::Abs { .. } => "abs",
+            ast::Instruction::Copysign { .. } => "copysign",
             ast::Instruction::Activemask { .. } => "activemask",
             ast::Instruction::Add { .. } => "add",
             ast::Instruction::And { .. } => "and",
@@ -1206,64 +1303,14 @@ pub fn ptx_to_tmatmul(ptx_source: &str) -> Result<String, String> {
     // Sanitize PTX to tolerate newer forms (virtual backend)
     let sanitized = sanitize_ptx_source(ptx_source);
 
-    // Reject truncated PTX: if sanitized output has unbalanced braces (more '{' than '}'),
-    // the function body is incomplete (typically from partial CUBIN extraction)
-    {
-        let open = sanitized.chars().filter(|&c| c == '{').count();
-        let close = sanitized.chars().filter(|&c| c == '}').count();
-        if open > close {
-            return Err(format!("Truncated PTX ({} bytes, {} unmatched braces) - incomplete function body", ptx_source.len(), open - close));
-        }
-    }
-
-    // Debug: save sanitized PTX for analysis
-    {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static DEBUG_COUNT: AtomicUsize = AtomicUsize::new(0);
-        let n = DEBUG_COUNT.fetch_add(1, Ordering::Relaxed);
-        if n < 10 {
-            let path = format!("/tmp/hetgpu_sanitized_debug_{}.ptx", n);
-            let _ = std::fs::write(&path, &sanitized);
-            let raw_path = format!("/tmp/hetgpu_raw_debug_{}.ptx", n);
-            let _ = std::fs::write(&raw_path, ptx_source);
-        }
-    }
-
     // Parse PTX. Be tolerant: fall back to unchecked parse if strict parse fails.
     let module = match ptx_parser::parse_module_checked(&sanitized) {
-        Ok(m) => {
-            eprintln!("[PTX Parser] Checked parse OK: {} directives", m.directives.len());
-            m
-        },
-        Err(errs) => {
-            eprintln!("[PTX Parser] Checked parse failed ({} errors), trying unchecked", errs.len());
-            for (i, e) in errs.iter().enumerate().take(3) {
-                eprintln!("[PTX Parser]   error {}: {:?}", i, e);
-            }
-            // Show first few lines of sanitized PTX for diagnosis
-            {
-                use std::sync::atomic::{AtomicUsize, Ordering};
-                static DIAG_COUNT: AtomicUsize = AtomicUsize::new(0);
-                let n = DIAG_COUNT.fetch_add(1, Ordering::Relaxed);
-                if n < 20 {
-                    let first_lines: String = sanitized.lines().take(5).collect::<Vec<_>>().join(" | ");
-                    eprintln!("[PTX Parser] FAIL#{} first5: {}", n, first_lines);
-                    // Save failing PTX for analysis
-                    let path = format!("/tmp/hetgpu_fail_{}.ptx", n);
-                    let _ = std::fs::write(&path, &sanitized);
-                    let raw_path = format!("/tmp/hetgpu_rawfail_{}.ptx", n);
-                    let _ = std::fs::write(&raw_path, ptx_source);
-                }
-            }
+        Ok(m) => m,
+        Err(_errs) => {
             // Best-effort recovery path: attempt to produce an AST ignoring unknown directives
-            let m = ptx_parser::parse_module_unchecked(&sanitized);
-            eprintln!("[PTX Parser] Unchecked parse: {} directives", m.directives.len());
-            m
+            ptx_parser::parse_module_unchecked(&sanitized)
         }
     };
-
-    // Log directive types for debugging
-    eprintln!("[PTX Parser] Total directives: {}", module.directives.len());
 
     // Compile to TMatmul
     let mut compiler = PtxToTMatmulCompiler::new();
@@ -1289,7 +1336,6 @@ fn sanitize_ptx_source(src: &str) -> String {
     }
 
     // 2) Strip ANSI/control characters (keep newlines, tabs, CR). This removes sequences like "\x1b[31m".
-    //    Also replace '$' with '_' — PTX labels like $L__BB50_3 use '$' which our lexer doesn't support.
     let mut cleaned = String::with_capacity(start_slice.len());
     for ch in start_slice.chars() {
         let code = ch as u32;
@@ -1297,222 +1343,23 @@ fn sanitize_ptx_source(src: &str) -> String {
             if ch == '\n' || ch == '\r' || ch == '\t' {
                 cleaned.push(ch);
             }
-        } else if ch == '$' {
-            cleaned.push('_');
         } else {
             cleaned.push(ch);
         }
     }
 
-    // 3) Split single-line PTX into proper lines. Some custom kernels arrive as one giant line
-    // like ".version 8.7.target sm_80.address_size 64.global ...{...};.visible .entry ...".
-    // Insert newlines at directive boundaries.
-    if cleaned.lines().count() <= 3 && cleaned.len() > 100 {
-        // Note: .visible and .extern are NOT in this list because they are modifiers
-        // that must stay on the same line as the following .entry/.func directive
-        let directives = [".version ", ".target ", ".address_size ", ".global ", ".const ",
-                          ".entry ", ".func ", ".reg ",
-                          ".shared ", ".local ", ".maxntid ", ".reqntid ",
-                          ".minnctapersm ", ".maxnreg "];
-        let mut split = String::with_capacity(cleaned.len() + 1000);
-        let bytes = cleaned.as_bytes();
-        let len = bytes.len();
-        let mut i = 0;
-        let mut in_data_init = false;
-        let mut paren_depth: i32 = 0;
-        while i < len {
-            let ch = bytes[i] as char;
-            // Track parentheses depth — don't split inside parameter lists
-            if ch == '(' { paren_depth += 1; }
-            if ch == ')' { paren_depth = (paren_depth - 1).max(0); }
-            // Check if we're at a directive boundary (insert newline before)
-            // But NOT inside parentheses (parameter lists use .global/.shared as qualifiers)
-            if ch == '.' && i > 0 && paren_depth == 0 {
-                let remaining = &cleaned[i..];
-                let is_directive = directives.iter().any(|d| remaining.starts_with(d));
-                if is_directive && !in_data_init {
-                    split.push('\n');
-                }
-            }
-            if ch == '=' {
-                in_data_init = true;
-            } else if ch == ';' {
-                in_data_init = false;
-                split.push(ch);
-                if i + 1 < len {
-                    split.push('\n');
-                }
-                i += 1;
-                continue;
-            } else if ch == '{' && !in_data_init {
-                split.push('\n');
-                split.push(ch);
-                split.push('\n');
-                i += 1;
-                continue;
-            } else if ch == '}' && !in_data_init {
-                split.push('\n');
-                split.push(ch);
-                split.push('\n');
-                i += 1;
-                continue;
-            }
-            split.push(ch);
-            i += 1;
-        }
-        cleaned = split;
-
-        // Join modifier-only lines with the following line
-        // e.g., ".visible\n.entry func()" → ".visible .entry func()"
-        let mut joined = String::with_capacity(cleaned.len());
-        let mut pending: Option<String> = None;
-        for line in cleaned.lines() {
-            let t = line.trim();
-            if t == ".visible" || t == ".extern" || t == ".weak" {
-                pending = Some(t.to_string());
-                continue;
-            }
-            if let Some(prefix) = pending.take() {
-                joined.push_str(&prefix);
-                joined.push(' ');
-                joined.push_str(line.trim_start());
-                joined.push('\n');
-            } else {
-                joined.push_str(line);
-                joined.push('\n');
-            }
-        }
-        if let Some(prefix) = pending {
-            joined.push_str(&prefix);
-            joined.push('\n');
-        }
-        cleaned = joined;
-    }
-
     let mut out = String::with_capacity(cleaned.len());
-    let mut skip_extern_continuation = false;
-    let mut main_brace_depth: i32 = 0;
     for line in cleaned.lines() {
         let mut cur = line.to_string();
 
-        // ============================================================
-        // BRACE DEPTH TRACKING (before brace removal)
-        // Count all braces on this line to maintain accurate depth.
-        // Handle standalone '{' and '}' lines: only emit at function body level.
-        // This prevents orphaned '}' from scoping blocks (e.g., {neg.f16 ...\n})
-        // from prematurely closing function bodies.
-        // ============================================================
-        {
-            let trimmed = cur.trim();
-            // Count braces on this line BEFORE any brace removal
-            let opens = trimmed.chars().filter(|&c| c == '{').count() as i32;
-            let closes = trimmed.chars().filter(|&c| c == '}').count() as i32;
-
-            if trimmed == "{" {
-                // Standalone opening brace
-                main_brace_depth += 1;
-                if main_brace_depth == 1 {
-                    // Function body opener — emit
-                    out.push_str(&cur);
-                    out.push('\n');
-                }
-                // Inner scoping braces — skip
-                continue;
-            }
-            if trimmed == "}" {
-                if main_brace_depth == 1 {
-                    // Function body closer — emit
-                    out.push_str(&cur);
-                    out.push('\n');
-                }
-                // Inner scoping closers — skip
-                main_brace_depth = (main_brace_depth - 1).max(0);
-                continue;
-            }
-
-            // For instruction lines with embedded braces (e.g., {neg.f16 ...;\n}),
-            // update depth from counted braces. The brace removal below will strip them.
-            main_brace_depth += opens;
-            main_brace_depth -= closes;
-            main_brace_depth = main_brace_depth.max(0);
-        }
-
-        // Comment out global/const/shared bX array/data directives the parser doesn't support
-        // Matches both initialized (.b8 name[N] = {...}) and zero-initialized (.b8 name[N];)
-        // Also catches dynamic shared memory (.shared .b8 global_smem[];)
+        // Comment out global bX string/data directives with initializers that parser doesn't support
         {
             let t = cur.trim_start();
-            if (t.starts_with(".global") || t.starts_with(".const") || t.starts_with(".shared"))
-                && t.contains(".b") && (t.contains('=') || t.contains('[')) {
+            if t.starts_with(".global") && t.contains(".b") && t.contains('=') {
                 out.push_str("// ");
                 out.push_str(&cur);
                 out.push('\n');
                 continue;
-            }
-        }
-
-        // Comment out .extern declarations and their multi-line continuations
-        // (.extern .func name\n(\n.param ...\n)\n;)
-        {
-            let t = cur.trim_start();
-            if t.starts_with(".extern") {
-                out.push_str("// ");
-                out.push_str(&cur);
-                out.push('\n');
-                // Only expect continuation lines if the extern has '(' (parameter list)
-                // Truncated externs like ".extern .func __assertfail" (no parens, no semicolon)
-                // should be treated as complete single-line declarations
-                skip_extern_continuation = t.contains('(') && !t.contains(';');
-                continue;
-            }
-        }
-        if skip_extern_continuation {
-            out.push_str("// ");
-            out.push_str(&cur);
-            out.push('\n');
-            // End of extern: line contains ';' (the terminating semicolon)
-            let trimmed = cur.trim();
-            if trimmed.contains(';') {
-                skip_extern_continuation = false;
-            }
-            continue;
-        }
-        // Catch orphaned extern continuation: a "(" line that follows a commented-out ".extern"
-        // Also catch standalone .param lines and ")" and ";" that are extern continuations
-        {
-            let t = cur.trim();
-            // If previous non-empty output line was a commented extern, this "(" is its continuation
-            if t == "(" {
-                let last_line = out.lines().rev()
-                    .find(|l| !l.trim().is_empty())
-                    .unwrap_or("");
-                if last_line.starts_with("// .extern") || last_line.starts_with("//.extern") {
-                    out.push_str("// ");
-                    out.push_str(&cur);
-                    out.push('\n');
-                    skip_extern_continuation = true;
-                    continue;
-                }
-            }
-        }
-
-        // Simplify aligned byte-array params: ".param .align N .bM name[K]" → ".param .b64 name"
-        // The parser doesn't support .align or array notation in param declarations.
-        // These are typically pointer-sized struct params (e.g., std::array<char*, 2>).
-        {
-            let t = cur.trim_start();
-            if t.starts_with(".param") && t.contains(".align") && t.contains('[') {
-                // Extract the parameter name (between last space before '[' and '[')
-                if let Some(bracket_pos) = t.find('[') {
-                    let before_bracket = &t[..bracket_pos];
-                    // Find the param name: last whitespace-delimited token before '['
-                    if let Some(name_start) = before_bracket.rfind(char::is_whitespace) {
-                        let param_name = before_bracket[name_start + 1..].trim();
-                        // Preserve trailing comma if present
-                        let trailing = if t.trim_end().ends_with(',') { "," } else { "" };
-                        cur = format!(".param .b64 {}{}", param_name, trailing);
-                    }
-                }
             }
         }
 
@@ -1610,193 +1457,71 @@ fn sanitize_ptx_source(src: &str) -> String {
             }
         }
 
-        // Normalize multi-operand mov (e.g., mov.b32 dst, src0, src1; or mov.b64 {lo, hi}, src;)
-        // After brace removal, pack/unpack becomes 3 operands. Reduce to 2-operand form.
-        if cur.trim_start().starts_with("mov.b32") || cur.trim_start().starts_with("mov.b64") {
-            let prefix_end = if cur.trim_start().starts_with("mov.b64") { "mov.b64".len() } else { "mov.b32".len() };
-            let t = cur.trim_start();
-            let rest = &t[prefix_end..];
-            let type_str = &t[..prefix_end];
+        // Normalize multi-operand mov (e.g., mov.b32 dst, src0, src1;) to two-operand form
+        if cur.trim_start().starts_with("mov.b32") {
+            let rest = &cur.trim_start()["mov.b32".len()..];
             let toks: Vec<&str> = rest
                 .split(|c| c == ',' || c == ';')
                 .map(|s| s.trim())
                 .filter(|s| !s.is_empty())
                 .collect();
-            if toks.len() == 3 {
-                // 3-operand mov (from brace removal):
-                // Unpack: mov.b64 {%r_lo, %r_hi}, %rd_src -> mov.b32 %r_lo, %rd_src; (take low part)
-                // Pack:   mov.b64 %rd_dst, {%r_lo, %r_hi} -> mov.b32 %rd_dst, %r_lo; (use first part)
-                // mov.b32 {tmp, %rs13}, %r1613 -> mov.b32 tmp, %r1613; (use source)
-                cur = format!("    mov.b32 {}, {};", toks[0], toks[2]);
-            } else if toks.len() >= 2 {
-                cur = format!("    {} {}, {};", type_str, toks[0], toks[1]);
+            if toks.len() >= 2 {
+                cur = format!("    mov.b32 {}, {};", toks[0], toks[1]);
             }
         }
 
-        // Expand ld.*.v4.* (e.g. ld.global.v4.b32, ld.global.v4.u32) into scalar loads
-        // Handles both brace syntax: ld.global.v4.u32 {%r1, %r2, %r3, %r4}, [addr];
-        // and non-brace syntax: ld.global.v4.b32 %r1, %r2, %r3, %r4, [addr];
-        {
-            let t = cur.trim_start();
-            if t.starts_with("ld.") && (t.contains(".v4.") || t.contains(".v2.")) {
-                // Strip braces and vector width
-                let scalar_cur = cur.replace(".v4.", ".").replace(".v2.", ".")
-                    .replace('{', "").replace('}', "");
-                let mut parts = scalar_cur.splitn(2, '[');
-                let left = parts.next().unwrap_or("");
-                let right = parts.next().unwrap_or("");
-                if let Some(pct_pos) = left.find('%') {
-                    let instr_prefix = left[..pct_pos].trim();
-                    let dests_str = &left[pct_pos..];
-                    let dests: Vec<String> = dests_str
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect();
-                    let addr_inside = right.split(']').next().unwrap_or("").trim().to_string();
-                    for d in &dests {
-                        out.push_str(&format!("    {} {}, [{}];\n", instr_prefix, d, addr_inside));
-                    }
-                    continue;
+        // Expand ld.global.v4.b32 %r1, %r2, %r3, %r4, [addr]; into four scalar loads
+        if cur.trim_start().starts_with("ld.global.v4.b32") {
+            let mut parts = cur.splitn(2, '[');
+            let left = parts.next().unwrap_or("");
+            let right = parts.next().unwrap_or("");
+            // Extract destinations before '[' and the address between '[' and ']'
+            let dests_part = left.replace("ld.global.v4.b32", "");
+            let mut dests: Vec<String> = dests_part
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            // Some formats have trailing comma before bracket; trim it
+            if let Some(last) = dests.last_mut() {
+                if last.ends_with(',') {
+                    last.pop();
                 }
             }
+            let addr_inside = right.split(']').next().unwrap_or("").trim().to_string();
+            for d in dests {
+                out.push_str(&format!("    ld.global.b32 {}, [{}];\n", d, addr_inside));
+            }
+            continue;
         }
 
-        // Expand st.*.v4.* (e.g. st.global.v4.b32, st.global.v4.u32) into four scalar stores
-        if cur.trim_start().starts_with("st.") && (cur.contains(".v4.") || cur.contains(".v2.")) {
-            let scalar_cur = cur.replace(".v4.", ".").replace(".v2.", ".")
-                .replace('{', "").replace('}', "");
-            if let Some(lb) = scalar_cur.find('[') {
-                if let Some(rb) = scalar_cur.find(']') {
-                    // Extract instruction prefix (e.g. "st.global.u32")
-                    let instr_prefix = scalar_cur[..lb].trim();
-                    let addr_inside = scalar_cur[lb + 1..rb].trim().to_string();
-                    let after = &scalar_cur[rb + 1..];
+        // Expand st.global.v4.b32 [addr], r1, r2, r3, r4; into four scalar stores
+        if cur.trim_start().starts_with("st.global.v4.b32") {
+            if let Some(lb) = cur.find('[') {
+                if let Some(rb) = cur.find(']') {
+                    let addr_inside = cur[lb + 1..rb].trim().to_string();
+                    let after = &cur[rb + 1..];
                     let srcs: Vec<String> = after
                         .split(&[',', ';'][..])
                         .map(|s| s.trim().to_string())
                         .filter(|s| !s.is_empty())
                         .collect();
                     for s in srcs {
-                        out.push_str(&format!("    {} [{}], {};\n", instr_prefix, addr_inside, s));
+                        out.push_str(&format!("    st.global.b32 [{}], {};\n", addr_inside, s));
                     }
                     continue;
                 }
-            }
-        }
-
-        // ============================================================
-        // MMA.SYNC HANDLING (must come BEFORE brace removal)
-        // Convert mma.sync to simplified form for tmatmul emulation
-        // mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
-        //   {%f1,%f2,%f3,%f4}, {%r1,%r2,%r3,%r4}, {%r5,%r6}, {%f5,%f6,%f7,%f8};
-        // -> Comment out (handled as tmatmul sequence in compiler)
-        //    or expand to scalar mad instructions
-        // ============================================================
-        {
-            let t = cur.trim_start();
-            if t.starts_with("mma.sync.") {
-                // Replace with a sequence of scalar mad operations
-                // Extract brace groups: D = A * B + C
-                // For simplicity, extract first register from each brace group
-                let groups: Vec<Vec<String>> = cur.split('{')
-                    .skip(1) // skip everything before first '{'
-                    .filter_map(|chunk| {
-                        chunk.find('}').map(|end| {
-                            chunk[..end].split(',')
-                                .map(|s| s.trim().to_string())
-                                .filter(|s| !s.is_empty())
-                                .collect()
-                        })
-                    })
-                    .collect();
-
-                if groups.len() == 4 {
-                    // groups: [D_regs, A_regs, B_regs, C_regs]
-                    let d_regs = &groups[0];
-                    let a_regs = &groups[1];
-                    let b_regs = &groups[2];
-                    let c_regs = &groups[3];
-
-                    // Emit scalar mad for each D register: D[i] = A[0] * B[0] + C[i]
-                    for i in 0..d_regs.len().min(c_regs.len()) {
-                        let a = a_regs.first().unwrap_or(&"%r0".to_string()).clone();
-                        let b = b_regs.first().unwrap_or(&"%r0".to_string()).clone();
-                        out.push_str(&format!("    mad.lo.s32 {}, {}, {}, {};\n",
-                            d_regs[i], a, b, c_regs[i]));
-                    }
-                    continue;
-                } else {
-                    // Can't parse brace groups, comment out
-                    out.push_str("    // ");
-                    out.push_str(&cur);
-                    out.push('\n');
-                    continue;
-                }
-            }
-        }
-
-        // ============================================================
-        // LDMATRIX HANDLING (must come BEFORE brace removal)
-        // ldmatrix.sync.aligned.x4.m8n8.shared.b16 {%r1,%r2,%r3,%r4}, [%r5];
-        // -> expand to scalar ld.shared.b16 for each register
-        // ============================================================
-        {
-            let t = cur.trim_start();
-            if t.starts_with("ldmatrix.") {
-                // Extract register list from braces and address from brackets
-                if let Some(lb) = cur.find('{') {
-                    if let Some(rb) = cur.find('}') {
-                        let regs: Vec<String> = cur[lb+1..rb].split(',')
-                            .map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty())
-                            .collect();
-                        // Extract address [%rN]
-                        if let Some(addr_start) = cur.find('[') {
-                            if let Some(addr_end) = cur.find(']') {
-                                let addr = &cur[addr_start..=addr_end]; // includes brackets
-                                for r in &regs {
-                                    out.push_str(&format!("    ld.shared.b16 {}, {};\n", r, addr));
-                                }
-                                continue;
-                            }
-                        }
-                    }
-                }
-                // No braces — may be already expanded or single register
-                // Comment out if we can't parse
-                out.push_str("    // ");
-                out.push_str(&cur);
-                out.push('\n');
-                continue;
             }
         }
 
         // Remove any braces around operands: { %r1 } -> %r1, tolerate stray '{' without matching '}'
         // BUT: Do NOT remove standalone braces that are function body delimiters
-        // Also handle predicated writes: {%r1|%p1} -> %r1 (drop the predicate part)
         {
             let trimmed = cur.trim();
             // Only strip braces if this is NOT a standalone brace line (function body delimiter)
             if trimmed != "{" && trimmed != "}" {
                 if cur.contains('{') || cur.contains('}') {
-                    // Handle {%reg|%pred} syntax - keep only the register, drop |%pred
-                    while let Some(lb) = cur.find('{') {
-                        if let Some(rb) = cur[lb..].find('}') {
-                            let inside = &cur[lb + 1..lb + rb];
-                            let replacement = if let Some(pipe) = inside.find('|') {
-                                inside[..pipe].trim().to_string()
-                            } else {
-                                inside.trim().to_string()
-                            };
-                            cur = format!("{}{}{}", &cur[..lb], replacement, &cur[lb + rb + 1..]);
-                        } else {
-                            // No matching '}', just remove '{'
-                            cur = cur.replacen('{', "", 1);
-                        }
-                    }
-                    // Remove any remaining stray '}'
-                    cur = cur.replace('}', "");
+                    cur = cur.replace('{', "").replace('}', "");
                 }
             }
         }
@@ -1913,28 +1638,17 @@ fn sanitize_ptx_source(src: &str) -> String {
 
         // ============================================================
         // DIV MODIFIER HANDLING
-        // Normalize div instructions to forms the parser accepts:
-        //   f32: div.full.f32 (parser knows this)
-        //   f64: div.rn.f64 (div.full is f32-only in PTX ISA)
+        // Strip approx/full modifiers from div instructions
         // ============================================================
-        {
-            let t = cur.trim_start();
-            if t.starts_with("div.") {
-                let is_f64 = t.contains(".f64");
-                // Strip approx/full/rounding modifiers first
-                cur = cur.replace("div.approx.", "div.")
-                         .replace("div.full.", "div.")
-                         .replace("div.rn.", "div.")
-                         .replace("div.rz.", "div.")
-                         .replace("div.rm.", "div.")
-                         .replace("div.rp.", "div.");
-                // Now we have plain div.f32 or div.f64 — add correct qualifier
-                if is_f64 {
-                    cur = cur.replace("div.f64", "div.rn.f64");
-                } else {
-                    cur = cur.replace("div.f32", "div.full.f32");
-                }
-            }
+        if cur.trim_start().starts_with("div.approx") {
+            cur = cur.replace("div.approx", "div");
+        }
+        if cur.trim_start().starts_with("div.full") {
+            cur = cur.replace("div.full", "div");
+        }
+        // Also handle rn (round to nearest) modifier on div
+        if cur.contains("div.rn.") {
+            cur = cur.replace("div.rn.", "div.");
         }
 
         // ============================================================
@@ -1990,7 +1704,7 @@ fn sanitize_ptx_source(src: &str) -> String {
                 let parts: Vec<&str> = t.split_whitespace().collect();
                 if parts.len() >= 3 {
                     let instr = parts[0]; // e.g., "redux.sync.add.u32"
-                    // Extract type from instruction (last part after dots)
+                                          // Extract type from instruction (last part after dots)
                     let instr_parts: Vec<&str> = instr.split('.').collect();
                     let type_part = instr_parts.last().unwrap_or(&"u32");
 
@@ -2085,36 +1799,83 @@ fn sanitize_ptx_source(src: &str) -> String {
         }
 
         // Handle vector member access: temp.x, temp.y -> temp (just use base variable)
-        // Only strip .x/.y/.z/.w when it's at the END of a token (optionally followed by , or ;)
-        // This avoids corrupting instruction names like bar.warp.sync
-        {
-            fn strip_vec_member(token: &str, suffix: &str) -> Option<String> {
-                // Token must not start with '.' or '%'
-                if token.starts_with('.') || token.starts_with('%') {
-                    return None;
-                }
-                // Strip trailing punctuation
-                let (core, trail) = if token.ends_with(',') || token.ends_with(';') {
-                    (&token[..token.len()-1], &token[token.len()-1..])
-                } else {
-                    (token, "")
-                };
-                // Only match if suffix is at the very end
-                if core.ends_with(suffix) && core.len() > suffix.len() {
-                    Some(format!("{}{}", &core[..core.len()-suffix.len()], trail))
-                } else {
-                    None
-                }
+        // This is a simplification - use first element for all
+        if cur.contains(".x") && !cur.contains("%") {
+            // Be careful not to replace .x in instruction names or labels
+            let has_member_access = cur.split_whitespace().any(|word| {
+                word.contains(".x") && !word.starts_with('.') && !word.starts_with('%')
+            });
+            if has_member_access {
+                // Replace variable.x with just variable
+                let parts: Vec<&str> = cur.split_whitespace().collect();
+                let new_parts: Vec<String> = parts
+                    .iter()
+                    .map(|p| {
+                        if p.contains(".x") && !p.starts_with('.') && !p.starts_with('%') {
+                            p.replace(".x", "").replace(",", ",")
+                        } else {
+                            p.to_string()
+                        }
+                    })
+                    .collect();
+                cur = new_parts.join(" ");
             }
-
-            for suffix in &[".x", ".y", ".z", ".w"] {
-                if cur.contains(suffix) && !cur.contains('%') {
-                    let parts: Vec<&str> = cur.split_whitespace().collect();
-                    let changed: Vec<String> = parts.iter()
-                        .map(|p| strip_vec_member(p, suffix).unwrap_or_else(|| p.to_string()))
-                        .collect();
-                    cur = changed.join(" ");
-                }
+        }
+        if cur.contains(".y") && !cur.contains("%") {
+            let has_member_access = cur.split_whitespace().any(|word| {
+                word.contains(".y") && !word.starts_with('.') && !word.starts_with('%')
+            });
+            if has_member_access {
+                let parts: Vec<&str> = cur.split_whitespace().collect();
+                let new_parts: Vec<String> = parts
+                    .iter()
+                    .map(|p| {
+                        if p.contains(".y") && !p.starts_with('.') && !p.starts_with('%') {
+                            p.replace(".y", "")
+                        } else {
+                            p.to_string()
+                        }
+                    })
+                    .collect();
+                cur = new_parts.join(" ");
+            }
+        }
+        if cur.contains(".z") && !cur.contains("%") {
+            let has_member_access = cur.split_whitespace().any(|word| {
+                word.contains(".z") && !word.starts_with('.') && !word.starts_with('%')
+            });
+            if has_member_access {
+                let parts: Vec<&str> = cur.split_whitespace().collect();
+                let new_parts: Vec<String> = parts
+                    .iter()
+                    .map(|p| {
+                        if p.contains(".z") && !p.starts_with('.') && !p.starts_with('%') {
+                            p.replace(".z", "")
+                        } else {
+                            p.to_string()
+                        }
+                    })
+                    .collect();
+                cur = new_parts.join(" ");
+            }
+        }
+        if cur.contains(".w") && !cur.contains("%") {
+            let has_member_access = cur.split_whitespace().any(|word| {
+                word.contains(".w") && !word.starts_with('.') && !word.starts_with('%')
+            });
+            if has_member_access {
+                let parts: Vec<&str> = cur.split_whitespace().collect();
+                let new_parts: Vec<String> = parts
+                    .iter()
+                    .map(|p| {
+                        if p.contains(".w") && !p.starts_with('.') && !p.starts_with('%') {
+                            p.replace(".w", "")
+                        } else {
+                            p.to_string()
+                        }
+                    })
+                    .collect();
+                cur = new_parts.join(" ");
             }
         }
 
@@ -2136,7 +1897,8 @@ fn sanitize_ptx_source(src: &str) -> String {
             let t = cur.trim_start();
             if t.starts_with("shf.l.") {
                 // Left funnel shift: use low word shifted left
-                let new_instr = t.replace("shf.l.clamp.", "shl.")
+                let new_instr = t
+                    .replace("shf.l.clamp.", "shl.")
                     .replace("shf.l.wrap.", "shl.");
                 // Need to remove the 'hi' operand (third operand)
                 let parts: Vec<&str> = new_instr.split_whitespace().collect();
@@ -2149,12 +1911,16 @@ fn sanitize_ptx_source(src: &str) -> String {
                         .collect();
                     if operands.len() >= 4 {
                         // shf.l dst, lo, hi, shift -> shl dst, lo, shift
-                        cur = format!("    {} {}, {}, {};", instr, operands[0], operands[1], operands[3]);
+                        cur = format!(
+                            "    {} {}, {}, {};",
+                            instr, operands[0], operands[1], operands[3]
+                        );
                     }
                 }
             } else if t.starts_with("shf.r.") {
                 // Right funnel shift: use high word shifted right
-                let new_instr = t.replace("shf.r.clamp.", "shr.")
+                let new_instr = t
+                    .replace("shf.r.clamp.", "shr.")
                     .replace("shf.r.wrap.", "shr.");
                 let parts: Vec<&str> = new_instr.split_whitespace().collect();
                 if parts.len() >= 2 {
@@ -2166,7 +1932,10 @@ fn sanitize_ptx_source(src: &str) -> String {
                         .collect();
                     if operands.len() >= 4 {
                         // shf.r dst, lo, hi, shift -> shr dst, hi, shift
-                        cur = format!("    {} {}, {}, {};", instr, operands[0], operands[2], operands[3]);
+                        cur = format!(
+                            "    {} {}, {}, {};",
+                            instr, operands[0], operands[2], operands[3]
+                        );
                     }
                 }
             }
@@ -2191,17 +1960,14 @@ fn sanitize_ptx_source(src: &str) -> String {
                         .map(|s| s.trim().trim_end_matches(';'))
                         .collect();
 
-                    // shfl.sync.* dst|pred, src, offset, laneMask, memberMask;
-                    // -> mov.type dst, src; setp.eq.b32 pred, 1, 1;
-                    if operands.len() >= 2 {
-                        let dst_pred = operands[0];
-                        let src = operands[1];
-
-                        // Split dst|pred (e.g. "%r223|%p22" -> dst="%r223", pred="%p22")
-                        let (dst, pred) = if let Some(pipe_pos) = dst_pred.find('|') {
-                            (&dst_pred[..pipe_pos], Some(&dst_pred[pipe_pos + 1..]))
+                    // shfl.sync.* dst, pred, src, offset, mask -> mov.type dst, src; setp.eq.b32 pred, 1, 1;
+                    if operands.len() >= 3 {
+                        let dst = operands[0];
+                        let pred = if operands.len() >= 2 { operands[1] } else { "" };
+                        let src = if operands.len() >= 3 {
+                            operands[2]
                         } else {
-                            (dst_pred, None)
+                            operands[1]
                         };
 
                         // For single thread, shuffled value equals input
@@ -2209,10 +1975,8 @@ fn sanitize_ptx_source(src: &str) -> String {
                         out.push_str(&cur);
                         out.push('\n');
                         // Set predicate to true if present
-                        if let Some(p) = pred {
-                            if p.starts_with('%') {
-                                out.push_str(&format!("    setp.eq.b32 {}, 1, 1;\n", p));
-                            }
+                        if !pred.is_empty() && pred.starts_with('%') {
+                            out.push_str(&format!("    setp.eq.b32 {}, 1, 1;\n", pred));
                         }
                         continue;
                     }
@@ -2239,83 +2003,11 @@ fn sanitize_ptx_source(src: &str) -> String {
             let t = cur.trim_start();
             if t.starts_with("dp4a.") {
                 // Approximate as multiply-add
-                cur = cur.replace("dp4a.u32.u32", "mad.lo.u32")
+                cur = cur
+                    .replace("dp4a.u32.u32", "mad.lo.u32")
                     .replace("dp4a.s32.s32", "mad.lo.s32")
                     .replace("dp4a.u32.s32", "mad.lo.s32")
                     .replace("dp4a.s32.u32", "mad.lo.s32");
-            }
-        }
-
-        // ============================================================
-        // CACHE HINT STRIPPING
-        // Strip .L2::cache_hint, .L2::64B, .L2::128B, .L2::256B, .L1::evict_*
-        // These are sm_80+ performance hints that don't affect semantics
-        // ============================================================
-        if cur.contains("::") {
-            cur = cur.replace(".L2::cache_hint", "")
-                .replace(".L2::64B", "")
-                .replace(".L2::128B", "")
-                .replace(".L2::256B", "")
-                .replace(".L1::evict_normal", "")
-                .replace(".L1::evict_unchanged", "")
-                .replace(".L1::evict_first", "")
-                .replace(".L1::evict_last", "")
-                .replace(".L1::no_allocate", "")
-                .replace(".shared::cta", ".shared")
-                .replace(".shared::cluster", ".shared")
-                .replace(".param::entry", ".param")
-                .replace(".param::func", ".param");
-        }
-
-        // ============================================================
-        // UNIFIED ADDRESSING HINT STRIPPING
-        // Strip .unified from load instructions (semantic no-op)
-        // ============================================================
-        if cur.contains(".unified") {
-            cur = cur.replace(".unified", "");
-        }
-
-        // ============================================================
-        // LDMATRIX ORDER FIX
-        // PTX emits: ldmatrix.sync.aligned.x4.m8n8.shared.b16
-        // Parser expects: ldmatrix.sync.aligned.m8n8.x4{.trans}.shared.b16
-        // Swap .xN and .mMnN order, and handle multi-register output
-        // ============================================================
-        {
-            let t = cur.trim_start();
-            if t.starts_with("ldmatrix.sync.aligned.") {
-                // Fix operand ordering: swap .xN and .mMnN
-                // ldmatrix.sync.aligned.x4.m8n8 -> ldmatrix.sync.aligned.m8n8.x4
-                // ldmatrix.sync.aligned.x4.trans.m8n8 -> ldmatrix.sync.aligned.m8n8.x4.trans
-                cur = cur.replace(".x1.m8n8", ".m8n8.x1")
-                    .replace(".x2.m8n8", ".m8n8.x2")
-                    .replace(".x4.m8n8", ".m8n8.x4")
-                    .replace(".x1.trans.m8n8", ".m8n8.x1.trans")
-                    .replace(".x2.trans.m8n8", ".m8n8.x2.trans")
-                    .replace(".x4.trans.m8n8", ".m8n8.x4.trans")
-                    .replace(".x1.m16n16", ".m16n16.x1")
-                    .replace(".x2.m16n16", ".m16n16.x2")
-                    .replace(".x4.m16n16", ".m16n16.x4");
-
-                // Handle multi-register output: after brace removal
-                // "ldmatrix.sync.aligned.m8n8.x4.shared.b16 %r1, %r2, %r3, %r4, [%r5];"
-                // -> expand to 4 scalar loads: "ld.shared.b16 %r1, [%r5];" etc.
-                let t2 = cur.trim_start();
-                if let Some(bracket_pos) = t2.find('[') {
-                    let before_bracket = &t2[..bracket_pos];
-                    let after_bracket = &t2[bracket_pos..];
-                    // Count register operands before '['
-                    let instr_and_regs: Vec<&str> = before_bracket.split_whitespace().collect();
-                    if instr_and_regs.len() > 2 {
-                        // Multiple output registers — expand to individual loads
-                        let addr = after_bracket.trim().trim_end_matches(';');
-                        for i in 1..instr_and_regs.len() {
-                            let reg = instr_and_regs[i].trim_end_matches(',');
-                            out.push_str(&format!("    ld.shared.b16 {}, {};\n", reg, addr));
-                        }
-                        continue;
-                    }
-                }
             }
         }
 
@@ -2330,164 +2022,7 @@ fn sanitize_ptx_source(src: &str) -> String {
         out.push_str(&cur);
         out.push('\n');
     }
-
-    // ============================================================
-    // POST-PROCESSING PASS
-    // Fix structural issues that can only be resolved after the main loop:
-    // 1. Remove inner scoping braces (track depth, keep only function body {/})
-    // 2. Split multi-statement lines (e.g., ".reg .b16 tmp; mov.b32 tmp, ...")
-    // 3. Fix 3-operand mov.b32/b64 from brace removal
-    // 4. Comment out remaining unsupported instructions
-    // 5. Strip memory ordering/cache qualifiers
-    // ============================================================
-    let mut final_out = String::with_capacity(out.len());
-    for line in out.lines() {
-        let t = line.trim();
-
-        // Skip empty lines and comments
-        if t.is_empty() || t.starts_with("//") {
-            final_out.push_str(line);
-            final_out.push('\n');
-            continue;
-        }
-
-        // Standalone braces are already handled by the main loop's brace depth tracker.
-        // Pass them through as-is (the main loop only emits function-level braces).
-        if t == "{" || t == "}" {
-            final_out.push_str(line);
-            final_out.push('\n');
-            continue;
-        }
-
-        // Split multi-statement lines: ".reg .b16 tmp; mov.b32 tmp, %rs, %r;"
-        // Split at ';' boundaries when there are multiple statements
-        let semi_count = t.chars().filter(|&c| c == ';').count();
-        if semi_count > 1 && !t.contains(" = {") {
-            let parts: Vec<&str> = t.split(';').collect();
-            for part in &parts {
-                let stmt = part.trim();
-                if !stmt.is_empty() {
-                    // Pass without ';' — postprocess_statement handles it
-                    let fixed = postprocess_statement(stmt);
-                    final_out.push_str("    ");
-                    final_out.push_str(&fixed);
-                    final_out.push_str(";\n");
-                }
-            }
-            continue;
-        }
-
-        // Process single statement
-        let fixed = postprocess_statement(t);
-        // Preserve original indentation
-        let indent = if line.starts_with("    ") || line.starts_with('\t') { "    " } else { "" };
-        final_out.push_str(indent);
-        final_out.push_str(&fixed);
-        final_out.push('\n');
-    }
-    final_out
-}
-
-/// Post-process a single statement: fix remaining issues after the main sanitization loop.
-/// Handles semicolons: strips trailing ';', processes, then re-adds ';'.
-fn postprocess_statement(stmt: &str) -> String {
-    let trimmed = stmt.trim();
-    let (body, has_semi) = if trimmed.ends_with(';') {
-        (&trimmed[..trimmed.len()-1], true)
-    } else {
-        (trimmed, false)
-    };
-    let semi = if has_semi { ";" } else { "" };
-    let mut cur = body.to_string();
-
-    // Comment out unsupported bf16 instructions
-    if cur.starts_with("neg.bf16") || cur.starts_with("neg.f16") {
-        return format!("// {}{}", cur, semi);
-    }
-
-    // Comment out cp.async instructions (async memory copy)
-    if cur.starts_with("cp.async") {
-        return format!("// {}{}", cur, semi);
-    }
-
-    // Comment out nanosleep
-    if cur.starts_with("nanosleep") {
-        return format!("// {}{}", cur, semi);
-    }
-
-    // Comment out barrier/fence/sync instructions not supported by parser
-    // These are no-ops for single-threaded TMatmul emulation
-    if cur.starts_with("bar.arrive") || cur.starts_with("bar.sync")
-        || cur.starts_with("bar.warp")
-        || cur.starts_with("barrier.cluster") || cur.starts_with("barrier.sync")
-        || cur.starts_with("mbarrier.") || cur.starts_with("fence.")
-        || cur.starts_with("elect.sync") || cur.starts_with("mapa.")
-        || cur.starts_with("brkpt") || cur.starts_with("trap")
-        || cur.starts_with("call.uni") || cur.starts_with("vprintf")
-    {
-        return format!("// {}{}", cur, semi);
-    }
-
-    // Convert cvt.rn.bf16x2.f32 %r, %f1, %f2 → mov.b32 %r, %f1;
-    if cur.starts_with("cvt.rn.bf16x2.f32") || cur.starts_with("cvt.rn.f16x2.f32") {
-        let prefix = if cur.starts_with("cvt.rn.bf16x2.f32") {
-            "cvt.rn.bf16x2.f32"
-        } else {
-            "cvt.rn.f16x2.f32"
-        };
-        let rest = &cur[prefix.len()..];
-        let toks: Vec<&str> = rest.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-        if toks.len() >= 2 {
-            return format!("mov.b32 {}, {}{}", toks[0], toks[1], semi);
-        }
-        return format!("// {}{}", cur, semi);
-    }
-
-    // Comment out set.*.f16x2 / set.*.bf16x2 (vector comparison)
-    if (cur.starts_with("set.") || cur.starts_with("setp.")) && (cur.contains(".f16x2") || cur.contains(".bf16x2")) {
-        return format!("// {}{}", cur, semi);
-    }
-
-    // Fix 3-operand mov.b32/b64 (from brace removal of pack/unpack)
-    if cur.starts_with("mov.b32") || cur.starts_with("mov.b64") {
-        let prefix_len = if cur.starts_with("mov.b64") { "mov.b64".len() } else { "mov.b32".len() };
-        let rest = &cur[prefix_len..];
-        let toks: Vec<&str> = rest.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-        if toks.len() == 3 {
-            return format!("mov.b32 {}, {}{}", toks[0], toks[2], semi);
-        }
-    }
-
-    // Strip memory ordering qualifiers from ld/st
-    // Only modify the instruction mnemonic part (before first space)
-    if cur.starts_with("ld.") || cur.starts_with("st.") {
-        if let Some(space_pos) = cur.find(' ') {
-            let mnemonic = &cur[..space_pos];
-            let rest = &cur[space_pos..];
-            let clean_mnemonic = mnemonic
-                .replace(".release", "").replace(".acquire", "")
-                .replace(".relaxed", "").replace(".acq_rel", "")
-                .replace(".weak", "")
-                .replace(".sys.", ".").replace(".gpu.", ".").replace(".cta.", ".")
-                .replace(".cluster.", ".")
-                .replace(".ca.", ".").replace(".cg.", ".").replace(".cs.", ".")
-                .replace(".lu.", ".").replace(".cv.", ".")
-                .replace(".wb.", ".").replace(".wt.", ".");
-            // Clean up double dots
-            let mut m = clean_mnemonic;
-            while m.contains("..") {
-                m = m.replace("..", ".");
-            }
-            cur = format!("{}{}", m, rest);
-        }
-    }
-
-    // Replace %globaltimer with 0
-    if cur.contains("%globaltimer") {
-        cur = cur.replace("%globaltimer", "0");
-    }
-
-    format!("{}{}", cur, semi)
+    out
 }
 
 /// Pattern-based optimization: Detect and optimize common PTX patterns

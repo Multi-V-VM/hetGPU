@@ -129,26 +129,14 @@ impl SassInliner {
         let builder = LLVMCreateBuilderInContext(context);
 
         // Register custom metadata kinds
-        let md_sass_addr = LLVMGetMDKindIDInContext(
-            context,
-            b"sass.addr\0".as_ptr() as *const _,
-            9,
-        );
-        let md_sass_opcode = LLVMGetMDKindIDInContext(
-            context,
-            b"sass.opcode\0".as_ptr() as *const _,
-            11,
-        );
-        let md_ptx_line = LLVMGetMDKindIDInContext(
-            context,
-            b"sass.ptx_line\0".as_ptr() as *const _,
-            13,
-        );
-        let md_control_codes = LLVMGetMDKindIDInContext(
-            context,
-            b"sass.control\0".as_ptr() as *const _,
-            12,
-        );
+        let md_sass_addr =
+            LLVMGetMDKindIDInContext(context, b"sass.addr\0".as_ptr() as *const _, 9);
+        let md_sass_opcode =
+            LLVMGetMDKindIDInContext(context, b"sass.opcode\0".as_ptr() as *const _, 11);
+        let md_ptx_line =
+            LLVMGetMDKindIDInContext(context, b"sass.ptx_line\0".as_ptr() as *const _, 13);
+        let md_control_codes =
+            LLVMGetMDKindIDInContext(context, b"sass.control\0".as_ptr() as *const _, 12);
 
         Self {
             context,
@@ -224,10 +212,10 @@ impl SassInliner {
             asm_str.len(),
             constraints_cstr.as_ptr() as *mut _,
             constraints.len(),
-            1,  // has side effects
-            0,  // is align stack
+            1, // has side effects
+            0, // is align stack
             LLVMInlineAsmDialect::LLVMInlineAsmDialectATT,
-            0,  // can throw
+            0, // can throw
         );
 
         // Call the inline assembly
@@ -383,12 +371,12 @@ impl SassInliner {
             | SassOpcodeClass::Exit => self.emit_branch(inst)?,
 
             // Synchronization
-            SassOpcodeClass::Barrier
-            | SassOpcodeClass::MemoryBarrier => self.emit_barrier(inst)?,
+            SassOpcodeClass::Barrier | SassOpcodeClass::MemoryBarrier => self.emit_barrier(inst)?,
 
             // Atomic operations
-            SassOpcodeClass::GlobalAtomic
-            | SassOpcodeClass::SharedAtomic => self.emit_atomic(inst)?,
+            SassOpcodeClass::GlobalAtomic | SassOpcodeClass::SharedAtomic => {
+                self.emit_atomic(inst)?
+            }
 
             // Special registers
             SassOpcodeClass::SpecialRegRead => self.emit_special(inst)?,
@@ -503,52 +491,71 @@ impl SassInliner {
         }
 
         // SASS address metadata
-        let addr_val = LLVMConstInt(
-            LLVMInt64TypeInContext(self.context),
-            inst.address,
-            0,
-        );
+        let addr_val = LLVMConstInt(LLVMInt64TypeInContext(self.context), inst.address, 0);
         let mut addr_md = LLVMValueAsMetadata(addr_val);
         let addr_node = LLVMMDNodeInContext2(self.context, &mut addr_md as *mut _, 1);
-        LLVMSetMetadata(value, self.md_sass_addr, LLVMMetadataAsValue(self.context, addr_node));
+        LLVMSetMetadata(
+            value,
+            self.md_sass_addr,
+            LLVMMetadataAsValue(self.context, addr_node),
+        );
 
         // Opcode metadata
         let opcode_cstr = CString::new(inst.opcode.as_str()).unwrap();
-        let mut opcode_md = LLVMMDStringInContext2(
-            self.context,
-            opcode_cstr.as_ptr(),
-            inst.opcode.len(),
-        );
+        let mut opcode_md =
+            LLVMMDStringInContext2(self.context, opcode_cstr.as_ptr(), inst.opcode.len());
         let opcode_node = LLVMMDNodeInContext2(self.context, &mut opcode_md as *mut _, 1);
-        LLVMSetMetadata(value, self.md_sass_opcode, LLVMMetadataAsValue(self.context, opcode_node));
+        LLVMSetMetadata(
+            value,
+            self.md_sass_opcode,
+            LLVMMetadataAsValue(self.context, opcode_node),
+        );
 
         // PTX line metadata (if available)
         if let Some(line) = inst.ptx_line {
-            let line_val = LLVMConstInt(
-                LLVMInt32TypeInContext(self.context),
-                line as u64,
-                0,
-            );
+            let line_val = LLVMConstInt(LLVMInt32TypeInContext(self.context), line as u64, 0);
             let mut line_md = LLVMValueAsMetadata(line_val);
             let line_node = LLVMMDNodeInContext2(self.context, &mut line_md as *mut _, 1);
-            LLVMSetMetadata(value, self.md_ptx_line, LLVMMetadataAsValue(self.context, line_node));
+            LLVMSetMetadata(
+                value,
+                self.md_ptx_line,
+                LLVMMetadataAsValue(self.context, line_node),
+            );
         }
 
         // Control codes metadata
         if self.config.preserve_control_codes {
             let cc = &inst.control_codes;
             let cc_vals = [
-                LLVMConstInt(LLVMInt8TypeInContext(self.context), cc.stall_count as u64, 0),
-                LLVMConstInt(LLVMInt8TypeInContext(self.context), cc.write_barrier as u64, 0),
-                LLVMConstInt(LLVMInt8TypeInContext(self.context), cc.read_barrier as u64, 0),
-                LLVMConstInt(LLVMInt8TypeInContext(self.context), cc.wait_barrier_mask as u64, 0),
+                LLVMConstInt(
+                    LLVMInt8TypeInContext(self.context),
+                    cc.stall_count as u64,
+                    0,
+                ),
+                LLVMConstInt(
+                    LLVMInt8TypeInContext(self.context),
+                    cc.write_barrier as u64,
+                    0,
+                ),
+                LLVMConstInt(
+                    LLVMInt8TypeInContext(self.context),
+                    cc.read_barrier as u64,
+                    0,
+                ),
+                LLVMConstInt(
+                    LLVMInt8TypeInContext(self.context),
+                    cc.wait_barrier_mask as u64,
+                    0,
+                ),
             ];
-            let mut cc_mds: Vec<LLVMMetadataRef> = cc_vals
-                .iter()
-                .map(|v| LLVMValueAsMetadata(*v))
-                .collect();
+            let mut cc_mds: Vec<LLVMMetadataRef> =
+                cc_vals.iter().map(|v| LLVMValueAsMetadata(*v)).collect();
             let cc_node = LLVMMDNodeInContext2(self.context, cc_mds.as_mut_ptr(), cc_mds.len());
-            LLVMSetMetadata(value, self.md_control_codes, LLVMMetadataAsValue(self.context, cc_node));
+            LLVMSetMetadata(
+                value,
+                self.md_control_codes,
+                LLVMMetadataAsValue(self.context, cc_node),
+            );
         }
     }
 
@@ -567,9 +574,13 @@ impl SassInliner {
         let (src1, src2) = self.get_src_operands(inst)?;
 
         let result = match opcode {
-            "IADD" | "IADD3" => LLVMBuildAdd(self.builder, src1, src2, b"iadd\0".as_ptr() as *const _),
+            "IADD" | "IADD3" => {
+                LLVMBuildAdd(self.builder, src1, src2, b"iadd\0".as_ptr() as *const _)
+            }
             "ISUB" => LLVMBuildSub(self.builder, src1, src2, b"isub\0".as_ptr() as *const _),
-            "IMUL" | "IMUL32I" => LLVMBuildMul(self.builder, src1, src2, b"imul\0".as_ptr() as *const _),
+            "IMUL" | "IMUL32I" => {
+                LLVMBuildMul(self.builder, src1, src2, b"imul\0".as_ptr() as *const _)
+            }
             "IMAD" => {
                 // IMAD: d = a * b + c
                 let src3 = if let Some(op) = inst.src_operands.get(2) {
@@ -577,7 +588,8 @@ impl SassInliner {
                 } else {
                     LLVMConstInt(LLVMInt32TypeInContext(self.context), 0, 0)
                 };
-                let mul = LLVMBuildMul(self.builder, src1, src2, b"imad_mul\0".as_ptr() as *const _);
+                let mul =
+                    LLVMBuildMul(self.builder, src1, src2, b"imad_mul\0".as_ptr() as *const _);
                 LLVMBuildAdd(self.builder, mul, src3, b"imad\0".as_ptr() as *const _)
             }
             "IDIV" => LLVMBuildSDiv(self.builder, src1, src2, b"idiv\0".as_ptr() as *const _),
@@ -594,14 +606,25 @@ impl SassInliner {
                     b"is_neg\0".as_ptr() as *const _,
                 );
                 let neg = LLVMBuildNeg(self.builder, src1, b"neg\0".as_ptr() as *const _);
-                LLVMBuildSelect(self.builder, is_neg, neg, src1, b"iabs\0".as_ptr() as *const _)
+                LLVMBuildSelect(
+                    self.builder,
+                    is_neg,
+                    neg,
+                    src1,
+                    b"iabs\0".as_ptr() as *const _,
+                )
             }
             "LEA" => {
                 // LEA: d = a + b * scale
                 let scale = self.get_lea_scale(inst);
                 let scaled = if scale != 1 {
                     let scale_val = LLVMConstInt(LLVMTypeOf(src2), scale as u64, 0);
-                    LLVMBuildMul(self.builder, src2, scale_val, b"lea_scale\0".as_ptr() as *const _)
+                    LLVMBuildMul(
+                        self.builder,
+                        src2,
+                        scale_val,
+                        b"lea_scale\0".as_ptr() as *const _,
+                    )
                 } else {
                     src2
                 };
@@ -634,9 +657,13 @@ impl SassInliner {
         let src2 = self.ensure_float_type(src2_raw, float_ty);
 
         let result = match opcode {
-            "FADD" | "FADD32I" => LLVMBuildFAdd(self.builder, src1, src2, b"fadd\0".as_ptr() as *const _),
+            "FADD" | "FADD32I" => {
+                LLVMBuildFAdd(self.builder, src1, src2, b"fadd\0".as_ptr() as *const _)
+            }
             "FSUB" => LLVMBuildFSub(self.builder, src1, src2, b"fsub\0".as_ptr() as *const _),
-            "FMUL" | "FMUL32I" => LLVMBuildFMul(self.builder, src1, src2, b"fmul\0".as_ptr() as *const _),
+            "FMUL" | "FMUL32I" => {
+                LLVMBuildFMul(self.builder, src1, src2, b"fmul\0".as_ptr() as *const _)
+            }
             "FFMA" | "FMA" => {
                 // FMA: d = a * b + c
                 let src3_raw = if let Some(op) = inst.src_operands.get(2) {
@@ -645,7 +672,8 @@ impl SassInliner {
                     LLVMConstReal(float_ty, 0.0)
                 };
                 let src3 = self.ensure_float_type(src3_raw, float_ty);
-                let mul = LLVMBuildFMul(self.builder, src1, src2, b"ffma_mul\0".as_ptr() as *const _);
+                let mul =
+                    LLVMBuildFMul(self.builder, src1, src2, b"ffma_mul\0".as_ptr() as *const _);
                 LLVMBuildFAdd(self.builder, mul, src3, b"ffma\0".as_ptr() as *const _)
             }
             "FDIV" => LLVMBuildFDiv(self.builder, src1, src2, b"fdiv\0".as_ptr() as *const _),
@@ -688,11 +716,10 @@ impl SassInliner {
     }
 
     /// Emit load instruction
-    unsafe fn emit_load(
-        &mut self,
-        inst: &EnhancedSassInstruction,
-    ) -> Result<LLVMValueRef, String> {
-        let dest = inst.dest_operands.first()
+    unsafe fn emit_load(&mut self, inst: &EnhancedSassInstruction) -> Result<LLVMValueRef, String> {
+        let dest = inst
+            .dest_operands
+            .first()
             .ok_or("Load requires destination")?;
 
         // Get memory address from source operand
@@ -709,7 +736,12 @@ impl SassInliner {
                         *offset as u64,
                         (*offset < 0) as i32,
                     );
-                    LLVMBuildAdd(self.builder, base_val, offset_val, b"addr\0".as_ptr() as *const _)
+                    LLVMBuildAdd(
+                        self.builder,
+                        base_val,
+                        offset_val,
+                        b"addr\0".as_ptr() as *const _,
+                    )
                 } else {
                     base_val
                 }
@@ -720,7 +752,11 @@ impl SassInliner {
             }
             Some(SassOperand::ConstantBank { bank, offset }) => {
                 // Constant memory access - simplified to constant value
-                LLVMConstInt(LLVMInt64TypeInContext(self.context), (*bank as u64 * 0x10000 + *offset as u64), 0)
+                LLVMConstInt(
+                    LLVMInt64TypeInContext(self.context),
+                    (*bank as u64 * 0x10000 + *offset as u64),
+                    0,
+                )
             }
             Some(other) => {
                 // For other operand types, try to get a value
@@ -735,7 +771,10 @@ impl SassInliner {
         let elem_type = self.get_data_type_llvm(inst.data_type.as_ref());
 
         // Cast address to pointer
-        let ptr_type = LLVMPointerType(elem_type, self.get_address_space(inst.memory_space.as_ref()));
+        let ptr_type = LLVMPointerType(
+            elem_type,
+            self.get_address_space(inst.memory_space.as_ref()),
+        );
         let ptr = LLVMBuildIntToPtr(self.builder, addr, ptr_type, b"ptr\0".as_ptr() as *const _);
 
         // Build load
@@ -754,34 +793,45 @@ impl SassInliner {
         inst: &EnhancedSassInstruction,
     ) -> Result<LLVMValueRef, String> {
         // Get memory address from destination
-        let addr = if let Some(SassOperand::Memory { base, offset, .. }) = inst.dest_operands.first() {
-            let base_val = if let Some(base_reg) = base {
-                self.get_register_value(base_reg)?
+        let addr =
+            if let Some(SassOperand::Memory { base, offset, .. }) = inst.dest_operands.first() {
+                let base_val = if let Some(base_reg) = base {
+                    self.get_register_value(base_reg)?
+                } else {
+                    LLVMConstInt(LLVMInt64TypeInContext(self.context), 0, 0)
+                };
+                if *offset != 0 {
+                    let offset_val = LLVMConstInt(
+                        LLVMInt64TypeInContext(self.context),
+                        *offset as u64,
+                        (*offset < 0) as i32,
+                    );
+                    LLVMBuildAdd(
+                        self.builder,
+                        base_val,
+                        offset_val,
+                        b"addr\0".as_ptr() as *const _,
+                    )
+                } else {
+                    base_val
+                }
             } else {
-                LLVMConstInt(LLVMInt64TypeInContext(self.context), 0, 0)
+                return Err("Store requires memory destination".to_string());
             };
-            if *offset != 0 {
-                let offset_val = LLVMConstInt(
-                    LLVMInt64TypeInContext(self.context),
-                    *offset as u64,
-                    (*offset < 0) as i32,
-                );
-                LLVMBuildAdd(self.builder, base_val, offset_val, b"addr\0".as_ptr() as *const _)
-            } else {
-                base_val
-            }
-        } else {
-            return Err("Store requires memory destination".to_string());
-        };
 
         // Get value to store
         let value = self.get_operand_value(
-            inst.src_operands.first().ok_or("Store requires source value")?,
+            inst.src_operands
+                .first()
+                .ok_or("Store requires source value")?,
         )?;
 
         // Determine element type
         let elem_type = LLVMTypeOf(value);
-        let ptr_type = LLVMPointerType(elem_type, self.get_address_space(inst.memory_space.as_ref()));
+        let ptr_type = LLVMPointerType(
+            elem_type,
+            self.get_address_space(inst.memory_space.as_ref()),
+        );
         let ptr = LLVMBuildIntToPtr(self.builder, addr, ptr_type, b"ptr\0".as_ptr() as *const _);
 
         // Build store
@@ -792,11 +842,11 @@ impl SassInliner {
     }
 
     /// Emit move instruction
-    unsafe fn emit_move(
-        &mut self,
-        inst: &EnhancedSassInstruction,
-    ) -> Result<LLVMValueRef, String> {
-        let dest = inst.dest_operands.first().ok_or("Move requires destination")?;
+    unsafe fn emit_move(&mut self, inst: &EnhancedSassInstruction) -> Result<LLVMValueRef, String> {
+        let dest = inst
+            .dest_operands
+            .first()
+            .ok_or("Move requires destination")?;
         let src = inst.src_operands.first().ok_or("Move requires source")?;
 
         let value = self.get_operand_value(src)?;
@@ -818,10 +868,22 @@ impl SassInliner {
 
         let result = if opcode.starts_with('F') {
             // Float comparison
-            LLVMBuildFCmp(self.builder, pred.1, src1, src2, b"fcmp\0".as_ptr() as *const _)
+            LLVMBuildFCmp(
+                self.builder,
+                pred.1,
+                src1,
+                src2,
+                b"fcmp\0".as_ptr() as *const _,
+            )
         } else {
             // Integer comparison
-            LLVMBuildICmp(self.builder, pred.0, src1, src2, b"icmp\0".as_ptr() as *const _)
+            LLVMBuildICmp(
+                self.builder,
+                pred.0,
+                src1,
+                src2,
+                b"icmp\0".as_ptr() as *const _,
+            )
         };
 
         self.store_to_dest(result, inst)?;
@@ -883,16 +945,17 @@ impl SassInliner {
         let opcode = inst.opcode.as_str();
 
         // Get address and value
-        let addr = self.get_operand_value(
-            inst.src_operands.first().ok_or("Atomic requires address")?,
-        )?;
-        let val = self.get_operand_value(
-            inst.src_operands.get(1).ok_or("Atomic requires value")?,
-        )?;
+        let addr =
+            self.get_operand_value(inst.src_operands.first().ok_or("Atomic requires address")?)?;
+        let val =
+            self.get_operand_value(inst.src_operands.get(1).ok_or("Atomic requires value")?)?;
 
         // Convert to pointer
         let elem_type = LLVMTypeOf(val);
-        let ptr_type = LLVMPointerType(elem_type, self.get_address_space(inst.memory_space.as_ref()));
+        let ptr_type = LLVMPointerType(
+            elem_type,
+            self.get_address_space(inst.memory_space.as_ref()),
+        );
         let ptr = LLVMBuildIntToPtr(self.builder, addr, ptr_type, b"aptr\0".as_ptr() as *const _);
 
         let atomic_op = match opcode {
@@ -942,9 +1005,14 @@ impl SassInliner {
         inst: &EnhancedSassInstruction,
     ) -> Result<LLVMValueRef, String> {
         let opcode = inst.opcode.as_str();
-        let dest = inst.dest_operands.first().ok_or("Conversion requires destination")?;
+        let dest = inst
+            .dest_operands
+            .first()
+            .ok_or("Conversion requires destination")?;
         let src = self.get_operand_value(
-            inst.src_operands.first().ok_or("Conversion requires source")?,
+            inst.src_operands
+                .first()
+                .ok_or("Conversion requires source")?,
         )?;
 
         let result = match opcode {
@@ -962,9 +1030,19 @@ impl SassInliner {
                 let src_width = LLVMGetIntTypeWidth(LLVMTypeOf(src));
                 let dest_width = LLVMGetIntTypeWidth(dest_type);
                 if dest_width > src_width {
-                    LLVMBuildSExt(self.builder, src, dest_type, b"i2i_ext\0".as_ptr() as *const _)
+                    LLVMBuildSExt(
+                        self.builder,
+                        src,
+                        dest_type,
+                        b"i2i_ext\0".as_ptr() as *const _,
+                    )
                 } else if dest_width < src_width {
-                    LLVMBuildTrunc(self.builder, src, dest_type, b"i2i_trunc\0".as_ptr() as *const _)
+                    LLVMBuildTrunc(
+                        self.builder,
+                        src,
+                        dest_type,
+                        b"i2i_trunc\0".as_ptr() as *const _,
+                    )
                 } else {
                     src
                 }
@@ -975,9 +1053,19 @@ impl SassInliner {
                 let src_elem_size = LLVMGetTypeKind(LLVMTypeOf(src));
                 let dest_elem_size = LLVMGetTypeKind(dest_type);
                 if dest_elem_size as u32 > src_elem_size as u32 {
-                    LLVMBuildFPExt(self.builder, src, dest_type, b"f2f_ext\0".as_ptr() as *const _)
+                    LLVMBuildFPExt(
+                        self.builder,
+                        src,
+                        dest_type,
+                        b"f2f_ext\0".as_ptr() as *const _,
+                    )
                 } else {
-                    LLVMBuildFPTrunc(self.builder, src, dest_type, b"f2f_trunc\0".as_ptr() as *const _)
+                    LLVMBuildFPTrunc(
+                        self.builder,
+                        src,
+                        dest_type,
+                        b"f2f_trunc\0".as_ptr() as *const _,
+                    )
                 }
             }
             _ => return Err(format!("Unknown conversion: {}", opcode)),
@@ -1001,8 +1089,20 @@ impl SassInliner {
             "XOR" => LLVMBuildXor(self.builder, src1, src2, b"xor\0".as_ptr() as *const _),
             "NOT" => LLVMBuildNot(self.builder, src1, b"not\0".as_ptr() as *const _),
             "POPC" => self.call_intrinsic("llvm.ctpop.i32", &[src1]),
-            "CLZ" => self.call_intrinsic("llvm.ctlz.i32", &[src1, LLVMConstInt(LLVMInt1TypeInContext(self.context), 0, 0)]),
-            "FLO" => self.call_intrinsic("llvm.cttz.i32", &[src1, LLVMConstInt(LLVMInt1TypeInContext(self.context), 0, 0)]),
+            "CLZ" => self.call_intrinsic(
+                "llvm.ctlz.i32",
+                &[
+                    src1,
+                    LLVMConstInt(LLVMInt1TypeInContext(self.context), 0, 0),
+                ],
+            ),
+            "FLO" => self.call_intrinsic(
+                "llvm.cttz.i32",
+                &[
+                    src1,
+                    LLVMConstInt(LLVMInt1TypeInContext(self.context), 0, 0),
+                ],
+            ),
             "BREV" => self.call_intrinsic("llvm.bitreverse.i32", &[src1]),
             _ => return Err(format!("Unknown bitwise op: {}", opcode)),
         };
@@ -1021,7 +1121,9 @@ impl SassInliner {
         match opcode {
             "S2R" => {
                 // Special register read - map to appropriate LLVM intrinsic
-                let sr_name = inst.src_operands.first()
+                let sr_name = inst
+                    .src_operands
+                    .first()
                     .and_then(|op| {
                         if let SassOperand::SpecialRegister(name) = op {
                             Some(name.as_str())
@@ -1067,7 +1169,8 @@ impl SassInliner {
             SassOperand::Immediate(val) => format!("0x{:x}", val),
             SassOperand::FloatImmediate(val) => format!("{}", val),
             SassOperand::Memory { base, offset, .. } => {
-                let base_str = base.as_ref()
+                let base_str = base
+                    .as_ref()
                     .map(|r| self.format_register(r))
                     .unwrap_or_else(|| "0".to_string());
                 if *offset != 0 {
@@ -1119,7 +1222,9 @@ impl SassInliner {
         inst: &EnhancedSassInstruction,
     ) -> Result<(LLVMValueRef, LLVMValueRef), String> {
         let src1 = self.get_operand_value(
-            inst.src_operands.first().ok_or("Binary op requires first source")?,
+            inst.src_operands
+                .first()
+                .ok_or("Binary op requires first source")?,
         )?;
         let src2 = if let Some(src2_op) = inst.src_operands.get(1) {
             self.get_operand_value(src2_op)?
@@ -1145,9 +1250,11 @@ impl SassInliner {
     unsafe fn get_operand_value(&mut self, op: &SassOperand) -> Result<LLVMValueRef, String> {
         match op {
             SassOperand::Register(reg) => self.get_register_value(reg),
-            SassOperand::Immediate(val) => {
-                Ok(LLVMConstInt(LLVMInt32TypeInContext(self.context), *val as u64, 0))
-            }
+            SassOperand::Immediate(val) => Ok(LLVMConstInt(
+                LLVMInt32TypeInContext(self.context),
+                *val as u64,
+                0,
+            )),
             SassOperand::FloatImmediate(val) => {
                 Ok(LLVMConstReal(LLVMFloatTypeInContext(self.context), *val))
             }
@@ -1188,7 +1295,11 @@ impl SassInliner {
     }
 
     /// Ensure a value is of float type, converting if necessary
-    unsafe fn ensure_float_type(&self, value: LLVMValueRef, target_type: LLVMTypeRef) -> LLVMValueRef {
+    unsafe fn ensure_float_type(
+        &self,
+        value: LLVMValueRef,
+        target_type: LLVMTypeRef,
+    ) -> LLVMValueRef {
         let value_type = LLVMTypeOf(value);
 
         // If already the target type, return as-is
@@ -1200,34 +1311,59 @@ impl SassInliner {
         let target_kind = LLVMGetTypeKind(target_type);
 
         match (kind, target_kind) {
-            (LLVMTypeKind::LLVMIntegerTypeKind, LLVMTypeKind::LLVMFloatTypeKind) |
-            (LLVMTypeKind::LLVMIntegerTypeKind, LLVMTypeKind::LLVMDoubleTypeKind) |
-            (LLVMTypeKind::LLVMIntegerTypeKind, LLVMTypeKind::LLVMHalfTypeKind) => {
+            (LLVMTypeKind::LLVMIntegerTypeKind, LLVMTypeKind::LLVMFloatTypeKind)
+            | (LLVMTypeKind::LLVMIntegerTypeKind, LLVMTypeKind::LLVMDoubleTypeKind)
+            | (LLVMTypeKind::LLVMIntegerTypeKind, LLVMTypeKind::LLVMHalfTypeKind) => {
                 // Convert integer to float - assume signed for general purpose
-                LLVMBuildSIToFP(self.builder, value, target_type, b"sitofp\0".as_ptr() as *const _)
+                LLVMBuildSIToFP(
+                    self.builder,
+                    value,
+                    target_type,
+                    b"sitofp\0".as_ptr() as *const _,
+                )
             }
-            (LLVMTypeKind::LLVMFloatTypeKind, LLVMTypeKind::LLVMFloatTypeKind) |
-            (LLVMTypeKind::LLVMDoubleTypeKind, LLVMTypeKind::LLVMDoubleTypeKind) |
-            (LLVMTypeKind::LLVMHalfTypeKind, LLVMTypeKind::LLVMHalfTypeKind) => {
+            (LLVMTypeKind::LLVMFloatTypeKind, LLVMTypeKind::LLVMFloatTypeKind)
+            | (LLVMTypeKind::LLVMDoubleTypeKind, LLVMTypeKind::LLVMDoubleTypeKind)
+            | (LLVMTypeKind::LLVMHalfTypeKind, LLVMTypeKind::LLVMHalfTypeKind) => {
                 // Same type, return as-is
                 value
             }
-            (LLVMTypeKind::LLVMFloatTypeKind, LLVMTypeKind::LLVMDoubleTypeKind) |
-            (LLVMTypeKind::LLVMHalfTypeKind, LLVMTypeKind::LLVMFloatTypeKind) |
-            (LLVMTypeKind::LLVMHalfTypeKind, LLVMTypeKind::LLVMDoubleTypeKind) => {
+            (LLVMTypeKind::LLVMFloatTypeKind, LLVMTypeKind::LLVMDoubleTypeKind)
+            | (LLVMTypeKind::LLVMHalfTypeKind, LLVMTypeKind::LLVMFloatTypeKind)
+            | (LLVMTypeKind::LLVMHalfTypeKind, LLVMTypeKind::LLVMDoubleTypeKind) => {
                 // Float extension
-                LLVMBuildFPExt(self.builder, value, target_type, b"fpext\0".as_ptr() as *const _)
+                LLVMBuildFPExt(
+                    self.builder,
+                    value,
+                    target_type,
+                    b"fpext\0".as_ptr() as *const _,
+                )
             }
-            (LLVMTypeKind::LLVMDoubleTypeKind, LLVMTypeKind::LLVMFloatTypeKind) |
-            (LLVMTypeKind::LLVMFloatTypeKind, LLVMTypeKind::LLVMHalfTypeKind) |
-            (LLVMTypeKind::LLVMDoubleTypeKind, LLVMTypeKind::LLVMHalfTypeKind) => {
+            (LLVMTypeKind::LLVMDoubleTypeKind, LLVMTypeKind::LLVMFloatTypeKind)
+            | (LLVMTypeKind::LLVMFloatTypeKind, LLVMTypeKind::LLVMHalfTypeKind)
+            | (LLVMTypeKind::LLVMDoubleTypeKind, LLVMTypeKind::LLVMHalfTypeKind) => {
                 // Float truncation
-                LLVMBuildFPTrunc(self.builder, value, target_type, b"fptrunc\0".as_ptr() as *const _)
+                LLVMBuildFPTrunc(
+                    self.builder,
+                    value,
+                    target_type,
+                    b"fptrunc\0".as_ptr() as *const _,
+                )
             }
             (LLVMTypeKind::LLVMPointerTypeKind, _) => {
                 // Pointer to int to float
-                let int_val = LLVMBuildPtrToInt(self.builder, value, LLVMInt64TypeInContext(self.context), b"ptrtoint\0".as_ptr() as *const _);
-                LLVMBuildSIToFP(self.builder, int_val, target_type, b"sitofp\0".as_ptr() as *const _)
+                let int_val = LLVMBuildPtrToInt(
+                    self.builder,
+                    value,
+                    LLVMInt64TypeInContext(self.context),
+                    b"ptrtoint\0".as_ptr() as *const _,
+                );
+                LLVMBuildSIToFP(
+                    self.builder,
+                    int_val,
+                    target_type,
+                    b"sitofp\0".as_ptr() as *const _,
+                )
             }
             _ => {
                 // For other cases, create a zero constant of target type
@@ -1237,7 +1373,11 @@ impl SassInliner {
         }
     }
 
-    unsafe fn store_result(&mut self, value: LLVMValueRef, dest: &SassOperand) -> Result<(), String> {
+    unsafe fn store_result(
+        &mut self,
+        value: LLVMValueRef,
+        dest: &SassOperand,
+    ) -> Result<(), String> {
         if let SassOperand::Register(reg) = dest {
             let name = self.format_register(reg);
             self.register_map.insert(name, value);
@@ -1259,9 +1399,13 @@ impl SassInliner {
             Some(SassDataType::U16) | Some(SassDataType::S16) | Some(SassDataType::F16) => {
                 LLVMInt16TypeInContext(self.context)
             }
-            Some(SassDataType::U32) | Some(SassDataType::S32) => LLVMInt32TypeInContext(self.context),
+            Some(SassDataType::U32) | Some(SassDataType::S32) => {
+                LLVMInt32TypeInContext(self.context)
+            }
             Some(SassDataType::F32) => LLVMFloatTypeInContext(self.context),
-            Some(SassDataType::U64) | Some(SassDataType::S64) => LLVMInt64TypeInContext(self.context),
+            Some(SassDataType::U64) | Some(SassDataType::S64) => {
+                LLVMInt64TypeInContext(self.context)
+            }
             Some(SassDataType::F64) => LLVMDoubleTypeInContext(self.context),
             _ => LLVMInt32TypeInContext(self.context),
         }
@@ -1299,7 +1443,10 @@ impl SassInliner {
         1
     }
 
-    fn get_comparison_predicate(&self, modifiers: &[String]) -> (LLVMIntPredicate, LLVMRealPredicate) {
+    fn get_comparison_predicate(
+        &self,
+        modifiers: &[String],
+    ) -> (LLVMIntPredicate, LLVMRealPredicate) {
         for modifier in modifiers {
             match modifier.as_str() {
                 ".EQ" => return (LLVMIntPredicate::LLVMIntEQ, LLVMRealPredicate::LLVMRealOEQ),
@@ -1340,7 +1487,12 @@ impl SassInliner {
 
         // Declare the intrinsic based on name pattern
         let (ret_type, param_types) = self.get_intrinsic_signature(name);
-        let fn_type = LLVMFunctionType(ret_type, param_types.as_ptr() as *mut _, param_types.len() as u32, 0);
+        let fn_type = LLVMFunctionType(
+            ret_type,
+            param_types.as_ptr() as *mut _,
+            param_types.len() as u32,
+            0,
+        );
         LLVMAddFunction(self.module, name_cstr.as_ptr(), fn_type)
     }
 
@@ -1457,9 +1609,21 @@ impl SassMetadataExtractor {
     pub unsafe fn new(context: LLVMContextRef) -> Self {
         Self {
             md_sass_addr: LLVMGetMDKindIDInContext(context, b"sass.addr\0".as_ptr() as *const _, 9),
-            md_sass_opcode: LLVMGetMDKindIDInContext(context, b"sass.opcode\0".as_ptr() as *const _, 11),
-            md_ptx_line: LLVMGetMDKindIDInContext(context, b"sass.ptx_line\0".as_ptr() as *const _, 13),
-            md_control_codes: LLVMGetMDKindIDInContext(context, b"sass.control\0".as_ptr() as *const _, 12),
+            md_sass_opcode: LLVMGetMDKindIDInContext(
+                context,
+                b"sass.opcode\0".as_ptr() as *const _,
+                11,
+            ),
+            md_ptx_line: LLVMGetMDKindIDInContext(
+                context,
+                b"sass.ptx_line\0".as_ptr() as *const _,
+                13,
+            ),
+            md_control_codes: LLVMGetMDKindIDInContext(
+                context,
+                b"sass.control\0".as_ptr() as *const _,
+                12,
+            ),
         }
     }
 
@@ -1593,9 +1757,12 @@ mod tests {
     // Helper function to create test instructions
     fn create_test_instruction(opcode: &str, address: u64) -> EnhancedSassInstruction {
         let mut inst = EnhancedSassInstruction::new(opcode.to_string(), address);
-        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 2)));
+        inst.dest_operands
+            .push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 2)));
         inst
     }
 
@@ -1618,7 +1785,8 @@ mod tests {
         inst.data_type = Some(SassDataType::U32);
         inst.opcode_class = SassOpcodeClass::GlobalLoad;
         inst.memory_space = Some(SassMemorySpace::Global);
-        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.dest_operands
+            .push(SassOperand::Register(SassRegister::new("R", 0)));
         inst.src_operands.push(SassOperand::Memory {
             base: Some(SassRegister::new("R", 2)),
             offset: 0x10,
@@ -1639,7 +1807,8 @@ mod tests {
             index: None,
             scale: 1,
         });
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 0)));
         inst
     }
 
@@ -1647,8 +1816,10 @@ mod tests {
         let mut inst = EnhancedSassInstruction::new("MOV".to_string(), address);
         inst.data_type = Some(SassDataType::B32);
         inst.opcode_class = SassOpcodeClass::Move;
-        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.dest_operands
+            .push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 1)));
         inst
     }
 
@@ -1656,10 +1827,14 @@ mod tests {
         let mut inst = EnhancedSassInstruction::new("IMAD".to_string(), address);
         inst.data_type = Some(SassDataType::S32);
         inst.opcode_class = SassOpcodeClass::IntegerArithmetic;
-        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 2)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 3)));
+        inst.dest_operands
+            .push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 2)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 3)));
         inst
     }
 
@@ -1667,10 +1842,14 @@ mod tests {
         let mut inst = EnhancedSassInstruction::new("FFMA".to_string(), address);
         inst.data_type = Some(SassDataType::F32);
         inst.opcode_class = SassOpcodeClass::FloatArithmetic;
-        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 2)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 3)));
+        inst.dest_operands
+            .push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 2)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 3)));
         inst
     }
 
@@ -1690,8 +1869,10 @@ mod tests {
     fn create_s2r_instruction(address: u64, special_reg: &str) -> EnhancedSassInstruction {
         let mut inst = EnhancedSassInstruction::new("S2R".to_string(), address);
         inst.opcode_class = SassOpcodeClass::SpecialRegRead;
-        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
-        inst.src_operands.push(SassOperand::SpecialRegister(special_reg.to_string()));
+        inst.dest_operands
+            .push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands
+            .push(SassOperand::SpecialRegister(special_reg.to_string()));
         inst
     }
 
@@ -1735,13 +1916,7 @@ mod tests {
 
             let instructions: Vec<EnhancedSassInstruction> = vec![];
 
-            let result = builder.build_kernel(
-                context,
-                module,
-                "empty_kernel",
-                &instructions,
-                &[],
-            );
+            let result = builder.build_kernel(context, module, "empty_kernel", &instructions, &[]);
 
             assert!(result.is_ok());
             let func = result.unwrap();
@@ -1771,13 +1946,7 @@ mod tests {
                 create_fadd_instruction(0x20),
             ];
 
-            let result = builder.build_kernel(
-                context,
-                module,
-                "test_kernel",
-                &instructions,
-                &[],
-            );
+            let result = builder.build_kernel(context, module, "test_kernel", &instructions, &[]);
 
             assert!(result.is_ok());
 
@@ -1804,18 +1973,9 @@ mod tests {
             };
             let builder = SassKernelBuilder::new(config);
 
-            let instructions = vec![
-                create_fadd_instruction(0x00),
-                create_iadd_instruction(0x10),
-            ];
+            let instructions = vec![create_fadd_instruction(0x00), create_iadd_instruction(0x10)];
 
-            let result = builder.build_kernel(
-                context,
-                module,
-                "asm_kernel",
-                &instructions,
-                &[],
-            );
+            let result = builder.build_kernel(context, module, "asm_kernel", &instructions, &[]);
 
             assert!(result.is_ok());
 
@@ -1845,13 +2005,7 @@ mod tests {
                 create_ffma_instruction(0x40),
             ];
 
-            let result = builder.build_kernel(
-                context,
-                module,
-                "ptx_kernel",
-                &instructions,
-                &[],
-            );
+            let result = builder.build_kernel(context, module, "ptx_kernel", &instructions, &[]);
 
             assert!(result.is_ok());
 
@@ -1881,13 +2035,7 @@ mod tests {
                 create_stg_instruction(0x40),
             ];
 
-            let result = builder.build_kernel(
-                context,
-                module,
-                "hybrid_kernel",
-                &instructions,
-                &[],
-            );
+            let result = builder.build_kernel(context, module, "hybrid_kernel", &instructions, &[]);
 
             assert!(result.is_ok());
 
@@ -1933,13 +2081,7 @@ mod tests {
             };
             let builder = SassKernelBuilder::new(config);
 
-            let result = builder.build_kernel(
-                context,
-                module,
-                "control_code_kernel",
-                &[inst],
-                &[],
-            );
+            let result = builder.build_kernel(context, module, "control_code_kernel", &[inst], &[]);
 
             assert!(result.is_ok());
 
@@ -1967,13 +2109,7 @@ mod tests {
             };
             let builder = SassKernelBuilder::new(config);
 
-            let result = builder.build_kernel(
-                context,
-                module,
-                "pred_kernel",
-                &[inst],
-                &[],
-            );
+            let result = builder.build_kernel(context, module, "pred_kernel", &[inst], &[]);
 
             assert!(result.is_ok());
 
@@ -2002,13 +2138,7 @@ mod tests {
             };
             let builder = SassKernelBuilder::new(config);
 
-            let result = builder.build_kernel(
-                context,
-                module,
-                "ptx_mapped_kernel",
-                &[inst],
-                &[],
-            );
+            let result = builder.build_kernel(context, module, "ptx_mapped_kernel", &[inst], &[]);
 
             assert!(result.is_ok());
 
@@ -2057,13 +2187,8 @@ mod tests {
                 let builder = SassKernelBuilder::new(config);
 
                 let kernel_name = format!("full_kernel_{:?}", strategy);
-                let result = builder.build_kernel(
-                    context,
-                    module,
-                    &kernel_name,
-                    &instructions,
-                    &[],
-                );
+                let result =
+                    builder.build_kernel(context, module, &kernel_name, &instructions, &[]);
 
                 assert!(result.is_ok(), "Failed for strategy {:?}", strategy);
             }
@@ -2151,13 +2276,23 @@ mod tests {
 
             for (dt, expected_bits) in &types {
                 let llvm_type = inliner.get_data_type_llvm(Some(dt));
-                let actual_bits = if *expected_bits <= 64 && *dt != SassDataType::F32 && *dt != SassDataType::F64 {
-                    LLVMGetIntTypeWidth(llvm_type)
-                } else {
-                    // For floats, we just verify the type is not null
-                    if !llvm_type.is_null() { *expected_bits } else { 0 }
-                };
-                assert!(actual_bits > 0 || !llvm_type.is_null(), "Failed for {:?}", dt);
+                let actual_bits =
+                    if *expected_bits <= 64 && *dt != SassDataType::F32 && *dt != SassDataType::F64
+                    {
+                        LLVMGetIntTypeWidth(llvm_type)
+                    } else {
+                        // For floats, we just verify the type is not null
+                        if !llvm_type.is_null() {
+                            *expected_bits
+                        } else {
+                            0
+                        }
+                    };
+                assert!(
+                    actual_bits > 0 || !llvm_type.is_null(),
+                    "Failed for {:?}",
+                    dt
+                );
             }
 
             drop(inliner);
@@ -2215,13 +2350,8 @@ mod tests {
                 ];
 
                 let kernel_name = format!("kernel_{}", i);
-                let result = builder.build_kernel(
-                    context,
-                    module,
-                    &kernel_name,
-                    &instructions,
-                    &[],
-                );
+                let result =
+                    builder.build_kernel(context, module, &kernel_name, &instructions, &[]);
 
                 assert!(result.is_ok());
             }
@@ -2242,8 +2372,10 @@ mod tests {
     fn test_immediate_operands() {
         let mut inst = EnhancedSassInstruction::new("IADD".to_string(), 0x00);
         inst.opcode_class = SassOpcodeClass::IntegerArithmetic;
-        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.dest_operands
+            .push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 1)));
         inst.src_operands.push(SassOperand::Immediate(42));
 
         unsafe {
@@ -2257,13 +2389,7 @@ mod tests {
             };
             let builder = SassKernelBuilder::new(config);
 
-            let result = builder.build_kernel(
-                context,
-                module,
-                "imm_kernel",
-                &[inst],
-                &[],
-            );
+            let result = builder.build_kernel(context, module, "imm_kernel", &[inst], &[]);
 
             assert!(result.is_ok());
 
@@ -2277,8 +2403,10 @@ mod tests {
         let mut inst = EnhancedSassInstruction::new("FADD".to_string(), 0x00);
         inst.data_type = Some(SassDataType::F32);
         inst.opcode_class = SassOpcodeClass::FloatArithmetic;
-        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.dest_operands
+            .push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 1)));
         inst.src_operands.push(SassOperand::FloatImmediate(3.14159));
 
         unsafe {
@@ -2292,13 +2420,7 @@ mod tests {
             };
             let builder = SassKernelBuilder::new(config);
 
-            let result = builder.build_kernel(
-                context,
-                module,
-                "fimm_kernel",
-                &[inst],
-                &[],
-            );
+            let result = builder.build_kernel(context, module, "fimm_kernel", &[inst], &[]);
 
             assert!(result.is_ok());
 
@@ -2314,10 +2436,13 @@ mod tests {
         for opcode in &opcodes {
             let mut inst = EnhancedSassInstruction::new(opcode.to_string(), 0x00);
             inst.opcode_class = SassOpcodeClass::IntegerLogical;
-            inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
-            inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
+            inst.dest_operands
+                .push(SassOperand::Register(SassRegister::new("R", 0)));
+            inst.src_operands
+                .push(SassOperand::Register(SassRegister::new("R", 1)));
             if *opcode != "NOT" {
-                inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 2)));
+                inst.src_operands
+                    .push(SassOperand::Register(SassRegister::new("R", 2)));
             }
 
             unsafe {
@@ -2352,9 +2477,12 @@ mod tests {
         let mut inst = EnhancedSassInstruction::new("ISETP".to_string(), 0x00);
         inst.opcode_class = SassOpcodeClass::IntegerComparison;
         inst.modifiers.push(".LT".to_string());
-        inst.dest_operands.push(SassOperand::Register(SassRegister::new("P", 0)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 2)));
+        inst.dest_operands
+            .push(SassOperand::Register(SassRegister::new("P", 0)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 2)));
 
         unsafe {
             let context = LLVMContextCreate();
@@ -2367,13 +2495,7 @@ mod tests {
             };
             let builder = SassKernelBuilder::new(config);
 
-            let result = builder.build_kernel(
-                context,
-                module,
-                "cmp_kernel",
-                &[inst],
-                &[],
-            );
+            let result = builder.build_kernel(context, module, "cmp_kernel", &[inst], &[]);
 
             assert!(result.is_ok());
 

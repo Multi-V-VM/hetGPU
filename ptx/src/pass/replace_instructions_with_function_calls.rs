@@ -150,8 +150,7 @@ fn to_call<'input>(
         hash_map::Entry::Occupied(occupied_entry) => occupied_entry.get().1,
         hash_map::Entry::Vacant(vacant_entry) => {
             let name = vacant_entry.key().clone();
-            let full_name = [ZLUDA_PTX_PREFIX, &*name].concat();
-            let name = resolver.register_named(Cow::Owned(full_name.clone()), None);
+            let name = resolver.register_named(lower_external_symbol_name(name), None);
             vacant_entry.insert((
                 to_variables(resolver, &data_return),
                 name,

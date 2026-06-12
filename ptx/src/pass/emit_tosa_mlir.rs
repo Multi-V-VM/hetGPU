@@ -715,9 +715,14 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
 
                 // Map it to a special identifier that won't be in function signature
                 let output_ssa = format!("%output_param");
-                eprintln!("ZLUDA DEBUG: Mapping output parameter {} (id: {}) to SSA value {} with type {}", 
-                         self.get_variable_name(output_param.name).unwrap_or(format!("output_{}", output_param.name.0)), 
-                         output_param.name.0, output_ssa, output_param_type);
+                eprintln!(
+                    "ZLUDA DEBUG: Mapping output parameter {} (id: {}) to SSA value {} with type {}",
+                    self.get_variable_name(output_param.name)
+                        .unwrap_or(format!("output_{}", output_param.name.0)),
+                    output_param.name.0,
+                    output_ssa,
+                    output_param_type
+                );
                 self.value_map.insert(output_param.name, output_ssa.clone());
                 self.ssa_types.insert(output_ssa, output_param_type);
             }
@@ -1954,8 +1959,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                 .map(|n| n.to_string())
                 .unwrap_or_else(|| format!("param_{}", src.0));
 
-            eprintln!("ZLUDA DEBUG: Parameter space load - loading address from parameter '{}' into dst {}", 
-                     src_name, dst.0);
+            eprintln!(
+                "ZLUDA DEBUG: Parameter space load - loading address from parameter '{}' into dst {}",
+                src_name, dst.0
+            );
 
             // Track that this destination variable holds an address from this parameter
             self.param_addresses.insert(dst, src_name.clone());
@@ -1998,7 +2005,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
         // Special case: Check if the src ID (e.g., 30) might be a synthetic ID for an indirect load
         // In PTX, [in_addr] means "load from the address stored in in_addr"
         // The parser might create a synthetic ID for this indirect reference
-        eprintln!("ZLUDA DEBUG: Checking for indirect load pattern - src {} might reference an address variable", src.0);
+        eprintln!(
+            "ZLUDA DEBUG: Checking for indirect load pattern - src {} might reference an address variable",
+            src.0
+        );
 
         // Look for address variables that were loaded from parameters
         for (addr_var_id, param_name) in &self.param_addresses {
@@ -2010,7 +2020,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             // For now, assume that if we can't find the src in value_map and we have param addresses,
             // this is an indirect load through the first address we loaded
             if param_name == "input" {
-                eprintln!("ZLUDA DEBUG: Treating this as indirect load through address {} from input parameter", addr_var_id.0);
+                eprintln!(
+                    "ZLUDA DEBUG: Treating this as indirect load through address {} from input parameter",
+                    addr_var_id.0
+                );
 
                 let arg_name = format!("%arg{}", self.next_arg_index);
                 self.next_arg_index += 1;
@@ -3051,8 +3064,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
             .map(|n| n.to_string())
             .unwrap_or_else(|| format!("<unnamed_{}>", src3.0));
 
-        eprintln!("ZLUDA DEBUG: FMA instruction - dst: {} ({}), src1: {} ({}), src2: {} ({}), src3: {} ({})",
-                 dst_name, dst.0, src1_name, src1.0, src2_name, src2.0, src3_name, src3.0);
+        eprintln!(
+            "ZLUDA DEBUG: FMA instruction - dst: {} ({}), src1: {} ({}), src2: {} ({}), src3: {} ({})",
+            dst_name, dst.0, src1_name, src1.0, src2_name, src2.0, src3_name, src3.0
+        );
 
         let dst_ssa = self.next_ssa_value();
         let src1_ssa = self.get_ssa_value(src1)?;
@@ -4043,7 +4058,10 @@ impl<'a, 'input> PtxToTosaConverter<'a, 'input> {
                         if let Some(check_type) = self.ssa_types.get(check_ssa) {
                             if Self::is_integer_type(check_type) {
                                 // If we find a data tensor that was created from a load, prefer it
-                                eprintln!("ZLUDA DEBUG: Checking if {} should use data tensor {} instead of {}", var_id.0, check_ssa, ssa_value);
+                                eprintln!(
+                                    "ZLUDA DEBUG: Checking if {} should use data tensor {} instead of {}",
+                                    var_id.0, check_ssa, ssa_value
+                                );
                             }
                         }
                     }

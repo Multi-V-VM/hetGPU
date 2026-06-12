@@ -7,11 +7,9 @@ edition = "2018"
 [features]
 default = []
 intel = []
-amd = []
 tenstorrent = []
 gemmini = []
 nvidia = []
-
 [lib]
 crate-type = ["cdylib"]
 

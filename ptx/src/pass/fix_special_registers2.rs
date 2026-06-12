@@ -218,6 +218,7 @@ pub fn map_operand<T: Copy, Err>(
                             ast::RegOrImmediate::Reg(fn_(ident, None)?.unwrap_or(ident))
                         }
                         ast::RegOrImmediate::Imm(imm) => ast::RegOrImmediate::Imm(imm),
+                        ast::RegOrImmediate::Discard => ast::RegOrImmediate::Discard,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?,

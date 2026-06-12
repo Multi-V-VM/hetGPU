@@ -23,17 +23,29 @@ use super::instruction::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SmVersion {
     /// Maxwell (GTX 9xx)
-    Sm50, Sm52, Sm53,
+    Sm50,
+    Sm52,
+    Sm53,
     /// Pascal (GTX 10xx)
-    Sm60, Sm61, Sm62,
+    Sm60,
+    Sm61,
+    Sm62,
     /// Volta/Turing (GTX 20xx, RTX 20xx)
-    Sm70, Sm72, Sm75,
+    Sm70,
+    Sm72,
+    Sm75,
     /// Ampere (RTX 30xx)
-    Sm80, Sm86, Sm87,
+    Sm80,
+    Sm86,
+    Sm87,
     /// Ada Lovelace (RTX 40xx)
     Sm89,
     /// Hopper
     Sm90,
+    /// Blackwell
+    Sm100,
+    Sm120,
+    Sm120a,
 }
 
 impl SmVersion {
@@ -54,6 +66,9 @@ impl SmVersion {
             87 => Some(SmVersion::Sm87),
             89 => Some(SmVersion::Sm89),
             90 => Some(SmVersion::Sm90),
+            100 => Some(SmVersion::Sm100),
+            120 => Some(SmVersion::Sm120),
+            121 => Some(SmVersion::Sm120a),
             _ => None,
         }
     }
@@ -61,17 +76,21 @@ impl SmVersion {
     /// Get instruction size in bytes for this architecture
     pub fn instruction_size(&self) -> usize {
         match self {
-            SmVersion::Sm50 | SmVersion::Sm52 | SmVersion::Sm53 => 8,  // 64-bit
-            SmVersion::Sm60 | SmVersion::Sm61 | SmVersion::Sm62 => 8,  // 64-bit
-            _ => 16, // 128-bit for Volta and later
+            SmVersion::Sm50 | SmVersion::Sm52 | SmVersion::Sm53 => 8, // 64-bit
+            SmVersion::Sm60 | SmVersion::Sm61 | SmVersion::Sm62 => 8, // 64-bit
+            _ => 16,                                                  // 128-bit for Volta and later
         }
     }
 
     /// Does this architecture use 128-bit instructions?
     pub fn uses_128bit(&self) -> bool {
         match self {
-            SmVersion::Sm50 | SmVersion::Sm52 | SmVersion::Sm53 |
-            SmVersion::Sm60 | SmVersion::Sm61 | SmVersion::Sm62 => false,
+            SmVersion::Sm50
+            | SmVersion::Sm52
+            | SmVersion::Sm53
+            | SmVersion::Sm60
+            | SmVersion::Sm61
+            | SmVersion::Sm62 => false,
             _ => true,
         }
     }
@@ -106,20 +125,20 @@ impl OpcodeTable {
         // The opcode is typically in bits [63:52] or similar positions
 
         // Memory operations
-        opcodes.insert(0x380, "LDG");      // Global load
+        opcodes.insert(0x380, "LDG"); // Global load
         opcodes.insert(0x381, "LDG.E");
-        opcodes.insert(0x385, "STG");      // Global store
+        opcodes.insert(0x385, "STG"); // Global store
         opcodes.insert(0x386, "STG.E");
-        opcodes.insert(0x388, "LDS");      // Shared load
-        opcodes.insert(0x389, "STS");      // Shared store
-        opcodes.insert(0x38C, "LDL");      // Local load
-        opcodes.insert(0x38D, "STL");      // Local store
-        opcodes.insert(0x390, "LDC");      // Constant load
+        opcodes.insert(0x388, "LDS"); // Shared load
+        opcodes.insert(0x389, "STS"); // Shared store
+        opcodes.insert(0x38C, "LDL"); // Local load
+        opcodes.insert(0x38D, "STL"); // Local store
+        opcodes.insert(0x390, "LDC"); // Constant load
 
         // Atomics
-        opcodes.insert(0x3A8, "ATOMG");    // Global atomic
-        opcodes.insert(0x3A9, "ATOMS");    // Shared atomic
-        opcodes.insert(0x3AC, "RED");      // Reduction
+        opcodes.insert(0x3A8, "ATOMG"); // Global atomic
+        opcodes.insert(0x3A9, "ATOMS"); // Shared atomic
+        opcodes.insert(0x3AC, "RED"); // Reduction
 
         // Integer arithmetic
         opcodes.insert(0x210, "IADD");
@@ -140,7 +159,7 @@ impl OpcodeTable {
         opcodes.insert(0x30D, "FSET");
         opcodes.insert(0x310, "FABS");
         opcodes.insert(0x311, "FNEG");
-        opcodes.insert(0x318, "MUFU");     // Multi-function unit
+        opcodes.insert(0x318, "MUFU"); // Multi-function unit
 
         // Double precision
         opcodes.insert(0x320, "DADD");
@@ -213,7 +232,10 @@ impl OpcodeTable {
         // No-op
         opcodes.insert(0x7FF, "NOP");
 
-        Self { opcodes, sm_version }
+        Self {
+            opcodes,
+            sm_version,
+        }
     }
 
     fn lookup(&self, opcode_bits: u16) -> &'static str {
@@ -264,8 +286,7 @@ impl SassDisassembler {
         }
 
         let encoding = u64::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3],
-            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         ]);
 
         // Extract opcode (typically bits 63:52 or similar)
@@ -307,8 +328,10 @@ impl SassDisassembler {
 
         EnhancedSassInstruction {
             opcode: opcode_name.to_string(),
-            instruction_text: format!("/*{:04x}*/ {} R{}, R{}, R{} ;",
-                address, opcode_name, dest_reg, src1_reg, src2_reg),
+            instruction_text: format!(
+                "/*{:04x}*/ {} R{}, R{}, R{} ;",
+                address, opcode_name, dest_reg, src1_reg, src2_reg
+            ),
             address,
             size: 8,
             encoding_lo: encoding,
@@ -340,12 +363,10 @@ impl SassDisassembler {
         }
 
         let encoding_lo = u64::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3],
-            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         ]);
         let encoding_hi = u64::from_le_bytes([
-            bytes[8], bytes[9], bytes[10], bytes[11],
-            bytes[12], bytes[13], bytes[14], bytes[15],
+            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
         ]);
 
         // For 128-bit instructions:
@@ -389,9 +410,7 @@ impl SassDisassembler {
             vec![SassOperand::Register(SassRegister::new("RZ", 255))]
         };
 
-        let mut srcs = vec![
-            SassOperand::Register(SassRegister::new("R", src1_reg)),
-        ];
+        let mut srcs = vec![SassOperand::Register(SassRegister::new("R", src1_reg))];
         if src2_reg < 255 {
             srcs.push(SassOperand::Register(SassRegister::new("R", src2_reg)));
         }
@@ -405,8 +424,10 @@ impl SassDisassembler {
 
         EnhancedSassInstruction {
             opcode: opcode_name.to_string(),
-            instruction_text: format!("/*{:04x}*/ {} R{}, R{}, R{} ;",
-                address, opcode_name, dest_reg, src1_reg, src2_reg),
+            instruction_text: format!(
+                "/*{:04x}*/ {} R{}, R{}, R{} ;",
+                address, opcode_name, dest_reg, src1_reg, src2_reg
+            ),
             address,
             size: 16,
             encoding_lo,
@@ -497,7 +518,11 @@ impl TextDisassemblyParser {
         let address = u64::from_str_radix(addr_str, 16).ok()?;
 
         // Get rest of line after address
-        let rest = line.get(addr_end + 2..)?.trim().trim_end_matches(';').trim();
+        let rest = line
+            .get(addr_end + 2..)?
+            .trim()
+            .trim_end_matches(';')
+            .trim();
 
         // Check for predicate (@P0, @!P1, etc.)
         let (predicate, instruction_part) = if rest.starts_with('@') {
@@ -522,7 +547,8 @@ impl TextDisassemblyParser {
         let modifiers: Vec<String> = opcode_parts[1..].iter().map(|s| s.to_string()).collect();
 
         // Parse data type from modifiers
-        let data_type = modifiers.iter()
+        let data_type = modifiers
+            .iter()
             .find_map(|m| SassDataType::from_modifier(m));
 
         // Parse operands
@@ -537,7 +563,8 @@ impl TextDisassemblyParser {
         };
 
         // Rest are source operands
-        let src_operands: Vec<SassOperand> = operand_strs[1..].iter()
+        let src_operands: Vec<SassOperand> = operand_strs[1..]
+            .iter()
             .filter_map(|s| SassOperand::parse(s))
             .collect();
 
@@ -596,7 +623,10 @@ impl TextDisassemblyParser {
                     current_file = file_part.to_string();
                 }
                 if let Some(line_part) = line.split("line ").nth(1) {
-                    if let Ok(line_num) = line_part.trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<u32>() {
+                    if let Ok(line_num) = line_part
+                        .trim_end_matches(|c: char| !c.is_ascii_digit())
+                        .parse::<u32>()
+                    {
                         current_line = line_num;
                     }
                 }
@@ -641,7 +671,9 @@ impl fmt::Display for DisassemblerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DisassemblerError::UnsupportedVersion(v) => write!(f, "Unsupported SM version: {}", v),
-            DisassemblerError::InvalidInstruction(addr) => write!(f, "Invalid instruction at 0x{:x}", addr),
+            DisassemblerError::InvalidInstruction(addr) => {
+                write!(f, "Invalid instruction at 0x{:x}", addr)
+            }
             DisassemblerError::ParseError(msg) => write!(f, "Parse error: {}", msg),
         }
     }
@@ -792,7 +824,10 @@ Function : test_kernel
         assert_eq!(instructions[1].ptx_line, Some(12));
         assert_eq!(instructions[2].ptx_line, Some(12));
 
-        assert_eq!(instructions[0].function_name, Some("test_kernel".to_string()));
+        assert_eq!(
+            instructions[0].function_name,
+            Some("test_kernel".to_string())
+        );
     }
 
     #[test]

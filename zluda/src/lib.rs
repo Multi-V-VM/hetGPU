@@ -30,6 +30,41 @@ pub extern "C" fn hetgpu_lz4_decompress(
     unsafe { lz4_sys::LZ4_decompress_safe(src, dst, compressed_size, dst_capacity) }
 }
 
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+#[no_mangle]
+pub unsafe extern "C" fn hetgpu_pacc_launch_named_kernel(
+    kernel_name: *const c_char,
+    grid_dim_x: ::core::ffi::c_uint,
+    grid_dim_y: ::core::ffi::c_uint,
+    grid_dim_z: ::core::ffi::c_uint,
+    block_dim_x: ::core::ffi::c_uint,
+    block_dim_y: ::core::ffi::c_uint,
+    block_dim_z: ::core::ffi::c_uint,
+    shared_mem_bytes: ::core::ffi::c_uint,
+    stream: *mut c_void,
+    kernel_params: *mut *mut c_void,
+    extra: *mut *mut c_void,
+) -> i32 {
+    crate::r#impl::function::launch_named_kernel_c(
+        kernel_name,
+        grid_dim_x,
+        grid_dim_y,
+        grid_dim_z,
+        block_dim_x,
+        block_dim_y,
+        block_dim_z,
+        shared_mem_bytes,
+        stream,
+        kernel_params,
+        extra,
+    )
+}
+
 // Note: cudaDriverGetVersion and cudaGetDeviceCount are now in cudart_shim.c
 // to get proper version tags (@@libcudart.so.12). The C implementations
 // call through to cuDriverGetVersion/cuDeviceGetCount defined below.
@@ -172,8 +207,7 @@ macro_rules! implemented {
             #[allow(improper_ctypes)]
             #[allow(improper_ctypes_definitions)]
             pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
-                cuda_base::cuda_normalize_fn!( crate::r#impl::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
-                Ok(())
+                cuda_base::cuda_normalize_fn!( crate::r#impl::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*)
             }
         )*
     };
@@ -187,8 +221,7 @@ macro_rules! implemented_in_function {
             #[allow(improper_ctypes)]
             #[allow(improper_ctypes_definitions)]
             pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
-                cuda_base::cuda_normalize_fn!( crate::r#impl::function::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
-                Ok(())
+                cuda_base::cuda_normalize_fn!( crate::r#impl::function::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*)
             }
         )*
     };
@@ -234,13 +267,98 @@ macro_rules! implemented_in_function {
     };
 }
 
+// PACC backend macros
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+macro_rules! implemented {
+    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* ) -> $ret_type:ty;)*) => {
+        $(
+            #[cfg_attr(not(test), no_mangle)]
+            #[allow(improper_ctypes)]
+            #[allow(improper_ctypes_definitions)]
+            pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
+                let backend_ret = cuda_base::cuda_normalize_fn!( crate::r#impl::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
+                crate::r#impl::into_cu_result(backend_ret)
+            }
+        )*
+    };
+}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+macro_rules! implemented_in_function {
+    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* ) -> $ret_type:ty;)*) => {
+        $(
+            #[cfg_attr(not(test), no_mangle)]
+            #[allow(improper_ctypes)]
+            #[allow(improper_ctypes_definitions)]
+            pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
+                let backend_ret = cuda_base::cuda_normalize_fn!( crate::r#impl::function::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
+                crate::r#impl::into_cu_result(backend_ret)
+            }
+        )*
+    };
+}
+
+// WebGPU backend macros - route CUDA entry points to the wasm WebGPU bridge.
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+macro_rules! implemented {
+    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* ) -> $ret_type:ty;)*) => {
+        $(
+            #[cfg_attr(not(test), no_mangle)]
+            #[allow(improper_ctypes)]
+            #[allow(improper_ctypes_definitions)]
+            pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
+                let backend_ret = cuda_base::cuda_normalize_fn!( crate::r#impl::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
+                crate::r#impl::into_cu_result(backend_ret)
+            }
+        )*
+    };
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+macro_rules! implemented_in_function {
+    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* ) -> $ret_type:ty;)*) => {
+        $(
+            #[cfg_attr(not(test), no_mangle)]
+            #[allow(improper_ctypes)]
+            #[allow(improper_ctypes_definitions)]
+            pub unsafe extern $abi fn $fn_name ( $( $arg_id : $arg_type),* ) -> $ret_type {
+                let backend_ret = cuda_base::cuda_normalize_fn!( crate::r#impl::function::$fn_name ) ($(crate::r#impl::FromCuda::from_cuda(&$arg_id)?),*);
+                crate::r#impl::into_cu_result(backend_ret)
+            }
+        )*
+    };
+}
+
 // NVIDIA backend macros - pass through to real libcuda.so
 #[cfg(all(
     feature = "nvidia",
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent"),
-    not(feature = "tmatmul")
+    not(feature = "tmatmul"),
+    not(feature = "webgpu")
 ))]
 macro_rules! implemented {
     ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* ) -> $ret_type:ty;)*) => {
@@ -260,7 +378,8 @@ macro_rules! implemented {
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent"),
-    not(feature = "tmatmul")
+    not(feature = "tmatmul"),
+    not(feature = "webgpu")
 ))]
 macro_rules! implemented_in_function {
     ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* ) -> $ret_type:ty;)*) => {
@@ -311,17 +430,12 @@ cuda_base::cuda_function_declarations!(
             cuMemcpyHtoD_v2,
             cuModuleGetFunction,
             cuModuleGetLoadingMode,
-            cuModuleLoad,
             cuModuleLoadData,
-            cuModuleLoadDataEx,
-            cuModuleLoadFatBinary,
             cuModuleUnload,
             cuPointerGetAttribute,
             cuMemGetAddressRange_v2,
             cuMemsetD32_v2,
             cuMemsetD8_v2,
-            cuOccupancyMaxActiveBlocksPerMultiprocessor,
-            cuOccupancyMaxActiveBlocksPerMultiprocessorWithFlags,
             // Provide custom implementations in r#impl::driver
             cuGetProcAddress,
             cuGetProcAddress_v2,

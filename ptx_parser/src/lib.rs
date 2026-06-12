@@ -343,6 +343,7 @@ fn reg_or_immediate<'a, 'input>(
     trace(
         "reg_or_immediate",
         alt((
+            Token::Underscore.value(ast::RegOrImmediate::Discard),
             immediate_value.map(|imm| ast::RegOrImmediate::Imm(imm)),
             ident.map(|id| ast::RegOrImmediate::Reg(id)),
         )),
@@ -419,21 +420,8 @@ pub fn parse_module_checked<'input>(
             .map_err(|err| PtxError::Parser(err.into_inner()))
     };
     match parse_result {
-        Ok(result) => {
-            // Treat parse as successful even with non-fatal errors/warnings.
-            // Only fail if there are truly fatal errors (Lexer/Parser errors).
-            let has_fatal = errors.iter().any(|e| matches!(e,
-                PtxError::ParseInt { .. }
-                | PtxError::ParseFloat { .. }
-                | PtxError::Lexer { .. }
-                | PtxError::Parser(_)
-            ));
-            if !has_fatal {
-                Ok(result)
-            } else {
-                Err(errors)
-            }
-        }
+        Ok(result) if errors.is_empty() => Ok(result),
+        Ok(_) => Err(errors),
         Err(err) => {
             errors.push(err);
             Err(errors)
@@ -458,9 +446,9 @@ pub fn parse_module_unchecked<'input>(text: &'input str) -> ast::Module<'input> 
             }
         }
     }
-    // Don't bail on lex errors — try to parse whatever valid tokens we got.
-    // PyTorch PTX may contain syntax our lexer doesn't understand, but the
-    // function bodies often lex fine and that's what we need.
+    if !errors.is_empty() {
+        return ast::Module::empty();
+    }
     let parse_result = {
         let state = PtxParserState::new(text, &mut errors);
         let parser = PtxParser {
@@ -508,7 +496,16 @@ fn version<'a, 'input>(stream: &mut PtxParser<'a, 'input>) -> PResult<(u8, u8)> 
 }
 
 fn target<'a, 'input>(stream: &mut PtxParser<'a, 'input>) -> PResult<(u32, Option<char>)> {
-    preceded(Token::DotTarget, ident.and_then(shader_model)).parse_next(stream)
+    (
+        Token::DotTarget,
+        ident.and_then(shader_model),
+        opt(preceded(
+            Token::Comma,
+            separated::<_, _, Vec<_>, _, _, _, _>(1.., ident, Token::Comma),
+        )),
+    )
+        .map(|(_, target, _)| target)
+        .parse_next(stream)
 }
 
 fn shader_model<'a>(stream: &mut &str) -> PResult<(u32, Option<char>)> {
@@ -558,29 +555,7 @@ fn directive<'a, 'input>(
     )
     .parse_next(stream)?;
     if errors != stream.state.errors.len() {
-        // Only discard directive for fatal errors.
-        // Todo/NonF32Ftz/Unsupported32Bit are non-fatal warnings —
-        // the instruction was successfully parsed, just not fully supported.
-        let has_fatal = stream.state.errors[errors..].iter().any(|e| !matches!(e,
-            PtxError::Todo
-            | PtxError::NonF32Ftz
-            | PtxError::Unsupported32Bit
-            | PtxError::UnknownFunction
-            | PtxError::MalformedCall
-            | PtxError::UnrecognizedStatement(_)
-            | PtxError::UnrecognizedDirective(_)
-            | PtxError::SyntaxError(_)
-            | PtxError::WrongType
-            | PtxError::WrongArrayType
-            | PtxError::WrongVectorElement
-            | PtxError::MultiArrayVariable
-            | PtxError::ZeroDimensionArray
-            | PtxError::ArrayInitalizer
-            | PtxError::NonExternPointer
-        ));
-        if has_fatal {
-            return Ok(None);
-        }
+        return Ok(None);
     }
     Ok(directive)
 }
@@ -1646,6 +1621,101 @@ fn call<'a, 'input>(
     Ok(ast::Instruction::Call { data, arguments })
 }
 
+fn parse_vset_compare_op(dot: &str) -> Option<VsetCompareOp> {
+    Some(match dot {
+        ".eq" => VsetCompareOp::Eq,
+        ".ne" => VsetCompareOp::Ne,
+        ".lt" => VsetCompareOp::Lt,
+        ".le" => VsetCompareOp::Le,
+        ".gt" => VsetCompareOp::Gt,
+        ".ge" => VsetCompareOp::Ge,
+        _ => return None,
+    })
+}
+
+fn parse_video_packed_lane_kind(t: ScalarType) -> Option<ast::VideoPackedLaneKind> {
+    Some(match t {
+        ScalarType::U32 => ast::VideoPackedLaneKind::Unsigned,
+        ScalarType::S32 => ast::VideoPackedLaneKind::Signed,
+        _ => return None,
+    })
+}
+
+fn vset4<'a, 'input>(
+    stream: &mut PtxParser<'a, 'input>,
+) -> PResult<ast::Instruction<ParsedOperandStr<'input>>> {
+    scalar_type
+        .verify(|t| *t == ScalarType::U32)
+        .parse_next(stream)?;
+    scalar_type
+        .verify(|t| *t == ScalarType::U32)
+        .parse_next(stream)?;
+    let cmp = any
+        .verify_map(|(t, _)| match t {
+            Token::DotEq => Some(VsetCompareOp::Eq),
+            Token::DotNe => Some(VsetCompareOp::Ne),
+            Token::DotLt => Some(VsetCompareOp::Lt),
+            Token::DotLe => Some(VsetCompareOp::Le),
+            Token::DotGt => Some(VsetCompareOp::Gt),
+            Token::DotGe => Some(VsetCompareOp::Ge),
+            Token::DotIdent(text) => parse_vset_compare_op(text),
+            _ => t.opcode_text().and_then(parse_vset_compare_op),
+        })
+        .parse_next(stream)?;
+    let dst = ParsedOperand::<&'input str>::parse.parse_next(stream)?;
+    Token::Comma.parse_next(stream)?;
+    let src1 = ParsedOperand::<&'input str>::parse.parse_next(stream)?;
+    Token::Comma.parse_next(stream)?;
+    let src2 = ParsedOperand::<&'input str>::parse.parse_next(stream)?;
+    Token::Comma.parse_next(stream)?;
+    let src3 = ParsedOperand::<&'input str>::parse.parse_next(stream)?;
+
+    Ok(ast::Instruction::VSet4 {
+        data: cmp,
+        arguments: VSet4Args {
+            dst,
+            src1,
+            src2,
+            src3,
+        },
+    })
+}
+
+fn vsub4<'a, 'input>(
+    stream: &mut PtxParser<'a, 'input>,
+) -> PResult<ast::Instruction<ParsedOperandStr<'input>>> {
+    let lane_kind = scalar_type
+        .verify_map(parse_video_packed_lane_kind)
+        .parse_next(stream)?;
+    scalar_type
+        .verify(|t| parse_video_packed_lane_kind(*t) == Some(lane_kind))
+        .parse_next(stream)?;
+    scalar_type
+        .verify(|t| parse_video_packed_lane_kind(*t) == Some(lane_kind))
+        .parse_next(stream)?;
+    let saturate = opt(Token::DotSat).parse_next(stream)?.is_some();
+    let dst = ParsedOperand::<&'input str>::parse.parse_next(stream)?;
+    Token::Comma.parse_next(stream)?;
+    let src1 = ParsedOperand::<&'input str>::parse.parse_next(stream)?;
+    Token::Comma.parse_next(stream)?;
+    let src2 = ParsedOperand::<&'input str>::parse.parse_next(stream)?;
+    Token::Comma.parse_next(stream)?;
+    let src3 = ParsedOperand::<&'input str>::parse.parse_next(stream)?;
+
+    Ok(ast::Instruction::VSub4 {
+        data: ast::Vsub4Details {
+            lane_kind,
+            saturate,
+        },
+        arguments: VSub4Args {
+            dst,
+            src1,
+            src2,
+            src3,
+        },
+    })
+}
+
 fn empty_call<'input>(
     uniform: bool,
     name: &'input str,
@@ -1788,6 +1858,8 @@ derive_parser!(
         Semicolon,
         #[token("@")]
         At,
+        #[token("_")]
+        Underscore,
         #[regex(r"[a-zA-Z][a-zA-Z0-9_$]*|[_$%][a-zA-Z0-9_$]+", |lex| lex.slice(), priority = 0)]
         Ident(&'input str),
         #[regex(r"\.[a-zA-Z][a-zA-Z0-9_$]*|\.[_$%][a-zA-Z0-9_$]+", |lex| lex.slice(), priority = 0)]
@@ -1884,6 +1956,22 @@ derive_parser!(
 
     #[derive(Debug, Copy, Clone, Display, PartialEq, Eq, Hash)]
     pub enum SetpBoolPostOp { }
+
+    #[derive(Debug, Copy, Clone, Display, PartialEq, Eq, Hash)]
+    pub enum VsetCompareOp {
+        #[display(".eq")]
+        Eq,
+        #[display(".ne")]
+        Ne,
+        #[display(".lt")]
+        Lt,
+        #[display(".le")]
+        Le,
+        #[display(".gt")]
+        Gt,
+        #[display(".ge")]
+        Ge,
+    }
 
     #[derive(Debug, Copy, Clone, Display, PartialEq, Eq, Hash)]
     pub enum AtomSemantics { }
@@ -2481,6 +2569,10 @@ derive_parser!(
                                   .f32, .f64,
                                   .f16, .f16x2, .bf16, .bf16x2 };
 
+    // Minimal SIMD quad-byte compare support for the exact default-selector forms seen in ggml PTX.
+    vset4 <= { vset4(stream) }
+    vsub4 <= { vsub4(stream) }
+
     // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-not
     not.type d, a => {
         ast::Instruction::Not {
@@ -2704,6 +2796,19 @@ derive_parser!(
     .type: ScalarType = { .s16, .s32, .s64 };
     ScalarType = { .f32, .f64, .f16, .f16x2, .bf16, .bf16x2 };
 
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#floating-point-instructions-copysign
+    copysign.type   d, a, b => {
+        ast::Instruction::Copysign {
+            data: type_,
+            arguments: ast::CopysignArgs {
+                dst: d,
+                src1: a,
+                src2: b,
+            }
+        }
+    }
+    .type: ScalarType = { .f32, .f64 };
+
     // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#integer-arithmetic-instructions-mad
     // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#floating-point-instructions-mad
     mad.mode.type  d, a, b, c => {
@@ -2711,7 +2816,9 @@ derive_parser!(
             data: ast::MadDetails::Integer {
                 type_,
                 control: mode.into(),
-                saturate: false
+                saturate: false,
+                carry_in: false,
+                carry_out: false
             },
             arguments: MadArgs { dst: d, src1: a, src2: b, src3: c }
         }
@@ -2720,13 +2827,43 @@ derive_parser!(
                                   .s16, .s32, .s64 };
     .mode: RawMulIntControl =   { .hi, .lo };
 
+    mad.mode.cc.u32  d, a, b, c => {
+        ast::Instruction::Mad {
+            data: ast::MadDetails::Integer {
+                type_: ScalarType::U32,
+                control: mode.into(),
+                saturate: false,
+                carry_in: false,
+                carry_out: true
+            },
+            arguments: MadArgs { dst: d, src1: a, src2: b, src3: c }
+        }
+    }
+    .mode: RawMulIntControl = { .hi, .lo };
+
+    madc.mode{.cc}.u32  d, a, b, c => {
+        ast::Instruction::Mad {
+            data: ast::MadDetails::Integer {
+                type_: ScalarType::U32,
+                control: mode.into(),
+                saturate: false,
+                carry_in: true,
+                carry_out: cc
+            },
+            arguments: MadArgs { dst: d, src1: a, src2: b, src3: c }
+        }
+    }
+    .mode: RawMulIntControl = { .hi, .lo };
+
     // The .wide suffix is supported only for 16-bit and 32-bit integer types.
     mad.wide.type  d, a, b, c => {
         ast::Instruction::Mad {
             data: ast::MadDetails::Integer {
                 type_,
                 control: wide.into(),
-                saturate: false
+                saturate: false,
+                carry_in: false,
+                carry_out: false
             },
             arguments: MadArgs { dst: d, src1: a, src2: b, src3: c  }
         }
@@ -2740,7 +2877,9 @@ derive_parser!(
             data: ast::MadDetails::Integer {
                 type_: s32,
                 control: hi.into(),
-                saturate: true
+                saturate: true,
+                carry_in: false,
+                carry_out: false
             },
             arguments: MadArgs { dst: d, src1: a, src2: b, src3: c  }
         }
@@ -3772,6 +3911,11 @@ derive_parser!(
     ret{.uni} => {
         Instruction::Ret { data: RetData { uniform: uni } }
     }
+    // PTX uses `exit;` for kernel termination in some nvcc-generated device code.
+    // The downstream IR path already models kernel termination as Ret.
+    exit => {
+        Instruction::Ret { data: RetData { uniform: false } }
+    }
 
     mul24.mode.type  d, a, b => {
         ast::Instruction::Mul24 {
@@ -4236,6 +4380,44 @@ mod tests {
     }
 
     #[test]
+    fn sm_80_debug_target_option() {
+        let text = ".target sm_80, debug";
+        let tokens = Token::lexer(text)
+            .map(|t| t.map(|t| (t, Span::default())))
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let mut errors = Vec::new();
+        let stream = super::PtxParser {
+            input: &tokens[..],
+            state: PtxParserState::new(text, &mut errors),
+        };
+        assert_eq!(target.parse(stream).unwrap(), (80, None));
+        assert_eq!(errors.len(), 0);
+    }
+
+    #[test]
+    fn module_with_debug_target_option() {
+        let text = "
+            .version 8.0
+            .target sm_80, debug
+            .address_size 64
+        ";
+        assert!(parse_module_checked(text).is_ok());
+    }
+
+    #[test]
+    fn module_with_ignored_debug_directives() {
+        let text = "
+            .version 8.0
+            .target sm_80, debug
+            .address_size 64
+            .file 1 \"kernel.cu\"
+            .section .debug_info { }
+        ";
+        assert!(parse_module_checked(text).is_ok());
+    }
+
+    #[test]
     fn sm_90ab() {
         let text = ".target sm_90ab";
         let tokens = Token::lexer(text)
@@ -4308,6 +4490,101 @@ mod tests {
             errors,
             vec![PtxError::UnrecognizedStatement("mov.u32 foo, {} {};")]
         );
+    }
+
+    #[test]
+    fn parse_exit_instruction() {
+        let text = "
+            .version 6.5
+            .target sm_80
+            .address_size 64
+
+            .visible .entry exits()
+            {
+                exit;
+            }";
+        assert!(parse_module_checked(text).is_ok());
+    }
+
+    #[test]
+    fn parse_mad_carry_integer_instructions() {
+        let text = "
+            .version 6.5
+            .target sm_80
+            .address_size 64
+
+            .visible .entry mad_carry()
+            {
+                .reg .u32 %r<5>;
+
+                mad.lo.cc.u32 %r1, %r2, %r3, %r4;
+                madc.hi.u32   %r4, %r2, %r3, 0;
+                ret;
+            }";
+        assert!(parse_module_checked(text).is_ok());
+    }
+
+    #[test]
+    fn parse_vset4_and_vsub4_video_instructions() {
+        let text = "
+            .version 6.5
+            .target sm_80
+            .address_size 64
+
+            .visible .entry video_ops()
+            {
+                .reg .u32 %r<5>;
+
+                vset4.u32.u32.ne %r1, %r2, %r3, %r4;
+                vsub4.u32.u32.u32 %r1, %r2, %r3, %r4;
+                vsub4.s32.s32.s32.sat %r1, %r2, %r3, %r4;
+                ret;
+            }";
+        let result = parse_module_checked(text);
+        if let Err(errors) = result {
+            panic!("{errors:?}");
+        }
+    }
+
+    #[test]
+    fn parse_copysign_instruction() {
+        let text = "
+            .version 6.5
+            .target sm_80
+            .address_size 64
+
+            .visible .entry copysign_ops()
+            {
+                .reg .f32 %f<4>;
+
+                copysign.f32 %f1, %f2, %f3;
+                ret;
+            }";
+        let result = parse_module_checked(text);
+        if let Err(errors) = result {
+            panic!("{errors:?}");
+        }
+    }
+
+    #[test]
+    fn parse_vector_pack_discard_operand() {
+        let text = "
+            .version 6.5
+            .target sm_80
+            .address_size 64
+
+            .visible .entry discard_pack()
+            {
+                .reg .u16 %rs<2>;
+                .reg .u32 %r<2>;
+
+                mov.b32 {_, %rs1}, %r1;
+                ret;
+            }";
+        let result = parse_module_checked(text);
+        if let Err(errors) = result {
+            panic!("{errors:?}");
+        }
     }
 
     #[test]

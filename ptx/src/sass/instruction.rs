@@ -18,79 +18,79 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SassOpcodeClass {
     // Arithmetic - Integer
-    IntegerArithmetic,      // IADD, IADD3, IMAD, IMUL, IABS, INEG, ...
-    IntegerComparison,      // ISETP, ICMP, ISET, ...
-    IntegerLogical,         // LOP3, AND, OR, XOR, NOT, SHL, SHR, ...
-    IntegerConversion,      // I2I, I2F, F2I, ...
+    IntegerArithmetic, // IADD, IADD3, IMAD, IMUL, IABS, INEG, ...
+    IntegerComparison, // ISETP, ICMP, ISET, ...
+    IntegerLogical,    // LOP3, AND, OR, XOR, NOT, SHL, SHR, ...
+    IntegerConversion, // I2I, I2F, F2I, ...
 
     // Arithmetic - Floating Point
-    FloatArithmetic,        // FADD, FMUL, FFMA, FMNMX, FABS, FNEG, ...
-    FloatComparison,        // FSETP, FCMP, FSET, ...
-    FloatTranscendental,    // MUFU (sin, cos, ex2, lg2, rcp, rsq, ...)
-    FloatConversion,        // F2F, ...
+    FloatArithmetic,     // FADD, FMUL, FFMA, FMNMX, FABS, FNEG, ...
+    FloatComparison,     // FSETP, FCMP, FSET, ...
+    FloatTranscendental, // MUFU (sin, cos, ex2, lg2, rcp, rsq, ...)
+    FloatConversion,     // F2F, ...
 
     // Arithmetic - Double Precision
-    DoubleArithmetic,       // DADD, DMUL, DFMA, ...
+    DoubleArithmetic, // DADD, DMUL, DFMA, ...
 
     // Arithmetic - Half Precision
-    HalfArithmetic,         // HADD2, HMUL2, HFMA2, ...
+    HalfArithmetic, // HADD2, HMUL2, HFMA2, ...
 
     // Memory - Global
-    GlobalLoad,             // LDG, LDG.E, LDG.U, ...
-    GlobalStore,            // STG, STG.E, ...
-    GlobalAtomic,           // ATOMG, RED, ...
+    GlobalLoad,   // LDG, LDG.E, LDG.U, ...
+    GlobalStore,  // STG, STG.E, ...
+    GlobalAtomic, // ATOMG, RED, ...
 
     // Memory - Shared
-    SharedLoad,             // LDS, LDS.U, ...
-    SharedStore,            // STS, ...
-    SharedAtomic,           // ATOMS, ...
+    SharedLoad,   // LDS, LDS.U, ...
+    SharedStore,  // STS, ...
+    SharedAtomic, // ATOMS, ...
 
     // Memory - Local
-    LocalLoad,              // LDL, ...
-    LocalStore,             // STL, ...
+    LocalLoad,  // LDL, ...
+    LocalStore, // STL, ...
 
     // Memory - Constant
-    ConstantLoad,           // LDC, ...
+    ConstantLoad, // LDC, ...
 
     // Memory - Texture/Surface
-    TextureFetch,           // TEX, TLD, TLD4, ...
-    TextureQuery,           // TXQ, ...
-    SurfaceLoad,            // SULD, ...
-    SurfaceStore,           // SUST, ...
-    SurfaceAtomic,          // SUATOM, ...
+    TextureFetch,  // TEX, TLD, TLD4, ...
+    TextureQuery,  // TXQ, ...
+    SurfaceLoad,   // SULD, ...
+    SurfaceStore,  // SUST, ...
+    SurfaceAtomic, // SUATOM, ...
 
     // Control Flow
-    Branch,                 // BRA, JMP, ...
-    ConditionalBranch,      // @P BRA, BRX, ...
-    Call,                   // CAL, JCAL, ...
-    Return,                 // RET, ...
-    Exit,                   // EXIT, ...
+    Branch,            // BRA, JMP, ...
+    ConditionalBranch, // @P BRA, BRX, ...
+    Call,              // CAL, JCAL, ...
+    Return,            // RET, ...
+    Exit,              // EXIT, ...
 
     // Synchronization
-    Barrier,                // BAR, DEPBAR, ...
-    MemoryBarrier,          // MEMBAR, ...
+    Barrier,       // BAR, DEPBAR, ...
+    MemoryBarrier, // MEMBAR, ...
 
     // Special Registers
-    SpecialRegRead,         // S2R (read %tid, %ctaid, %nctaid, %laneid, ...)
-    SpecialRegWrite,        // not common
+    SpecialRegRead,  // S2R (read %tid, %ctaid, %nctaid, %laneid, ...)
+    SpecialRegWrite, // not common
 
     // Predicate Operations
-    PredicateSet,           // PSETP, PLOP3, ...
+    PredicateSet, // PSETP, PLOP3, ...
 
     // Data Movement
-    Move,                   // MOV, MOV32I, PRMT, SHFL, ...
-    Shuffle,                // SHFL, ...
+    Move,    // MOV, MOV32I, PRMT, SHFL, ...
+    Shuffle, // SHFL, ...
 
     // Uniform Operations (SM 7.0+)
-    UniformArithmetic,      // UIADD, UFLO, etc.
-    UniformDataPath,        // ULDC, ULEA, etc.
+    UniformArithmetic, // UIADD, UFLO, etc.
+    UniformDataPath,   // ULDC, ULEA, etc.
 
     // Tensor Core (SM 7.0+)
-    TensorCore,             // HMMA, IMMA, BMMA, ...
+    TensorCore, // HMMA, IMMA, BMMA, ...
 
     // Miscellaneous
-    NoOperation,            // NOP
-    ControlCode,            // Scheduling/control instructions
+    NoOperation, // NOP
+    ControlCode, // Scheduling/control instructions
     Unknown,
 }
 
@@ -149,7 +149,7 @@ pub enum SassMemorySpace {
     Constant,
     Texture,
     Surface,
-    Generic,  // Address could be any space
+    Generic, // Address could be any space
 }
 
 impl fmt::Display for SassMemorySpace {
@@ -188,10 +188,10 @@ pub enum SassDataType {
     F64,
 
     // Special
-    BF16,       // Brain Float 16
-    TF32,       // TensorFloat 32
-    FP8E4M3,    // 8-bit float (E4M3)
-    FP8E5M2,    // 8-bit float (E5M2)
+    BF16,    // Brain Float 16
+    TF32,    // TensorFloat 32
+    FP8E4M3, // 8-bit float (E4M3)
+    FP8E5M2, // 8-bit float (E5M2)
 
     // Bit types (untyped)
     B8,
@@ -210,9 +210,21 @@ impl SassDataType {
     /// Get the size in bits
     pub fn size_bits(&self) -> u32 {
         match self {
-            SassDataType::U8 | SassDataType::S8 | SassDataType::B8 | SassDataType::FP8E4M3 | SassDataType::FP8E5M2 => 8,
-            SassDataType::U16 | SassDataType::S16 | SassDataType::F16 | SassDataType::BF16 | SassDataType::B16 => 16,
-            SassDataType::U32 | SassDataType::S32 | SassDataType::F32 | SassDataType::TF32 | SassDataType::B32 => 32,
+            SassDataType::U8
+            | SassDataType::S8
+            | SassDataType::B8
+            | SassDataType::FP8E4M3
+            | SassDataType::FP8E5M2 => 8,
+            SassDataType::U16
+            | SassDataType::S16
+            | SassDataType::F16
+            | SassDataType::BF16
+            | SassDataType::B16 => 16,
+            SassDataType::U32
+            | SassDataType::S32
+            | SassDataType::F32
+            | SassDataType::TF32
+            | SassDataType::B32 => 32,
             SassDataType::U64 | SassDataType::S64 | SassDataType::F64 | SassDataType::B64 => 64,
             SassDataType::U128 | SassDataType::B128 => 128,
             SassDataType::Pred => 1,
@@ -372,7 +384,7 @@ impl SassRegister {
             "UR" => "%ur",
             "P" => "%p",
             "UP" => "%up",
-            "F" => "%f",  // Some SASS uses F for float regs
+            "F" => "%f", // Some SASS uses F for float regs
             _ => "%r",
         };
 
@@ -403,10 +415,7 @@ pub enum SassOperand {
     FloatImmediate(f64),
 
     /// Constant bank reference: c[bank][offset]
-    ConstantBank {
-        bank: u32,
-        offset: u32,
-    },
+    ConstantBank { bank: u32, offset: u32 },
 
     /// Memory reference: [Rbase + offset]
     Memory {
@@ -450,7 +459,10 @@ impl SassOperand {
             let negated = s.starts_with("@!");
             let reg_str = if negated { &s[2..] } else { &s[1..] };
             let reg = SassRegister::parse(reg_str)?;
-            return Some(SassOperand::Predicate { register: reg, negated });
+            return Some(SassOperand::Predicate {
+                register: reg,
+                negated,
+            });
         }
 
         // Constant bank: c[0x0][0x0]
@@ -529,9 +541,7 @@ impl SassOperand {
             SassOperand::Barrier(num) => format!("bar{}", num),
             SassOperand::SpecialRegister(name) => {
                 // Convert SR_TID.X to %tid.x
-                let ptx_name = name.strip_prefix("SR_")
-                    .unwrap_or(name)
-                    .to_lowercase();
+                let ptx_name = name.strip_prefix("SR_").unwrap_or(name).to_lowercase();
                 format!("%{}", ptx_name)
             }
             SassOperand::Label(name) => name.clone(),
@@ -678,9 +688,7 @@ pub enum PtxTemplate {
     NoEquivalent,
 
     /// Special handling required
-    Special {
-        handler: String,
-    },
+    Special { handler: String },
 }
 
 /// Confidence level for PTX mapping
@@ -814,20 +822,30 @@ impl EnhancedSassInstruction {
     /// Generate PTX equivalent instruction
     pub fn generate_ptx(&self) -> Option<String> {
         match &self.ptx_template {
-            PtxTemplate::Direct { opcode, default_type } => {
-                let type_suffix = self.data_type
+            PtxTemplate::Direct {
+                opcode,
+                default_type,
+            } => {
+                let type_suffix = self
+                    .data_type
                     .map(|dt| dt.to_ptx_suffix())
                     .or(default_type.as_deref())
                     .unwrap_or("b32");
 
-                let pred = self.predicate.as_ref()
+                let pred = self
+                    .predicate
+                    .as_ref()
                     .map(|p| format!("{} ", p.to_ptx_operand()))
                     .unwrap_or_default();
 
-                let dests: Vec<String> = self.dest_operands.iter()
+                let dests: Vec<String> = self
+                    .dest_operands
+                    .iter()
                     .map(|o| o.to_ptx_operand())
                     .collect();
-                let srcs: Vec<String> = self.src_operands.iter()
+                let srcs: Vec<String> = self
+                    .src_operands
+                    .iter()
                     .map(|o| o.to_ptx_operand())
                     .collect();
 
@@ -839,7 +857,10 @@ impl EnhancedSassInstruction {
                     format!("{}, {}", dests.join(", "), srcs.join(", "))
                 };
 
-                Some(format!("{}{}.{} {};", pred, opcode, type_suffix, all_operands))
+                Some(format!(
+                    "{}{}.{} {};",
+                    pred, opcode, type_suffix, all_operands
+                ))
             }
             PtxTemplate::Composite { patterns } => {
                 // For composite instructions, return the first pattern
@@ -879,10 +900,10 @@ impl EnhancedSassInstruction {
     /// Get the latency estimate for this instruction
     pub fn estimated_latency(&self) -> u32 {
         match self.opcode_class {
-            SassOpcodeClass::GlobalLoad => 200,  // High latency
-            SassOpcodeClass::SharedLoad => 20,   // Medium latency
+            SassOpcodeClass::GlobalLoad => 200, // High latency
+            SassOpcodeClass::SharedLoad => 20,  // Medium latency
             SassOpcodeClass::LocalLoad => 50,
-            SassOpcodeClass::ConstantLoad => 4,  // Cached
+            SassOpcodeClass::ConstantLoad => 4, // Cached
             SassOpcodeClass::GlobalStore | SassOpcodeClass::SharedStore => 20,
             SassOpcodeClass::FloatTranscendental => 20, // MUFU
             SassOpcodeClass::DoubleArithmetic => 8,
@@ -910,7 +931,9 @@ impl fmt::Display for EnhancedSassInstruction {
         if !self.dest_operands.is_empty() || !self.src_operands.is_empty() {
             write!(f, " ")?;
 
-            let all_operands: Vec<String> = self.dest_operands.iter()
+            let all_operands: Vec<String> = self
+                .dest_operands
+                .iter()
                 .chain(self.src_operands.iter())
                 .map(|o| o.to_ptx_operand())
                 .collect();
@@ -932,23 +955,22 @@ pub fn classify_opcode(opcode: &str) -> SassOpcodeClass {
 
     match op.as_str() {
         // Integer Arithmetic
-        "IADD" | "IADD3" | "IADD32I" | "IMAD" | "IMAD32I" | "IMADSP" |
-        "IMUL" | "IMUL32I" | "IABS" | "INEG" | "IMNMX" |
-        "LEA" | "LEA.HI" => SassOpcodeClass::IntegerArithmetic,
+        "IADD" | "IADD3" | "IADD32I" | "IMAD" | "IMAD32I" | "IMADSP" | "IMUL" | "IMUL32I"
+        | "IABS" | "INEG" | "IMNMX" | "LEA" | "LEA.HI" => SassOpcodeClass::IntegerArithmetic,
 
         // Integer Comparison
         "ISETP" | "ISET" | "ICMP" => SassOpcodeClass::IntegerComparison,
 
         // Integer Logical
-        "LOP" | "LOP3" | "LOP32I" | "AND" | "OR" | "XOR" | "NOT" |
-        "SHL" | "SHR" | "SHF" | "BFE" | "BFI" | "FLO" | "POPC" => SassOpcodeClass::IntegerLogical,
+        "LOP" | "LOP3" | "LOP32I" | "AND" | "OR" | "XOR" | "NOT" | "SHL" | "SHR" | "SHF"
+        | "BFE" | "BFI" | "FLO" | "POPC" => SassOpcodeClass::IntegerLogical,
 
         // Integer Conversion
         "I2I" | "I2F" | "F2I" => SassOpcodeClass::IntegerConversion,
 
         // Floating Point Arithmetic
-        "FADD" | "FADD32I" | "FMUL" | "FMUL32I" | "FFMA" |
-        "FMNMX" | "FABS" | "FNEG" | "FSWZADD" => SassOpcodeClass::FloatArithmetic,
+        "FADD" | "FADD32I" | "FMUL" | "FMUL32I" | "FFMA" | "FMNMX" | "FABS" | "FNEG"
+        | "FSWZADD" => SassOpcodeClass::FloatArithmetic,
 
         // Floating Point Comparison
         "FSETP" | "FSET" | "FCMP" => SassOpcodeClass::FloatComparison,
@@ -1013,8 +1035,8 @@ pub fn classify_opcode(opcode: &str) -> SassOpcodeClass {
         "SHFL" => SassOpcodeClass::Shuffle,
 
         // Uniform Operations
-        "UIADD3" | "UIMAD" | "UFLO" | "UPOPC" |
-        "ULDC" | "ULEA" | "UMOV" | "UPRMT" | "USEL" | "USETP" => SassOpcodeClass::UniformDataPath,
+        "UIADD3" | "UIMAD" | "UFLO" | "UPOPC" | "ULDC" | "ULEA" | "UMOV" | "UPRMT" | "USEL"
+        | "USETP" => SassOpcodeClass::UniformDataPath,
 
         // Tensor Core
         "HMMA" | "IMMA" | "BMMA" | "DMMA" => SassOpcodeClass::TensorCore,
@@ -1032,95 +1054,268 @@ pub fn get_ptx_template(opcode: &str) -> PtxTemplate {
 
     match op.as_str() {
         // Integer Arithmetic
-        "IADD" | "IADD32I" => PtxTemplate::Direct { opcode: "add".to_string(), default_type: Some("s32".to_string()) },
-        "IADD3" => PtxTemplate::Special { handler: "iadd3_to_add".to_string() },
-        "IMAD" | "IMAD32I" => PtxTemplate::Direct { opcode: "mad.lo".to_string(), default_type: Some("s32".to_string()) },
-        "IMUL" | "IMUL32I" => PtxTemplate::Direct { opcode: "mul.lo".to_string(), default_type: Some("s32".to_string()) },
-        "IABS" => PtxTemplate::Direct { opcode: "abs".to_string(), default_type: Some("s32".to_string()) },
-        "INEG" => PtxTemplate::Direct { opcode: "neg".to_string(), default_type: Some("s32".to_string()) },
-        "IMNMX" => PtxTemplate::Direct { opcode: "min".to_string(), default_type: Some("s32".to_string()) }, // or max depending on flag
+        "IADD" | "IADD32I" => PtxTemplate::Direct {
+            opcode: "add".to_string(),
+            default_type: Some("s32".to_string()),
+        },
+        "IADD3" => PtxTemplate::Special {
+            handler: "iadd3_to_add".to_string(),
+        },
+        "IMAD" | "IMAD32I" => PtxTemplate::Direct {
+            opcode: "mad.lo".to_string(),
+            default_type: Some("s32".to_string()),
+        },
+        "IMUL" | "IMUL32I" => PtxTemplate::Direct {
+            opcode: "mul.lo".to_string(),
+            default_type: Some("s32".to_string()),
+        },
+        "IABS" => PtxTemplate::Direct {
+            opcode: "abs".to_string(),
+            default_type: Some("s32".to_string()),
+        },
+        "INEG" => PtxTemplate::Direct {
+            opcode: "neg".to_string(),
+            default_type: Some("s32".to_string()),
+        },
+        "IMNMX" => PtxTemplate::Direct {
+            opcode: "min".to_string(),
+            default_type: Some("s32".to_string()),
+        }, // or max depending on flag
 
         // Integer Comparison
-        "ISETP" => PtxTemplate::Direct { opcode: "setp".to_string(), default_type: Some("s32".to_string()) },
-        "ISET" => PtxTemplate::Direct { opcode: "set".to_string(), default_type: Some("s32".to_string()) },
+        "ISETP" => PtxTemplate::Direct {
+            opcode: "setp".to_string(),
+            default_type: Some("s32".to_string()),
+        },
+        "ISET" => PtxTemplate::Direct {
+            opcode: "set".to_string(),
+            default_type: Some("s32".to_string()),
+        },
 
         // Integer Logical
-        "LOP" | "LOP3" | "LOP32I" => PtxTemplate::Special { handler: "lop3_to_logic".to_string() },
-        "SHL" => PtxTemplate::Direct { opcode: "shl".to_string(), default_type: Some("b32".to_string()) },
-        "SHR" => PtxTemplate::Direct { opcode: "shr".to_string(), default_type: Some("b32".to_string()) },
-        "AND" => PtxTemplate::Direct { opcode: "and".to_string(), default_type: Some("b32".to_string()) },
-        "OR" => PtxTemplate::Direct { opcode: "or".to_string(), default_type: Some("b32".to_string()) },
-        "XOR" => PtxTemplate::Direct { opcode: "xor".to_string(), default_type: Some("b32".to_string()) },
-        "NOT" => PtxTemplate::Direct { opcode: "not".to_string(), default_type: Some("b32".to_string()) },
-        "BFE" => PtxTemplate::Direct { opcode: "bfe".to_string(), default_type: Some("u32".to_string()) },
-        "BFI" => PtxTemplate::Direct { opcode: "bfi".to_string(), default_type: Some("b32".to_string()) },
-        "FLO" => PtxTemplate::Direct { opcode: "bfind".to_string(), default_type: Some("u32".to_string()) },
-        "POPC" => PtxTemplate::Direct { opcode: "popc".to_string(), default_type: Some("b32".to_string()) },
+        "LOP" | "LOP3" | "LOP32I" => PtxTemplate::Special {
+            handler: "lop3_to_logic".to_string(),
+        },
+        "SHL" => PtxTemplate::Direct {
+            opcode: "shl".to_string(),
+            default_type: Some("b32".to_string()),
+        },
+        "SHR" => PtxTemplate::Direct {
+            opcode: "shr".to_string(),
+            default_type: Some("b32".to_string()),
+        },
+        "AND" => PtxTemplate::Direct {
+            opcode: "and".to_string(),
+            default_type: Some("b32".to_string()),
+        },
+        "OR" => PtxTemplate::Direct {
+            opcode: "or".to_string(),
+            default_type: Some("b32".to_string()),
+        },
+        "XOR" => PtxTemplate::Direct {
+            opcode: "xor".to_string(),
+            default_type: Some("b32".to_string()),
+        },
+        "NOT" => PtxTemplate::Direct {
+            opcode: "not".to_string(),
+            default_type: Some("b32".to_string()),
+        },
+        "BFE" => PtxTemplate::Direct {
+            opcode: "bfe".to_string(),
+            default_type: Some("u32".to_string()),
+        },
+        "BFI" => PtxTemplate::Direct {
+            opcode: "bfi".to_string(),
+            default_type: Some("b32".to_string()),
+        },
+        "FLO" => PtxTemplate::Direct {
+            opcode: "bfind".to_string(),
+            default_type: Some("u32".to_string()),
+        },
+        "POPC" => PtxTemplate::Direct {
+            opcode: "popc".to_string(),
+            default_type: Some("b32".to_string()),
+        },
 
         // Floating Point Arithmetic
-        "FADD" | "FADD32I" => PtxTemplate::Direct { opcode: "add".to_string(), default_type: Some("f32".to_string()) },
-        "FMUL" | "FMUL32I" => PtxTemplate::Direct { opcode: "mul".to_string(), default_type: Some("f32".to_string()) },
-        "FFMA" => PtxTemplate::Direct { opcode: "fma.rn".to_string(), default_type: Some("f32".to_string()) },
-        "FMNMX" => PtxTemplate::Direct { opcode: "min".to_string(), default_type: Some("f32".to_string()) },
-        "FABS" => PtxTemplate::Direct { opcode: "abs".to_string(), default_type: Some("f32".to_string()) },
-        "FNEG" => PtxTemplate::Direct { opcode: "neg".to_string(), default_type: Some("f32".to_string()) },
+        "FADD" | "FADD32I" => PtxTemplate::Direct {
+            opcode: "add".to_string(),
+            default_type: Some("f32".to_string()),
+        },
+        "FMUL" | "FMUL32I" => PtxTemplate::Direct {
+            opcode: "mul".to_string(),
+            default_type: Some("f32".to_string()),
+        },
+        "FFMA" => PtxTemplate::Direct {
+            opcode: "fma.rn".to_string(),
+            default_type: Some("f32".to_string()),
+        },
+        "FMNMX" => PtxTemplate::Direct {
+            opcode: "min".to_string(),
+            default_type: Some("f32".to_string()),
+        },
+        "FABS" => PtxTemplate::Direct {
+            opcode: "abs".to_string(),
+            default_type: Some("f32".to_string()),
+        },
+        "FNEG" => PtxTemplate::Direct {
+            opcode: "neg".to_string(),
+            default_type: Some("f32".to_string()),
+        },
 
         // Floating Point Comparison
-        "FSETP" => PtxTemplate::Direct { opcode: "setp".to_string(), default_type: Some("f32".to_string()) },
-        "FSET" => PtxTemplate::Direct { opcode: "set".to_string(), default_type: Some("f32".to_string()) },
+        "FSETP" => PtxTemplate::Direct {
+            opcode: "setp".to_string(),
+            default_type: Some("f32".to_string()),
+        },
+        "FSET" => PtxTemplate::Direct {
+            opcode: "set".to_string(),
+            default_type: Some("f32".to_string()),
+        },
 
         // Transcendental
-        "MUFU" => PtxTemplate::Special { handler: "mufu_to_transcendental".to_string() },
+        "MUFU" => PtxTemplate::Special {
+            handler: "mufu_to_transcendental".to_string(),
+        },
 
         // Conversions
-        "I2I" => PtxTemplate::Direct { opcode: "cvt".to_string(), default_type: None },
-        "I2F" => PtxTemplate::Direct { opcode: "cvt".to_string(), default_type: None },
-        "F2I" => PtxTemplate::Direct { opcode: "cvt".to_string(), default_type: None },
-        "F2F" => PtxTemplate::Direct { opcode: "cvt".to_string(), default_type: None },
+        "I2I" => PtxTemplate::Direct {
+            opcode: "cvt".to_string(),
+            default_type: None,
+        },
+        "I2F" => PtxTemplate::Direct {
+            opcode: "cvt".to_string(),
+            default_type: None,
+        },
+        "F2I" => PtxTemplate::Direct {
+            opcode: "cvt".to_string(),
+            default_type: None,
+        },
+        "F2F" => PtxTemplate::Direct {
+            opcode: "cvt".to_string(),
+            default_type: None,
+        },
 
         // Double Precision
-        "DADD" => PtxTemplate::Direct { opcode: "add".to_string(), default_type: Some("f64".to_string()) },
-        "DMUL" => PtxTemplate::Direct { opcode: "mul".to_string(), default_type: Some("f64".to_string()) },
-        "DFMA" => PtxTemplate::Direct { opcode: "fma.rn".to_string(), default_type: Some("f64".to_string()) },
+        "DADD" => PtxTemplate::Direct {
+            opcode: "add".to_string(),
+            default_type: Some("f64".to_string()),
+        },
+        "DMUL" => PtxTemplate::Direct {
+            opcode: "mul".to_string(),
+            default_type: Some("f64".to_string()),
+        },
+        "DFMA" => PtxTemplate::Direct {
+            opcode: "fma.rn".to_string(),
+            default_type: Some("f64".to_string()),
+        },
 
         // Memory Operations
-        "LDG" => PtxTemplate::Direct { opcode: "ld.global".to_string(), default_type: None },
-        "STG" => PtxTemplate::Direct { opcode: "st.global".to_string(), default_type: None },
-        "LDS" => PtxTemplate::Direct { opcode: "ld.shared".to_string(), default_type: None },
-        "STS" => PtxTemplate::Direct { opcode: "st.shared".to_string(), default_type: None },
-        "LDL" => PtxTemplate::Direct { opcode: "ld.local".to_string(), default_type: None },
-        "STL" => PtxTemplate::Direct { opcode: "st.local".to_string(), default_type: None },
-        "LDC" => PtxTemplate::Direct { opcode: "ld.const".to_string(), default_type: None },
+        "LDG" => PtxTemplate::Direct {
+            opcode: "ld.global".to_string(),
+            default_type: None,
+        },
+        "STG" => PtxTemplate::Direct {
+            opcode: "st.global".to_string(),
+            default_type: None,
+        },
+        "LDS" => PtxTemplate::Direct {
+            opcode: "ld.shared".to_string(),
+            default_type: None,
+        },
+        "STS" => PtxTemplate::Direct {
+            opcode: "st.shared".to_string(),
+            default_type: None,
+        },
+        "LDL" => PtxTemplate::Direct {
+            opcode: "ld.local".to_string(),
+            default_type: None,
+        },
+        "STL" => PtxTemplate::Direct {
+            opcode: "st.local".to_string(),
+            default_type: None,
+        },
+        "LDC" => PtxTemplate::Direct {
+            opcode: "ld.const".to_string(),
+            default_type: None,
+        },
 
         // Atomics
-        "ATOMG" => PtxTemplate::Direct { opcode: "atom.global".to_string(), default_type: None },
-        "ATOMS" => PtxTemplate::Direct { opcode: "atom.shared".to_string(), default_type: None },
-        "RED" => PtxTemplate::Direct { opcode: "red.global".to_string(), default_type: None },
+        "ATOMG" => PtxTemplate::Direct {
+            opcode: "atom.global".to_string(),
+            default_type: None,
+        },
+        "ATOMS" => PtxTemplate::Direct {
+            opcode: "atom.shared".to_string(),
+            default_type: None,
+        },
+        "RED" => PtxTemplate::Direct {
+            opcode: "red.global".to_string(),
+            default_type: None,
+        },
 
         // Control Flow
-        "BRA" | "JMP" => PtxTemplate::Direct { opcode: "bra".to_string(), default_type: None },
-        "CAL" | "JCAL" => PtxTemplate::Direct { opcode: "call".to_string(), default_type: None },
-        "RET" => PtxTemplate::Direct { opcode: "ret".to_string(), default_type: None },
-        "EXIT" => PtxTemplate::Direct { opcode: "exit".to_string(), default_type: None },
+        "BRA" | "JMP" => PtxTemplate::Direct {
+            opcode: "bra".to_string(),
+            default_type: None,
+        },
+        "CAL" | "JCAL" => PtxTemplate::Direct {
+            opcode: "call".to_string(),
+            default_type: None,
+        },
+        "RET" => PtxTemplate::Direct {
+            opcode: "ret".to_string(),
+            default_type: None,
+        },
+        "EXIT" => PtxTemplate::Direct {
+            opcode: "exit".to_string(),
+            default_type: None,
+        },
 
         // Synchronization
-        "BAR" => PtxTemplate::Direct { opcode: "bar.sync".to_string(), default_type: None },
-        "MEMBAR" => PtxTemplate::Direct { opcode: "membar".to_string(), default_type: None },
+        "BAR" => PtxTemplate::Direct {
+            opcode: "bar.sync".to_string(),
+            default_type: None,
+        },
+        "MEMBAR" => PtxTemplate::Direct {
+            opcode: "membar".to_string(),
+            default_type: None,
+        },
 
         // Special Registers
-        "S2R" => PtxTemplate::Direct { opcode: "mov".to_string(), default_type: Some("u32".to_string()) },
+        "S2R" => PtxTemplate::Direct {
+            opcode: "mov".to_string(),
+            default_type: Some("u32".to_string()),
+        },
 
         // Data Movement
-        "MOV" | "MOV32I" => PtxTemplate::Direct { opcode: "mov".to_string(), default_type: Some("b32".to_string()) },
-        "SEL" => PtxTemplate::Direct { opcode: "selp".to_string(), default_type: Some("b32".to_string()) },
-        "PRMT" => PtxTemplate::Direct { opcode: "prmt".to_string(), default_type: Some("b32".to_string()) },
-        "SHFL" => PtxTemplate::Direct { opcode: "shfl".to_string(), default_type: None },
+        "MOV" | "MOV32I" => PtxTemplate::Direct {
+            opcode: "mov".to_string(),
+            default_type: Some("b32".to_string()),
+        },
+        "SEL" => PtxTemplate::Direct {
+            opcode: "selp".to_string(),
+            default_type: Some("b32".to_string()),
+        },
+        "PRMT" => PtxTemplate::Direct {
+            opcode: "prmt".to_string(),
+            default_type: Some("b32".to_string()),
+        },
+        "SHFL" => PtxTemplate::Direct {
+            opcode: "shfl".to_string(),
+            default_type: None,
+        },
 
         // Predicates
-        "PSETP" => PtxTemplate::Direct { opcode: "setp".to_string(), default_type: Some("pred".to_string()) },
+        "PSETP" => PtxTemplate::Direct {
+            opcode: "setp".to_string(),
+            default_type: Some("pred".to_string()),
+        },
 
         // Tensor Core
-        "HMMA" | "IMMA" | "BMMA" | "DMMA" => PtxTemplate::Special { handler: "mma_to_wmma".to_string() },
+        "HMMA" | "IMMA" | "BMMA" | "DMMA" => PtxTemplate::Special {
+            handler: "mma_to_wmma".to_string(),
+        },
 
         // No-op
         "NOP" => PtxTemplate::NoEquivalent,
@@ -1225,7 +1420,10 @@ mod tests {
         assert_eq!(SassDataType::from_modifier(".F32"), Some(SassDataType::F32));
         assert_eq!(SassDataType::from_modifier(".U64"), Some(SassDataType::U64));
         assert_eq!(SassDataType::from_modifier(".S16"), Some(SassDataType::S16));
-        assert_eq!(SassDataType::from_modifier("BF16"), Some(SassDataType::BF16));
+        assert_eq!(
+            SassDataType::from_modifier("BF16"),
+            Some(SassDataType::BF16)
+        );
     }
 
     #[test]
@@ -1240,9 +1438,12 @@ mod tests {
     fn test_enhanced_instruction() {
         let mut inst = EnhancedSassInstruction::new("FADD".to_string(), 0x100);
         inst.data_type = Some(SassDataType::F32);
-        inst.dest_operands.push(SassOperand::Register(SassRegister::new("R", 0)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 1)));
-        inst.src_operands.push(SassOperand::Register(SassRegister::new("R", 2)));
+        inst.dest_operands
+            .push(SassOperand::Register(SassRegister::new("R", 0)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 1)));
+        inst.src_operands
+            .push(SassOperand::Register(SassRegister::new("R", 2)));
 
         let ptx = inst.generate_ptx();
         assert!(ptx.is_some());

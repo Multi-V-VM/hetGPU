@@ -16,7 +16,6 @@ ze_runtime_sys = { path = "../ext/ze_runtime-sys" }
 [features]
 default = ["intel"]
 intel = []
-amd = []
 tenstorrent = []
 gemmini = []
 nvidia = []

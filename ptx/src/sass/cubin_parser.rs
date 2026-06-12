@@ -8,9 +8,8 @@
 //! - NVIDIA-specific sections (.nv.info, .nv.constant, etc.)
 
 use object::{
-    Object, ObjectSection, ObjectSymbol, SectionKind, SymbolKind,
     read::elf::{ElfFile, FileHeader, SectionHeader},
-    Endianness,
+    Endianness, Object, ObjectSection, ObjectSymbol, SectionKind, SymbolKind,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -23,7 +22,7 @@ use super::instruction::*;
 
 /// NVIDIA-specific ELF section types
 pub mod nv_section_types {
-    pub const SHT_CUDA_INFO: u32 = 0x70000000;      // .nv.info
+    pub const SHT_CUDA_INFO: u32 = 0x70000000; // .nv.info
     pub const SHT_CUDA_CALLGRAPH: u32 = 0x70000001; // .nv.callgraph
     pub const SHT_CUDA_RELOCINFO: u32 = 0x70000002; // .nv.rel.*
 }
@@ -163,8 +162,7 @@ impl CubinParser {
 
     /// Load CUBIN from file
     pub fn from_file(path: &str) -> Result<Self, CubinParseError> {
-        let data = std::fs::read(path)
-            .map_err(|e| CubinParseError::IoError(e.to_string()))?;
+        let data = std::fs::read(path).map_err(|e| CubinParseError::IoError(e.to_string()))?;
         Ok(Self::new(data))
     }
 
@@ -204,7 +202,10 @@ impl CubinParser {
     }
 
     /// Extract SM version from ELF header flags
-    fn extract_sm_version<'a, F: FileHeader>(&self, elf: &ElfFile<'a, F>) -> Result<u32, CubinParseError> {
+    fn extract_sm_version<'a, F: FileHeader>(
+        &self,
+        elf: &ElfFile<'a, F>,
+    ) -> Result<u32, CubinParseError> {
         // NVIDIA encodes SM version in ELF flags
         // The format varies by CUDA version, but generally:
         // flags & 0xFF gives the SM version (e.g., 0x3D = 61 for sm_61)
@@ -225,11 +226,15 @@ impl CubinParser {
     }
 
     /// Parse all ELF sections
-    fn parse_sections<'a, F: FileHeader>(&self, elf: &ElfFile<'a, F>) -> Result<HashMap<String, CubinSection>, CubinParseError> {
+    fn parse_sections<'a, F: FileHeader>(
+        &self,
+        elf: &ElfFile<'a, F>,
+    ) -> Result<HashMap<String, CubinSection>, CubinParseError> {
         let mut sections = HashMap::new();
 
         for section in elf.sections() {
-            let name = section.name()
+            let name = section
+                .name()
                 .map_err(|e| CubinParseError::SectionError(e.to_string()))?
                 .to_string();
 
@@ -237,25 +242,32 @@ impl CubinParser {
                 continue;
             }
 
-            let data = section.data()
+            let data = section
+                .data()
                 .map_err(|e| CubinParseError::SectionError(e.to_string()))?
                 .to_vec();
 
-            sections.insert(name.clone(), CubinSection {
-                name,
-                address: section.address(),
-                size: section.size(),
-                data,
-                section_type: 0, // Would need raw section header access
-                flags: 0,
-            });
+            sections.insert(
+                name.clone(),
+                CubinSection {
+                    name,
+                    address: section.address(),
+                    size: section.size(),
+                    data,
+                    section_type: 0, // Would need raw section header access
+                    flags: 0,
+                },
+            );
         }
 
         Ok(sections)
     }
 
     /// Parse symbol table
-    fn parse_symbols<'a, F: FileHeader>(&self, elf: &ElfFile<'a, F>) -> Result<Vec<CubinSymbol>, CubinParseError> {
+    fn parse_symbols<'a, F: FileHeader>(
+        &self,
+        elf: &ElfFile<'a, F>,
+    ) -> Result<Vec<CubinSymbol>, CubinParseError> {
         let mut symbols = Vec::new();
 
         for symbol in elf.symbols() {
@@ -271,7 +283,8 @@ impl CubinParser {
                 _ => CubinSymbolType::Unknown,
             };
 
-            let section_name = symbol.section_index()
+            let section_name = symbol
+                .section_index()
                 .and_then(|idx| elf.section_by_index(idx).ok())
                 .and_then(|s| s.name().ok().map(|n| n.to_string()));
 
@@ -304,7 +317,8 @@ impl CubinParser {
                 let kernel_name = name.strip_prefix(".text.").unwrap_or(name);
 
                 // Find corresponding symbol for more info
-                let kernel_symbol = symbols.iter()
+                let kernel_symbol = symbols
+                    .iter()
                     .find(|s| s.name == kernel_name || s.section.as_deref() == Some(name));
 
                 // Try to get kernel metadata from .nv.info.{kernel_name}
@@ -365,24 +379,48 @@ impl CubinParser {
 
             // Parse known attributes
             match attr_type {
-                0x0401 => { // EIATTR_REGCOUNT
+                0x0401 => {
+                    // EIATTR_REGCOUNT
                     if attr_data.len() >= 4 {
-                        num_regs = u32::from_le_bytes([attr_data[0], attr_data[1], attr_data[2], attr_data[3]]);
+                        num_regs = u32::from_le_bytes([
+                            attr_data[0],
+                            attr_data[1],
+                            attr_data[2],
+                            attr_data[3],
+                        ]);
                     }
                 }
-                0x0808 => { // EIATTR_SMEM_SIZE
+                0x0808 => {
+                    // EIATTR_SMEM_SIZE
                     if attr_data.len() >= 4 {
-                        shared_mem = u32::from_le_bytes([attr_data[0], attr_data[1], attr_data[2], attr_data[3]]);
+                        shared_mem = u32::from_le_bytes([
+                            attr_data[0],
+                            attr_data[1],
+                            attr_data[2],
+                            attr_data[3],
+                        ]);
                     }
                 }
-                0x0A04 => { // EIATTR_LMEM_SIZE
+                0x0A04 => {
+                    // EIATTR_LMEM_SIZE
                     if attr_data.len() >= 4 {
-                        local_mem = u32::from_le_bytes([attr_data[0], attr_data[1], attr_data[2], attr_data[3]]);
+                        local_mem = u32::from_le_bytes([
+                            attr_data[0],
+                            attr_data[1],
+                            attr_data[2],
+                            attr_data[3],
+                        ]);
                     }
                 }
-                0x0504 => { // EIATTR_MAX_THREADS
+                0x0504 => {
+                    // EIATTR_MAX_THREADS
                     if attr_data.len() >= 4 {
-                        max_threads = u32::from_le_bytes([attr_data[0], attr_data[1], attr_data[2], attr_data[3]]);
+                        max_threads = u32::from_le_bytes([
+                            attr_data[0],
+                            attr_data[1],
+                            attr_data[2],
+                            attr_data[3],
+                        ]);
                     }
                 }
                 _ => {}
@@ -393,14 +431,18 @@ impl CubinParser {
     }
 
     /// Extract constant memory sections
-    fn extract_constants(&self, sections: &HashMap<String, CubinSection>) -> Result<Vec<CubinConstant>, CubinParseError> {
+    fn extract_constants(
+        &self,
+        sections: &HashMap<String, CubinSection>,
+    ) -> Result<Vec<CubinConstant>, CubinParseError> {
         let mut constants = Vec::new();
 
         // Look for .nv.constant* sections
         for (name, section) in sections {
             if name.starts_with(".nv.constant") {
                 // Parse constant bank from name: .nv.constant0, .nv.constant2, etc.
-                let bank = name.strip_prefix(".nv.constant")
+                let bank = name
+                    .strip_prefix(".nv.constant")
                     .and_then(|s| s.split('.').next())
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0);
@@ -435,24 +477,31 @@ impl CubinParser {
     }
 
     /// Parse DWARF debug line information
-    fn parse_debug_lines<'a, F: FileHeader>(&self, elf: &ElfFile<'a, F>) -> Result<HashMap<u64, DebugLineInfo>, CubinParseError> {
+    fn parse_debug_lines<'a, F: FileHeader>(
+        &self,
+        elf: &ElfFile<'a, F>,
+    ) -> Result<HashMap<u64, DebugLineInfo>, CubinParseError> {
         // This will be delegated to the dwarf_parser module
         // For now, return empty map
         Ok(HashMap::new())
     }
 
     /// Get raw SASS code for a kernel
-    pub fn get_kernel_code<'a>(&self, parsed: &'a ParsedCubin, kernel_name: &str) -> Option<&'a [u8]> {
-        parsed.kernels.iter()
+    pub fn get_kernel_code<'a>(
+        &self,
+        parsed: &'a ParsedCubin,
+        kernel_name: &str,
+    ) -> Option<&'a [u8]> {
+        parsed
+            .kernels
+            .iter()
             .find(|k| k.name == kernel_name)
             .map(|k| k.code.as_slice())
     }
 
     /// Get all kernel names
     pub fn get_kernel_names(parsed: &ParsedCubin) -> Vec<&str> {
-        parsed.kernels.iter()
-            .map(|k| k.name.as_str())
-            .collect()
+        parsed.kernels.iter().map(|k| k.name.as_str()).collect()
     }
 }
 
@@ -476,7 +525,9 @@ impl fmt::Display for CubinParseError {
             CubinParseError::ElfParseError(msg) => write!(f, "ELF parse error: {}", msg),
             CubinParseError::SectionError(msg) => write!(f, "Section error: {}", msg),
             CubinParseError::InvalidFormat(msg) => write!(f, "Invalid CUBIN format: {}", msg),
-            CubinParseError::UnsupportedVersion(ver) => write!(f, "Unsupported SM version: {}", ver),
+            CubinParseError::UnsupportedVersion(ver) => {
+                write!(f, "Unsupported SM version: {}", ver)
+            }
         }
     }
 }
@@ -556,8 +607,7 @@ impl CubinParserBuilder {
     }
 
     pub fn from_file(mut self, path: &str) -> Result<Self, CubinParseError> {
-        let data = std::fs::read(path)
-            .map_err(|e| CubinParseError::IoError(e.to_string()))?;
+        let data = std::fs::read(path).map_err(|e| CubinParseError::IoError(e.to_string()))?;
         self.data = Some(data);
         Ok(self)
     }
@@ -573,12 +623,14 @@ impl CubinParserBuilder {
     }
 
     pub fn build(self) -> Result<CubinParser, CubinParseError> {
-        let data = self.data.ok_or_else(|| {
-            CubinParseError::InvalidFormat("No data provided".to_string())
-        })?;
+        let data = self
+            .data
+            .ok_or_else(|| CubinParseError::InvalidFormat("No data provided".to_string()))?;
 
         if !is_cubin(&data) {
-            return Err(CubinParseError::InvalidFormat("Not a valid CUBIN file".to_string()));
+            return Err(CubinParseError::InvalidFormat(
+                "Not a valid CUBIN file".to_string(),
+            ));
         }
 
         Ok(CubinParser::new(data))
@@ -604,8 +656,8 @@ mod tests {
         // Valid ELF header for CUBIN
         let mut cubin_header = vec![0u8; 64];
         cubin_header[0..4].copy_from_slice(b"\x7FELF");
-        cubin_header[4] = 2;  // 64-bit
-        cubin_header[5] = 1;  // Little endian
+        cubin_header[4] = 2; // 64-bit
+        cubin_header[5] = 1; // Little endian
         cubin_header[18] = 190; // EM_CUDA
         cubin_header[19] = 0;
 

@@ -1,7 +1,13 @@
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 use nvidia_runtime_sys;
 use std::{ffi::CString, sync::OnceLock};
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
@@ -15,6 +21,8 @@ use std::os::raw::{c_char, c_int, c_void};
 use std::{cell::RefCell, collections::HashMap, ptr::NonNull};
 
 use crate::r#impl::context;
+#[cfg(feature = "webgpu")]
+use crate::r#impl::webgpu;
 
 use super::LiveCheck;
 
@@ -34,13 +42,18 @@ fn get_self_library_handle() -> *mut c_void {
             // Use dladdr on cuInit (which we know is in our library) to find our .so path
             let mut info: libc::Dl_info = std::mem::zeroed();
             // Use a known exported function as the reference point
-            extern "C" { fn cuInit(flags: std::os::raw::c_uint) -> std::os::raw::c_int; }
+            extern "C" {
+                fn cuInit(flags: std::os::raw::c_uint) -> std::os::raw::c_int;
+            }
             let func_ptr = cuInit as *const c_void;
             if libc::dladdr(func_ptr, &mut info) != 0 && !info.dli_fname.is_null() {
                 let handle = libc::dlopen(info.dli_fname, libc::RTLD_NOLOAD | libc::RTLD_NOW);
                 if !handle.is_null() {
                     let fname = CStr::from_ptr(info.dli_fname).to_string_lossy();
-                    eprintln!("[hetGPU] cuGetProcAddress: self library = {} (handle={:p})", fname, handle);
+                    eprintln!(
+                        "[hetGPU] cuGetProcAddress: self library = {} (handle={:p})",
+                        fname, handle
+                    );
                     SELF_HANDLE = handle;
                 }
             }
@@ -51,43 +64,11 @@ fn get_self_library_handle() -> *mut c_void {
 }
 
 // CUDA driver entry point lookups
-//
-// For the NVIDIA backend: forward to real CUDA's cuGetProcAddress so PyTorch gets
-// real function pointers. Only intercept functions we need (cuLaunchKernel, cuModuleLoadData).
-// For other backends (Intel/AMD/TT): resolve from our own .so.
-
-/// Functions we intercept even on the NVIDIA passthrough backend.
-/// For these, we return our shim's address so Concordia hooks fire.
-#[cfg(all(feature = "nvidia", not(feature = "intel"), not(feature = "tmatmul")))]
-fn is_intercepted_symbol(sym: &str) -> bool {
-    // Only intercept functions we actively need for Concordia.
-    // Everything else goes to real CUDA for maximum compatibility.
-    matches!(sym,
-        "cuInit" |
-        "cuGetProcAddress" | "cuGetProcAddress_v2" |
-        "cuGetExportTable" |
-        "cuGetErrorString" | "cuGetErrorName" |
-        "cuDriverGetVersion" |
-        // Module/kernel functions for Concordia dispatch table
-        "cuModuleLoadData" | "cuModuleLoadDataEx" |
-        "cuModuleLoadFatBinary" | "cuModuleLoad" |
-        "cuModuleGetFunction" | "cuModuleUnload" |
-        "cuLaunchKernel" | "cuLaunchKernelEx" |
-        // Device/context queries (our wrappers work correctly)
-        "cuDeviceGet" | "cuDeviceGetCount" | "cuDeviceGetName" |
-        "cuDeviceGetAttribute" | "cuDeviceTotalMem_v2" |
-        "cuDeviceGetUuid" | "cuDeviceGetUuid_v2" |
-        "cuDeviceGetLuid" | "cuDeviceComputeCapability" |
-        "cuDevicePrimaryCtxRetain" | "cuDevicePrimaryCtxRelease" |
-        "cuDevicePrimaryCtxGetState" | "cuDeviceGetProperties"
-    )
-}
-
 pub(crate) fn get_proc_address(
     symbol: *const c_char,
     pfn: *mut *mut c_void,
-    cuda_version: c_int,
-    flags: cuda_types::cuda::cuuint64_t,
+    _cuda_version: c_int,
+    _flags: cuda_types::cuda::cuuint64_t,
 ) -> Result<(), CUerror> {
     if symbol.is_null() || pfn.is_null() {
         return Err(CUerror::INVALID_VALUE);
@@ -96,46 +77,18 @@ pub(crate) fn get_proc_address(
     #[cfg(unix)]
     unsafe {
         let sym_str = std::ffi::CStr::from_ptr(symbol).to_string_lossy();
-
-        // NVIDIA backend: forward to real CUDA for most functions
-        #[cfg(all(feature = "nvidia", not(feature = "intel"), not(feature = "tmatmul")))]
-        {
-            // Ensure nvidia_runtime_sys is initialized
-            let _ = nvidia_runtime_sys::init();
-
-            if !is_intercepted_symbol(&sym_str) {
-                // Forward to real CUDA's cuGetProcAddress
-                if let Some(funcs) = nvidia_runtime_sys::get_cuda_funcs() {
-                    if let Some(real_gpa) = funcs.cuGetProcAddress {
-                        let result = real_gpa(symbol, pfn, cuda_version, flags);
-                        return match result {
-                            Ok(()) => Ok(()),
-                            Err(_) => Err(CUerror::NOT_FOUND),
-                        };
-                    }
-                    // Fallback: dlsym from real CUDA library
-                    if !funcs.lib_handle.0.is_null() {
-                        let addr = dlsym(funcs.lib_handle.0, symbol);
-                        if !addr.is_null() {
-                            *pfn = addr;
-                            return Ok(());
-                        }
-                    }
-                }
-            }
-            // For intercepted functions, fall through to resolve from our .so
-        }
-
-        // Resolve from our own library (shim)
+        // First try our own library to avoid resolving to system's libcuda.so.1
         let self_handle = get_self_library_handle();
         let mut addr = std::ptr::null_mut();
         if !self_handle.is_null() {
             addr = dlsym(self_handle, symbol);
         }
         if addr.is_null() {
+            // Fallback to global search
             addr = dlsym(RTLD_DEFAULT, symbol);
         }
         if addr.is_null() {
+            eprintln!("[hetGPU] cuGetProcAddress: '{}' NOT FOUND", sym_str);
             *pfn = std::ptr::null_mut();
             return Err(CUerror::NOT_FOUND);
         }
@@ -148,8 +101,8 @@ pub(crate) fn get_proc_address(
 pub(crate) fn get_proc_address_v2(
     symbol: *const c_char,
     pfn: *mut *mut c_void,
-    cuda_version: c_int,
-    flags: cuda_types::cuda::cuuint64_t,
+    _cuda_version: c_int,
+    _flags: cuda_types::cuda::cuuint64_t,
     symbol_status: *mut cuda_types::cuda::CUdriverProcAddressQueryResult,
 ) -> Result<(), CUerror> {
     if symbol.is_null() || pfn.is_null() {
@@ -158,55 +111,14 @@ pub(crate) fn get_proc_address_v2(
 
     #[cfg(unix)]
     unsafe {
-        let sym_str = std::ffi::CStr::from_ptr(symbol).to_string_lossy();
-
-        // NVIDIA backend: forward to real CUDA for non-intercepted functions
-        #[cfg(all(feature = "nvidia", not(feature = "intel"), not(feature = "tmatmul")))]
-        {
-            let _ = nvidia_runtime_sys::init();
-
-            if !is_intercepted_symbol(&sym_str) {
-                if let Some(funcs) = nvidia_runtime_sys::get_cuda_funcs() {
-                    if let Some(real_gpa_v2) = funcs.cuGetProcAddress_v2 {
-                        let result = real_gpa_v2(symbol, pfn, cuda_version, flags, symbol_status);
-                        return match result {
-                            Ok(()) => Ok(()),
-                            Err(_) => Err(CUerror::NOT_FOUND),
-                        };
-                    }
-                    // Fallback: use non-v2 or dlsym
-                    if let Some(real_gpa) = funcs.cuGetProcAddress {
-                        let result = real_gpa(symbol, pfn, cuda_version, flags);
-                        if !symbol_status.is_null() {
-                            (*symbol_status).0 = match result { Ok(()) => 0, Err(_) => 1 };
-                        }
-                        return match result {
-                            Ok(()) => Ok(()),
-                            Err(_) => Err(CUerror::NOT_FOUND),
-                        };
-                    }
-                    // Last resort: dlsym from real CUDA
-                    if !funcs.lib_handle.0.is_null() {
-                        let addr = dlsym(funcs.lib_handle.0, symbol);
-                        *pfn = addr;
-                        if !symbol_status.is_null() {
-                            (*symbol_status).0 = if addr.is_null() { 1 } else { 0 };
-                        }
-                        if !addr.is_null() { return Ok(()); }
-                        return Err(CUerror::NOT_FOUND);
-                    }
-                }
-            }
-            // Intercepted functions: resolve from our .so
-        }
-
-        // Resolve from our own library
+        // First try our own library to avoid resolving to system's libcuda.so.1
         let self_handle = get_self_library_handle();
         let mut addr = std::ptr::null_mut();
         if !self_handle.is_null() {
             addr = dlsym(self_handle, symbol);
         }
         if addr.is_null() {
+            // Fallback to global search
             addr = dlsym(RTLD_DEFAULT, symbol);
         }
         *pfn = addr as *mut c_void;
@@ -234,10 +146,7 @@ pub(crate) fn get_export_table(
 }
 
 // Provide safe implementations for cuGetErrorString/cuGetErrorName to avoid NULL deref in callers
-pub(crate) fn get_error_string(
-    error: CUresult,
-    pStr: &mut *const c_char,
-) -> Result<(), CUerror> {
+pub(crate) fn get_error_string(error: CUresult, pStr: &mut *const c_char) -> Result<(), CUerror> {
     // Stable static messages
     static OK_STR: &[u8] = b"CUDA_SUCCESS\0";
     static ERR_STR: &[u8] = b"CUDA_ERROR_UNKNOWN\0";
@@ -249,10 +158,7 @@ pub(crate) fn get_error_string(
     Ok(())
 }
 
-pub(crate) fn get_error_name(
-    error: CUresult,
-    pStr: &mut *const c_char,
-) -> Result<(), CUerror> {
+pub(crate) fn get_error_name(error: CUresult, pStr: &mut *const c_char) -> Result<(), CUerror> {
     static OK_NAME: &[u8] = b"CUDA_SUCCESS\0";
     static ERR_NAME: &[u8] = b"CUDA_ERROR_UNKNOWN\0";
     let name_ptr = match error {
@@ -373,7 +279,10 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
         .get_or_init(|| {
             // Helper function to create virtual device
             fn create_virtual_device(reason: &str) -> Result<GlobalState, CUerror> {
-                eprintln!("[Intel Backend] {} - creating virtual device for TMatmul", reason);
+                eprintln!(
+                    "[Intel Backend] {} - creating virtual device for TMatmul",
+                    reason
+                );
                 let comgr_isa = CString::new("virtual-gpu").map_err(|_| CUerror::UNKNOWN)?;
                 let virtual_device = ze_device_handle_t(std::ptr::null_mut());
                 let ctx = context::Context::new(virtual_device);
@@ -388,7 +297,8 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
 
                 DEVICES_ZE.with(|map| {
                     let mut map = map.borrow_mut();
-                    let device_ptr = unsafe { NonNull::new_unchecked(Box::into_raw(device_box_clone)) };
+                    let device_ptr =
+                        unsafe { NonNull::new_unchecked(Box::into_raw(device_box_clone)) };
                     map.insert(virtual_device, device_ptr);
                 });
 
@@ -418,16 +328,16 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
 
             // Get drivers
             let mut drivers = vec![std::ptr::null_mut(); driver_count as usize];
-            let driver_get_result = unsafe { zeDriverGet(&mut driver_count, *drivers.as_mut_ptr()) };
+            let driver_get_result =
+                unsafe { zeDriverGet(&mut driver_count, *drivers.as_mut_ptr()) };
             if driver_get_result != ze_result_t::ZE_RESULT_SUCCESS {
                 return create_virtual_device("Failed to get drivers");
             }
 
             // Get device count for the first driver
             let mut device_count = 0;
-            let device_result = unsafe {
-                zeDeviceGet(*drivers[0], &mut device_count, std::ptr::null_mut())
-            };
+            let device_result =
+                unsafe { zeDeviceGet(*drivers[0], &mut device_count, std::ptr::null_mut()) };
             if device_result != ze_result_t::ZE_RESULT_SUCCESS || device_count == 0 {
                 return create_virtual_device("No Intel devices on driver");
             }
@@ -580,7 +490,10 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     // Install checkpoint signal handler if enabled
     if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
         if let Err(e) = super::checkpoint::install_signal_handler() {
-            eprintln!("[hetGPU] Warning: Failed to install checkpoint handler: {}", e);
+            eprintln!(
+                "[hetGPU] Warning: Failed to install checkpoint handler: {}",
+                e
+            );
         }
     }
 
@@ -619,7 +532,10 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     // Install checkpoint signal handler if enabled
     if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
         if let Err(e) = super::checkpoint::install_signal_handler() {
-            eprintln!("[hetGPU] Warning: Failed to install checkpoint handler: {}", e);
+            eprintln!(
+                "[hetGPU] Warning: Failed to install checkpoint handler: {}",
+                e
+            );
         }
     }
 
@@ -639,14 +555,22 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     // Install checkpoint signal handler if enabled
     if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
         if let Err(e) = super::checkpoint::install_signal_handler() {
-            eprintln!("[hetGPU] Warning: Failed to install checkpoint handler: {}", e);
+            eprintln!(
+                "[hetGPU] Warning: Failed to install checkpoint handler: {}",
+                e
+            );
         }
     }
 
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
     static GLOBAL_STATE: OnceLock<Result<GlobalState, CUerror>> = OnceLock::new();
 
@@ -678,7 +602,12 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
         .map_err(|e| *e)
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     let _ = flags;
     global_state()?;
@@ -686,7 +615,10 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     // Install checkpoint signal handler if enabled
     if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
         if let Err(e) = super::checkpoint::install_signal_handler() {
-            eprintln!("[hetGPU] Warning: Failed to install checkpoint handler: {}", e);
+            eprintln!(
+                "[hetGPU] Warning: Failed to install checkpoint handler: {}",
+                e
+            );
         }
     }
 
@@ -704,7 +636,10 @@ pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
     eprintln!("[hetGPU] cuDriverGetVersion called");
     // Return the CUDA version same as AMD implementation
     *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
-    eprintln!("[hetGPU] cuDriverGetVersion: returning version {}", *version);
+    eprintln!(
+        "[hetGPU] cuDriverGetVersion: returning version {}",
+        *version
+    );
     Ok(())
 }
 
@@ -715,7 +650,12 @@ pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
     *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
     Ok(())
@@ -765,7 +705,12 @@ thread_local! {
     static TT_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn device_tmatmul(dev_id: i32) -> Result<&'static Device, CUerror> {
     TMATMUL_DEVICES.with(|map| {
         let map_ref = map.borrow();
@@ -776,13 +721,24 @@ pub(crate) fn device_tmatmul(dev_id: i32) -> Result<&'static Device, CUerror> {
     })
 }
 
-#[cfg(all(feature = "tmatmul", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent")))]
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 thread_local! {
     static TMATMUL_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
 }
 
 // NVIDIA backend - pass through to real libcuda.so
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
     static GLOBAL_STATE: OnceLock<Result<GlobalState, CUerror>> = OnceLock::new();
 
@@ -818,7 +774,8 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
 
                 // Get device name
                 let mut name_buf = [0i8; 256];
-                let name_result = nvidia_runtime_sys::cuDeviceGetName(name_buf.as_mut_ptr(), 256, cuda_device);
+                let name_result =
+                    nvidia_runtime_sys::cuDeviceGetName(name_buf.as_mut_ptr(), 256, cuda_device);
                 let device_name = if name_result == 0 {
                     let name_cstr = unsafe { CStr::from_ptr(name_buf.as_ptr()) };
                     name_cstr.to_str().unwrap_or("Unknown").to_string()
@@ -832,9 +789,13 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
 
                 // Create a primary CUDA context for this device
                 let mut cuda_ctx = cuda_types::cuda::CUcontext(std::ptr::null_mut());
-                let ctx_result = nvidia_runtime_sys::cuDevicePrimaryCtxRetain(&mut cuda_ctx, cuda_device);
+                let ctx_result =
+                    nvidia_runtime_sys::cuDevicePrimaryCtxRetain(&mut cuda_ctx, cuda_device);
                 if ctx_result != 0 {
-                    eprintln!("[NVIDIA Backend] Failed to retain primary context for device {}: error {}", i, ctx_result);
+                    eprintln!(
+                        "[NVIDIA Backend] Failed to retain primary context for device {}: error {}",
+                        i, ctx_result
+                    );
                     continue;
                 }
 
@@ -872,7 +833,13 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
         .map_err(|e| *e)
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     // Call real cuInit
     let result = nvidia_runtime_sys::cuInit(flags);
@@ -886,14 +853,23 @@ pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
     // Install checkpoint signal handler if enabled
     if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
         if let Err(e) = super::checkpoint::install_signal_handler() {
-            eprintln!("[hetGPU] Warning: Failed to install checkpoint handler: {}", e);
+            eprintln!(
+                "[hetGPU] Warning: Failed to install checkpoint handler: {}",
+                e
+            );
         }
     }
 
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
     // Get version from real CUDA driver
     let result = nvidia_runtime_sys::cuDriverGetVersion(version);
@@ -904,7 +880,13 @@ pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn device_nvidia(dev_id: i32) -> Result<&'static Device, CUerror> {
     NVIDIA_DEVICES.with(|map| {
         let map_ref = map.borrow();
@@ -915,29 +897,220 @@ pub(crate) fn device_nvidia(dev_id: i32) -> Result<&'static Device, CUerror> {
     })
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 thread_local! {
     static NVIDIA_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
 }
 
-// Occupancy functions - return 1 block as a safe default for virtual backend
-pub(crate) fn occupancy_max_active_blocks_per_multiprocessor(
-    num_blocks: &mut i32,
-    _func: CUfunction,
-    _block_size: i32,
-    _dynamic_smem_size: usize,
-) -> Result<(), CUerror> {
-    *num_blocks = 1;
+// WebGPU backend - wasm/browser bridge.
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
+    static GLOBAL_STATE: OnceLock<Result<GlobalState, CUerror>> = OnceLock::new();
+
+    GLOBAL_STATE
+        .get_or_init(|| {
+            webgpu::init().map_err(|_| CUerror::NOT_INITIALIZED)?;
+            let visible_devices = webgpu::device_count().clamp(1, 1);
+            let comgr_isa = CString::new("webgpu-wgsl").map_err(|_| CUerror::UNKNOWN)?;
+            let mut devices = Vec::with_capacity(visible_devices);
+
+            WEBGPU_DEVICES.with(|map| {
+                let mut map = map.borrow_mut();
+                for dev_id in 0..visible_devices {
+                    let device = Device {
+                        _comgr_isa: comgr_isa.clone(),
+                        primary_context: LiveCheck::new(context::Context::new(dev_id as i32)),
+                    };
+                    let device_ptr =
+                        unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(device.clone()))) };
+                    map.insert(dev_id as i32, device_ptr);
+                    devices.push(device);
+                }
+            });
+
+            eprintln!("[WebGPU Backend] exposing {} CUDA-visible device(s)", visible_devices);
+            Ok(GlobalState { devices })
+        })
+        .as_ref()
+        .map_err(|e| *e)
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
+    let _ = flags;
+    global_state()?;
     Ok(())
 }
 
-pub(crate) fn occupancy_max_active_blocks_per_multiprocessor_with_flags(
-    num_blocks: &mut i32,
-    _func: CUfunction,
-    _block_size: i32,
-    _dynamic_smem_size: usize,
-    _flags: u32,
-) -> Result<(), CUerror> {
-    *num_blocks = 1;
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
+    *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
     Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn device_webgpu(dev_id: i32) -> Result<&'static Device, CUerror> {
+    if dev_id < 0 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    WEBGPU_DEVICES.with(|map| {
+        let map_ref = map.borrow();
+        map_ref
+            .get(&dev_id)
+            .ok_or(CUerror::INVALID_DEVICE)
+            .map(|dev_ptr| unsafe { dev_ptr.as_ref() })
+    })
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+thread_local! {
+    static WEBGPU_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
+}
+
+// ============================================================================
+// PACC backend driver implementations (SiFive Intelligence XM / RISC-V IME)
+// ============================================================================
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
+    static GLOBAL_STATE: OnceLock<Result<GlobalState, CUerror>> = OnceLock::new();
+
+    GLOBAL_STATE
+        .get_or_init(|| {
+            let visible_devices = std::env::var("HETGPU_PACC_VISIBLE_DEVICES")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(4)
+                .clamp(1, 4);
+
+            // PACC can expose one logical CUDA device per physical PACC.
+            let comgr_isa = CString::new("riscv64-pacc-ime").map_err(|_| CUerror::UNKNOWN)?;
+            let mut devices = Vec::with_capacity(visible_devices);
+
+            PACC_DEVICES.with(|map| {
+                let mut map = map.borrow_mut();
+                for dev_id in 0..visible_devices {
+                    let device = Device {
+                        _comgr_isa: comgr_isa.clone(),
+                        primary_context: LiveCheck::new(context::Context::new(dev_id as i32)),
+                    };
+                    let device_box = Box::new(device.clone());
+                    let device_ptr =
+                        unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(device.clone()))) };
+                    map.insert(dev_id as i32, device_ptr);
+                    devices.push(*device_box);
+                }
+            });
+
+            eprintln!(
+                "[PACC Backend] exposing {} CUDA-visible PACC device(s)",
+                visible_devices
+            );
+
+            Ok(GlobalState { devices })
+        })
+        .as_ref()
+        .map_err(|e| *e)
+}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
+    let _ = flags;
+    global_state()?;
+
+    // Install checkpoint signal handler if enabled
+    if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
+        if let Err(e) = super::checkpoint::install_signal_handler() {
+            eprintln!(
+                "[hetGPU] Warning: Failed to install checkpoint handler: {}",
+                e
+            );
+        }
+    }
+
+    eprintln!("[PACC Backend] cuInit: RISC-V IME backend initialized");
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
+    *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn device_pacc(dev_id: i32) -> Result<&'static Device, CUerror> {
+    if dev_id < 0 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    global_state()?
+        .devices
+        .get(dev_id as usize)
+        .ok_or(CUerror::INVALID_DEVICE)
+}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+thread_local! {
+    static PACC_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
 }

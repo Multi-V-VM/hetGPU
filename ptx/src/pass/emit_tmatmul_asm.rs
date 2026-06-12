@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-
 /// Number of vector registers available in hardware (v0-v7)
 const NUM_REGISTERS: usize = 8;
 
@@ -61,7 +60,8 @@ impl RegisterAllocator {
             // First, get a register (may cause another spill)
             let reg = self.allocate_physical_register(ssa_value)?;
             // Queue reload operation
-            self.pending_reloads.push((slot.memory_name.clone(), reg.clone()));
+            self.pending_reloads
+                .push((slot.memory_name.clone(), reg.clone()));
             // Remove from spill slots
             self.spill_slots.remove(ssa_value);
             return Ok(reg);
@@ -92,7 +92,8 @@ impl RegisterAllocator {
         let victim_reg = format!("v{}", victim_idx);
 
         // Find which SSA value is in this register
-        let victim_ssa = self.value_to_reg
+        let victim_ssa = self
+            .value_to_reg
             .iter()
             .find(|(_, r)| **r == victim_reg)
             .map(|(s, _)| s.clone());
@@ -103,13 +104,17 @@ impl RegisterAllocator {
             self.next_spill_slot += 1;
 
             // Queue spill operation
-            self.pending_spills.push((victim_reg.clone(), spill_name.clone()));
+            self.pending_spills
+                .push((victim_reg.clone(), spill_name.clone()));
 
             // Record spill slot
-            self.spill_slots.insert(victim_ssa.clone(), SpillSlot {
-                memory_name: spill_name,
-                ssa_value: victim_ssa.clone(),
-            });
+            self.spill_slots.insert(
+                victim_ssa.clone(),
+                SpillSlot {
+                    memory_name: spill_name,
+                    ssa_value: victim_ssa.clone(),
+                },
+            );
 
             // Free the victim from register mapping
             self.value_to_reg.remove(&victim_ssa);
@@ -265,12 +270,6 @@ pub enum TMatmulInstruction {
         dst: String,
     },
 
-    // Raw instruction text — allows emitting any instruction the interpreter
-    // supports (abs, max, min, sqrt, rsqrt, exp, log, tanh, floor, ceil,
-    // round, sign, relu, gelu, reduce_sum, reduce_max, etc.) without needing
-    // a formal enum variant for each one.
-    Raw(String),
-
     // Comments and labels
     Comment(String),
     Label(String),
@@ -317,9 +316,6 @@ impl std::fmt::Display for TMatmulInstruction {
             }
             TMatmulInstruction::TMatmulExport { dst } => {
                 write!(f, "    tmatmul_export    {}", dst)
-            }
-            TMatmulInstruction::Raw(text) => {
-                write!(f, "{}", text)
             }
             TMatmulInstruction::Comment(text) => {
                 write!(f, "    ; {}", text)
@@ -434,11 +430,13 @@ impl TMatmulCodegen {
     fn emit_pending_spills(&mut self) {
         let spills = self.reg_allocator.take_pending_spills();
         for (reg, mem_name) in spills {
-            self.program.add_comment(&format!("Spill {} to {}", reg, mem_name));
-            self.program.add_instruction(TMatmulInstruction::StoreVector {
-                src: reg,
-                dst: MemoryLocation::Custom(mem_name),
-            });
+            self.program
+                .add_comment(&format!("Spill {} to {}", reg, mem_name));
+            self.program
+                .add_instruction(TMatmulInstruction::StoreVector {
+                    src: reg,
+                    dst: MemoryLocation::Custom(mem_name),
+                });
         }
     }
 
@@ -446,11 +444,13 @@ impl TMatmulCodegen {
     fn emit_pending_reloads(&mut self) {
         let reloads = self.reg_allocator.take_pending_reloads();
         for (mem_name, reg) in reloads {
-            self.program.add_comment(&format!("Reload {} from {}", reg, mem_name));
-            self.program.add_instruction(TMatmulInstruction::LoadVector {
-                dst: reg,
-                src: MemoryLocation::Custom(mem_name),
-            });
+            self.program
+                .add_comment(&format!("Reload {} from {}", reg, mem_name));
+            self.program
+                .add_instruction(TMatmulInstruction::LoadVector {
+                    dst: reg,
+                    src: MemoryLocation::Custom(mem_name),
+                });
         }
     }
 
@@ -606,41 +606,6 @@ impl TMatmulCodegen {
                     .add_instruction(TMatmulInstruction::TMatmulGo { weights });
                 self.program
                     .add_instruction(TMatmulInstruction::TMatmulExport { dst: output_reg });
-            }
-            // Unary math ops — supported by the interpreter directly
-            "tmatmul.abs" | "tmatmul.neg" | "tmatmul.sqrt" | "tmatmul.rsqrt"
-            | "tmatmul.exp" | "tmatmul.log" | "tmatmul.sin" | "tmatmul.cos"
-            | "tmatmul.tanh" | "tmatmul.floor" | "tmatmul.ceil" | "tmatmul.round"
-            | "tmatmul.sign" | "tmatmul.relu" | "tmatmul.gelu" | "tmatmul.reciprocal" => {
-                let opname = &op["tmatmul.".len()..];
-                let src = self.ensure_in_register(operands[0])?;
-                self.emit_pending_spills();
-                let dst = self.reg_allocator.allocate(results[0])?;
-                self.emit_pending_spills();
-                self.program.add_instruction(TMatmulInstruction::Raw(
-                    format!("    {}    {},{}", opname, dst, src),
-                ));
-            }
-            // Binary math ops — min, max
-            "tmatmul.min" | "tmatmul.max" => {
-                let opname = &op["tmatmul.".len()..];
-                let src1 = self.ensure_in_register(operands[0])?;
-                let src2 = self.ensure_in_register(operands[1])?;
-                self.emit_pending_spills();
-                let dst = self.reg_allocator.allocate(results[0])?;
-                self.emit_pending_spills();
-                self.program.add_instruction(TMatmulInstruction::Raw(
-                    format!("    {}    {},{},{}", opname, dst, src1, src2),
-                ));
-            }
-            // Reduction ops
-            "tmatmul.reduce_sum" | "tmatmul.reduce_max" | "tmatmul.reduce_mean" => {
-                let opname = &op["tmatmul.".len()..];
-                let src = self.ensure_in_register(operands[0])?;
-                self.emit_pending_spills();
-                self.program.add_instruction(TMatmulInstruction::Raw(
-                    format!("    {}    {}", opname, src),
-                ));
             }
             _ => {
                 return Err(format!("Unknown operation: {}", op));

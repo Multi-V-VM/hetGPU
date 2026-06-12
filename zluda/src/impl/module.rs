@@ -4,8 +4,21 @@ use super::ZludaObject;
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 use nvidia_runtime_sys;
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+use pacc_runtime_sys;
 use std::{ffi::CStr, ptr, sync::Arc};
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 use tt_runtime_sys;
@@ -35,13 +48,42 @@ pub(crate) struct Module {
     kernels: Vec<(String, tt_runtime_sys::Kernel)>,
 }
 
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) struct Module {
+    module_id: u64,
+    ptx_source: Arc<String>,
+    kernels: Vec<(String, u64)>,
+}
+
 #[cfg(any(feature = "amd", feature = "intel", feature = "tenstorrent"))]
 unsafe impl Send for Module {}
 #[cfg(any(feature = "amd", feature = "intel", feature = "tenstorrent"))]
 unsafe impl Sync for Module {}
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Send for Module {}
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Sync for Module {}
 #[cfg(feature = "amd")]
 impl ZludaObject for Module {
-    const COOKIE: usize = 0xe9138bd040487d4a;
+    const COOKIE: usize = 0x40487d4a;
 
     type CudaHandle = CUmodule;
 
@@ -58,7 +100,9 @@ impl ZludaObject for Module {
     feature = "intel",
     feature = "tenstorrent",
     feature = "tmatmul",
-    feature = "nvidia"
+    feature = "nvidia",
+    feature = "pacc",
+    feature = "webgpu"
 ))]
 pub(crate) fn get_loading_mode(mode: *mut cuda_types::cuda::CUmoduleLoadingMode) -> CUresult {
     if mode.is_null() {
@@ -72,7 +116,7 @@ pub(crate) fn get_loading_mode(mode: *mut cuda_types::cuda::CUmoduleLoadingMode)
 
 #[cfg(feature = "intel")]
 impl ZludaObject for Module {
-    const COOKIE: usize = 0xe9138bd040487d4a;
+    const COOKIE: usize = 0x40487d4a;
 
     type CudaHandle = CUmodule;
 
@@ -99,9 +143,27 @@ impl ZludaObject for Module {
     }
 }
 
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl ZludaObject for Module {
+    const COOKIE: usize = 0x40487d4a;
+
+    type CudaHandle = CUmodule;
+
+    fn drop_checked(&mut self) -> CUresult {
+        self.kernels.clear();
+        Ok(())
+    }
+}
+
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 impl ZludaObject for Module {
-    const COOKIE: usize = 0xe9138bd040487d4a;
+    const COOKIE: usize = 0x40487d4a;
 
     type CudaHandle = CUmodule;
 
@@ -195,41 +257,6 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
 }
 
 #[cfg(feature = "intel")]
-pub(crate) fn load(
-    module: &mut CUmodule,
-    fname: *const ::core::ffi::c_char,
-) -> CUresult {
-    eprintln!("[Intel Backend] cuModuleLoad called (load from file)");
-    let path = unsafe { std::ffi::CStr::from_ptr(fname) }
-        .to_str()
-        .map_err(|_| CUerror::INVALID_VALUE)?;
-    let data = std::fs::read(path).map_err(|_| CUerror::FILE_NOT_FOUND)?;
-    load_data(module, data.as_ptr() as *const std::ffi::c_void)
-}
-
-#[cfg(feature = "intel")]
-pub(crate) fn load_fat_binary(
-    module: &mut CUmodule,
-    fat_cubin: *const std::ffi::c_void,
-) -> CUresult {
-    eprintln!("[Intel Backend] cuModuleLoadFatBinary called (delegating to load_data)");
-    load_data(module, fat_cubin)
-}
-
-#[cfg(feature = "intel")]
-pub(crate) fn load_data_ex(
-    module: &mut CUmodule,
-    image: *const std::ffi::c_void,
-    _num_options: std::ffi::c_uint,
-    _options: *mut cuda_types::cuda::CUjit_option,
-    _option_values: *mut *mut std::ffi::c_void,
-) -> CUresult {
-    // Delegate to load_data, ignoring JIT options
-    eprintln!("[Intel Backend] cuModuleLoadDataEx called (delegating to load_data)");
-    load_data(module, image)
-}
-
-#[cfg(feature = "intel")]
 pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -> CUresult {
     crate::r#impl::hetgpu_debug!(
         "[Intel Backend] cuModuleLoadData called from PyTorch/application"
@@ -281,14 +308,23 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
         let binary_size = if first_bytes.len() >= 64 && first_bytes[4] == 2 {
             // 64-bit ELF: size = max(e_shoff + e_shnum * e_shentsize, e_phoff + e_phnum * e_phentsize)
             let e_shoff = u64::from_le_bytes([
-                first_bytes[40], first_bytes[41], first_bytes[42], first_bytes[43],
-                first_bytes[44], first_bytes[45], first_bytes[46], first_bytes[47]
+                first_bytes[40],
+                first_bytes[41],
+                first_bytes[42],
+                first_bytes[43],
+                first_bytes[44],
+                first_bytes[45],
+                first_bytes[46],
+                first_bytes[47],
             ]) as usize;
             let e_shentsize = u16::from_le_bytes([first_bytes[58], first_bytes[59]]) as usize;
             let e_shnum = u16::from_le_bytes([first_bytes[60], first_bytes[61]]) as usize;
             let elf_end = e_shoff + e_shnum * e_shentsize;
             if elf_end > 0 && elf_end < 100 * 1024 * 1024 {
-                eprintln!("[Intel Backend] ELF binary size from headers: {} bytes", elf_end);
+                eprintln!(
+                    "[Intel Backend] ELF binary size from headers: {} bytes",
+                    elf_end
+                );
                 elf_end
             } else {
                 // Fallback: scan for end (less reliable)
@@ -358,14 +394,27 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                 let elf_size = if first_bytes.len() >= 64 && first_bytes[4] == 2 {
                     // 64-bit ELF: section header table end = e_shoff + e_shnum * e_shentsize
                     let e_shoff = u64::from_le_bytes([
-                        first_bytes[40], first_bytes[41], first_bytes[42], first_bytes[43],
-                        first_bytes[44], first_bytes[45], first_bytes[46], first_bytes[47]
+                        first_bytes[40],
+                        first_bytes[41],
+                        first_bytes[42],
+                        first_bytes[43],
+                        first_bytes[44],
+                        first_bytes[45],
+                        first_bytes[46],
+                        first_bytes[47],
                     ]) as usize;
-                    let e_shentsize = u16::from_le_bytes([first_bytes[58], first_bytes[59]]) as usize;
+                    let e_shentsize =
+                        u16::from_le_bytes([first_bytes[58], first_bytes[59]]) as usize;
                     let e_shnum = u16::from_le_bytes([first_bytes[60], first_bytes[61]]) as usize;
                     let end = e_shoff + e_shnum * e_shentsize;
-                    if end > 0 && end < 100 * 1024 * 1024 { end } else { 0 }
-                } else { 0 };
+                    if end > 0 && end < 100 * 1024 * 1024 {
+                        end
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
                 if elf_size > 4096 {
                     eprintln!("[Intel Backend] ELF size detected: {} bytes", elf_size);
                     unsafe { std::slice::from_raw_parts(image as *const u8, elf_size) }
@@ -378,8 +427,14 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
             let ptx_source = try_extract_ptx_from_cubin(full_binary);
 
             if let Some(ref ptx) = ptx_source {
-                eprintln!("[Intel Backend] Successfully extracted {} bytes of PTX from CUBIN", ptx.len());
-                eprintln!("[Intel Backend] PTX preview: {}...", &ptx[..ptx.len().min(200)]);
+                eprintln!(
+                    "[Intel Backend] Successfully extracted {} bytes of PTX from CUBIN",
+                    ptx.len()
+                );
+                eprintln!(
+                    "[Intel Backend] PTX preview: {}...",
+                    &ptx[..ptx.len().min(200)]
+                );
             } else {
                 eprintln!("[Intel Backend] No PTX found in CUBIN - operations will be no-ops");
             }
@@ -449,9 +504,8 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                 }
 
                 // Optionally copy into hardware simulator asm dir
-                let hw_asm_dir = std::env::var("HETGPU_TMATMUL_ASM_DIR").unwrap_or_else(|_| {
-                    "/mnt/ubuntu/ternary_matmul/asm".to_string()
-                });
+                let hw_asm_dir = std::env::var("HETGPU_TMATMUL_ASM_DIR")
+                    .unwrap_or_else(|_| "/mnt/ubuntu/ternary_matmul/asm".to_string());
                 let hw_asm_out = std::path::Path::new(&hw_asm_dir).join("hetgpu_kernel.S");
                 if let Err(e) = (|| -> Result<(), std::io::Error> {
                     std::fs::create_dir_all(&hw_asm_dir)?;
@@ -481,43 +535,10 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                     ptx_source: Some(Arc::new(text.to_string())),
                     tmatmul_assembly: Some(tmatmul_asm),
                 };
-
-                // Clone assembly before wrapping (wrap moves new_module)
-                #[cfg(feature = "tmatmul")]
-                let concordia_asm = new_module.tmatmul_assembly.clone();
-
                 *module = new_module.wrap();
                 // Register PTX source for checkpoint/restore
-                crate::r#impl::checkpoint::register_module_ptx(
-                    module.0 as u64,
-                    text,
-                );
+                crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, text);
                 ensure_virtual_context(ctx_handle, dev_handle);
-
-                // Register all kernels from this module with Concordia dispatch table
-                #[cfg(feature = "tmatmul")]
-                {
-                    if crate::r#impl::concordia::is_enabled() {
-                        let ptx_arc = Some(Arc::new(text.to_string()));
-                        let asm_clone = concordia_asm;
-                        // Extract kernel names from PTX (.entry directives)
-                        for line in text.lines() {
-                            let trimmed = line.trim();
-                            if trimmed.starts_with(".entry") || trimmed.starts_with(".visible .entry") {
-                                if let Some(name) = trimmed.split_whitespace()
-                                    .find(|w| !w.starts_with('.') && !w.starts_with("//") && w.len() > 1)
-                                {
-                                    let clean_name = name.trim_end_matches('(');
-                                    crate::r#impl::concordia::on_module_compiled(
-                                        clean_name,
-                                        asm_clone.clone(),
-                                        ptx_arc.clone(),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
 
                 crate::r#impl::hetgpu_debug!(
                     "[TMatmul Backend] TMatmul assembly ready for emulator at /tmp/tmatmul_kernel.S"
@@ -536,10 +557,8 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                         );
                         let asm_path = std::env::temp_dir().join("tmatmul_kernel.S");
                         let _ = std::fs::write(&asm_path, &tmatmul_asm);
-                        let hw_asm_dir =
-                            std::env::var("HETGPU_TMATMUL_ASM_DIR").unwrap_or_else(|_| {
-                                "/mnt/ubuntu/ternary_matmul/asm".to_string()
-                            });
+                        let hw_asm_dir = std::env::var("HETGPU_TMATMUL_ASM_DIR")
+                            .unwrap_or_else(|_| "/mnt/ubuntu/ternary_matmul/asm".to_string());
                         let hw_asm_out = std::path::Path::new(&hw_asm_dir).join("hetgpu_kernel.S");
                         let _ = (|| -> Result<(), std::io::Error> {
                             std::fs::create_dir_all(&hw_asm_dir)?;
@@ -558,10 +577,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                         };
                         *module = new_module.wrap();
                         // Register PTX source for checkpoint/restore
-                        crate::r#impl::checkpoint::register_module_ptx(
-                            module.0 as u64,
-                            &sanitized,
-                        );
+                        crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, &sanitized);
                         ensure_virtual_context(ctx_handle, dev_handle);
                         return Ok(());
                     }
@@ -578,10 +594,7 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
                         };
                         *module = new_module.wrap();
                         // Register PTX source for checkpoint/restore
-                        crate::r#impl::checkpoint::register_module_ptx(
-                            module.0 as u64,
-                            text,
-                        );
+                        crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, text);
                         ensure_virtual_context(ctx_handle, dev_handle);
                         return Ok(());
                     }
@@ -807,18 +820,24 @@ pub(crate) fn get_function(
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
         .unwrap_or(false);
     if use_tmatmul || hmod.module.0.is_null() {
-        eprintln!("[Intel Backend] Creating placeholder kernel '{}' for tmatmul emulation", name_str);
+        eprintln!(
+            "[Intel Backend] Creating placeholder kernel '{}' for tmatmul emulation",
+            name_str
+        );
         let kernel_wrapper = ZeKernel {
             context: hmod.context,
             device: hmod.device,
             module: hmod.module,
             kernel: ze_kernel_handle_t(std::ptr::null_mut()),
             name: name_str.to_string(),
-            ptx_source: hmod.ptx_source.clone(),  // Pass PTX to kernel for emulation
+            ptx_source: hmod.ptx_source.clone(), // Pass PTX to kernel for emulation
             module_handle: hmod.module.0 as u64,
         };
         if let Some(ref ptx) = kernel_wrapper.ptx_source {
-            eprintln!("[Intel Backend] Kernel has {} bytes of PTX available", ptx.len());
+            eprintln!(
+                "[Intel Backend] Kernel has {} bytes of PTX available",
+                ptx.len()
+            );
         }
         *hfunc = kernel_wrapper.wrap();
         return CUresult::SUCCESS;
@@ -883,8 +902,8 @@ pub(crate) struct ZeKernel {
     pub module: ze_module_handle_t,
     pub kernel: ze_kernel_handle_t,
     pub name: String,
-    pub ptx_source: Option<Arc<String>>,  // Shared PTX - avoids cloning per kernel
-    pub module_handle: u64,  // Handle for checkpoint tracking
+    pub ptx_source: Option<Arc<String>>, // Shared PTX - avoids cloning per kernel
+    pub module_handle: u64,              // Handle for checkpoint tracking
 }
 #[cfg(feature = "intel")]
 unsafe impl Send for ZeKernel {}
@@ -892,7 +911,7 @@ unsafe impl Send for ZeKernel {}
 unsafe impl Sync for ZeKernel {}
 #[cfg(feature = "intel")]
 impl ZludaObject for ZeKernel {
-    const COOKIE: usize = 0xad74ceadb9b2d51c;
+    const COOKIE: usize = 0xb9b2d51c;
 
     type CudaHandle = CUfunction;
 
@@ -1023,7 +1042,7 @@ unsafe impl Sync for TtKernel {}
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 impl ZludaObject for TtKernel {
-    const COOKIE: usize = 0xad74ceadb9b2d51c;
+    const COOKIE: usize = 0xb9b2d51c;
 
     type CudaHandle = CUfunction;
 
@@ -1075,7 +1094,7 @@ unsafe impl Sync for Module {}
     not(feature = "tenstorrent")
 ))]
 impl ZludaObject for Module {
-    const COOKIE: usize = 0xe9138bd040487d4a;
+    const COOKIE: usize = 0x40487d4a;
 
     type CudaHandle = CUmodule;
 
@@ -1267,7 +1286,7 @@ unsafe impl Sync for TMatmulKernel {}
     not(feature = "tenstorrent")
 ))]
 impl ZludaObject for TMatmulKernel {
-    const COOKIE: usize = 0xad74ceadb9b2d51c;
+    const COOKIE: usize = 0xb9b2d51c;
 
     type CudaHandle = CUfunction;
 
@@ -1295,16 +1314,23 @@ impl<'a> super::FromCuda<'a, CUfunction> for &'a TMatmulKernel {
 #[cfg(feature = "intel")]
 fn try_extract_ptx_from_cubin(binary: &[u8]) -> Option<String> {
     // Check for ELF magic
-    if binary.len() < 4 || !(binary[0] == 0x7f && binary[1] == b'E' && binary[2] == b'L' && binary[3] == b'F') {
-        eprintln!("[PTX Extract] Not an ELF file (magic: {:02x} {:02x} {:02x} {:02x})",
-                 binary.get(0).copied().unwrap_or(0),
-                 binary.get(1).copied().unwrap_or(0),
-                 binary.get(2).copied().unwrap_or(0),
-                 binary.get(3).copied().unwrap_or(0));
+    if binary.len() < 4
+        || !(binary[0] == 0x7f && binary[1] == b'E' && binary[2] == b'L' && binary[3] == b'F')
+    {
+        eprintln!(
+            "[PTX Extract] Not an ELF file (magic: {:02x} {:02x} {:02x} {:02x})",
+            binary.get(0).copied().unwrap_or(0),
+            binary.get(1).copied().unwrap_or(0),
+            binary.get(2).copied().unwrap_or(0),
+            binary.get(3).copied().unwrap_or(0)
+        );
         return None;
     }
 
-    eprintln!("[PTX Extract] ELF file detected (size: {} bytes), searching for embedded PTX...", binary.len());
+    eprintln!(
+        "[PTX Extract] ELF file detected (size: {} bytes), searching for embedded PTX...",
+        binary.len()
+    );
 
     // First try to parse ELF properly to find .nv_fatbin section (contains compressed PTX)
     if let Some(ptx) = try_extract_ptx_from_elf_sections(binary) {
@@ -1325,21 +1351,36 @@ fn try_extract_ptx_from_cubin(binary: &[u8]) -> Option<String> {
             let next_char = binary.get(i + version_pattern.len()).copied().unwrap_or(0);
             if next_char.is_ascii_digit() {
                 all_version_positions.push(i);
-                eprintln!("[PTX Extract] Found potential PTX at offset {} (next bytes: {:?})",
-                         i, &binary[i..binary.len().min(i + 30)].iter()
-                             .map(|&b| if b.is_ascii_graphic() || b == b' ' || b == b'\n' { b as char } else { '.' })
-                             .collect::<String>());
+                eprintln!(
+                    "[PTX Extract] Found potential PTX at offset {} (next bytes: {:?})",
+                    i,
+                    &binary[i..binary.len().min(i + 30)]
+                        .iter()
+                        .map(|&b| if b.is_ascii_graphic() || b == b' ' || b == b'\n' {
+                            b as char
+                        } else {
+                            '.'
+                        })
+                        .collect::<String>()
+                );
             }
         }
     }
 
-    eprintln!("[PTX Extract] Found {} potential PTX start positions", all_version_positions.len());
+    eprintln!(
+        "[PTX Extract] Found {} potential PTX start positions",
+        all_version_positions.len()
+    );
 
     // Try each position
     for &pos in &all_version_positions {
         if let Some(ptx) = extract_ptx_from_offset_improved(binary, pos) {
             if ptx.len() >= 100 && ptx.contains(".target") {
-                eprintln!("[PTX Extract] Valid PTX found at offset {} ({} bytes)", pos, ptx.len());
+                eprintln!(
+                    "[PTX Extract] Valid PTX found at offset {} ({} bytes)",
+                    pos,
+                    ptx.len()
+                );
                 return Some(ptx);
             } else {
                 eprintln!("[PTX Extract] Extracted {} bytes from offset {} but doesn't look like valid PTX", ptx.len(), pos);
@@ -1362,7 +1403,10 @@ fn try_extract_ptx_from_elf_sections(binary: &[u8]) -> Option<String> {
 
     // Check if 64-bit ELF (class byte at offset 4)
     let is_64bit = binary[4] == 2;
-    eprintln!("[PTX Extract] ELF class: {}", if is_64bit { "64-bit" } else { "32-bit" });
+    eprintln!(
+        "[PTX Extract] ELF class: {}",
+        if is_64bit { "64-bit" } else { "32-bit" }
+    );
 
     if !is_64bit {
         eprintln!("[PTX Extract] 32-bit ELF not supported for PTX extraction");
@@ -1376,15 +1420,17 @@ fn try_extract_ptx_from_elf_sections(binary: &[u8]) -> Option<String> {
     // e_shstrndx (section name string table index) is at bytes 62-63
 
     let e_shoff = u64::from_le_bytes([
-        binary[40], binary[41], binary[42], binary[43],
-        binary[44], binary[45], binary[46], binary[47]
+        binary[40], binary[41], binary[42], binary[43], binary[44], binary[45], binary[46],
+        binary[47],
     ]) as usize;
     let e_shentsize = u16::from_le_bytes([binary[58], binary[59]]) as usize;
     let e_shnum = u16::from_le_bytes([binary[60], binary[61]]) as usize;
     let e_shstrndx = u16::from_le_bytes([binary[62], binary[63]]) as usize;
 
-    eprintln!("[PTX Extract] ELF: shoff={}, shentsize={}, shnum={}, shstrndx={}",
-             e_shoff, e_shentsize, e_shnum, e_shstrndx);
+    eprintln!(
+        "[PTX Extract] ELF: shoff={}, shentsize={}, shnum={}, shstrndx={}",
+        e_shoff, e_shentsize, e_shnum, e_shstrndx
+    );
 
     if e_shoff == 0 || e_shnum == 0 || e_shoff >= binary.len() {
         eprintln!("[PTX Extract] Invalid section headers");
@@ -1404,10 +1450,14 @@ fn try_extract_ptx_from_elf_sections(binary: &[u8]) -> Option<String> {
 
     // For 64-bit: sh_offset is at bytes 24-31, sh_size is at 32-39
     let strtab_sh_offset = u64::from_le_bytes([
-        binary[strtab_offset + 24], binary[strtab_offset + 25],
-        binary[strtab_offset + 26], binary[strtab_offset + 27],
-        binary[strtab_offset + 28], binary[strtab_offset + 29],
-        binary[strtab_offset + 30], binary[strtab_offset + 31]
+        binary[strtab_offset + 24],
+        binary[strtab_offset + 25],
+        binary[strtab_offset + 26],
+        binary[strtab_offset + 27],
+        binary[strtab_offset + 28],
+        binary[strtab_offset + 29],
+        binary[strtab_offset + 30],
+        binary[strtab_offset + 31],
     ]) as usize;
 
     eprintln!("[PTX Extract] String table at offset {}", strtab_sh_offset);
@@ -1423,8 +1473,10 @@ fn try_extract_ptx_from_elf_sections(binary: &[u8]) -> Option<String> {
 
         // sh_name is at bytes 0-3 (offset into string table)
         let sh_name_offset = u32::from_le_bytes([
-            binary[sh_offset], binary[sh_offset + 1],
-            binary[sh_offset + 2], binary[sh_offset + 3]
+            binary[sh_offset],
+            binary[sh_offset + 1],
+            binary[sh_offset + 2],
+            binary[sh_offset + 3],
         ]) as usize;
 
         // Get section name
@@ -1433,7 +1485,8 @@ fn try_extract_ptx_from_elf_sections(binary: &[u8]) -> Option<String> {
             continue;
         }
 
-        let name_end = binary[name_start..].iter()
+        let name_end = binary[name_start..]
+            .iter()
             .position(|&b| b == 0)
             .map(|p| name_start + p)
             .unwrap_or(binary.len().min(name_start + 64));
@@ -1442,23 +1495,39 @@ fn try_extract_ptx_from_elf_sections(binary: &[u8]) -> Option<String> {
 
         // sh_offset and sh_size for 64-bit
         let section_offset = u64::from_le_bytes([
-            binary[sh_offset + 24], binary[sh_offset + 25],
-            binary[sh_offset + 26], binary[sh_offset + 27],
-            binary[sh_offset + 28], binary[sh_offset + 29],
-            binary[sh_offset + 30], binary[sh_offset + 31]
+            binary[sh_offset + 24],
+            binary[sh_offset + 25],
+            binary[sh_offset + 26],
+            binary[sh_offset + 27],
+            binary[sh_offset + 28],
+            binary[sh_offset + 29],
+            binary[sh_offset + 30],
+            binary[sh_offset + 31],
         ]) as usize;
         let section_size = u64::from_le_bytes([
-            binary[sh_offset + 32], binary[sh_offset + 33],
-            binary[sh_offset + 34], binary[sh_offset + 35],
-            binary[sh_offset + 36], binary[sh_offset + 37],
-            binary[sh_offset + 38], binary[sh_offset + 39]
+            binary[sh_offset + 32],
+            binary[sh_offset + 33],
+            binary[sh_offset + 34],
+            binary[sh_offset + 35],
+            binary[sh_offset + 36],
+            binary[sh_offset + 37],
+            binary[sh_offset + 38],
+            binary[sh_offset + 39],
         ]) as usize;
 
-        if interesting_sections.contains(&section_name) || section_name.contains("ptx") || section_name.contains("fatbin") {
-            eprintln!("[PTX Extract] Found interesting section '{}' at offset {}, size {}",
-                     section_name, section_offset, section_size);
+        if interesting_sections.contains(&section_name)
+            || section_name.contains("ptx")
+            || section_name.contains("fatbin")
+        {
+            eprintln!(
+                "[PTX Extract] Found interesting section '{}' at offset {}, size {}",
+                section_name, section_offset, section_size
+            );
 
-            if section_offset > 0 && section_size > 0 && section_offset + section_size <= binary.len() {
+            if section_offset > 0
+                && section_size > 0
+                && section_offset + section_size <= binary.len()
+            {
                 let section_data = &binary[section_offset..section_offset + section_size];
 
                 // Try to extract PTX from this section
@@ -1474,7 +1543,11 @@ fn try_extract_ptx_from_elf_sections(binary: &[u8]) -> Option<String> {
 
 #[cfg(feature = "intel")]
 fn try_extract_ptx_from_section(data: &[u8], section_name: &str) -> Option<String> {
-    eprintln!("[PTX Extract] Analyzing section '{}' ({} bytes)", section_name, data.len());
+    eprintln!(
+        "[PTX Extract] Analyzing section '{}' ({} bytes)",
+        section_name,
+        data.len()
+    );
 
     if data.len() < 8 {
         return None;
@@ -1490,7 +1563,8 @@ fn try_extract_ptx_from_section(data: &[u8], section_name: &str) -> Option<Strin
     }
 
     // Check for compressed data (zlib magic: 0x78)
-    if data[0] == 0x78 && (data[1] == 0x01 || data[1] == 0x5e || data[1] == 0x9c || data[1] == 0xda) {
+    if data[0] == 0x78 && (data[1] == 0x01 || data[1] == 0x5e || data[1] == 0x9c || data[1] == 0xda)
+    {
         eprintln!("[PTX Extract] Found zlib compressed data, attempting decompression...");
         return try_decompress_zlib(data);
     }
@@ -1504,7 +1578,9 @@ fn try_extract_ptx_from_section(data: &[u8], section_name: &str) -> Option<Strin
     }
 
     // Search for PTX within the section
-    if let Some(pos) = data.windows(9).position(|w| w.starts_with(b".version ") && w[9..].first().map(|b| b.is_ascii_digit()).unwrap_or(false)) {
+    if let Some(pos) = data.windows(9).position(|w| {
+        w.starts_with(b".version ") && w[9..].first().map(|b| b.is_ascii_digit()).unwrap_or(false)
+    }) {
         if let Some(ptx) = extract_ptx_from_offset_improved(data, pos) {
             if ptx.len() >= 100 {
                 return Some(ptx);
@@ -1540,16 +1616,30 @@ fn try_extract_ptx_from_fatbin(data: &[u8]) -> Option<String> {
         let kind = u16::from_le_bytes([data[offset], data[offset + 1]]);
         let entry_header_size = u16::from_le_bytes([data[offset + 4], data[offset + 5]]) as usize;
         let payload_size = u64::from_le_bytes([
-            data[offset + 8], data[offset + 9], data[offset + 10], data[offset + 11],
-            data[offset + 12], data[offset + 13], data[offset + 14], data[offset + 15]
+            data[offset + 8],
+            data[offset + 9],
+            data[offset + 10],
+            data[offset + 11],
+            data[offset + 12],
+            data[offset + 13],
+            data[offset + 14],
+            data[offset + 15],
         ]) as usize;
         let uncompressed_size = u64::from_le_bytes([
-            data[offset + 16], data[offset + 17], data[offset + 18], data[offset + 19],
-            data[offset + 20], data[offset + 21], data[offset + 22], data[offset + 23]
+            data[offset + 16],
+            data[offset + 17],
+            data[offset + 18],
+            data[offset + 19],
+            data[offset + 20],
+            data[offset + 21],
+            data[offset + 22],
+            data[offset + 23],
         ]) as usize;
 
-        eprintln!("[PTX Extract] Fatbin entry: kind=0x{:04x}, header={}, payload={}, uncompressed={}",
-                 kind, entry_header_size, payload_size, uncompressed_size);
+        eprintln!(
+            "[PTX Extract] Fatbin entry: kind=0x{:04x}, header={}, payload={}, uncompressed={}",
+            kind, entry_header_size, payload_size, uncompressed_size
+        );
 
         // kind 0x01 = PTX, 0x02 = CUBIN/ELF
         if kind == 0x01 {
@@ -1601,20 +1691,28 @@ fn try_decompress_zlib(data: &[u8]) -> Option<String> {
         let mut decoder = ZlibDecoder::new(data);
         let mut result = String::new();
         if decoder.read_to_string(&mut result).is_ok() && result.contains(".version") {
-            eprintln!("[PTX Extract] Successfully decompressed {} bytes of PTX", result.len());
+            eprintln!(
+                "[PTX Extract] Successfully decompressed {} bytes of PTX",
+                result.len()
+            );
             return Some(result);
         }
     }
 
     // Fallback: try to use system zlib via C
     eprintln!("[PTX Extract] zlib decompression not available (compile with flate2 feature)");
-    eprintln!("[PTX Extract] Compressed data starts with: {:02x} {:02x}", data[0], data[1]);
+    eprintln!(
+        "[PTX Extract] Compressed data starts with: {:02x} {:02x}",
+        data[0], data[1]
+    );
     None
 }
 
 #[cfg(feature = "intel")]
 fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 #[cfg(feature = "intel")]
@@ -1682,19 +1780,30 @@ fn extract_ptx_from_offset_improved(binary: &[u8], start: usize) -> Option<Strin
         if end > start + 50 {
             let window_start = end.saturating_sub(50);
             let window = &binary[window_start..end];
-            let binary_count = window.iter().filter(|&&b| {
-                b > 127 || (b < 32 && b != b'\n' && b != b'\r' && b != b'\t' && b != 0)
-            }).count();
+            let binary_count = window
+                .iter()
+                .filter(|&&b| {
+                    b > 127 || (b < 32 && b != b'\n' && b != b'\r' && b != b'\t' && b != 0)
+                })
+                .count();
 
             // If more than 30% is binary, we've probably left PTX territory
             if binary_count > window.len() * 3 / 10 {
-                eprintln!("[PTX Extract] Binary data detected at offset {}, stopping extraction", end);
+                eprintln!(
+                    "[PTX Extract] Binary data detected at offset {}, stopping extraction",
+                    end
+                );
                 break;
             }
         }
 
         // Update valid end if we're in valid PTX territory
-        if byte.is_ascii_graphic() || byte == b' ' || byte == b'\n' || byte == b'\r' || byte == b'\t' {
+        if byte.is_ascii_graphic()
+            || byte == b' '
+            || byte == b'\n'
+            || byte == b'\r'
+            || byte == b'\t'
+        {
             if found_target {
                 last_valid_end = end + 1;
             }
@@ -1709,7 +1818,10 @@ fn extract_ptx_from_offset_improved(binary: &[u8], start: usize) -> Option<Strin
     }
 
     if end <= start {
-        eprintln!("[PTX Extract] No valid PTX content found at offset {}", start);
+        eprintln!(
+            "[PTX Extract] No valid PTX content found at offset {}",
+            start
+        );
         return None;
     }
 
@@ -1717,23 +1829,35 @@ fn extract_ptx_from_offset_improved(binary: &[u8], start: usize) -> Option<Strin
     let ptx_bytes = &binary[start..end];
 
     // Filter out null bytes and invalid characters
-    let cleaned: Vec<u8> = ptx_bytes.iter()
+    let cleaned: Vec<u8> = ptx_bytes
+        .iter()
         .copied()
-        .filter(|&b| b != 0 && (b.is_ascii_graphic() || b == b' ' || b == b'\n' || b == b'\r' || b == b'\t'))
+        .filter(|&b| {
+            b != 0 && (b.is_ascii_graphic() || b == b' ' || b == b'\n' || b == b'\r' || b == b'\t')
+        })
         .collect();
 
     match String::from_utf8(cleaned) {
         Ok(ptx) => {
             let trimmed = ptx.trim();
             if trimmed.len() < 50 {
-                eprintln!("[PTX Extract] PTX too short ({} bytes) after cleaning", trimmed.len());
+                eprintln!(
+                    "[PTX Extract] PTX too short ({} bytes) after cleaning",
+                    trimmed.len()
+                );
                 return None;
             }
-            eprintln!("[PTX Extract] Extracted {} bytes of PTX (cleaned from {} raw bytes)",
-                     trimmed.len(), end - start);
-            eprintln!("[PTX Extract] PTX starts with: {}...", &trimmed[..trimmed.len().min(100)]);
+            eprintln!(
+                "[PTX Extract] Extracted {} bytes of PTX (cleaned from {} raw bytes)",
+                trimmed.len(),
+                end - start
+            );
+            eprintln!(
+                "[PTX Extract] PTX starts with: {}...",
+                &trimmed[..trimmed.len().min(100)]
+            );
             Some(trimmed.to_string())
-        },
+        }
         Err(e) => {
             eprintln!("[PTX Extract] Failed to decode PTX as UTF-8: {}", e);
             None
@@ -1747,11 +1871,18 @@ fn extract_ptx_from_offset(binary: &[u8], start: usize) -> Option<String> {
     let mut end = start;
     while end < binary.len() && end < start + 100_000 {
         let byte = binary[end];
-        if byte == 0 { break; }
+        if byte == 0 {
+            break;
+        }
         if end > start + 100 {
             let recent = &binary[end.saturating_sub(100)..end];
-            let binary_ratio = recent.iter().filter(|&&b| b > 127 || (b < 32 && b != b'\n' && b != b'\r' && b != b'\t')).count();
-            if binary_ratio > recent.len() / 2 { break; }
+            let binary_ratio = recent
+                .iter()
+                .filter(|&&b| b > 127 || (b < 32 && b != b'\n' && b != b'\r' && b != b'\t'))
+                .count();
+            if binary_ratio > recent.len() / 2 {
+                break;
+            }
         }
         end += 1;
     }
@@ -1761,7 +1892,7 @@ fn extract_ptx_from_offset(binary: &[u8], start: usize) -> Option<String> {
         Ok(ptx) => {
             eprintln!("[PTX Extract] Extracted {} bytes of PTX", ptx.len());
             Some(ptx.to_string())
-        },
+        }
         Err(e) => {
             eprintln!("[PTX Extract] Failed to decode PTX as UTF-8: {}", e);
             None
@@ -1806,14 +1937,17 @@ unsafe impl Sync for Module {}
     not(feature = "tmatmul")
 ))]
 impl ZludaObject for Module {
-    const COOKIE: usize = 0xe9138bd040487d4a;
+    const COOKIE: usize = 0x40487d4a;
 
     type CudaHandle = CUmodule;
 
     fn drop_checked(&mut self) -> CUresult {
         let result = nvidia_runtime_sys::cuModuleUnload(self.cuda_module);
         if result != 0 {
-            eprintln!("[NVIDIA Backend] cuModuleUnload failed with error {}", result);
+            eprintln!(
+                "[NVIDIA Backend] cuModuleUnload failed with error {}",
+                result
+            );
             return Err(CUerror::UNKNOWN);
         }
         Ok(())
@@ -1861,7 +1995,10 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     let temp_handle = image as u64;
     if let Some(ref ptx) = ptx_source {
         crate::r#impl::checkpoint::register_module_ptx(temp_handle, ptx);
-        eprintln!("[NVIDIA Backend] Pre-registered PTX source for checkpointing (temp handle: 0x{:x})", temp_handle);
+        eprintln!(
+            "[NVIDIA Backend] Pre-registered PTX source for checkpointing (temp handle: 0x{:x})",
+            temp_handle
+        );
     }
 
     // Pass through to real CUDA driver
@@ -1869,19 +2006,22 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     let result = nvidia_runtime_sys::cuModuleLoadData(&mut cuda_module, image);
 
     if result != 0 {
-        eprintln!("[NVIDIA Backend] cuModuleLoadData failed with error {}", result);
+        eprintln!(
+            "[NVIDIA Backend] cuModuleLoadData failed with error {}",
+            result
+        );
         // Even though loading failed, PTX is still registered for checkpoint purposes
         // This allows heterogeneous restore to another backend
-        eprintln!("[NVIDIA Backend] PTX source is still available for heterogeneous checkpoint/restore");
+        eprintln!(
+            "[NVIDIA Backend] PTX source is still available for heterogeneous checkpoint/restore"
+        );
         return Err(CUerror::NO_BINARY_FOR_GPU);
     }
 
     eprintln!("[NVIDIA Backend] Module loaded successfully");
 
     // Create module wrapper
-    let new_module = Module {
-        cuda_module,
-    };
+    let new_module = Module { cuda_module };
 
     *module = new_module.wrap();
 
@@ -1889,59 +2029,13 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     // This updates the checkpoint registry with the correct handle
     if let Some(ptx) = ptx_source {
         crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, &ptx);
-        eprintln!("[NVIDIA Backend] Registered PTX source for checkpointing (module: 0x{:x})", module.0 as u64);
+        eprintln!(
+            "[NVIDIA Backend] Registered PTX source for checkpointing (module: 0x{:x})",
+            module.0 as u64
+        );
     }
 
     Ok(())
-}
-
-#[cfg(all(
-    feature = "nvidia",
-    not(feature = "amd"),
-    not(feature = "intel"),
-    not(feature = "tenstorrent"),
-    not(feature = "tmatmul")
-))]
-pub(crate) fn load(
-    module: &mut CUmodule,
-    fname: *const ::core::ffi::c_char,
-) -> CUresult {
-    let path = unsafe { std::ffi::CStr::from_ptr(fname) }
-        .to_str()
-        .map_err(|_| CUerror::INVALID_VALUE)?;
-    let data = std::fs::read(path).map_err(|_| CUerror::FILE_NOT_FOUND)?;
-    load_data(module, data.as_ptr() as *const std::ffi::c_void)
-}
-
-#[cfg(all(
-    feature = "nvidia",
-    not(feature = "amd"),
-    not(feature = "intel"),
-    not(feature = "tenstorrent"),
-    not(feature = "tmatmul")
-))]
-pub(crate) fn load_fat_binary(
-    module: &mut CUmodule,
-    fat_cubin: *const std::ffi::c_void,
-) -> CUresult {
-    load_data(module, fat_cubin)
-}
-
-#[cfg(all(
-    feature = "nvidia",
-    not(feature = "amd"),
-    not(feature = "intel"),
-    not(feature = "tenstorrent"),
-    not(feature = "tmatmul")
-))]
-pub(crate) fn load_data_ex(
-    module: &mut CUmodule,
-    image: *const std::ffi::c_void,
-    _num_options: std::ffi::c_uint,
-    _options: *mut cuda_types::cuda::CUjit_option,
-    _option_values: *mut *mut std::ffi::c_void,
-) -> CUresult {
-    load_data(module, image)
 }
 
 #[cfg(all(
@@ -1984,7 +2078,10 @@ pub(crate) fn get_function(
     let result = nvidia_runtime_sys::cuModuleGetFunction(&mut cuda_func, hmod.cuda_module, name);
 
     if result != 0 {
-        eprintln!("[NVIDIA Backend] cuModuleGetFunction failed with error {}", result);
+        eprintln!(
+            "[NVIDIA Backend] cuModuleGetFunction failed with error {}",
+            result
+        );
         return Err(CUerror::NOT_FOUND);
     }
 
@@ -2038,7 +2135,7 @@ unsafe impl Sync for NvidiaKernel {}
     not(feature = "tmatmul")
 ))]
 impl ZludaObject for NvidiaKernel {
-    const COOKIE: usize = 0xad74ceadb9b2d51c;
+    const COOKIE: usize = 0xb9b2d51c;
 
     type CudaHandle = CUfunction;
 
@@ -2047,3 +2144,452 @@ impl ZludaObject for NvidiaKernel {
         Ok(())
     }
 }
+
+// ============================================================================
+// WebGPU backend module implementations
+// ============================================================================
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -> CUresult {
+    if image.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let text = unsafe { CStr::from_ptr(image.cast()) }
+        .to_str()
+        .map_err(|_| CUerror::INVALID_VALUE)?;
+    let module_id =
+        crate::r#impl::webgpu::load_module(text.as_bytes()).map_err(|_| CUerror::UNKNOWN)?;
+    let new_module = Module {
+        module_id,
+        ptx_source: Arc::new(text.to_string()),
+        kernels: Vec::new(),
+    };
+    *module = new_module.wrap();
+    crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, text);
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn unload(hmod: CUmodule) -> CUresult {
+    super::drop_checked::<Module>(hmod)
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_function(
+    hfunc: &mut CUfunction,
+    hmod: &Module,
+    name: *const ::core::ffi::c_char,
+) -> CUresult {
+    if name.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let function_name = unsafe {
+        CStr::from_ptr(name)
+            .to_str()
+            .map_err(|_| CUerror::INVALID_VALUE)?
+    };
+    let kernel_id = crate::r#impl::webgpu::get_function(hmod.module_id, function_name)
+        .map_err(|_| CUerror::NOT_FOUND)?;
+    let kernel = WebGpuKernel {
+        module_id: hmod.module_id,
+        kernel_id,
+        function_name: function_name.to_string(),
+        ptx_source: hmod.ptx_source.clone(),
+    };
+    *hfunc = kernel.wrap();
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) struct WebGpuKernel {
+    pub module_id: u64,
+    pub kernel_id: u64,
+    pub function_name: String,
+    pub ptx_source: Arc<String>,
+}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Send for WebGpuKernel {}
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Sync for WebGpuKernel {}
+
+#[cfg(all(
+    feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl ZludaObject for WebGpuKernel {
+    const COOKIE: usize = 0x2ae60777;
+
+    type CudaHandle = CUfunction;
+
+    fn drop_checked(&mut self) -> CUresult {
+        Ok(())
+    }
+}
+
+// ============================================================================
+// PACC backend module implementations (SiFive Intelligence XM / RISC-V IME)
+// ============================================================================
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) struct Module {
+    device: *mut pacc_runtime_sys::pacc_Device,
+    program: Option<*mut pacc_runtime_sys::pacc_Program>,
+    kernels: Vec<(String, *mut pacc_runtime_sys::pacc_Kernel)>,
+}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+unsafe impl Send for Module {}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+unsafe impl Sync for Module {}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+fn current_pacc_device_id() -> Result<i32, CUerror> {
+    let device_count = super::driver::global_state()?.devices.len() as i32;
+    let device_id = match super::context::get_current_pacc() {
+        Ok(ctx) => ctx.device_id,
+        Err(_) => 0,
+    };
+    if device_id >= 0 && device_id < device_count {
+        Ok(device_id)
+    } else {
+        Ok(0)
+    }
+}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+impl ZludaObject for Module {
+    const COOKIE: usize = 0x40487d4a;
+
+    type CudaHandle = CUmodule;
+
+    fn drop_checked(&mut self) -> CUresult {
+        self.kernels.clear();
+        self.program = None;
+        Ok(())
+    }
+}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -> CUresult {
+    if image.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+
+    // Try to extract PTX source
+    let image_bytes = unsafe { std::slice::from_raw_parts(image as *const u8, 8) };
+    let is_ptx = image_bytes.starts_with(b".version") || image_bytes.starts_with(b"//");
+
+    if is_ptx {
+        let c_str = unsafe { std::ffi::CStr::from_ptr(image as *const std::ffi::c_char) };
+        if let Ok(ptx_text) = c_str.to_str() {
+            crate::r#impl::checkpoint::register_module_ptx(image as u64, ptx_text);
+        }
+    }
+
+    let device_id = current_pacc_device_id()?;
+    // Bind this CUDA module to the current logical PACC device/context.
+    let device = unsafe { pacc_runtime_sys::pacc_CreateDevice(device_id as u32) };
+    if device.is_null() {
+        eprintln!("[PACC Backend] Failed to create PACC device {}", device_id);
+        return Err(CUerror::UNKNOWN);
+    }
+    if std::env::var("HETGPU_PACC_LOG_PROGRAM_LOADS")
+        .ok()
+        .as_deref()
+        == Some("1")
+    {
+        eprintln!(
+            "[PACC Backend] cuModuleLoadData binding module to pacc{}",
+            device_id
+        );
+    }
+
+    // Create PACC program
+    let program_ptr = unsafe { pacc_runtime_sys::pacc_CreateProgram() };
+
+    // If PTX, ask the PACC runtime to compile PTX -> LLVM -> XM ELF and load it.
+    if is_ptx && !program_ptr.is_null() {
+        let c_str = unsafe { std::ffi::CStr::from_ptr(image as *const std::ffi::c_char) };
+        if let Ok(ptx_text) = c_str.to_str() {
+            if std::env::var("HETGPU_PACC_LOG_PROGRAM_LOADS")
+                .ok()
+                .as_deref()
+                == Some("1")
+            {
+                eprintln!(
+                    "[PACC Backend] Compiling PTX ({} bytes) through pacc runtime...",
+                    ptx_text.len()
+                );
+            }
+            let result = unsafe {
+                pacc_runtime_sys::pacc_LoadProgramPtx(
+                    program_ptr,
+                    std::ptr::null(),
+                    c"module.ptx".as_ptr(),
+                    ptx_text.as_ptr(),
+                    ptx_text.len() as u64,
+                    std::ptr::null(),
+                    0,
+                )
+            };
+            if result != pacc_runtime_sys::pacc_Result_Success {
+                let compile_error = unsafe {
+                    program_ptr
+                        .as_ref()
+                        .and_then(|p| p.compile_error.as_deref())
+                        .map(str::to_owned)
+                };
+                eprintln!(
+                    "[PACC Backend] pacc_LoadProgramPtx failed: {}{}",
+                    result,
+                    compile_error
+                        .as_deref()
+                        .map(|msg| format!(" ({})", msg))
+                        .unwrap_or_default()
+                );
+            } else if std::env::var("HETGPU_PACC_LOG_PROGRAM_LOADS")
+                .ok()
+                .as_deref()
+                == Some("1")
+            {
+                eprintln!(
+                    "[PACC Backend] pacc_LoadProgramPtx succeeded for {} bytes of PTX",
+                    ptx_text.len()
+                );
+            }
+        }
+    }
+
+    let new_module = Module {
+        device,
+        program: if program_ptr.is_null() {
+            None
+        } else {
+            Some(program_ptr)
+        },
+        kernels: Vec::new(),
+    };
+
+    *module = new_module.wrap();
+
+    if std::env::var("HETGPU_PACC_LOG_PROGRAM_LOADS")
+        .ok()
+        .as_deref()
+        == Some("1")
+    {
+        let module_ref = super::as_ref::<Module>(module).as_result()?;
+        let elf_len = module_ref
+            .program
+            .map(|p| unsafe { (*p).elf_bytes.len() })
+            .unwrap_or(0);
+        eprintln!(
+            "[PACC Backend] cuModuleLoadData installed module={:?} program={:?} elf_bytes={}",
+            *module, module_ref.program, elf_len
+        );
+    }
+
+    if is_ptx {
+        let c_str = unsafe { std::ffi::CStr::from_ptr(image as *const std::ffi::c_char) };
+        if let Ok(ptx_text) = c_str.to_str() {
+            crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, ptx_text);
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn unload(hmod: CUmodule) -> CUresult {
+    if hmod.0.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    super::drop_checked::<Module>(hmod)
+}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_function(
+    hfunc: *mut CUfunction,
+    hmod: CUmodule,
+    name: *const ::core::ffi::c_char,
+) -> CUresult {
+    if hfunc.is_null() || hmod.0.is_null() || name.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+
+    let function_name = unsafe {
+        std::ffi::CStr::from_ptr(name)
+            .to_str()
+            .map_err(|_| CUerror::INVALID_VALUE)?
+    };
+
+    crate::r#impl::hetgpu_debug!("[PACC Backend] Getting function: {}", function_name);
+
+    // Get program from the wrapped CUDA module handle. PACC modules use the
+    // same LiveCheck wrapper as the other backends; casting CUmodule directly
+    // to Module reads the cookie as fields and makes program look like None.
+    let module_ref = super::as_ref::<Module>(&hmod).as_result()?;
+    let kernel_ptr = if let Some(program) = module_ref.program {
+        unsafe { pacc_runtime_sys::pacc_CreateKernelOnDevice(program, module_ref.device, name) }
+    } else {
+        std::ptr::null_mut()
+    };
+
+    if std::env::var("HETGPU_PACC_LOG_KERNEL_HANDLES")
+        .ok()
+        .as_deref()
+        == Some("1")
+    {
+        eprintln!(
+            "[PACC Backend] Function '{}' module_device={:?} program={:?} elf_bytes={} kernel_ptr={:?}",
+            function_name,
+            module_ref.device,
+            module_ref.program,
+            module_ref
+                .program
+                .map(|p| unsafe { (*p).elf_bytes.len() })
+                .unwrap_or(0),
+            kernel_ptr
+        );
+    }
+
+    let pacc_kernel = PaccKernel {
+        device: module_ref.device,
+        kernel_ptr,
+        kernel_name: function_name.to_string(),
+    };
+
+    let kernel_box = Box::new(pacc_kernel);
+    let kernel_raw = Box::into_raw(kernel_box);
+    unsafe { *hfunc = CUfunction(kernel_raw as *mut _) };
+    Ok(())
+}
+
+// PACC kernel structure
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+#[repr(C)]
+pub(crate) struct PaccKernel {
+    pub device: *mut pacc_runtime_sys::pacc_Device,
+    pub kernel_ptr: *mut pacc_runtime_sys::pacc_Kernel,
+    pub kernel_name: String,
+}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+unsafe impl Send for PaccKernel {}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+unsafe impl Sync for PaccKernel {}
+
+#[cfg(all(
+    feature = "pacc",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+impl ZludaObject for PaccKernel {
+    const COOKIE: usize = 0xb9b2d51c;
+
+    type CudaHandle = CUfunction;
+
+    fn drop_checked(&mut self) -> CUresult {
+        eprintln!("[PACC Backend] Cleaning up kernel: {}", self.kernel_name);
+        Ok(())
+    }
+}
+
+// FromCuda<CUfunction> for &PaccKernel is generated by from_cuda_object!(module::PaccKernel)

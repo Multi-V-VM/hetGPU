@@ -2,8 +2,8 @@
 //!
 //! These tests verify the complete flow of parsing SASS and generating LLVM IR.
 
-use std::process::{Command, Stdio};
 use std::io::Write;
+use std::process::{Command, Stdio};
 
 // Sample cuobjdump -sass output for testing
 const SAMPLE_CUOBJDUMP_OUTPUT: &str = r#"
@@ -59,9 +59,18 @@ fn test_sass_inliner_help() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Check for key help text components
-    assert!(stdout.contains("SASS") || stdout.contains("sass"), "Expected SASS in help text");
-    assert!(stdout.contains("--strategy") || stdout.contains("strategy"), "Expected strategy option");
-    assert!(stdout.contains("--stdin") || stdout.contains("stdin"), "Expected stdin option");
+    assert!(
+        stdout.contains("SASS") || stdout.contains("sass"),
+        "Expected SASS in help text"
+    );
+    assert!(
+        stdout.contains("--strategy") || stdout.contains("strategy"),
+        "Expected strategy option"
+    );
+    assert!(
+        stdout.contains("--stdin") || stdout.contains("stdin"),
+        "Expected stdin option"
+    );
 }
 
 #[test]
@@ -79,7 +88,9 @@ fn test_sass_inliner_stdin_metadata_only() {
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(SIMPLE_KERNEL_OUTPUT.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(SIMPLE_KERNEL_OUTPUT.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -92,8 +103,14 @@ fn test_sass_inliner_stdin_metadata_only() {
         eprintln!("stderr: {}", stderr);
     }
     assert!(output.status.success(), "sass_inliner failed: {}", stderr);
-    assert!(stdout.contains("define"), "Expected LLVM IR function definition");
-    assert!(stdout.contains("_sass_simple_add"), "Expected kernel function name");
+    assert!(
+        stdout.contains("define"),
+        "Expected LLVM IR function definition"
+    );
+    assert!(
+        stdout.contains("_sass_simple_add"),
+        "Expected kernel function name"
+    );
 }
 
 #[test]
@@ -111,7 +128,9 @@ fn test_sass_inliner_stdin_ptx_reconstruction() {
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(SIMPLE_KERNEL_OUTPUT.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(SIMPLE_KERNEL_OUTPUT.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -123,7 +142,10 @@ fn test_sass_inliner_stdin_ptx_reconstruction() {
         eprintln!("stderr: {}", stderr);
     }
     assert!(output.status.success(), "sass_inliner failed: {}", stderr);
-    assert!(stdout.contains("define"), "Expected LLVM IR function definition");
+    assert!(
+        stdout.contains("define"),
+        "Expected LLVM IR function definition"
+    );
 }
 
 #[test]
@@ -141,7 +163,9 @@ fn test_sass_inliner_stdin_inline_assembly() {
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(SIMPLE_KERNEL_OUTPUT.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(SIMPLE_KERNEL_OUTPUT.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -153,7 +177,10 @@ fn test_sass_inliner_stdin_inline_assembly() {
         eprintln!("stderr: {}", stderr);
     }
     assert!(output.status.success(), "sass_inliner failed: {}", stderr);
-    assert!(stdout.contains("define"), "Expected LLVM IR function definition");
+    assert!(
+        stdout.contains("define"),
+        "Expected LLVM IR function definition"
+    );
 }
 
 #[test]
@@ -171,7 +198,9 @@ fn test_sass_inliner_stdin_hybrid() {
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(SIMPLE_KERNEL_OUTPUT.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(SIMPLE_KERNEL_OUTPUT.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -183,7 +212,10 @@ fn test_sass_inliner_stdin_hybrid() {
         eprintln!("stderr: {}", stderr);
     }
     assert!(output.status.success(), "sass_inliner failed: {}", stderr);
-    assert!(stdout.contains("define"), "Expected LLVM IR function definition");
+    assert!(
+        stdout.contains("define"),
+        "Expected LLVM IR function definition"
+    );
 }
 
 #[test]
@@ -202,7 +234,9 @@ fn test_sass_inliner_vector_add_kernel() {
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(SAMPLE_CUOBJDUMP_OUTPUT.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(SAMPLE_CUOBJDUMP_OUTPUT.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -216,11 +250,17 @@ fn test_sass_inliner_vector_add_kernel() {
     assert!(output.status.success(), "sass_inliner failed: {}", stderr);
 
     // Check LLVM IR structure
-    assert!(stdout.contains("define"), "Expected LLVM IR function definition");
+    assert!(
+        stdout.contains("define"),
+        "Expected LLVM IR function definition"
+    );
     assert!(stdout.contains("_sass_"), "Expected SASS kernel prefix");
 
     // Check verbose output
-    assert!(stderr.contains("Parsed") || stderr.contains("instruction"), "Expected verbose output");
+    assert!(
+        stderr.contains("Parsed") || stderr.contains("instruction"),
+        "Expected verbose output"
+    );
 }
 
 #[test]
@@ -237,7 +277,9 @@ fn test_sass_inliner_with_dump_sass() {
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(SIMPLE_KERNEL_OUTPUT.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(SIMPLE_KERNEL_OUTPUT.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -251,8 +293,14 @@ fn test_sass_inliner_with_dump_sass() {
     assert!(output.status.success(), "sass_inliner failed: {}", stderr);
 
     // Check that SASS instructions were dumped to stdout
-    assert!(stdout.contains("MOV") || stdout.contains("IADD") || stdout.contains("FADD") || stdout.contains("SASS"),
-            "Expected SASS instruction dump in stdout, got: {}", stdout);
+    assert!(
+        stdout.contains("MOV")
+            || stdout.contains("IADD")
+            || stdout.contains("FADD")
+            || stdout.contains("SASS"),
+        "Expected SASS instruction dump in stdout, got: {}",
+        stdout
+    );
 }
 
 #[test]
@@ -280,7 +328,9 @@ Function : memory_test
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(memory_kernel.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(memory_kernel.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -292,7 +342,10 @@ Function : memory_test
         eprintln!("stderr: {}", stderr);
     }
     assert!(output.status.success(), "sass_inliner failed: {}", stderr);
-    assert!(stdout.contains("define"), "Expected LLVM IR function definition");
+    assert!(
+        stdout.contains("define"),
+        "Expected LLVM IR function definition"
+    );
 }
 
 #[test]
@@ -320,7 +373,9 @@ Function : arith_test
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(arith_kernel.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(arith_kernel.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -334,11 +389,21 @@ Function : arith_test
     assert!(output.status.success(), "sass_inliner failed: {}", stderr);
 
     // PTX reconstruction should generate actual LLVM operations
-    assert!(stdout.contains("define"), "Expected LLVM IR function definition");
+    assert!(
+        stdout.contains("define"),
+        "Expected LLVM IR function definition"
+    );
     // Check for various IR operations that could be generated
-    assert!(stdout.contains("add") || stdout.contains("fadd") || stdout.contains("mul")
-            || stdout.contains("sitofp") || stdout.contains("call") || stdout.contains("ret"),
-            "Expected LLVM operations in output, got: {}", &stdout[..std::cmp::min(500, stdout.len())]);
+    assert!(
+        stdout.contains("add")
+            || stdout.contains("fadd")
+            || stdout.contains("mul")
+            || stdout.contains("sitofp")
+            || stdout.contains("call")
+            || stdout.contains("ret"),
+        "Expected LLVM operations in output, got: {}",
+        &stdout[..std::cmp::min(500, stdout.len())]
+    );
 }
 
 #[test]
@@ -366,7 +431,9 @@ Function : control_test
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(control_kernel.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(control_kernel.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -378,7 +445,10 @@ Function : control_test
         eprintln!("stderr: {}", stderr);
     }
     assert!(output.status.success(), "sass_inliner failed: {}", stderr);
-    assert!(stdout.contains("define"), "Expected LLVM IR function definition");
+    assert!(
+        stdout.contains("define"),
+        "Expected LLVM IR function definition"
+    );
 }
 
 #[test]
@@ -403,7 +473,9 @@ Function : sync_test
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(sync_kernel.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(sync_kernel.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -415,7 +487,10 @@ Function : sync_test
         eprintln!("stderr: {}", stderr);
     }
     assert!(output.status.success(), "sass_inliner failed: {}", stderr);
-    assert!(stdout.contains("define"), "Expected LLVM IR function definition");
+    assert!(
+        stdout.contains("define"),
+        "Expected LLVM IR function definition"
+    );
 }
 
 #[test]
@@ -442,7 +517,9 @@ Function : special_test
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(special_kernel.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(special_kernel.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -454,7 +531,10 @@ Function : special_test
         eprintln!("stderr: {}", stderr);
     }
     assert!(output.status.success(), "sass_inliner failed: {}", stderr);
-    assert!(stdout.contains("define"), "Expected LLVM IR function definition");
+    assert!(
+        stdout.contains("define"),
+        "Expected LLVM IR function definition"
+    );
 }
 
 #[test]
@@ -482,7 +562,9 @@ fn test_sass_inliner_output_file() {
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(SIMPLE_KERNEL_OUTPUT.as_bytes()).expect("Failed to write");
+        stdin
+            .write_all(SIMPLE_KERNEL_OUTPUT.as_bytes())
+            .expect("Failed to write");
     }
 
     let output = child.wait_with_output().expect("Failed to wait");
@@ -497,7 +579,10 @@ fn test_sass_inliner_output_file() {
     assert!(Path::new(output_path).exists(), "Output file should exist");
 
     let content = fs::read_to_string(output_path).expect("Failed to read output");
-    assert!(content.contains("define"), "Output file should contain LLVM IR");
+    assert!(
+        content.contains("define"),
+        "Output file should contain LLVM IR"
+    );
 
     // Clean up
     let _ = fs::remove_file(output_path);

@@ -4,12 +4,12 @@
 //! execution and allow resuming from saved state.
 
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::path::PathBuf;
-use std::fs;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // Fine-Grained Checkpoint Structures
@@ -340,19 +340,17 @@ impl CheckpointManager {
         let json = serde_json::to_string_pretty(&checkpoint_data)
             .map_err(|e| format!("JSON serialization error: {}", e))?;
 
-        fs::write(&filepath, json)
-            .map_err(|e| format!("Failed to write checkpoint: {}", e))?;
+        fs::write(&filepath, json).map_err(|e| format!("Failed to write checkpoint: {}", e))?;
 
         Ok(filepath)
     }
 
     /// Load checkpoint from file
     pub fn load_checkpoint(path: &str) -> Result<CheckpointData, String> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read checkpoint: {}", e))?;
+        let content =
+            fs::read_to_string(path).map_err(|e| format!("Failed to read checkpoint: {}", e))?;
 
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse checkpoint: {}", e))
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse checkpoint: {}", e))
     }
 
     /// Save fine-grained checkpoint
@@ -393,20 +391,22 @@ impl CheckpointManager {
         let json = serde_json::to_string_pretty(&checkpoint_data)
             .map_err(|e| format!("JSON serialization error: {}", e))?;
 
-        fs::write(&filepath, json)
-            .map_err(|e| format!("Failed to write checkpoint: {}", e))?;
+        fs::write(&filepath, json).map_err(|e| format!("Failed to write checkpoint: {}", e))?;
 
         eprintln!("[hetGPU] Fine-grained checkpoint saved: {:?}", filepath);
         eprintln!("[hetGPU]   Granularity: {:?}", granularity);
-        eprintln!("[hetGPU]   Kernels: {}", checkpoint_data.kernel_states.len());
+        eprintln!(
+            "[hetGPU]   Kernels: {}",
+            checkpoint_data.kernel_states.len()
+        );
 
         Ok(filepath)
     }
 
     /// Load fine-grained checkpoint
     pub fn load_fine_grained_checkpoint(path: &str) -> Result<FineGrainedCheckpointData, String> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read checkpoint: {}", e))?;
+        let content =
+            fs::read_to_string(path).map_err(|e| format!("Failed to read checkpoint: {}", e))?;
 
         serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse fine-grained checkpoint: {}", e))
@@ -547,7 +547,12 @@ fn detect_backend() -> String {
     return "intel".to_string();
     #[cfg(feature = "tenstorrent")]
     return "tenstorrent".to_string();
-    #[cfg(not(any(feature = "nvidia", feature = "amd", feature = "intel", feature = "tenstorrent")))]
+    #[cfg(not(any(
+        feature = "nvidia",
+        feature = "amd",
+        feature = "intel",
+        feature = "tenstorrent"
+    )))]
     return "unknown".to_string();
 }
 
@@ -575,7 +580,12 @@ fn estimate_resume_time(kernel_states: &[FineGrainedKernelState]) -> u64 {
 }
 
 /// Create initial thread register state
-pub fn create_initial_thread_state(thread_id: (u32, u32, u32), block_dim: (u32, u32, u32), block_id: (u32, u32, u32), grid_dim: (u32, u32, u32)) -> ThreadRegisterState {
+pub fn create_initial_thread_state(
+    thread_id: (u32, u32, u32),
+    block_dim: (u32, u32, u32),
+    block_id: (u32, u32, u32),
+    grid_dim: (u32, u32, u32),
+) -> ThreadRegisterState {
     let mut special_regs = HashMap::new();
 
     // Thread ID registers
@@ -619,7 +629,12 @@ pub fn create_initial_thread_state(thread_id: (u32, u32, u32), block_dim: (u32, 
 }
 
 /// Create initial warp state
-pub fn create_initial_warp_state(warp_id: u32, block_dim: (u32, u32, u32), block_id: (u32, u32, u32), grid_dim: (u32, u32, u32)) -> WarpState {
+pub fn create_initial_warp_state(
+    warp_id: u32,
+    block_dim: (u32, u32, u32),
+    block_id: (u32, u32, u32),
+    grid_dim: (u32, u32, u32),
+) -> WarpState {
     let mut thread_states = Vec::with_capacity(32);
     let threads_per_block = block_dim.0 * block_dim.1 * block_dim.2;
     let warp_start = warp_id * 32;
@@ -669,7 +684,9 @@ pub fn create_initial_block_state(
 
     let mut warp_states = Vec::with_capacity(warps_per_block as usize);
     for warp_id in 0..warps_per_block {
-        warp_states.push(create_initial_warp_state(warp_id, block_dim, block_id, grid_dim));
+        warp_states.push(create_initial_warp_state(
+            warp_id, block_dim, block_id, grid_dim,
+        ));
     }
 
     BlockState {
@@ -729,8 +746,8 @@ pub fn instrument_ptx_for_migration(
     }
 
     let mut output = String::new();
-    let mut in_kernel_header = false;  // Inside .entry/.func but before {
-    let mut in_kernel_body = false;    // Inside { ... }
+    let mut in_kernel_header = false; // Inside .entry/.func but before {
+    let mut in_kernel_body = false; // Inside { ... }
     let mut wrote_restore_dispatch = false;
     let mut past_reg_decls = false;
     let mut current_ip: u64 = 0;
@@ -771,8 +788,11 @@ pub fn instrument_ptx_for_migration(
 
         // Collect register declarations (must start with .reg, .local, .shared, etc.)
         if in_kernel_body && !past_reg_decls && trimmed.starts_with(".") {
-            if trimmed.starts_with(".reg") || trimmed.starts_with(".local") ||
-               trimmed.starts_with(".shared") || trimmed.starts_with(".param") {
+            if trimmed.starts_with(".reg")
+                || trimmed.starts_with(".local")
+                || trimmed.starts_with(".shared")
+                || trimmed.starts_with(".param")
+            {
                 reg_decls.push(trimmed.to_string());
             }
             output.push_str(line);
@@ -807,9 +827,14 @@ pub fn instrument_ptx_for_migration(
         }
 
         // For instructions (not labels, not comments, not empty), add checkpoint label
-        if in_kernel_body && past_reg_decls && !trimmed.is_empty() &&
-           !trimmed.starts_with(".") && !trimmed.starts_with("//") &&
-           !trimmed.ends_with(":") && trimmed != "}" {
+        if in_kernel_body
+            && past_reg_decls
+            && !trimmed.is_empty()
+            && !trimmed.starts_with(".")
+            && !trimmed.starts_with("//")
+            && !trimmed.ends_with(":")
+            && trimmed != "}"
+        {
             // Add checkpoint label before instruction
             output.push_str(&format!("__checkpoint_ip_{}:\n", current_ip));
             current_ip += 1;
@@ -842,7 +867,10 @@ fn generate_restore_dispatcher(
 
     if let Some(state) = resume_state {
         // If we have a resume state, generate direct jump
-        code.push_str(&format!("    mov.u64 %__restore_ip, {};\n", state.instruction_offset));
+        code.push_str(&format!(
+            "    mov.u64 %__restore_ip, {};\n",
+            state.instruction_offset
+        ));
         code.push_str("    setp.ne.u64 %__restore_active, %__restore_ip, 0;\n");
         code.push_str("    @%__restore_active bra __restore_dispatch;\n");
         code.push_str("    bra __normal_start;\n\n");
@@ -890,7 +918,6 @@ fn generate_restore_dispatcher(
             ));
         }
         code.push_str("    // Fallthrough to normal start if IP not found\n");
-
     } else {
         // No resume state - check for runtime restore flag
         code.push_str("    // Runtime restore check (via shared memory or parameter)\n");
@@ -911,7 +938,10 @@ pub fn generate_checkpoint_save_code(
 ) -> String {
     let mut code = String::new();
 
-    code.push_str(&format!("    // === Checkpoint save at IP {} ===\n", instruction_pc));
+    code.push_str(&format!(
+        "    // === Checkpoint save at IP {} ===\n",
+        instruction_pc
+    ));
 
     // Save instruction pointer
     code.push_str(&format!(
@@ -993,7 +1023,11 @@ pub fn transform_ptx_for_heterogeneous_migration(
             output.push('\n');
 
             // Insert restore dispatcher
-            output.push_str(&generate_restore_dispatcher(&instructions, resume_state, &[]));
+            output.push_str(&generate_restore_dispatcher(
+                &instructions,
+                resume_state,
+                &[],
+            ));
             kernel_header_done = true;
             continue;
         }
@@ -1005,7 +1039,9 @@ pub fn transform_ptx_for_heterogeneous_migration(
         }
 
         // For each instruction, add checkpoint label
-        if in_kernel && kernel_header_done && !trimmed.is_empty()
+        if in_kernel
+            && kernel_header_done
+            && !trimmed.is_empty()
             && !trimmed.starts_with(".")
             && !trimmed.starts_with("//")
             && !trimmed.ends_with(":")
@@ -1140,7 +1176,8 @@ pub struct CheckpointData {
 }
 
 /// Global checkpoint manager instance
-static CHECKPOINT_MANAGER: std::sync::OnceLock<Mutex<CheckpointManager>> = std::sync::OnceLock::new();
+static CHECKPOINT_MANAGER: std::sync::OnceLock<Mutex<CheckpointManager>> =
+    std::sync::OnceLock::new();
 
 /// Get the global checkpoint manager
 pub fn get_checkpoint_manager() -> &'static Mutex<CheckpointManager> {
@@ -1174,7 +1211,11 @@ pub fn install_signal_handler() -> Result<(), String> {
         // Use a static message to avoid any allocations
         let msg = b"\n[hetGPU] Checkpoint requested (will save at next sync point)...\n";
         unsafe {
-            libc::write(libc::STDERR_FILENO, msg.as_ptr() as *const libc::c_void, msg.len());
+            libc::write(
+                libc::STDERR_FILENO,
+                msg.as_ptr() as *const libc::c_void,
+                msg.len(),
+            );
         }
 
         // DO NOT call save_checkpoint() here - it's not async-signal-safe!
@@ -1190,17 +1231,15 @@ pub fn install_signal_handler() -> Result<(), String> {
         sa.sa_flags = libc::SA_RESTART;
         libc::sigemptyset(&mut sa.sa_mask);
 
-        // Use SIGUSR1 instead of SIGINT — Python overrides SIGINT
-        // Send checkpoint signal: kill -USR1 <pid>
-        let ret = libc::sigaction(libc::SIGUSR1, &sa, std::ptr::null_mut());
+        let ret = libc::sigaction(libc::SIGINT, &sa, std::ptr::null_mut());
         if ret != 0 {
             HANDLER_INSTALLED.store(false, Ordering::SeqCst);
             return Err("Failed to install SIGINT handler".to_string());
         }
     }
 
-    eprintln!("[hetGPU] Checkpoint handler installed (kill -USR1 <pid> to checkpoint)");
-    eprintln!("[hetGPU] Note: Checkpoint triggers at the next cuLaunchKernel call");
+    eprintln!("[hetGPU] Checkpoint handler installed (Ctrl+C to checkpoint)");
+    eprintln!("[hetGPU] Note: Checkpoint will be saved at the next GPU sync point");
     Ok(())
 }
 
@@ -1341,42 +1380,19 @@ pub fn get_current_kernel_state() -> Option<KernelExecutionState> {
 /// Check for checkpoint at kernel launch point
 /// Returns true if execution should be paused
 pub fn check_checkpoint_at_launch() -> bool {
-    // Also check file-based trigger: touch /tmp/hetgpu_checkpoint to trigger
-    if !is_checkpoint_requested() {
-        if std::path::Path::new("/tmp/hetgpu_checkpoint").exists() {
-            CHECKPOINT_REQUESTED.store(true, Ordering::SeqCst);
-            let _ = std::fs::remove_file("/tmp/hetgpu_checkpoint");
-        }
-    }
-
     if is_checkpoint_requested() {
         clear_checkpoint_request();
 
-        eprintln!("[hetGPU] Checkpoint triggered at kernel launch (Ctrl+C)");
+        eprintln!("[hetGPU] Checkpoint triggered at kernel launch");
 
-        // 1. Concordia delta checkpoint (fast — only dirty KV-cache pages)
-        #[cfg(any(feature = "tmatmul", feature = "nvidia"))]
-        {
-            if super::concordia::is_enabled() {
-                let mut rt = super::concordia::get_runtime().lock().unwrap();
-                if !rt.checkpoint.regions.is_empty() {
-                    let snap_id = rt.checkpoint.create_delta();
-                    eprintln!("[hetGPU:Concordia] Delta checkpoint #{} saved (Ctrl+C)", snap_id);
-                } else {
-                    eprintln!("[hetGPU:Concordia] No KV-cache regions registered for delta checkpoint");
-                }
-                rt.print_stats();
-            }
-        }
-
-        // 2. Full hetGPU checkpoint (kernel state + PTX sources)
+        // Save checkpoint
         if let Ok(manager) = get_checkpoint_manager().lock() {
             match manager.save_checkpoint() {
                 Ok(path) => {
-                    eprintln!("[hetGPU] Full checkpoint saved to: {:?}", path);
+                    eprintln!("[hetGPU] Checkpoint saved to: {:?}", path);
                 }
                 Err(e) => {
-                    eprintln!("[hetGPU] Full checkpoint failed: {}", e);
+                    eprintln!("[hetGPU] Checkpoint failed: {}", e);
                 }
             }
         }
@@ -1481,7 +1497,8 @@ impl GpuRestoreState {
         ptx_source: String,
         kernel_name: &str,
     ) -> Result<Self, String> {
-        let kernel = checkpoint.active_kernels
+        let kernel = checkpoint
+            .active_kernels
             .iter()
             .find(|k| k.kernel_name == kernel_name)
             .ok_or_else(|| format!("Kernel '{}' not found in checkpoint", kernel_name))?;
@@ -1492,15 +1509,18 @@ impl GpuRestoreState {
             ptx_source,
             compiled_binary: None,
             kernel_name: kernel_name.to_string(),
-            kernel_args: kernel.kernel_args.iter().enumerate().map(|(i, (addr, size))| {
-                KernelArgRestore {
+            kernel_args: kernel
+                .kernel_args
+                .iter()
+                .enumerate()
+                .map(|(i, (addr, size))| KernelArgRestore {
                     index: i as u32,
                     original_addr: *addr,
                     size: *size,
                     is_pointer: is_likely_pointer(*addr),
                     data: Vec::new(),
-                }
-            }).collect(),
+                })
+                .collect(),
             memory_regions: Vec::new(),
             grid_dim: kernel.grid_dim,
             block_dim: kernel.block_dim,
@@ -1511,7 +1531,13 @@ impl GpuRestoreState {
     }
 
     /// Add memory region to restore
-    pub fn add_memory_region(&mut self, addr: u64, size: usize, data: Vec<u8>, mem_type: MemoryType) {
+    pub fn add_memory_region(
+        &mut self,
+        addr: u64,
+        size: usize,
+        data: Vec<u8>,
+        mem_type: MemoryType,
+    ) {
         self.memory_regions.push(MemoryRegionRestore {
             original_addr: addr,
             size,
@@ -1540,16 +1566,13 @@ impl GpuRestoreState {
     pub fn save(&self, path: &str) -> Result<(), String> {
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Serialization error: {}", e))?;
-        fs::write(path, json)
-            .map_err(|e| format!("Write error: {}", e))
+        fs::write(path, json).map_err(|e| format!("Write error: {}", e))
     }
 
     /// Load restore state from file
     pub fn load(path: &str) -> Result<Self, String> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Read error: {}", e))?;
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Parse error: {}", e))
+        let content = fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| format!("Parse error: {}", e))
     }
 }
 
@@ -1577,27 +1600,40 @@ impl GpuRestorer {
     ///
     /// Returns Ok with recompiled module handle if successful
     pub fn restore(&mut self) -> Result<RestoreResult, String> {
-        eprintln!("[hetGPU] Restoring GPU state from {} backend to {} backend",
-            self.state.source_backend, self.target_backend);
+        eprintln!(
+            "[hetGPU] Restoring GPU state from {} backend to {} backend",
+            self.state.source_backend, self.target_backend
+        );
 
         let mut result = RestoreResult::default();
 
         // Step 1: Recompile PTX for target backend if needed
         if self.is_cross_backend() || self.state.compiled_binary.is_none() {
-            eprintln!("[hetGPU] Recompiling PTX for {} backend...", self.target_backend);
+            eprintln!(
+                "[hetGPU] Recompiling PTX for {} backend...",
+                self.target_backend
+            );
             result.recompiled = true;
             // The actual recompilation will be handled by cuModuleLoadData
             // We store the PTX source for that
         }
 
         // Step 2: Reallocate memory regions
-        eprintln!("[hetGPU] Restoring {} memory regions...", self.state.memory_regions.len());
+        eprintln!(
+            "[hetGPU] Restoring {} memory regions...",
+            self.state.memory_regions.len()
+        );
 
         // First pass: collect all the allocation info without mutating
         let mut allocations: Vec<(u64, u64, usize, Vec<u8>)> = Vec::new();
         for region in &self.state.memory_regions {
             let new_addr = self.allocate_memory(region.size, region.mem_type)?;
-            allocations.push((region.original_addr, new_addr, region.size, region.data.clone()));
+            allocations.push((
+                region.original_addr,
+                new_addr,
+                region.size,
+                region.data.clone(),
+            ));
         }
 
         // Second pass: apply the remappings and copy data
@@ -1609,19 +1645,26 @@ impl GpuRestorer {
             self.copy_to_device(new_addr, &data)?;
 
             result.memory_mappings.push((original_addr, new_addr));
-            eprintln!("[hetGPU]   0x{:016x} -> 0x{:016x} ({} bytes)",
-                original_addr, new_addr, size);
+            eprintln!(
+                "[hetGPU]   0x{:016x} -> 0x{:016x} ({} bytes)",
+                original_addr, new_addr, size
+            );
         }
 
         // Step 3: Update kernel arguments with remapped addresses
-        result.remapped_args = self.state.kernel_args.iter().map(|arg| {
-            if arg.is_pointer {
-                let new_addr = self.state.get_remapped_address(arg.original_addr);
-                (arg.index, new_addr)
-            } else {
-                (arg.index, arg.original_addr)
-            }
-        }).collect();
+        result.remapped_args = self
+            .state
+            .kernel_args
+            .iter()
+            .map(|arg| {
+                if arg.is_pointer {
+                    let new_addr = self.state.get_remapped_address(arg.original_addr);
+                    (arg.index, new_addr)
+                } else {
+                    (arg.index, arg.original_addr)
+                }
+            })
+            .collect();
 
         // Step 4: Prepare thread state for fine-grained resume
         if let Some(ref thread_state) = self.state.thread_state {
@@ -1631,8 +1674,10 @@ impl GpuRestorer {
                 block_id: thread_state.block_id,
                 thread_id: thread_state.thread_id,
             });
-            eprintln!("[hetGPU] Resume point: PTX line {}, offset 0x{:x}",
-                thread_state.ptx_line, thread_state.instruction_offset);
+            eprintln!(
+                "[hetGPU] Resume point: PTX line {}, offset 0x{:x}",
+                thread_state.ptx_line, thread_state.instruction_offset
+            );
 
             // Step 5: Instrument PTX with restore dispatch code for instruction-level migration
             // This generates code similar to WebAssembly's approach:
@@ -1640,16 +1685,20 @@ impl GpuRestorer {
             //   - Restore dispatcher that jumps to correct IP
             //   - Register state restoration before jump
             if !self.state.ptx_source.is_empty() && thread_state.instruction_offset > 0 {
-                eprintln!("[hetGPU] Instrumenting PTX for instruction-level resume at IP {}...",
-                    thread_state.instruction_offset);
-
-                let instrumented_ptx = instrument_ptx_for_migration(
-                    &self.state.ptx_source,
-                    Some(thread_state),
+                eprintln!(
+                    "[hetGPU] Instrumenting PTX for instruction-level resume at IP {}...",
+                    thread_state.instruction_offset
                 );
 
+                let instrumented_ptx =
+                    instrument_ptx_for_migration(&self.state.ptx_source, Some(thread_state));
+
                 // Log a preview of the instrumented PTX
-                let preview: String = instrumented_ptx.lines().take(30).collect::<Vec<_>>().join("\n");
+                let preview: String = instrumented_ptx
+                    .lines()
+                    .take(30)
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 eprintln!("[hetGPU] Instrumented PTX preview:\n{}", preview);
 
                 result.ptx_source = instrumented_ptx;
@@ -1809,10 +1858,12 @@ pub fn resume_from_checkpoint(checkpoint_path: &str) -> Result<RestoreResult, St
 
 /// Get checkpoint directory
 pub fn get_checkpoint_dir() -> String {
-    CHECKPOINT_DIR.get_or_init(|| {
-        std::env::var("HETGPU_CHECKPOINT_DIR")
-            .unwrap_or_else(|_| "/tmp/hetgpu_checkpoints".to_string())
-    }).clone()
+    CHECKPOINT_DIR
+        .get_or_init(|| {
+            std::env::var("HETGPU_CHECKPOINT_DIR")
+                .unwrap_or_else(|_| "/tmp/hetgpu_checkpoints".to_string())
+        })
+        .clone()
 }
 
 /// Set checkpoint directory
@@ -1828,15 +1879,7 @@ mod tests {
 
     #[test]
     fn test_kernel_execution_tracking() {
-        let exec_id = begin_kernel_execution(
-            "test_kernel",
-            (1, 1, 1),
-            (32, 1, 1),
-            0,
-            0,
-            100,
-            200,
-        );
+        let exec_id = begin_kernel_execution("test_kernel", (1, 1, 1), (32, 1, 1), 0, 0, 100, 200);
 
         add_kernel_argument(0x1000, 8);
         add_kernel_argument(0x2000, 8);
@@ -1915,7 +1958,8 @@ impl Default for CRestoreResult {
 }
 
 /// Loaded checkpoint data for FFI access
-static LOADED_CHECKPOINT: std::sync::OnceLock<Mutex<Option<CheckpointData>>> = std::sync::OnceLock::new();
+static LOADED_CHECKPOINT: std::sync::OnceLock<Mutex<Option<CheckpointData>>> =
+    std::sync::OnceLock::new();
 
 fn get_loaded_checkpoint() -> &'static Mutex<Option<CheckpointData>> {
     LOADED_CHECKPOINT.get_or_init(|| Mutex::new(None))
@@ -1962,15 +2006,18 @@ pub extern "C" fn hetgpu_checkpoint_load(path: *const std::ffi::c_char) -> i32 {
                         ptx_source: ptx.clone(),
                         compiled_binary: None,
                         kernel_name: kernel.kernel_name.clone(),
-                        kernel_args: kernel.kernel_args.iter().enumerate().map(|(i, (addr, size))| {
-                            KernelArgRestore {
+                        kernel_args: kernel
+                            .kernel_args
+                            .iter()
+                            .enumerate()
+                            .map(|(i, (addr, size))| KernelArgRestore {
                                 index: i as u32,
                                 original_addr: *addr,
                                 size: *size,
                                 is_pointer: is_likely_pointer(*addr),
                                 data: Vec::new(),
-                            }
-                        }).collect(),
+                            })
+                            .collect(),
                         memory_regions: Vec::new(),
                         grid_dim: kernel.grid_dim,
                         block_dim: kernel.block_dim,
@@ -2000,7 +2047,10 @@ pub extern "C" fn hetgpu_checkpoint_load(path: *const std::ffi::c_char) -> i32 {
                     thread_state: None,
                     address_remap: HashMap::new(),
                 };
-                eprintln!("[hetGPU FFI] Created restore state from PTX source (module {})", module_handle);
+                eprintln!(
+                    "[hetGPU FFI] Created restore state from PTX source (module {})",
+                    module_handle
+                );
 
                 if let Ok(mut manager) = get_checkpoint_manager().lock() {
                     manager.loaded_restore_state = Some(restore_state);
@@ -2502,10 +2552,7 @@ pub extern "C" fn hetgpu_checkpoint_get_thread_state_count() -> u32 {
 
 /// Get thread state by index
 #[no_mangle]
-pub extern "C" fn hetgpu_checkpoint_get_thread_state(
-    index: u32,
-    state: *mut CThreadState,
-) -> i32 {
+pub extern "C" fn hetgpu_checkpoint_get_thread_state(index: u32, state: *mut CThreadState) -> i32 {
     if state.is_null() {
         return -1;
     }
@@ -2569,9 +2616,7 @@ pub extern "C" fn hetgpu_checkpoint_get_register(
 
 /// Parse PTX and return instruction count
 #[no_mangle]
-pub extern "C" fn hetgpu_parse_ptx_instruction_count(
-    ptx: *const std::ffi::c_char,
-) -> i32 {
+pub extern "C" fn hetgpu_parse_ptx_instruction_count(ptx: *const std::ffi::c_char) -> i32 {
     if ptx.is_null() {
         return -1;
     }

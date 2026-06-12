@@ -10,8 +10,8 @@ use std::ffi::{c_char, c_void, CStr, CString};
 use std::ptr;
 
 use super::replay::{
-    self, AllocationType, Backend, CompressionType, DirtyTrackingMethod,
-    RecordingConfig, ReplayConfig, ReplayEngine, ReplayTrace,
+    self, AllocationType, Backend, CompressionType, DirtyTrackingMethod, RecordingConfig,
+    ReplayConfig, ReplayEngine, ReplayTrace,
 };
 
 // =============================================================================
@@ -210,11 +210,19 @@ pub extern "C" fn hetgpu_recording_start(
         let c_config = unsafe { &*config };
         std::env::set_var(
             "HETGPU_RECORD_INPUTS",
-            if c_config.capture_inputs != 0 { "1" } else { "0" },
+            if c_config.capture_inputs != 0 {
+                "1"
+            } else {
+                "0"
+            },
         );
         std::env::set_var(
             "HETGPU_RECORD_OUTPUTS",
-            if c_config.capture_outputs != 0 { "1" } else { "0" },
+            if c_config.capture_outputs != 0 {
+                "1"
+            } else {
+                "0"
+            },
         );
     }
 
@@ -246,7 +254,11 @@ pub extern "C" fn hetgpu_recording_stop() -> i32 {
 /// 1 if recording is active, 0 otherwise
 #[no_mangle]
 pub extern "C" fn hetgpu_recording_is_active() -> i32 {
-    if replay::is_recording_active() { 1 } else { 0 }
+    if replay::is_recording_active() {
+        1
+    } else {
+        0
+    }
 }
 
 /// Get recording statistics
@@ -401,7 +413,11 @@ pub extern "C" fn hetgpu_replay_is_complete(handle: HetGpuReplayHandle) -> i32 {
     }
 
     let engine = unsafe { &*(handle as *const ReplayEngine) };
-    if engine.is_complete() { 1 } else { 0 }
+    if engine.is_complete() {
+        1
+    } else {
+        0
+    }
 }
 
 /// Free replay session
@@ -722,7 +738,11 @@ pub extern "C" fn hetgpu_replay_get_passed_count(handle: HetGpuReplayHandle) -> 
     }
 
     let engine = unsafe { &*(handle as *const ReplayEngine) };
-    engine.get_validation_results().iter().filter(|r| r.passed).count() as u64
+    engine
+        .get_validation_results()
+        .iter()
+        .filter(|r| r.passed)
+        .count() as u64
 }
 
 /// Get number of failed validations
@@ -739,7 +759,11 @@ pub extern "C" fn hetgpu_replay_get_failed_count(handle: HetGpuReplayHandle) -> 
     }
 
     let engine = unsafe { &*(handle as *const ReplayEngine) };
-    engine.get_validation_results().iter().filter(|r| !r.passed).count() as u64
+    engine
+        .get_validation_results()
+        .iter()
+        .filter(|r| !r.passed)
+        .count() as u64
 }
 
 // =============================================================================

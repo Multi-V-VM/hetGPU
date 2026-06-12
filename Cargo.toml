@@ -25,6 +25,10 @@ members = [
     "ext/tt_comgr-sys",
     "ext/tt_runtime-sys",
     "ext/cutile_comgr-sys",
+    "nvidia_sass",
+    "ptxas",
+    "ext/aie_comgr-sys",
+    "ext/aie_runtime-sys",
 ]
 
 default-members = ["zluda", "zluda_ml", "zluda_inject", "zluda_redirect"]
@@ -35,6 +39,7 @@ features = [
     "tenstorrent",
     "gemmini",
     "cutile",
+    "nvidia",
 ]
 default = [
     "gemmini"

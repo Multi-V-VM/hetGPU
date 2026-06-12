@@ -4,9 +4,8 @@
 //! to TOSA MLIR dialect using pattern-based rewriting.
 
 use crate::{
-    cutile_comgr_status_s, cutile_comgr_status_t, cutile_comgr_data_set_t,
-    cutile_comgr_data_kind_s, DATA_STORE, DATA_SET_STORE,
-    DataContent, get_next_handle,
+    cutile_comgr_data_kind_s, cutile_comgr_data_set_t, cutile_comgr_status_s,
+    cutile_comgr_status_t, get_next_handle, DataContent, DATA_SET_STORE, DATA_STORE,
 };
 use std::collections::HashMap;
 
@@ -76,7 +75,10 @@ pub fn transform_to_tosa(
     input_handles: &[u64],
     output_set: cutile_comgr_data_set_t,
 ) -> cutile_comgr_status_t {
-    eprintln!("CuTile->TOSA: Transforming {} input(s)", input_handles.len());
+    eprintln!(
+        "CuTile->TOSA: Transforming {} input(s)",
+        input_handles.len()
+    );
 
     for &handle in input_handles {
         // Get input data
@@ -114,11 +116,14 @@ pub fn transform_to_tosa(
         let output_handle = get_next_handle();
         {
             let mut store = DATA_STORE.lock().unwrap();
-            store.insert(output_handle, DataContent {
-                kind: cutile_comgr_data_kind_s::CUTILE_COMGR_DATA_KIND_MLIR_TOSA,
-                content: tosa_mlir.into_bytes(),
-                name: input_content.name.map(|n| n.replace(".mlir", "_tosa.mlir")),
-            });
+            store.insert(
+                output_handle,
+                DataContent {
+                    kind: cutile_comgr_data_kind_s::CUTILE_COMGR_DATA_KIND_MLIR_TOSA,
+                    content: tosa_mlir.into_bytes(),
+                    name: input_content.name.map(|n| n.replace(".mlir", "_tosa.mlir")),
+                },
+            );
         }
 
         // Add to output set
@@ -182,15 +187,10 @@ fn transform_types(line: &str, _type_mappings: &mut HashMap<String, String>) -> 
             let tile_type = &result[start..end_pos];
 
             // Extract shape and element type
-            let inner = &tile_type[16..tile_type.len()-1]; // Remove "!cuda_tile.tile<" and ">"
+            let inner = &tile_type[16..tile_type.len() - 1]; // Remove "!cuda_tile.tile<" and ">"
             let tensor_type = format!("tensor<{}>", inner);
 
-            result = format!(
-                "{}{}{}",
-                &result[..start],
-                tensor_type,
-                &result[end_pos..]
-            );
+            result = format!("{}{}{}", &result[..start], tensor_type, &result[end_pos..]);
         } else {
             break;
         }
@@ -211,7 +211,11 @@ fn handle_special_ops(line: &str) -> String {
         // Add shift = 0 for integer multiplications if not present
         if let Some(pos) = result.find("tosa.mul") {
             // Check if this looks like an integer operation
-            if result.contains("i32") || result.contains("i64") || result.contains("i16") || result.contains("i8") {
+            if result.contains("i32")
+                || result.contains("i64")
+                || result.contains("i16")
+                || result.contains("i8")
+            {
                 // Find the position after the operands to insert shift
                 if let Some(colon_pos) = result[pos..].find(':') {
                     let insert_pos = pos + colon_pos;
@@ -233,7 +237,10 @@ fn handle_special_ops(line: &str) -> String {
         if let Some(arrow_pos) = result.find("->") {
             // Extract destination shape and compute multiples
             // For now, add a placeholder
-            result = result.replace("tosa.tile", "tosa.tile {multiples = array<i64: 1, 1, 1, 1>}");
+            result = result.replace(
+                "tosa.tile",
+                "tosa.tile {multiples = array<i64: 1, 1, 1, 1>}",
+            );
         }
     }
 

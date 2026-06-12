@@ -28,9 +28,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use ptx::sass::{
-    CubinParser, EnhancedSassInstruction, SassDisassembler,
-    TextDisassemblyParser, SassOpcodeClass,
-    PtxRecoveryEngine, PtxReconstructor,
+    CubinParser, EnhancedSassInstruction, PtxReconstructor, PtxRecoveryEngine, SassDisassembler,
+    SassOpcodeClass, TextDisassemblyParser,
 };
 
 // ============================================================================
@@ -653,7 +652,8 @@ impl GpuRecorder {
         if let Some(ref mut kernel) = self.current_kernel {
             if let Some(last_record) = kernel.execution_records.last_mut() {
                 if last_record.address == address {
-                    let is_divergent = taken_mask.count_ones() > 0 && fallthrough_mask.count_ones() > 0;
+                    let is_divergent =
+                        taken_mask.count_ones() > 0 && fallthrough_mask.count_ones() > 0;
 
                     last_record.control_flow = Some(ControlFlowRecord {
                         branch_type,
@@ -701,7 +701,10 @@ impl GpuRecorder {
         self.recording.timeline.events.push(TimelineEvent {
             event_type: TimelineEventType::Checkpoint,
             timestamp_ns: self.get_timestamp_ns(),
-            data: format!("Memory snapshot {}", self.recording.memory_snapshots.len() - 1),
+            data: format!(
+                "Memory snapshot {}",
+                self.recording.memory_snapshots.len() - 1
+            ),
         });
     }
 
@@ -862,7 +865,10 @@ impl GpuReplayer {
     pub fn current_instruction(&self) -> Option<&EnhancedSassInstruction> {
         let record = self.current_record()?;
         let kernel = self.current_kernel()?;
-        kernel.instructions.iter().find(|i| i.address == record.address)
+        kernel
+            .instructions
+            .iter()
+            .find(|i| i.address == record.address)
     }
 
     /// Add a breakpoint
@@ -891,7 +897,12 @@ impl GpuReplayer {
     pub fn step(&mut self) -> ReplayResult {
         // Get record data we need before mutating
         let record_data = self.current_record().map(|r| {
-            (r.address, r.sequence, r.registers_after.clone(), r.memory_access.clone())
+            (
+                r.address,
+                r.sequence,
+                r.registers_after.clone(),
+                r.memory_access.clone(),
+            )
         });
 
         let Some((address, sequence, registers_after, memory_access)) = record_data else {
@@ -909,9 +920,13 @@ impl GpuReplayer {
                 let hit = match &bp.bp_type {
                     BreakpointType::Address(addr) => address == *addr,
                     BreakpointType::Sequence(seq) => sequence == *seq,
-                    BreakpointType::MemoryAccess { address: mem_addr, size: _ } => {
+                    BreakpointType::MemoryAccess {
+                        address: mem_addr,
+                        size: _,
+                    } => {
                         if let Some(ref access) = memory_access {
-                            access.address <= *mem_addr && *mem_addr < access.address + access.size as u64
+                            access.address <= *mem_addr
+                                && *mem_addr < access.address + access.size as u64
                         } else {
                             false
                         }
@@ -930,7 +945,10 @@ impl GpuReplayer {
         self.position.sequence = sequence + 1;
 
         // Check if we need to move to next kernel
-        let kernel_len = self.current_kernel().map(|k| k.execution_records.len()).unwrap_or(0);
+        let kernel_len = self
+            .current_kernel()
+            .map(|k| k.execution_records.len())
+            .unwrap_or(0);
         if self.position.record_index >= kernel_len {
             self.position.kernel_index += 1;
             self.position.record_index = 0;
@@ -950,16 +968,19 @@ impl GpuReplayer {
                 return ReplayResult::StartOfRecording;
             }
             self.position.kernel_index -= 1;
-            let kernel_len = self.current_kernel().map(|k| k.execution_records.len()).unwrap_or(1);
+            let kernel_len = self
+                .current_kernel()
+                .map(|k| k.execution_records.len())
+                .unwrap_or(1);
             self.position.record_index = kernel_len.saturating_sub(1);
         } else {
             self.position.record_index -= 1;
         }
 
         // Get register state and sequence before mutating
-        let record_data = self.current_record().map(|r| {
-            (r.registers_before.clone(), r.sequence)
-        });
+        let record_data = self
+            .current_record()
+            .map(|r| (r.registers_before.clone(), r.sequence));
 
         // Restore register state
         if let Some((registers_before, sequence)) = record_data {
@@ -988,9 +1009,9 @@ impl GpuReplayer {
             match self.reverse_step() {
                 ReplayResult::Stepped => {
                     // Get record data for breakpoint checking
-                    let record_data = self.current_record().map(|r| {
-                        (r.address, r.sequence, r.memory_access.clone())
-                    });
+                    let record_data = self
+                        .current_record()
+                        .map(|r| (r.address, r.sequence, r.memory_access.clone()));
 
                     // Check breakpoints
                     if let Some((address, sequence, memory_access)) = record_data {
@@ -999,9 +1020,13 @@ impl GpuReplayer {
                                 let hit = match &bp.bp_type {
                                     BreakpointType::Address(addr) => address == *addr,
                                     BreakpointType::Sequence(seq) => sequence == *seq,
-                                    BreakpointType::MemoryAccess { address: mem_addr, size: _ } => {
+                                    BreakpointType::MemoryAccess {
+                                        address: mem_addr,
+                                        size: _,
+                                    } => {
                                         if let Some(ref access) = memory_access {
-                                            access.address <= *mem_addr && *mem_addr < access.address + access.size as u64
+                                            access.address <= *mem_addr
+                                                && *mem_addr < access.address + access.size as u64
                                         } else {
                                             false
                                         }
@@ -1175,7 +1200,8 @@ impl RecordingAnalyzer {
         let hotspots = self.find_hotspots(10);
         let memory_patterns = self.analyze_memory_patterns();
         let divergence_analysis = self.analyze_divergence();
-        let recommendations = self.generate_recommendations(&summary, &memory_patterns, &divergence_analysis);
+        let recommendations =
+            self.generate_recommendations(&summary, &memory_patterns, &divergence_analysis);
 
         AnalysisReport {
             summary,
@@ -1224,10 +1250,16 @@ impl RecordingAnalyzer {
 
         for kernel in &self.recording.kernels {
             for record in &kernel.execution_records {
-                let entry = address_counts.entry(record.address).or_insert((0, String::new()));
+                let entry = address_counts
+                    .entry(record.address)
+                    .or_insert((0, String::new()));
                 entry.0 += 1;
                 if entry.1.is_empty() {
-                    if let Some(inst) = kernel.instructions.iter().find(|i| i.address == record.address) {
+                    if let Some(inst) = kernel
+                        .instructions
+                        .iter()
+                        .find(|i| i.address == record.address)
+                    {
                         entry.1 = inst.opcode.clone();
                     }
                 }
@@ -1241,7 +1273,11 @@ impl RecordingAnalyzer {
             .map(|(addr, (count, opcode))| Hotspot {
                 address: addr,
                 count,
-                percentage: if total > 0 { count as f64 / total as f64 * 100.0 } else { 0.0 },
+                percentage: if total > 0 {
+                    count as f64 / total as f64 * 100.0
+                } else {
+                    0.0
+                },
                 opcode,
                 avg_cycles: None,
             })
@@ -1359,10 +1395,19 @@ impl RecordingAnalyzer {
 
         println!("Summary:");
         println!("  Total kernels: {}", report.summary.total_kernels);
-        println!("  Total instructions: {}", report.summary.total_instructions);
-        println!("  Total memory operations: {}", report.summary.total_memory_ops);
+        println!(
+            "  Total instructions: {}",
+            report.summary.total_instructions
+        );
+        println!(
+            "  Total memory operations: {}",
+            report.summary.total_memory_ops
+        );
         println!("  Total branches: {}", report.summary.total_branches);
-        println!("  Divergent branch ratio: {:.2}%", report.summary.divergent_branch_ratio * 100.0);
+        println!(
+            "  Divergent branch ratio: {:.2}%",
+            report.summary.divergent_branch_ratio * 100.0
+        );
         println!();
 
         println!("Top {} Hotspots:", report.hotspots.len());
@@ -1379,17 +1424,42 @@ impl RecordingAnalyzer {
         println!();
 
         println!("Memory Patterns:");
-        println!("  Coalesced access ratio: {:.2}%", report.memory_patterns.coalesced_ratio * 100.0);
-        println!("  Bank conflict ratio: {:.2}%", report.memory_patterns.bank_conflict_ratio * 100.0);
-        println!("  Cache hit ratio: {:.2}%", report.memory_patterns.cache_hit_ratio * 100.0);
-        println!("  Bandwidth utilization: {:.2}%", report.memory_patterns.bandwidth_utilization * 100.0);
+        println!(
+            "  Coalesced access ratio: {:.2}%",
+            report.memory_patterns.coalesced_ratio * 100.0
+        );
+        println!(
+            "  Bank conflict ratio: {:.2}%",
+            report.memory_patterns.bank_conflict_ratio * 100.0
+        );
+        println!(
+            "  Cache hit ratio: {:.2}%",
+            report.memory_patterns.cache_hit_ratio * 100.0
+        );
+        println!(
+            "  Bandwidth utilization: {:.2}%",
+            report.memory_patterns.bandwidth_utilization * 100.0
+        );
         println!();
 
         println!("Divergence Analysis:");
-        println!("  Total branches: {}", report.divergence_analysis.total_branches);
-        println!("  Divergent branches: {}", report.divergence_analysis.divergent_branches);
-        println!("  Average active threads: {:.1}", report.divergence_analysis.avg_active_threads);
-        if !report.divergence_analysis.worst_divergence_points.is_empty() {
+        println!(
+            "  Total branches: {}",
+            report.divergence_analysis.total_branches
+        );
+        println!(
+            "  Divergent branches: {}",
+            report.divergence_analysis.divergent_branches
+        );
+        println!(
+            "  Average active threads: {:.1}",
+            report.divergence_analysis.avg_active_threads
+        );
+        if !report
+            .divergence_analysis
+            .worst_divergence_points
+            .is_empty()
+        {
             println!("  Worst divergence points:");
             for (addr, ratio) in &report.divergence_analysis.worst_divergence_points {
                 println!("    0x{:08x}: {:.2}% divergent", addr, ratio * 100.0);
@@ -1505,7 +1575,8 @@ fn parse_record_command(args: &[String]) -> Result<Command, String> {
                 if i >= args.len() {
                     return Err("--snapshot-freq requires an argument".to_string());
                 }
-                config.memory_snapshot_frequency = args[i].parse().map_err(|_| "Invalid frequency")?;
+                config.memory_snapshot_frequency =
+                    args[i].parse().map_err(|_| "Invalid frequency")?;
             }
             arg if arg.starts_with('-') => {
                 return Err(format!("Unknown option: {}", arg));
@@ -1523,7 +1594,11 @@ fn parse_record_command(args: &[String]) -> Result<Command, String> {
         return Err("Input file required".to_string());
     }
 
-    Ok(Command::Record { input, output, config })
+    Ok(Command::Record {
+        input,
+        output,
+        config,
+    })
 }
 
 fn parse_replay_command(args: &[String]) -> Result<Command, String> {
@@ -1563,7 +1638,11 @@ fn parse_replay_command(args: &[String]) -> Result<Command, String> {
         return Err("Input file required".to_string());
     }
 
-    Ok(Command::Replay { input, breakpoints, interactive })
+    Ok(Command::Replay {
+        input,
+        breakpoints,
+        interactive,
+    })
 }
 
 fn parse_analyze_command(args: &[String]) -> Result<Command, String> {
@@ -1598,14 +1677,20 @@ fn parse_analyze_command(args: &[String]) -> Result<Command, String> {
         return Err("Input file required".to_string());
     }
 
-    Ok(Command::Analyze { input, output, hotspots })
+    Ok(Command::Analyze {
+        input,
+        output,
+        hotspots,
+    })
 }
 
 fn parse_info_command(args: &[String]) -> Result<Command, String> {
     if args.is_empty() {
         return Err("Input file required".to_string());
     }
-    Ok(Command::Info { input: PathBuf::from(&args[0]) })
+    Ok(Command::Info {
+        input: PathBuf::from(&args[0]),
+    })
 }
 
 fn parse_ptx_command(args: &[String]) -> Result<Command, String> {
@@ -1651,11 +1736,16 @@ fn parse_ptx_command(args: &[String]) -> Result<Command, String> {
         return Err("Input file required".to_string());
     }
 
-    Ok(Command::Ptx { input, output, address })
+    Ok(Command::Ptx {
+        input,
+        output,
+        address,
+    })
 }
 
 fn print_help() {
-    println!(r#"GPU Record and Replay (gpu_rr) - rr-style debugging for GPU kernels
+    println!(
+        r#"GPU Record and Replay (gpu_rr) - rr-style debugging for GPU kernels
 
 USAGE:
     gpu_rr [OPTIONS] <COMMAND>
@@ -1707,7 +1797,8 @@ EXAMPLES:
 
     # Reconstruct PTX from text SASS
     gpu_rr ptx cuobjdump_output.txt -o reconstructed.ptx
-"#);
+"#
+    );
 }
 
 fn main() {
@@ -1724,25 +1815,36 @@ fn run() -> Result<(), String> {
     let args = parse_args()?;
 
     match args.command {
-        Command::Record { input, output, config } => {
-            run_record(&input, &output, config, args.verbose)
-        }
-        Command::Replay { input, breakpoints, interactive } => {
-            run_replay(&input, breakpoints, interactive, args.verbose)
-        }
-        Command::Analyze { input, output, hotspots } => {
-            run_analyze(&input, output.as_ref(), hotspots, args.verbose)
-        }
-        Command::Info { input } => {
-            run_info(&input, args.verbose)
-        }
-        Command::Ptx { input, output, address } => {
-            run_ptx(&input, output.as_ref(), address, args.verbose)
-        }
+        Command::Record {
+            input,
+            output,
+            config,
+        } => run_record(&input, &output, config, args.verbose),
+        Command::Replay {
+            input,
+            breakpoints,
+            interactive,
+        } => run_replay(&input, breakpoints, interactive, args.verbose),
+        Command::Analyze {
+            input,
+            output,
+            hotspots,
+        } => run_analyze(&input, output.as_ref(), hotspots, args.verbose),
+        Command::Info { input } => run_info(&input, args.verbose),
+        Command::Ptx {
+            input,
+            output,
+            address,
+        } => run_ptx(&input, output.as_ref(), address, args.verbose),
     }
 }
 
-fn run_record(input: &str, output: &PathBuf, config: RecordingConfig, verbose: bool) -> Result<(), String> {
+fn run_record(
+    input: &str,
+    output: &PathBuf,
+    config: RecordingConfig,
+    verbose: bool,
+) -> Result<(), String> {
     if verbose {
         eprintln!("Recording from: {}", input);
         eprintln!("Output: {:?}", output);
@@ -1751,38 +1853,47 @@ fn run_record(input: &str, output: &PathBuf, config: RecordingConfig, verbose: b
     // Load CUBIN or SASS text
     let content = fs::read(input).map_err(|e| format!("Failed to read input: {}", e))?;
 
-    let (instructions, kernel_name): (Vec<EnhancedSassInstruction>, String) = if content.starts_with(&[0x7f, b'E', b'L', b'F']) {
-        // ELF/CUBIN file
-        let parser = CubinParser::new(content);
-        let cubin = parser.parse().map_err(|e| format!("Failed to parse CUBIN: {}", e))?;
+    let (instructions, kernel_name): (Vec<EnhancedSassInstruction>, String) =
+        if content.starts_with(&[0x7f, b'E', b'L', b'F']) {
+            // ELF/CUBIN file
+            let parser = CubinParser::new(content);
+            let cubin = parser
+                .parse()
+                .map_err(|e| format!("Failed to parse CUBIN: {}", e))?;
 
-        if cubin.kernels.is_empty() {
-            return Err("No kernels found in CUBIN".to_string());
-        }
+            if cubin.kernels.is_empty() {
+                return Err("No kernels found in CUBIN".to_string());
+            }
 
-        let kernel = &cubin.kernels[0];
-        let disasm = SassDisassembler::new(cubin.sm_version).map_err(|e| format!("Disassembler error: {}", e))?;
-        let instructions = disasm.disassemble(&kernel.code, kernel.address);
-        (instructions, kernel.name.clone())
-    } else {
-        // Text SASS (cuobjdump output)
-        let text = String::from_utf8_lossy(&content);
-        let instructions = TextDisassemblyParser::parse_cuobjdump_output(&text);
+            let kernel = &cubin.kernels[0];
+            let disasm = SassDisassembler::new(cubin.sm_version)
+                .map_err(|e| format!("Disassembler error: {}", e))?;
+            let instructions = disasm.disassemble(&kernel.code, kernel.address);
+            (instructions, kernel.name.clone())
+        } else {
+            // Text SASS (cuobjdump output)
+            let text = String::from_utf8_lossy(&content);
+            let instructions = TextDisassemblyParser::parse_cuobjdump_output(&text);
 
-        if instructions.is_empty() {
-            return Err("No instructions found in input".to_string());
-        }
+            if instructions.is_empty() {
+                return Err("No instructions found in input".to_string());
+            }
 
-        // Get function name from first instruction
-        let kernel_name = instructions.first()
-            .and_then(|i| i.function_name.clone())
-            .unwrap_or_else(|| "kernel".to_string());
+            // Get function name from first instruction
+            let kernel_name = instructions
+                .first()
+                .and_then(|i| i.function_name.clone())
+                .unwrap_or_else(|| "kernel".to_string());
 
-        (instructions, kernel_name)
-    };
+            (instructions, kernel_name)
+        };
 
     if verbose {
-        eprintln!("Found kernel '{}' with {} instructions", kernel_name, instructions.len());
+        eprintln!(
+            "Found kernel '{}' with {} instructions",
+            kernel_name,
+            instructions.len()
+        );
     }
 
     // Create recorder
@@ -1806,7 +1917,7 @@ fn run_record(input: &str, output: &PathBuf, config: RecordingConfig, verbose: b
 
         recorder.record_instruction(
             inst.address,
-            0, // warp_id
+            0,          // warp_id
             0xFFFFFFFF, // all threads active
             Some(regs_before),
             Some(regs_after),
@@ -1852,18 +1963,12 @@ fn run_record(input: &str, output: &PathBuf, config: RecordingConfig, verbose: b
                     inst.address,
                     BranchType::Conditional,
                     inst.address + 0x10, // target
-                    0xFFFF0000, // half taken
-                    0x0000FFFF, // half not taken
+                    0xFFFF0000,          // half taken
+                    0x0000FFFF,          // half not taken
                 );
             }
             SassOpcodeClass::Exit => {
-                recorder.record_control_flow(
-                    inst.address,
-                    BranchType::Exit,
-                    0,
-                    0xFFFFFFFF,
-                    0,
-                );
+                recorder.record_control_flow(inst.address, BranchType::Exit, 0, 0xFFFFFFFF, 0);
             }
             _ => {}
         }
@@ -1875,16 +1980,29 @@ fn run_record(input: &str, output: &PathBuf, config: RecordingConfig, verbose: b
     let recording = recorder.finalize();
     let file = File::create(output).map_err(|e| format!("Failed to create output: {}", e))?;
     let writer = BufWriter::new(file);
-    serde_json::to_writer_pretty(writer, &recording).map_err(|e| format!("Failed to write: {}", e))?;
+    serde_json::to_writer_pretty(writer, &recording)
+        .map_err(|e| format!("Failed to write: {}", e))?;
 
     println!("Recording saved to {:?}", output);
     println!("  Kernels: {}", recording.kernels.len());
-    println!("  Total instructions: {}", recording.kernels.iter().map(|k| k.stats.total_instructions).sum::<u64>());
+    println!(
+        "  Total instructions: {}",
+        recording
+            .kernels
+            .iter()
+            .map(|k| k.stats.total_instructions)
+            .sum::<u64>()
+    );
 
     Ok(())
 }
 
-fn run_replay(input: &PathBuf, breakpoints: Vec<u64>, interactive: bool, verbose: bool) -> Result<(), String> {
+fn run_replay(
+    input: &PathBuf,
+    breakpoints: Vec<u64>,
+    interactive: bool,
+    verbose: bool,
+) -> Result<(), String> {
     if verbose {
         eprintln!("Replaying: {:?}", input);
     }
@@ -1959,35 +2077,27 @@ fn run_interactive_replay(replayer: &mut GpuReplayer) -> Result<(), String> {
         let cmd = input.trim();
 
         match cmd {
-            "s" | "step" => {
-                match replayer.step() {
-                    ReplayResult::Stepped => {}
-                    ReplayResult::Breakpoint(id) => println!("Breakpoint {} hit", id),
-                    ReplayResult::EndOfRecording => println!("End of recording"),
-                    _ => {}
-                }
-            }
-            "rs" | "reverse-step" => {
-                match replayer.reverse_step() {
-                    ReplayResult::Stepped => {}
-                    ReplayResult::StartOfRecording => println!("Start of recording"),
-                    _ => {}
-                }
-            }
-            "c" | "continue" => {
-                match replayer.continue_execution() {
-                    ReplayResult::Breakpoint(id) => println!("Breakpoint {} hit", id),
-                    ReplayResult::EndOfRecording => println!("End of recording"),
-                    _ => {}
-                }
-            }
-            "rc" | "reverse-continue" => {
-                match replayer.reverse_continue() {
-                    ReplayResult::Breakpoint(id) => println!("Breakpoint {} hit", id),
-                    ReplayResult::StartOfRecording => println!("Start of recording"),
-                    _ => {}
-                }
-            }
+            "s" | "step" => match replayer.step() {
+                ReplayResult::Stepped => {}
+                ReplayResult::Breakpoint(id) => println!("Breakpoint {} hit", id),
+                ReplayResult::EndOfRecording => println!("End of recording"),
+                _ => {}
+            },
+            "rs" | "reverse-step" => match replayer.reverse_step() {
+                ReplayResult::Stepped => {}
+                ReplayResult::StartOfRecording => println!("Start of recording"),
+                _ => {}
+            },
+            "c" | "continue" => match replayer.continue_execution() {
+                ReplayResult::Breakpoint(id) => println!("Breakpoint {} hit", id),
+                ReplayResult::EndOfRecording => println!("End of recording"),
+                _ => {}
+            },
+            "rc" | "reverse-continue" => match replayer.reverse_continue() {
+                ReplayResult::Breakpoint(id) => println!("Breakpoint {} hit", id),
+                ReplayResult::StartOfRecording => println!("Start of recording"),
+                _ => {}
+            },
             "r" | "registers" => {
                 let regs = replayer.get_registers();
                 println!("Registers:");
@@ -2022,7 +2132,12 @@ fn run_interactive_replay(replayer: &mut GpuReplayer) -> Result<(), String> {
     Ok(())
 }
 
-fn run_analyze(input: &PathBuf, output: Option<&PathBuf>, _hotspots: bool, verbose: bool) -> Result<(), String> {
+fn run_analyze(
+    input: &PathBuf,
+    output: Option<&PathBuf>,
+    _hotspots: bool,
+    verbose: bool,
+) -> Result<(), String> {
     if verbose {
         eprintln!("Analyzing: {:?}", input);
     }
@@ -2036,7 +2151,8 @@ fn run_analyze(input: &PathBuf, output: Option<&PathBuf>, _hotspots: bool, verbo
         // Save JSON report
         let file = File::create(out_path).map_err(|e| format!("Failed to create: {}", e))?;
         let writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(writer, &report.summary).map_err(|e| format!("Failed to write: {}", e))?;
+        serde_json::to_writer_pretty(writer, &report.summary)
+            .map_err(|e| format!("Failed to write: {}", e))?;
         println!("\nReport saved to {:?}", out_path);
     }
 
@@ -2046,7 +2162,8 @@ fn run_analyze(input: &PathBuf, output: Option<&PathBuf>, _hotspots: bool, verbo
 fn run_info(input: &PathBuf, _verbose: bool) -> Result<(), String> {
     let file = File::open(input).map_err(|e| format!("Failed to open: {}", e))?;
     let reader = BufReader::new(file);
-    let recording: GpuRecording = serde_json::from_reader(reader).map_err(|e| format!("Failed to parse: {}", e))?;
+    let recording: GpuRecording =
+        serde_json::from_reader(reader).map_err(|e| format!("Failed to parse: {}", e))?;
 
     println!("=== GPU Recording Info ===\n");
     println!("ID: {}", recording.header.id);
@@ -2060,13 +2177,21 @@ fn run_info(input: &PathBuf, _verbose: bool) -> Result<(), String> {
 
     println!("Device Info:");
     println!("  Name: {}", recording.header.device_info.name);
-    println!("  SM Version: sm_{}", recording.header.device_info.sm_version);
+    println!(
+        "  SM Version: sm_{}",
+        recording.header.device_info.sm_version
+    );
     println!("  SMs: {}", recording.header.device_info.sm_count);
     println!();
 
     println!("Kernels: {}", recording.kernels.len());
     for (i, kernel) in recording.kernels.iter().enumerate() {
-        println!("  {}. {} - {} instructions", i + 1, kernel.name, kernel.stats.total_instructions);
+        println!(
+            "  {}. {} - {} instructions",
+            i + 1,
+            kernel.name,
+            kernel.stats.total_instructions
+        );
     }
     println!();
 
@@ -2076,7 +2201,12 @@ fn run_info(input: &PathBuf, _verbose: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn run_ptx(input: &PathBuf, output: Option<&PathBuf>, address: Option<u64>, verbose: bool) -> Result<(), String> {
+fn run_ptx(
+    input: &PathBuf,
+    output: Option<&PathBuf>,
+    address: Option<u64>,
+    verbose: bool,
+) -> Result<(), String> {
     if verbose {
         eprintln!("Recovering PTX from: {:?}", input);
     }
@@ -2089,7 +2219,8 @@ fn run_ptx(input: &PathBuf, output: Option<&PathBuf>, address: Option<u64>, verb
         let mut engine = PtxRecoveryEngine::new(content)
             .map_err(|e| format!("Failed to create recovery engine: {}", e))?;
 
-        let result = engine.recover_all()
+        let result = engine
+            .recover_all()
             .map_err(|e| format!("Failed to recover PTX: {}", e))?;
 
         if let Some(addr) = address {
@@ -2113,7 +2244,10 @@ fn run_ptx(input: &PathBuf, output: Option<&PathBuf>, address: Option<u64>, verb
                 if let Some(ref linkage) = func.linkage_name {
                     println!("// Linkage name: {}", linkage);
                 }
-                println!("// SASS range: 0x{:x} - 0x{:x}\n", func.start_address, func.end_address);
+                println!(
+                    "// SASS range: 0x{:x} - 0x{:x}\n",
+                    func.start_address, func.end_address
+                );
 
                 // Print PTX lines with SASS mapping
                 if !func.ptx_lines.is_empty() {
@@ -2132,7 +2266,10 @@ fn run_ptx(input: &PathBuf, output: Option<&PathBuf>, address: Option<u64>, verb
 
             // Print statistics
             println!("\n=== Recovery Statistics ===");
-            println!("Total SASS instructions: {}", result.stats.total_sass_instructions);
+            println!(
+                "Total SASS instructions: {}",
+                result.stats.total_sass_instructions
+            );
             println!("Mapped to PTX: {}", result.stats.mapped_instructions);
             println!("Unmapped: {}", result.stats.unmapped_instructions);
 
@@ -2166,7 +2303,8 @@ fn run_ptx(input: &PathBuf, output: Option<&PathBuf>, address: Option<u64>, verb
             return Err("No instructions found in input".to_string());
         }
 
-        let kernel_name = instructions.first()
+        let kernel_name = instructions
+            .first()
             .and_then(|i| i.function_name.clone())
             .unwrap_or_else(|| "kernel".to_string());
 
@@ -2187,8 +2325,12 @@ fn run_ptx(input: &PathBuf, output: Option<&PathBuf>, address: Option<u64>, verb
 
         for inst in &instructions {
             let ptx = reconstructor.reconstruct_instruction(inst);
-            println!("    // 0x{:04x}: {} {:?}", inst.address, inst.opcode,
-                inst.src_operands.iter().take(3).collect::<Vec<_>>());
+            println!(
+                "    // 0x{:04x}: {} {:?}",
+                inst.address,
+                inst.opcode,
+                inst.src_operands.iter().take(3).collect::<Vec<_>>()
+            );
             println!("    {}", ptx);
         }
 

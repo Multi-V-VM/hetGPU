@@ -80,7 +80,8 @@ fn test_gpu_rr_record() {
     let (success, stdout, _) = run_gpu_rr(&[
         "record",
         input_path.to_str().unwrap(),
-        "-o", output_path.to_str().unwrap(),
+        "-o",
+        output_path.to_str().unwrap(),
     ]);
 
     assert!(success, "Record command should succeed");
@@ -102,7 +103,8 @@ fn test_gpu_rr_record_verbose() {
         "-v",
         "record",
         input_path.to_str().unwrap(),
-        "-o", output_path.to_str().unwrap(),
+        "-o",
+        output_path.to_str().unwrap(),
     ]);
 
     assert!(success);
@@ -121,15 +123,13 @@ fn test_gpu_rr_info() {
     let (success, _, _) = run_gpu_rr(&[
         "record",
         input_path.to_str().unwrap(),
-        "-o", output_path.to_str().unwrap(),
+        "-o",
+        output_path.to_str().unwrap(),
     ]);
     assert!(success);
 
     // Then get info
-    let (success, stdout, _) = run_gpu_rr(&[
-        "info",
-        output_path.to_str().unwrap(),
-    ]);
+    let (success, stdout, _) = run_gpu_rr(&["info", output_path.to_str().unwrap()]);
 
     assert!(success, "Info command should succeed");
     assert!(stdout.contains("GPU Recording Info"));
@@ -149,15 +149,13 @@ fn test_gpu_rr_analyze() {
     let (success, _, _) = run_gpu_rr(&[
         "record",
         input_path.to_str().unwrap(),
-        "-o", output_path.to_str().unwrap(),
+        "-o",
+        output_path.to_str().unwrap(),
     ]);
     assert!(success);
 
     // Then analyze
-    let (success, stdout, _) = run_gpu_rr(&[
-        "analyze",
-        output_path.to_str().unwrap(),
-    ]);
+    let (success, stdout, _) = run_gpu_rr(&["analyze", output_path.to_str().unwrap()]);
 
     assert!(success, "Analyze command should succeed");
     assert!(stdout.contains("GPU Recording Analysis Report"));
@@ -179,15 +177,13 @@ fn test_gpu_rr_replay() {
     let (success, _, _) = run_gpu_rr(&[
         "record",
         input_path.to_str().unwrap(),
-        "-o", output_path.to_str().unwrap(),
+        "-o",
+        output_path.to_str().unwrap(),
     ]);
     assert!(success);
 
     // Then replay (non-interactive)
-    let (success, stdout, _) = run_gpu_rr(&[
-        "replay",
-        output_path.to_str().unwrap(),
-    ]);
+    let (success, stdout, _) = run_gpu_rr(&["replay", output_path.to_str().unwrap()]);
 
     assert!(success, "Replay command should succeed");
     assert!(stdout.contains("End of recording reached"));
@@ -204,16 +200,13 @@ fn test_gpu_rr_replay_verbose() {
     let (success, _, _) = run_gpu_rr(&[
         "record",
         input_path.to_str().unwrap(),
-        "-o", output_path.to_str().unwrap(),
+        "-o",
+        output_path.to_str().unwrap(),
     ]);
     assert!(success);
 
     // Replay in verbose mode
-    let (success, stdout, _) = run_gpu_rr(&[
-        "-v",
-        "replay",
-        output_path.to_str().unwrap(),
-    ]);
+    let (success, stdout, _) = run_gpu_rr(&["-v", "replay", output_path.to_str().unwrap()]);
 
     assert!(success);
     // Should show address and sequence for each step
@@ -232,16 +225,14 @@ fn test_gpu_rr_replay_with_breakpoint() {
     let (success, _, _) = run_gpu_rr(&[
         "record",
         input_path.to_str().unwrap(),
-        "-o", output_path.to_str().unwrap(),
+        "-o",
+        output_path.to_str().unwrap(),
     ]);
     assert!(success);
 
     // Replay with breakpoint at FADD instruction (0x70)
-    let (success, stdout, _) = run_gpu_rr(&[
-        "replay",
-        "--break", "0x70",
-        output_path.to_str().unwrap(),
-    ]);
+    let (success, stdout, _) =
+        run_gpu_rr(&["replay", "--break", "0x70", output_path.to_str().unwrap()]);
 
     assert!(success);
     assert!(stdout.contains("Breakpoint") && stdout.contains("hit"));
@@ -258,15 +249,13 @@ fn test_gpu_rr_with_branching_kernel() {
     let (success, _, _) = run_gpu_rr(&[
         "record",
         input_path.to_str().unwrap(),
-        "-o", output_path.to_str().unwrap(),
+        "-o",
+        output_path.to_str().unwrap(),
     ]);
     assert!(success);
 
     // Analyze
-    let (success, stdout, _) = run_gpu_rr(&[
-        "analyze",
-        output_path.to_str().unwrap(),
-    ]);
+    let (success, stdout, _) = run_gpu_rr(&["analyze", output_path.to_str().unwrap()]);
 
     assert!(success);
     // Should detect the branch
@@ -284,7 +273,8 @@ fn test_gpu_rr_recording_format() {
     let (success, _, _) = run_gpu_rr(&[
         "record",
         input_path.to_str().unwrap(),
-        "-o", output_path.to_str().unwrap(),
+        "-o",
+        output_path.to_str().unwrap(),
     ]);
     assert!(success);
 
@@ -308,7 +298,12 @@ fn test_gpu_rr_recording_format() {
     assert_eq!(kernels.len(), 1);
 
     let kernel = &kernels[0];
-    assert!(kernel.get("name").unwrap().as_str().unwrap().contains("vectorAdd"));
+    assert!(kernel
+        .get("name")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .contains("vectorAdd"));
     assert!(kernel.get("instructions").is_some());
     assert!(kernel.get("execution_records").is_some());
 

@@ -20,10 +20,19 @@ fn main() {
     // We ship cudart/cublas/cublasLt shims so PyTorch can start even if the
     // system libraries are absent (e.g. missing cublasGetMathMode).
     let embed = std::env::var("CARGO_FEATURE_EMBED_CUDART").is_ok();
+    let webgpu = std::env::var("CARGO_FEATURE_WEBGPU").is_ok();
     if embed {
         println!("cargo:rerun-if-changed=src/cudart_shim.c");
         println!("cargo:rerun-if-changed=src/cublas_shim.c");
         println!("cargo:rerun-if-changed=src/cublaslt_shim.c");
+        println!("cargo:rerun-if-changed=src/cusparse_shim.c");
+        println!("cargo:rerun-if-changed=src/cufft_shim.c");
+        println!("cargo:rerun-if-changed=src/nccl_shim.c");
+        println!("cargo:rerun-if-changed=src/torch_abi_shim.c");
+        println!("cargo:rerun-if-changed=src/pacc_disabled_stubs.c");
+        if webgpu {
+            println!("cargo:rerun-if-changed=src/webgpu_bridge.c");
+        }
 
         let cargo_manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let tools_dir = std::path::Path::new(&cargo_manifest_dir).parent().unwrap();
@@ -47,182 +56,145 @@ fn main() {
                 .display()
         );
 
-        // Add version scripts for all shims
-        let version_scripts = [
-            tools_dir.join("tools/cudart_shim/cudart_shim.map"),
-            tools_dir.join("tools/cublas_shim/cublas_shim.map"),
-            tools_dir.join("tools/cublaslt_shim/cublaslt_shim.map"),
-        ];
-
-        for version_script in &version_scripts {
-            if version_script.exists() {
-                println!(
-                    "cargo:rustc-link-arg=-Wl,--version-script={}",
-                    version_script.display()
-                );
-            } else {
-                eprintln!(
-                    "Warning: Version script not found at {}",
-                    version_script.display()
-                );
-            }
-        }
-
-        // Set SONAME so the real libcudart.so.12 (which uses dlopen("libcuda.so.1"))
-        // finds our library when it's already loaded in the process.
-        println!("cargo:rustc-link-arg=-Wl,-soname,libcuda.so.1");
-
-        // Force the linker to keep all symbols from the shim archives
-        println!("cargo:rustc-link-arg=-Wl,--whole-archive");
-        println!("cargo:rustc-link-arg=-lcudart_shim");
-        println!("cargo:rustc-link-arg=-lcublas_shim");
-        println!("cargo:rustc-link-arg=-lcublaslt_shim");
-        println!("cargo:rustc-link-arg=-Wl,--no-whole-archive");
-
+        let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+        let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+        let static_cudart = target_os == "emscripten"
+            || target_arch == "wasm32"
+            || target_env == "emscripten"
+            || std::env::var("HETGPU_EMBED_CUDART_STATIC").is_ok();
         let enable_logs = std::env::var("HETGPU_DEBUG_LOGS")
             .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "on"))
             .unwrap_or(false);
 
-        // Build cudart_shim
-        let mut cudart_build = cc::Build::new();
-        cudart_build.file("src/cudart_shim.c");
-        cudart_build.flag("-fPIC");
-        cudart_build.flag("-Wno-unused-parameter");
-        if enable_logs {
-            cudart_build.define("HETGPU_DEBUG_LOGS", None);
-        }
-        cudart_build.compile("cudart_shim");
-
-        // Build cublas_shim
-        let mut cublas_build = cc::Build::new();
-        cublas_build.file("src/cublas_shim.c");
-        cublas_build.flag("-fPIC");
-        cublas_build.flag("-Wno-unused-parameter");
-        if enable_logs {
-            cublas_build.define("HETGPU_DEBUG_LOGS", None);
-        }
-        cublas_build.compile("cublas_shim");
-
-        // Build cublaslt_shim
-        let mut cublaslt_build = cc::Build::new();
-        cublaslt_build.file("src/cublaslt_shim.c");
-        cublaslt_build.flag("-fPIC");
-        cublaslt_build.flag("-Wno-unused-parameter");
-        if enable_logs {
-            cublaslt_build.define("HETGPU_DEBUG_LOGS", None);
-        }
-        cublaslt_build.compile("cublaslt_shim");
-
-        // Also build standalone shared libraries (libcudart.so.12, libcublas.so.12,
-        // libcublasLt.so.12) so they can replace the real system libraries.
-        // Without these, PyTorch resolves cudart symbols from the real libcudart.so.12
-        // which internally computes occupancy using stale/invalid state, causing SIGFPE.
-        build_standalone_shim_libraries(tools_dir, enable_logs);
-    }
-}
-
-/// Build standalone .so shim libraries that can be deployed alongside libcuda.so.1.
-/// When LD_LIBRARY_PATH includes the output directory, PyTorch finds these shims
-/// instead of the real CUDA libraries.
-fn build_standalone_shim_libraries(tools_dir: &std::path::Path, enable_logs: bool) {
-    let out_dir = std::env::var("OUT_DIR").unwrap();
-    let out_path = std::path::Path::new(&out_dir);
-    // Place standalone shims next to the final library output.
-    // Cargo builds into target/{profile}/deps or target/{profile}/build/...
-    // We put them in OUT_DIR and also copy to the target directory.
-    let target_dir = out_path
-        .ancestors()
-        .find(|p| p.file_name().map_or(false, |n| n == "debug" || n == "release"))
-        .map(|p| p.to_path_buf());
-
-    // Only build standalone libcudart.so.12. The cublas/cublasLt shims are
-    // intentionally NOT built as standalone libraries — the real cublas libraries
-    // are functional and our shims lack the 77+ internal symbols that
-    // libcublas.so.12 imports from libcublasLt.so.12.
-    let shims: &[(&str, &str, &str, &str)] = &[
-        (
-            "src/cudart_shim.c",
-            "tools/cudart_shim/cudart_shim.map",
-            "libcudart.so.12",
-            "cudart",
-        ),
-    ];
-
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-
-    for (src, map, soname, label) in shims {
-        let src_path = std::path::Path::new(&manifest_dir).join(src);
-        let map_path = tools_dir.join(map);
-
-        if !src_path.exists() {
-            eprintln!("Warning: shim source {} not found, skipping standalone {}", src, soname);
-            continue;
-        }
-
-        let obj_path = out_path.join(format!("{}_standalone.o", label));
-        let so_path = out_path.join(soname);
-
-        // Compile to object file
-        let mut compile = std::process::Command::new("cc");
-        compile
-            .arg("-fPIC")
-            .arg("-shared")
-            .arg("-Wno-unused-parameter")
-            .arg("-o")
-            .arg(&so_path)
-            .arg(&src_path);
-
-        if enable_logs {
-            compile.arg("-DHETGPU_DEBUG_LOGS");
-        }
-
-        // Add version script if available
-        if map_path.exists() {
-            compile.arg(format!("-Wl,--version-script={}", map_path.display()));
-        }
-
-        // Set SONAME so the dynamic linker treats this as the real library
-        compile.arg(format!("-Wl,-soname,{}", soname));
-
-        // The standalone cudart shim uses extern cu* driver API functions.
-        // Create a symlink to libcuda.so.1 so we can link against it and
-        // generate a DT_NEEDED entry. At runtime, LD_PRELOAD provides the
-        // real libcuda.so.1 (which is our hetGPU driver).
-        if let Some(ref tdir) = target_dir {
-            let cuda_link = out_path.join("libcuda.so");
-            let cuda_target = tdir.join("libcuda.so.1");
-            if cuda_target.exists() {
-                let _ = std::fs::remove_file(&cuda_link);
-                let _ = std::os::unix::fs::symlink(&cuda_target, &cuda_link);
-                compile.arg(format!("-L{}", out_path.display()));
-                compile.arg("-lcuda");
+        if static_cudart {
+            let mut build = cc::Build::new();
+            build
+                .file("src/cudart_shim.c")
+                .file("src/cublas_shim.c")
+                .file("src/cublaslt_shim.c")
+                .file("src/cusparse_shim.c")
+                .file("src/cufft_shim.c")
+                .file("src/nccl_shim.c")
+                .file("src/torch_abi_shim.c")
+                .file("src/pacc_disabled_stubs.c")
+                .flag_if_supported("-Wno-unused-parameter")
+                .define("_GNU_SOURCE", None)
+                .define("_GLIBCXX_USE_CXX11_ABI", Some("0"))
+                .define("HETGPU_STATIC_CUDART", None);
+            if webgpu {
+                build.file("src/webgpu_bridge.c");
+                build.define("HETGPU_WEBGPU", None);
             }
+            if target_os == "emscripten" || target_arch == "wasm32" {
+                build.define("HETGPU_WASM", None);
+            }
+            if enable_logs {
+                build.define("HETGPU_DEBUG_LOGS", None);
+            }
+            build.compile("hetgpu_cuda_shim");
+            return;
         }
 
-        compile.arg("-Wl,--no-as-needed");
+        let out_dir = std::env::var("OUT_DIR").unwrap();
+        let profile_dir = std::path::Path::new(&out_dir)
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .expect("OUT_DIR should be under target/<profile>/build/<pkg>/out");
 
-        let status = compile.status();
-        match status {
-            Ok(s) if s.success() => {
-                eprintln!("Built standalone {}", soname);
-                // Copy to target directory if found
-                if let Some(ref tdir) = target_dir {
-                    let dest = tdir.join(soname);
-                    // Remove existing file/symlink first to avoid
-                    // following symlinks during copy
-                    let _ = std::fs::remove_file(&dest);
-                    match std::fs::copy(&so_path, &dest) {
-                        Ok(_) => eprintln!("  -> copied to {}", dest.display()),
-                        Err(e) => eprintln!("  -> copy to {} failed: {}", dest.display(), e),
-                    }
-                }
-            }
-            Ok(s) => {
-                eprintln!("Warning: building standalone {} failed (exit {})", soname, s);
-            }
-            Err(e) => {
-                eprintln!("Warning: could not run cc to build standalone {}: {}", soname, e);
-            }
+        let is_macos = target_os == "macos";
+
+        let shim_so = profile_dir.join(if is_macos {
+            "libhetgpu_cuda_shim.dylib"
+        } else {
+            "libhetgpu_cuda_shim.so"
+        });
+        let compiler = cc::Build::new().get_compiler();
+        let mut shim_build = compiler.to_command();
+        if is_macos {
+            shim_build.arg("-dynamiclib");
+            shim_build.arg("-undefined");
+            shim_build.arg("dynamic_lookup");
+        } else {
+            shim_build.arg("-shared");
+        }
+        shim_build.arg("-fPIC");
+        shim_build.arg("-Wno-unused-parameter");
+        shim_build.arg("-D_GLIBCXX_USE_CXX11_ABI=0");
+        if enable_logs {
+            shim_build.arg("-DHETGPU_DEBUG_LOGS");
+        }
+        shim_build.arg("-o");
+        shim_build.arg(&shim_so);
+        shim_build.arg("src/cudart_shim.c");
+        shim_build.arg("src/cublas_shim.c");
+        shim_build.arg("src/cublaslt_shim.c");
+        shim_build.arg("src/cusparse_shim.c");
+        shim_build.arg("src/cufft_shim.c");
+        shim_build.arg("src/nccl_shim.c");
+        shim_build.arg("src/torch_abi_shim.c");
+        if !is_macos {
+            shim_build.arg("-Wl,-soname,libhetgpu_cuda_shim.so");
+            shim_build.arg("-ldl");
+        }
+        shim_build.arg("-lz");
+        let status = shim_build.status().unwrap();
+        assert!(status.success(), "failed to build embedded CUDA shim");
+
+        let nccl_so = profile_dir.join(if is_macos {
+            "libnccl.2.dylib"
+        } else {
+            "libnccl.so.2"
+        });
+        let mut nccl_build = compiler.to_command();
+        if is_macos {
+            nccl_build.arg("-dynamiclib");
+            nccl_build.arg("-undefined");
+            nccl_build.arg("dynamic_lookup");
+        } else {
+            nccl_build.arg("-shared");
+        }
+        nccl_build.arg("-fPIC");
+        nccl_build.arg("-Wno-unused-parameter");
+        if enable_logs {
+            nccl_build.arg("-DHETGPU_DEBUG_LOGS");
+        }
+        nccl_build.arg("-o");
+        nccl_build.arg(&nccl_so);
+        nccl_build.arg("src/nccl_shim.c");
+        if !is_macos {
+            nccl_build.arg("-Wl,-soname,libnccl.so.2");
+        }
+        let status = nccl_build.status().unwrap();
+        assert!(status.success(), "failed to build embedded NCCL shim");
+
+        let nccl_link = profile_dir.join(if is_macos {
+            "libnccl.dylib"
+        } else {
+            "libnccl.so"
+        });
+        let _ = std::fs::remove_file(&nccl_link);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            if is_macos {
+                "libnccl.2.dylib"
+            } else {
+                "libnccl.so.2"
+            },
+            &nccl_link,
+        )
+        .unwrap();
+
+        println!("cargo:rustc-link-search=native={}", profile_dir.display());
+        if is_macos {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path");
+            println!("cargo:rustc-link-lib=dylib=hetgpu_cuda_shim");
+        } else {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
+            println!("cargo:rustc-link-arg=-Wl,--no-as-needed");
+            println!("cargo:rustc-link-arg=-lhetgpu_cuda_shim");
+            println!("cargo:rustc-link-arg=-Wl,--as-needed");
         }
     }
 }

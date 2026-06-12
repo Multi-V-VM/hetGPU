@@ -2,7 +2,13 @@ use super::context;
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 use nvidia_runtime_sys;
 use std::{ffi::c_void, mem, ptr};
 #[cfg(feature = "intel")]
@@ -424,7 +430,10 @@ pub(crate) fn get_attribute(
     attrib: CUdevice_attribute,
     dev_idx: ze_device_handle_t,
 ) -> ze_result_t {
-    eprintln!("[hetGPU] get_attribute called: attrib={:?}, dev_idx={:?}", attrib, dev_idx);
+    eprintln!(
+        "[hetGPU] get_attribute called: attrib={:?}, dev_idx={:?}",
+        attrib, dev_idx
+    );
     // Check if this is a virtual device (null handle) - return GPU-like defaults
     let is_virtual = dev_idx.0.is_null();
     eprintln!("[hetGPU] is_virtual={}", is_virtual);
@@ -565,7 +574,7 @@ pub(crate) fn get_attribute(
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK => {
-            *pi = 65536;
+            *pi = 64; // Default value since there's no direct equivalent
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_CLOCK_RATE => {
@@ -589,7 +598,10 @@ pub(crate) fn get_attribute(
             }
             #[cfg(not(feature = "tmatmul"))]
             {
-                eprintln!("[hetGPU] MULTIPROCESSOR_COUNT: returning {} (intel path)", props.numEUsPerSubslice);
+                eprintln!(
+                    "[hetGPU] MULTIPROCESSOR_COUNT: returning {} (intel path)",
+                    props.numEUsPerSubslice
+                );
                 *pi = props.numEUsPerSubslice as i32;
             }
             ze_result_t::ZE_RESULT_SUCCESS
@@ -670,12 +682,17 @@ pub(crate) fn get_attribute(
             // For TMatmul backend, return fixed value to avoid SIGFPE
             #[cfg(feature = "tmatmul")]
             {
-                eprintln!("[hetGPU] MAX_THREADS_PER_MULTIPROCESSOR: returning 2048 (tmatmul feature)");
+                eprintln!(
+                    "[hetGPU] MAX_THREADS_PER_MULTIPROCESSOR: returning 2048 (tmatmul feature)"
+                );
                 *pi = 2048;
             }
             #[cfg(not(feature = "tmatmul"))]
             {
-                eprintln!("[hetGPU] MAX_THREADS_PER_MULTIPROCESSOR: returning {} (intel path)", props.numThreadsPerEU);
+                eprintln!(
+                    "[hetGPU] MAX_THREADS_PER_MULTIPROCESSOR: returning {} (intel path)",
+                    props.numThreadsPerEU
+                );
                 *pi = props.numThreadsPerEU as i32;
             }
             ze_result_t::ZE_RESULT_SUCCESS
@@ -713,7 +730,7 @@ pub(crate) fn get_attribute(
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_MULTIPROCESSOR => {
-            *pi = 65536;
+            *pi = 64; // Default value
             ze_result_t::ZE_RESULT_SUCCESS
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MANAGED_MEMORY => {
@@ -909,7 +926,11 @@ pub(crate) fn get_name(
         let device_name = b"Virtual GPU (TMatmul)\0";
         let copy_len = std::cmp::min(device_name.len(), len as usize);
         unsafe {
-            ptr::copy_nonoverlapping(device_name.as_ptr() as *const i8, name, copy_len);
+            ptr::copy_nonoverlapping(
+                device_name.as_ptr() as *const ::core::ffi::c_char,
+                name,
+                copy_len,
+            );
         }
         return Ok(());
     }
@@ -1065,10 +1086,7 @@ pub(crate) fn primary_context_retain(
 }
 
 #[cfg(feature = "intel")]
-pub(crate) fn primary_context_retain(
-    pctx: &mut CUcontext,
-    dev: i32,
-) -> Result<(), CUerror> {
+pub(crate) fn primary_context_retain(pctx: &mut CUcontext, dev: i32) -> Result<(), CUerror> {
     eprintln!("[hetGPU] cuDevicePrimaryCtxRetain called with dev={}", dev);
     // Get device from global state using ordinal
     let device_obj = super::driver::device(dev)?;
@@ -1078,7 +1096,10 @@ pub(crate) fn primary_context_retain(
         mutable_ctx.ref_count += 1;
     }
     *pctx = raw_ctx;
-    eprintln!("[hetGPU] cuDevicePrimaryCtxRetain: success, ctx={:?}", raw_ctx);
+    eprintln!(
+        "[hetGPU] cuDevicePrimaryCtxRetain: success, ctx={:?}",
+        raw_ctx
+    );
     Ok(())
 }
 
@@ -1301,6 +1322,11 @@ pub(crate) fn get_attribute(
 pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> CUresult {
     let devices = super::driver::global_state()?;
     *count = devices.devices.len() as ::core::ffi::c_int;
+    if let Ok(override_count) = std::env::var("HETGPU_PACC_VISIBLE_DEVICES") {
+        if let Ok(parsed) = override_count.parse::<i32>() {
+            *count = parsed.clamp(1, 4);
+        }
+    }
     Ok(())
 }
 
@@ -1323,7 +1349,7 @@ pub(crate) fn get_name(
     let copy_len = std::cmp::min(device_name.len(), len as usize - 1);
 
     unsafe {
-        std::ptr::copy_nonoverlapping(device_name.as_ptr() as *const i8, name, copy_len);
+        std::ptr::copy_nonoverlapping(device_name.as_ptr(), name as *mut u8, copy_len);
         *name.add(copy_len) = 0;
     }
 
@@ -1536,7 +1562,7 @@ pub(crate) fn get_attribute(
         }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_CONCURRENT_KERNELS => 1,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_ECC_ENABLED => 0,
-        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_BUS_ID => 0,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_BUS_ID => 0x02 + dev,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID => 0,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID => 0,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TCC_DRIVER => 0,
@@ -1591,7 +1617,7 @@ pub(crate) fn get_name(
     let copy_len = std::cmp::min(device_name.len(), len as usize - 1);
 
     unsafe {
-        std::ptr::copy_nonoverlapping(device_name.as_ptr() as *const i8, name, copy_len);
+        std::ptr::copy_nonoverlapping(device_name.as_ptr(), name as *mut u8, copy_len);
         *name.add(copy_len) = 0;
     }
 
@@ -1819,7 +1845,13 @@ pub(crate) fn primary_context_get_state(dev: i32, flags: &mut u32, active: &mut 
 }
 
 // NVIDIA backend device function implementations - passthrough to real libcuda.so
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn compute_capability(major: &mut i32, minor: &mut i32, dev: i32) -> CUresult {
     let result = nvidia_runtime_sys::cuDeviceComputeCapability(major, minor, dev);
     if result != 0 {
@@ -1828,7 +1860,13 @@ pub(crate) fn compute_capability(major: &mut i32, minor: &mut i32, dev: i32) -> 
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn get(device: *mut i32, ordinal: i32) -> CUresult {
     let result = nvidia_runtime_sys::cuDeviceGet(device, ordinal);
     if result != 0 {
@@ -1837,7 +1875,13 @@ pub(crate) fn get(device: *mut i32, ordinal: i32) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn get_attribute(pi: &mut i32, attrib: CUdevice_attribute, dev: i32) -> CUresult {
     let result = nvidia_runtime_sys::cuDeviceGetAttribute(pi, attrib, dev);
     if result != 0 {
@@ -1846,11 +1890,20 @@ pub(crate) fn get_attribute(pi: &mut i32, attrib: CUdevice_attribute, dev: i32) 
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> CUresult {
     eprintln!("[hetGPU device] get_count called");
     let result = nvidia_runtime_sys::cuDeviceGetCount(count);
-    eprintln!("[hetGPU device] nvidia_runtime_sys::cuDeviceGetCount returned {}, count={}", result, *count);
+    eprintln!(
+        "[hetGPU device] nvidia_runtime_sys::cuDeviceGetCount returned {}, count={}",
+        result, *count
+    );
     if result != 0 {
         eprintln!("[hetGPU device] get_count returning error");
         return Err(CUerror::UNKNOWN);
@@ -1859,8 +1912,18 @@ pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
-pub(crate) fn get_name(name: *mut ::core::ffi::c_char, len: ::core::ffi::c_int, dev: i32) -> CUresult {
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_name(
+    name: *mut ::core::ffi::c_char,
+    len: ::core::ffi::c_int,
+    dev: i32,
+) -> CUresult {
     let result = nvidia_runtime_sys::cuDeviceGetName(name, len, dev);
     if result != 0 {
         return Err(CUerror::UNKNOWN);
@@ -1868,7 +1931,13 @@ pub(crate) fn get_name(name: *mut ::core::ffi::c_char, len: ::core::ffi::c_int, 
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn get_uuid(uuid: *mut cuda_types::cuda::CUuuid, dev: i32) -> CUresult {
     let result = nvidia_runtime_sys::cuDeviceGetUuid(uuid, dev);
     if result != 0 {
@@ -1877,13 +1946,29 @@ pub(crate) fn get_uuid(uuid: *mut cuda_types::cuda::CUuuid, dev: i32) -> CUresul
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn get_uuid_v2(uuid: *mut cuda_types::cuda::CUuuid, dev: i32) -> CUresult {
     get_uuid(uuid, dev)
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
-pub(crate) fn get_luid(luid: *mut ::core::ffi::c_char, device_node_mask: &mut ::core::ffi::c_uint, dev: i32) -> CUresult {
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_luid(
+    luid: *mut ::core::ffi::c_char,
+    device_node_mask: &mut ::core::ffi::c_uint,
+    dev: i32,
+) -> CUresult {
     let result = nvidia_runtime_sys::cuDeviceGetLuid(luid, device_node_mask, dev);
     if result != 0 {
         return Err(CUerror::UNKNOWN);
@@ -1891,7 +1976,13 @@ pub(crate) fn get_luid(luid: *mut ::core::ffi::c_char, device_node_mask: &mut ::
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn total_mem_v2(bytes: *mut usize, dev: i32) -> CUresult {
     let result = nvidia_runtime_sys::cuDeviceTotalMem_v2(bytes, dev);
     if result != 0 {
@@ -1900,52 +1991,116 @@ pub(crate) fn total_mem_v2(bytes: *mut usize, dev: i32) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn get_properties(prop: &mut CUdevprop, dev: i32) -> CUresult {
     // CUDA doesn't have a direct cuDeviceGetProperties, so we build from attributes
     let mut pi: i32 = 0;
-    
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK, dev);
+
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK,
+        dev,
+    );
     prop.maxThreadsPerBlock = pi;
-    
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X, dev);
+
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X,
+        dev,
+    );
     prop.maxThreadsDim[0] = pi;
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Y, dev);
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Y,
+        dev,
+    );
     prop.maxThreadsDim[1] = pi;
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Z, dev);
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Z,
+        dev,
+    );
     prop.maxThreadsDim[2] = pi;
-    
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X, dev);
+
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X,
+        dev,
+    );
     prop.maxGridSize[0] = pi;
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Y, dev);
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Y,
+        dev,
+    );
     prop.maxGridSize[1] = pi;
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Z, dev);
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Z,
+        dev,
+    );
     prop.maxGridSize[2] = pi;
-    
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK, dev);
+
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK,
+        dev,
+    );
     prop.sharedMemPerBlock = pi;
-    
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TOTAL_CONSTANT_MEMORY, dev);
+
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TOTAL_CONSTANT_MEMORY,
+        dev,
+    );
     prop.totalConstantMemory = pi;
-    
+
     prop.SIMDWidth = 32;
-    
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_PITCH, dev);
+
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_PITCH,
+        dev,
+    );
     prop.memPitch = pi;
-    
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK, dev);
+
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK,
+        dev,
+    );
     prop.regsPerBlock = pi;
-    
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_CLOCK_RATE, dev);
+
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_CLOCK_RATE,
+        dev,
+    );
     prop.clockRate = pi;
-    
-    nvidia_runtime_sys::cuDeviceGetAttribute(&mut pi, CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT, dev);
+
+    nvidia_runtime_sys::cuDeviceGetAttribute(
+        &mut pi,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT,
+        dev,
+    );
     prop.textureAlign = pi;
-    
+
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn primary_context_retain(pctx: &mut CUcontext, dev: i32) -> CUresult {
     let result = nvidia_runtime_sys::cuDevicePrimaryCtxRetain(pctx, dev);
     if result != 0 {
@@ -1954,7 +2109,13 @@ pub(crate) fn primary_context_retain(pctx: &mut CUcontext, dev: i32) -> CUresult
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn primary_context_release(dev: i32) -> CUresult {
     let result = nvidia_runtime_sys::cuDevicePrimaryCtxRelease_v2(dev);
     if result != 0 {
@@ -1963,11 +2124,305 @@ pub(crate) fn primary_context_release(dev: i32) -> CUresult {
     Ok(())
 }
 
-#[cfg(all(feature = "nvidia", not(feature = "amd"), not(feature = "intel"), not(feature = "tenstorrent"), not(feature = "tmatmul")))]
+#[cfg(all(
+    feature = "nvidia",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
 pub(crate) fn primary_context_get_state(dev: i32, flags: &mut u32, active: &mut i32) -> CUresult {
     let result = nvidia_runtime_sys::cuDevicePrimaryCtxGetState(dev, flags, active);
     if result != 0 {
         return Err(CUerror::UNKNOWN);
     }
+    Ok(())
+}
+
+// ============================================================================
+// PACC device function implementations (SiFive Intelligence XM / RISC-V IME)
+// ============================================================================
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn compute_capability(major: &mut i32, minor: &mut i32, _dev: i32) -> CUresult {
+    *major = COMPUTE_CAPABILITY_MAJOR;
+    *minor = COMPUTE_CAPABILITY_MINOR;
+    Ok(())
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get(device: *mut i32, ordinal: i32) -> CUresult {
+    let devices = super::driver::global_state()?;
+    if ordinal < 0 || ordinal >= devices.devices.len() as i32 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    unsafe { *device = ordinal };
+    Ok(())
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> CUresult {
+    let devices = super::driver::global_state()?;
+    *count = devices.devices.len() as ::core::ffi::c_int;
+    Ok(())
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_name(
+    name: *mut ::core::ffi::c_char,
+    len: ::core::ffi::c_int,
+    dev: i32,
+) -> CUresult {
+    if name.is_null() || len <= 0 {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let devices = super::driver::global_state()?;
+    if dev < 0 || dev >= devices.devices.len() as i32 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    let device_name = b"SiFive Intelligence XM PACC\0";
+    let copy_len = std::cmp::min(device_name.len(), len as usize - 1);
+    unsafe {
+        std::ptr::copy_nonoverlapping(device_name.as_ptr(), name as *mut u8, copy_len);
+        *name.add(copy_len) = 0;
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_uuid(uuid: *mut [u8; 16], dev: i32) -> CUresult {
+    if uuid.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let devices = super::driver::global_state()?;
+    if dev < 0 || dev >= devices.devices.len() as i32 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    let mut device_uuid = [0u8; 16];
+    device_uuid[0..4].copy_from_slice(&(dev as u32).to_le_bytes());
+    device_uuid[4..8].copy_from_slice(b"PACC");
+    device_uuid[8..16].copy_from_slice(b"ZLUDA001");
+    unsafe { *uuid = device_uuid };
+    Ok(())
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_uuid_v2(uuid: *mut [u8; 16], dev: i32) -> CUresult {
+    get_uuid(uuid, dev)
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_luid(
+    luid: *mut [u8; 8],
+    device_node_mask: *mut ::core::ffi::c_uint,
+    dev: i32,
+) -> CUresult {
+    if luid.is_null() || device_node_mask.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let devices = super::driver::global_state()?;
+    if dev < 0 || dev >= devices.devices.len() as i32 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    let mut device_luid = [0u8; 8];
+    device_luid[0..4].copy_from_slice(&(dev as u32).to_le_bytes());
+    device_luid[4..8].copy_from_slice(b"PACC");
+    unsafe {
+        *luid = device_luid;
+        *device_node_mask = 1u32 << (dev as u32 % 32);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn total_mem_v2(bytes: *mut usize, dev: i32) -> CUresult {
+    if bytes.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let devices = super::driver::global_state()?;
+    if dev < 0 || dev >= devices.devices.len() as i32 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    unsafe { *bytes = 512 * 1024 * 1024 };
+    Ok(())
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_properties(prop: &mut CUdevprop, dev: i32) -> CUresult {
+    let devices = super::driver::global_state()?;
+    if dev < 0 || dev >= devices.devices.len() as i32 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    prop.maxThreadsPerBlock = 1024;
+    prop.maxThreadsDim = [1024, 1024, 64];
+    prop.maxGridSize = [65535, 65535, 65535];
+    prop.sharedMemPerBlock = 65536;
+    prop.totalConstantMemory = 65536;
+    prop.SIMDWidth = 32;
+    prop.memPitch = 2147483647;
+    prop.regsPerBlock = 65536;
+    prop.clockRate = 1000;
+    prop.textureAlign = 512;
+    Ok(())
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn primary_context_retain(pctx: *mut CUcontext, dev: i32) -> CUresult {
+    if pctx.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let (primary_ctx, handle) = super::context::get_primary_pacc(dev)?;
+    primary_ctx.increment_ref_count();
+    unsafe { *pctx = handle };
+    Ok(())
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn primary_context_release(dev: i32) -> CUresult {
+    let (primary_ctx, _) = super::context::get_primary_pacc(dev)?;
+    let ref_count = primary_ctx.decrement_ref_count();
+    if ref_count == 0 {
+        primary_ctx.destroy()?;
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_attribute(
+    pi: *mut ::core::ffi::c_int,
+    attrib: CUdevice_attribute,
+    dev: i32,
+) -> CUresult {
+    if pi.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let devices = super::driver::global_state()?;
+    if dev < 0 || dev >= devices.devices.len() as i32 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    let result = match attrib {
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK => 1024,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X => 1024,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Y => 1024,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Z => 64,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X => 65535,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Y => 65535,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Z => 65535,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK => 65536,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TOTAL_CONSTANT_MEMORY => 65536,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_WARP_SIZE => 32,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_PITCH => 2147483647,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK => 65536,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_CLOCK_RATE => 1000000,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT => 512,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT => 1,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_KERNEL_EXEC_TIMEOUT => 0,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_INTEGRATED => 1,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_CAN_MAP_HOST_MEMORY => 1,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_MODE => 0,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE1D_WIDTH => 65536,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE2D_WIDTH => 65536,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE2D_HEIGHT => 65536,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE3D_WIDTH => 4096,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE3D_HEIGHT => 4096,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE3D_DEPTH => 4096,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE => 1000000,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH => 128,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_L2_CACHE_SIZE => 131072,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR => 2048,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT => 1,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING => 1,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR => {
+            COMPUTE_CAPABILITY_MAJOR
+        }
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR => {
+            COMPUTE_CAPABILITY_MINOR
+        }
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_BUS_ID => 0x02 + dev,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID => 0,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID => 0,
+        _ => return Err(CUerror::INVALID_VALUE),
+    };
+    unsafe { *pi = result };
+    Ok(())
+}
+
+// ─── PACC primary_context_get_state ──────────────────────────────────────────
+#[cfg(all(
+    any(feature = "pacc", feature = "webgpu"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn primary_context_get_state(dev: i32, flags: &mut u32, active: &mut i32) -> CUresult {
+    if dev < 0 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    let devices = super::driver::global_state()?;
+    if dev >= devices.devices.len() as i32 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    *flags = 0;
+    *active = 1;
     Ok(())
 }

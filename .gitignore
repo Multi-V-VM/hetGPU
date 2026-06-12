@@ -8,3 +8,7 @@ Cargo.lock
 *.py
 *.pyc
 ze_runner*
+ze_runner*
+cxl/
+qemu/
+sb*
