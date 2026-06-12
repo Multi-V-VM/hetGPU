@@ -1,7 +1,7 @@
 use crate::r#impl::context;
 #[cfg(feature = "intel")]
 use crate::r#impl::ze_to_cuda_result;
-#[cfg(any(feature = "intel", feature = "nvidia"))]
+#[cfg(any(feature = "intel", feature = "nvidia", feature = "tmatmul"))]
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
@@ -14,12 +14,36 @@ use ze_runtime_sys::*;
 /// Global allocation tracker for virtual backend.
 /// Maps pointer addresses to their allocation sizes in bytes.
 /// Used by invoke_emulator_bridge to determine safe read sizes.
-#[cfg(feature = "intel")]
+#[cfg(any(
+    feature = "intel",
+    all(
+        feature = "tmatmul",
+        not(feature = "amd"),
+        not(feature = "tenstorrent"),
+        not(feature = "nvidia")
+    )
+))]
 use std::sync::Mutex;
-#[cfg(feature = "intel")]
+#[cfg(any(
+    feature = "intel",
+    all(
+        feature = "tmatmul",
+        not(feature = "amd"),
+        not(feature = "tenstorrent"),
+        not(feature = "nvidia")
+    )
+))]
 use std::collections::HashMap;
 
-#[cfg(feature = "intel")]
+#[cfg(any(
+    feature = "intel",
+    all(
+        feature = "tmatmul",
+        not(feature = "amd"),
+        not(feature = "tenstorrent"),
+        not(feature = "nvidia")
+    )
+))]
 lazy_static::lazy_static! {
     pub(crate) static ref VIRTUAL_ALLOC_MAP: Mutex<HashMap<usize, usize>> = Mutex::new(HashMap::new());
 }
@@ -28,7 +52,15 @@ lazy_static::lazy_static! {
 /// Returns Some((remaining_bytes, base_addr)) if the address falls within a tracked allocation.
 /// `remaining_bytes` is how many bytes are available from `addr` to the end of the allocation.
 /// Returns None if the address is not within any tracked allocation.
-#[cfg(feature = "intel")]
+#[cfg(any(
+    feature = "intel",
+    all(
+        feature = "tmatmul",
+        not(feature = "amd"),
+        not(feature = "tenstorrent"),
+        not(feature = "nvidia")
+    )
+))]
 pub(crate) fn get_alloc_size(addr: usize) -> Option<usize> {
     if let Ok(map) = VIRTUAL_ALLOC_MAP.lock() {
         // Check for exact match first (fast path)
@@ -50,7 +82,15 @@ pub(crate) fn get_alloc_size(addr: usize) -> Option<usize> {
 
 /// Register an external allocation in the virtual alloc map.
 /// Called from cudart_shim.c when cudaMalloc falls back to aligned_alloc.
-#[cfg(feature = "intel")]
+#[cfg(any(
+    feature = "intel",
+    all(
+        feature = "tmatmul",
+        not(feature = "amd"),
+        not(feature = "tenstorrent"),
+        not(feature = "nvidia")
+    )
+))]
 #[no_mangle]
 pub unsafe extern "C" fn hetgpu_register_alloc(ptr: usize, size: usize) {
     if ptr != 0 && size > 0 {
@@ -62,7 +102,15 @@ pub unsafe extern "C" fn hetgpu_register_alloc(ptr: usize, size: usize) {
 
 /// Unregister an allocation from the virtual alloc map.
 /// Called from cudart_shim.c when cudaFree frees a fallback allocation.
-#[cfg(feature = "intel")]
+#[cfg(any(
+    feature = "intel",
+    all(
+        feature = "tmatmul",
+        not(feature = "amd"),
+        not(feature = "tenstorrent"),
+        not(feature = "nvidia")
+    )
+))]
 #[no_mangle]
 pub unsafe extern "C" fn hetgpu_unregister_alloc(ptr: usize) {
     if ptr != 0 {
@@ -698,6 +746,144 @@ pub(crate) fn set_d8_v2(dst: CUdeviceptr, value: ::core::ffi::c_uchar, n: usize)
     // For Tenstorrent, implement 8-bit memory set
     // In a real implementation, this would set device memory to the specified value
     let _ = (dst, value, n); // Suppress unused warnings
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
+    if dptr.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let size = bytesize.max(1);
+    let layout = std::alloc::Layout::from_size_align(size, 64).map_err(|_| CUerror::OUT_OF_MEMORY)?;
+    let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+    if ptr.is_null() {
+        return Err(CUerror::OUT_OF_MEMORY);
+    }
+    unsafe { *dptr = CUdeviceptr_v2(ptr.cast()) };
+    if let Ok(mut map) = VIRTUAL_ALLOC_MAP.lock() {
+        map.insert(ptr as usize, size);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+pub(crate) fn free_v2(dptr: CUdeviceptr) -> CUresult {
+    if dptr.0.is_null() {
+        return Ok(());
+    }
+    let size = if let Ok(mut map) = VIRTUAL_ALLOC_MAP.lock() {
+        map.remove(&(dptr.0 as usize)).unwrap_or(1)
+    } else {
+        1
+    };
+    if let Ok(layout) = std::alloc::Layout::from_size_align(size.max(1), 64) {
+        unsafe { std::alloc::dealloc(dptr.0.cast(), layout) };
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+pub(crate) fn copy_dto_h_v2(
+    dst_host: *mut ::core::ffi::c_void,
+    src_device: CUdeviceptr,
+    byte_count: usize,
+) -> CUresult {
+    if dst_host.is_null() || (src_device.0.is_null() && byte_count != 0) {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    unsafe { std::ptr::copy_nonoverlapping(src_device.0.cast::<u8>(), dst_host.cast::<u8>(), byte_count) };
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+pub(crate) fn copy_hto_d_v2(
+    dst_device: CUdeviceptr,
+    src_host: *const ::core::ffi::c_void,
+    byte_count: usize,
+) -> CUresult {
+    if (dst_device.0.is_null() || src_host.is_null()) && byte_count != 0 {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    unsafe { std::ptr::copy_nonoverlapping(src_host.cast::<u8>(), dst_device.0.cast::<u8>(), byte_count) };
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+pub(crate) fn get_address_range_v2(
+    base: *mut CUdeviceptr,
+    size: *mut usize,
+    dptr: CUdeviceptr,
+) -> CUresult {
+    if !base.is_null() {
+        unsafe { *base = dptr };
+    }
+    if !size.is_null() {
+        unsafe { *size = get_alloc_size(dptr.0 as usize).unwrap_or(0) };
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+pub(crate) fn set_d8_v2(dst: CUdeviceptr, value: ::core::ffi::c_uchar, n: usize) -> CUresult {
+    if dst.0.is_null() && n != 0 {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    unsafe { std::ptr::write_bytes(dst.0.cast::<u8>(), value, n) };
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+pub(crate) fn set_d32_v2(dst: CUdeviceptr, ui: ::core::ffi::c_uint, n: usize) -> CUresult {
+    if dst.0.is_null() && n != 0 {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let dst = dst.0.cast::<u32>();
+    for i in 0..n {
+        unsafe { dst.add(i).write(ui) };
+    }
     Ok(())
 }
 

@@ -1,4 +1,21 @@
 fn main() {
+    let apple_backend = std::env::var("CARGO_FEATURE_ANE").is_ok();
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if apple_backend && matches!(target_os.as_str(), "macos" | "ios") {
+        println!("cargo:rerun-if-changed=src/apple_metal_runtime.m");
+        println!("cargo:rerun-if-changed=src/apple_cuda_stub.m");
+        println!("cargo:rerun-if-changed=src/ane_bridge.h");
+        println!("cargo:rerun-if-changed=src/ane_bridge.m");
+        let mut metal_build = cc::Build::new();
+        metal_build.file("src/apple_metal_runtime.m");
+        metal_build.file("src/ane_bridge.m");
+        metal_build.flag("-fobjc-arc");
+        metal_build.compile("hetgpu_apple_metal_runtime");
+        println!("cargo:rustc-link-lib=framework=Foundation");
+        println!("cargo:rustc-link-lib=framework=Metal");
+        println!("cargo:rustc-link-lib=framework=IOSurface");
+    }
+
     // Only build and link embedded shims when the feature is enabled.
     // We ship cudart/cublas/cublasLt shims so PyTorch can start even if the
     // system libraries are absent (e.g. missing cublasGetMathMode).

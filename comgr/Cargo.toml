@@ -6,19 +6,19 @@ edition = "2021"
 
 [features]
 default = ["intel"]
-amd = []
-intel = []
-tenstorrent = []
-gemmini = []
-cutile = []
+amd = ["dep:amd_comgr_sys", "dep:hip_runtime_sys"]
+intel = ["dep:intel_comgr_sys", "dep:ze_runtime_sys"]
+tenstorrent = ["dep:tt_comgr_sys"]
+gemmini = ["dep:gemmini_comgr_sys"]
+cutile = ["dep:cutile_comgr_sys"]
 
 [lib]
 
 [dependencies]
-amd_comgr_sys = { path = "../ext/amd_comgr-sys"  }
-intel_comgr_sys = { path = "../ext/intel_comgr-sys"  }
-tt_comgr_sys = { path = "../ext/tt_comgr-sys" }
-gemmini_comgr_sys = { path = "../ext/gemmini_comgr-sys" }
-cutile_comgr_sys = { path = "../ext/cutile_comgr-sys" }
-hip_runtime_sys = { path = "../ext/hip_runtime-sys"  }
-ze_runtime_sys = { path = "../ext/ze_runtime-sys"  }
+amd_comgr_sys = { path = "../ext/amd_comgr-sys", optional = true }
+intel_comgr_sys = { path = "../ext/intel_comgr-sys", optional = true }
+tt_comgr_sys = { path = "../ext/tt_comgr-sys", optional = true }
+gemmini_comgr_sys = { path = "../ext/gemmini_comgr-sys", optional = true }
+cutile_comgr_sys = { path = "../ext/cutile_comgr-sys", optional = true }
+hip_runtime_sys = { path = "../ext/hip_runtime-sys", optional = true }
+ze_runtime_sys = { path = "../ext/ze_runtime-sys", optional = true }

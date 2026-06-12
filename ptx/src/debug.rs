@@ -2727,12 +2727,10 @@ impl GpuTrapHandler {
         }
 
         unsafe {
-            let handler = libc::sigaction {
-                sa_sigaction: sigint_handler as usize,
-                sa_mask: std::mem::zeroed(),
-                sa_flags: 0,
-                sa_restorer: None,
-            };
+            let mut handler: libc::sigaction = std::mem::zeroed();
+            handler.sa_sigaction = sigint_handler as usize;
+            handler.sa_flags = 0;
+            libc::sigemptyset(&mut handler.sa_mask);
 
             if libc::sigaction(libc::SIGINT, &handler, std::ptr::null_mut()) != 0 {
                 return Err("Failed to install SIGINT handler".to_string());

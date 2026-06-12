@@ -73,6 +73,9 @@ pub(crate) mod concordia_gpu;
 #[cfg(feature = "cutile")]
 pub mod cutile;
 
+#[cfg(feature = "ane")]
+pub mod ane;
+
 // In both debug and release builds, return SUCCESS for unimplemented functions
 // to allow frameworks like PyTorch to proceed with virtual device
 pub(crate) fn unimplemented() -> CUresult {
@@ -179,6 +182,7 @@ macro_rules! from_cuda_object {
 from_cuda_nop!(
     *mut i8,
     *mut i32,
+    *mut u32,
     *mut usize,
     *mut CUcontext,
     *const ::core::ffi::c_void,
@@ -200,6 +204,110 @@ from_cuda_nop!(
     cuda_types::cuda::CUresult,
     CUdevice_attribute
 );
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, CUfunction> for CUfunction {
+    fn from_cuda(function: &'a CUfunction) -> Result<Self, CUerror> {
+        Ok(*function)
+    }
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, CUdeviceptr_v2> for CUdeviceptr_v2 {
+    fn from_cuda(ptr: &'a CUdeviceptr_v2) -> Result<Self, CUerror> {
+        Ok(*ptr)
+    }
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, CUstream> for *mut ::core::ffi::c_void {
+    fn from_cuda(stream: &'a CUstream) -> Result<Self, CUerror> {
+        Ok(stream.0.cast())
+    }
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, CUpointer_attribute_enum> for CUpointer_attribute_enum {
+    fn from_cuda(attr: &'a CUpointer_attribute_enum) -> Result<Self, CUerror> {
+        Ok(*attr)
+    }
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, CUfunction_attribute_enum> for CUfunction_attribute_enum {
+    fn from_cuda(attr: &'a CUfunction_attribute_enum) -> Result<Self, CUerror> {
+        Ok(*attr)
+    }
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, *mut CUfunction> for &'a mut CUfunction {
+    fn from_cuda(function: &'a *mut CUfunction) -> Result<Self, CUerror> {
+        unsafe { function.as_mut() }.ok_or(CUerror::INVALID_VALUE)
+    }
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, *mut CUuuid_st> for *mut [u8; 16] {
+    fn from_cuda(uuid: &'a *mut CUuuid_st) -> Result<Self, CUerror> {
+        Ok(uuid.cast::<[u8; 16]>())
+    }
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+impl<'a> FromCuda<'a, *mut i8> for *mut [u8; 8] {
+    fn from_cuda(luid: &'a *mut i8) -> Result<Self, CUerror> {
+        Ok(luid.cast::<[u8; 8]>())
+    }
+}
 
 // Wrapper entry points expected by cuda_function_declarations! for error string helpers
 pub(crate) fn get_error_string(error: CUresult, pStr: &mut *const c_char) -> Result<(), CUerror> {

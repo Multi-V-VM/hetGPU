@@ -9,9 +9,12 @@
 #include <execinfo.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#if defined(__linux__) && defined(__x86_64__)
 #include <ucontext.h>
+#endif
 #include <dlfcn.h>
 
+#if defined(__linux__) && defined(__x86_64__)
 // SIGFPE handler - log first occurrence then disable FP exceptions to continue
 static int sigfpe_count = 0;
 
@@ -66,6 +69,7 @@ static void install_sigfpe_handler(void) {
     sigaction(SIGFPE, &sa, NULL);
     fprintf(stderr, "[hetGPU] SIGFPE handler installed (non-fatal)\n");
 }
+#endif
 
 #if defined(HETGPU_DEBUG_LOGS)
 #define HETGPU_LOG(...) fprintf(stderr, __VA_ARGS__)

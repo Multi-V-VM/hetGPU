@@ -1152,6 +1152,50 @@ pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -
     not(feature = "intel"),
     not(feature = "tenstorrent")
 ))]
+pub(crate) fn load(module: &mut CUmodule, fname: *const ::core::ffi::c_char) -> CUresult {
+    if fname.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let path = unsafe { CStr::from_ptr(fname) }
+        .to_str()
+        .map_err(|_| CUerror::INVALID_VALUE)?;
+    let ptx = std::fs::read_to_string(path).map_err(|_| CUerror::FILE_NOT_FOUND)?;
+    let c_ptx = std::ffi::CString::new(ptx).map_err(|_| CUerror::INVALID_VALUE)?;
+    load_data(module, c_ptx.as_ptr().cast())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn load_fat_binary(module: &mut CUmodule, fat_cubin: *const ::core::ffi::c_void) -> CUresult {
+    load_data(module, fat_cubin)
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn load_data_ex(
+    module: &mut CUmodule,
+    image: *const ::core::ffi::c_void,
+    _num_options: ::core::ffi::c_uint,
+    _options: *mut CUjit_option,
+    _option_values: *mut *mut ::core::ffi::c_void,
+) -> CUresult {
+    load_data(module, image)
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
 pub(crate) fn unload(hmod: CUmodule) -> CUresult {
     super::drop_checked::<Module>(hmod)
 }

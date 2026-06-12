@@ -1,4 +1,4 @@
-#[cfg(any(feature = "tenstorrent", feature = "nvidia"))]
+#[cfg(any(feature = "tenstorrent", feature = "nvidia", feature = "tmatmul"))]
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
@@ -1061,7 +1061,6 @@ fn is_integer_type_kernel(kernel_name: &str) -> bool {
 /// Keeps the module header (.version, .target, .address_size) and extracts only
 /// the function matching the given kernel name.
 /// This avoids compiling hundreds of unrelated kernels in multi-MB PTX modules.
-#[cfg(any(feature = "intel", feature = "nvidia"))]
 /// Normalize a mangled C++ name by replacing anonymous namespace hashes
 /// (_GLOBAL__N__XXXXXXXX_) with a wildcard pattern so that names compiled
 /// from different TUs can still match.
@@ -4251,6 +4250,98 @@ pub(crate) fn get_attribute(
 
     unsafe { *pi = result };
     Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+pub(crate) fn get_attribute(
+    pi: &mut i32,
+    attrib: CUfunction_attribute,
+    _hfunc: &super::module::TMatmulKernel,
+) -> CUresult {
+    *pi = match attrib {
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK => 1024,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_NUM_REGS => 32,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES => 0,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_CONST_SIZE_BYTES => 0,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES => 0,
+        _ => 0,
+    };
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+pub(crate) fn launch_kernel(
+    f: &super::module::TMatmulKernel,
+    grid_dim_x: ::core::ffi::c_uint,
+    grid_dim_y: ::core::ffi::c_uint,
+    grid_dim_z: ::core::ffi::c_uint,
+    block_dim_x: ::core::ffi::c_uint,
+    block_dim_y: ::core::ffi::c_uint,
+    block_dim_z: ::core::ffi::c_uint,
+    shared_mem_bytes: ::core::ffi::c_uint,
+    stream: *mut ::core::ffi::c_void,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    extra: *mut *mut ::core::ffi::c_void,
+) -> CUresult {
+    let _ = (
+        f,
+        grid_dim_x,
+        grid_dim_y,
+        grid_dim_z,
+        block_dim_x,
+        block_dim_y,
+        block_dim_z,
+        shared_mem_bytes,
+        stream,
+        kernel_params,
+        extra,
+    );
+    crate::r#impl::hetgpu_debug!("[ANE/TMatmul] cuLaunchKernel accepted as host-side no-op");
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "nvidia")
+))]
+pub(crate) fn launch_kernel_ex(
+    config: *const cuda_types::cuda::CUlaunchConfig,
+    f: &super::module::TMatmulKernel,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    extra: *mut *mut ::core::ffi::c_void,
+) -> CUresult {
+    if config.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let cfg = unsafe { &*config };
+    launch_kernel(
+        f,
+        cfg.gridDimX,
+        cfg.gridDimY,
+        cfg.gridDimZ,
+        cfg.blockDimX,
+        cfg.blockDimY,
+        cfg.blockDimZ,
+        cfg.sharedMemBytes,
+        cfg.hStream.0.cast(),
+        kernel_params,
+        extra,
+    )
 }
 
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]

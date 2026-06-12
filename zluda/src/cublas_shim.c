@@ -252,6 +252,99 @@ extern int hetgpu_tmatmul_gemm(
     void *C, int Ctype, int ldc
 );
 
+// Apple backend GEMM execution. When the Rust ane feature is not linked this
+// weak stub returns unavailable and callers fall back to the existing path.
+__attribute__((weak)) int hetgpu_ane_gemm(
+    int transa, int transb,
+    int m, int n, int k,
+    float alpha,
+    const void *A, int Atype, int lda,
+    const void *B, int Btype, int ldb,
+    float beta,
+    void *C, int Ctype, int ldc
+) {
+    (void)transa; (void)transb; (void)m; (void)n; (void)k;
+    (void)alpha; (void)A; (void)Atype; (void)lda;
+    (void)B; (void)Btype; (void)ldb;
+    (void)beta; (void)C; (void)Ctype; (void)ldc;
+    return -1;
+}
+
+extern int hetgpu_ane_gemm(
+    int transa, int transb,
+    int m, int n, int k,
+    float alpha,
+    const void *A, int Atype, int lda,
+    const void *B, int Btype, int ldb,
+    float beta,
+    void *C, int Ctype, int ldc
+);
+
+typedef int (*hetgpu_ane_gemm_fn)(
+    int transa, int transb,
+    int m, int n, int k,
+    float alpha,
+    const void *A, int Atype, int lda,
+    const void *B, int Btype, int ldb,
+    float beta,
+    void *C, int Ctype, int ldc
+);
+
+static hetgpu_ane_gemm_fn hetgpu_resolve_ane_gemm(void) {
+    static hetgpu_ane_gemm_fn resolved = NULL;
+    static int attempted = 0;
+    if (attempted) {
+        return resolved;
+    }
+    attempted = 1;
+
+    const char *names[] = {
+        "libcuda.so.1",
+        "libcuda.dylib",
+        "libnvcuda.dylib",
+        NULL
+    };
+    for (int i = 0; names[i] != NULL; i++) {
+        void *handle = dlopen(names[i], RTLD_NOW);
+        if (!handle) {
+            continue;
+        }
+        resolved = (hetgpu_ane_gemm_fn)dlsym(handle, "hetgpu_ane_gemm");
+        if (resolved) {
+            return resolved;
+        }
+    }
+    return NULL;
+}
+
+static int hetgpu_try_apple_gemm(
+    int transa, int transb,
+    int m, int n, int k,
+    float alpha,
+    const void *A, int Atype, int lda,
+    const void *B, int Btype, int ldb,
+    float beta,
+    void *C, int Ctype, int ldc
+) {
+    const char *backend = getenv("HETGPU_APPLE_BACKEND");
+    if (!backend || (strcmp(backend, "ane") != 0 && strcmp(backend, "metal") != 0)) {
+        return -1;
+    }
+    hetgpu_ane_gemm_fn ane_gemm = hetgpu_resolve_ane_gemm();
+    if (!ane_gemm) {
+        DEBUG_LOG("Apple %s GEMM unavailable (libcuda hetgpu_ane_gemm not found), falling back", backend);
+        return -1;
+    }
+    int result = ane_gemm(
+        transa, transb, m, n, k, alpha, A, Atype, lda, B, Btype, ldb, beta, C, Ctype, ldc);
+    if (result == 0) {
+        DEBUG_LOG("Apple %s GEMM completed", backend);
+    } else {
+        DEBUG_LOG("Apple %s GEMM unavailable (%d), falling back", backend, result);
+    }
+    return result;
+}
+
 // Helper macro to get function pointer from real cuBLAS and call it
 #define GET_REAL_FUNC(func_name, func_type) \
     static func_type real_##func_name = NULL; \
@@ -404,13 +497,20 @@ cublasStatus_t cublasSgemm_v2(cublasHandle_t handle,
     if (C && A && B && m > 0 && n > 0 && k > 0) {
         float a = alpha ? *alpha : 1.0f;
         float b = beta ? *beta : 0.0f;
-        DEBUG_LOG("cublasSgemm_v2: routing to TMatmul emulator");
-        hetgpu_tmatmul_gemm(
-            transa != 0, transb != 0,
-            m, n, k, a,
-            A, CUDA_R_32F, lda,
-            B, CUDA_R_32F, ldb,
-            b, C, CUDA_R_32F, ldc);
+        if (hetgpu_try_apple_gemm(
+                transa != 0, transb != 0,
+                m, n, k, a,
+                A, CUDA_R_32F, lda,
+                B, CUDA_R_32F, ldb,
+                b, C, CUDA_R_32F, ldc) != 0) {
+            DEBUG_LOG("cublasSgemm_v2: routing to TMatmul emulator");
+            hetgpu_tmatmul_gemm(
+                transa != 0, transb != 0,
+                m, n, k, a,
+                A, CUDA_R_32F, lda,
+                B, CUDA_R_32F, ldb,
+                b, C, CUDA_R_32F, ldc);
+        }
     }
     return CUBLAS_STATUS_SUCCESS;
 }
@@ -441,10 +541,14 @@ cublasStatus_t cublasHgemm(cublasHandle_t handle,
         // Alpha/beta are half precision - convert to float
         float a = alpha ? hetgpu_f16_to_f32(*(const uint16_t*)alpha) : 1.0f;
         float b = beta ? hetgpu_f16_to_f32(*(const uint16_t*)beta) : 0.0f;
-        DEBUG_LOG("cublasHgemm: routing to TMatmul emulator (alpha=%.3f, beta=%.3f)", a, b);
-        hetgpu_tmatmul_gemm(transa != 0, transb != 0, m, n, k, a,
-                           A, CUDA_R_16F, lda, B, CUDA_R_16F, ldb,
-                           b, C, CUDA_R_16F, ldc);
+        if (hetgpu_try_apple_gemm(transa != 0, transb != 0, m, n, k, a,
+                                  A, CUDA_R_16F, lda, B, CUDA_R_16F, ldb,
+                                  b, C, CUDA_R_16F, ldc) != 0) {
+            DEBUG_LOG("cublasHgemm: routing to TMatmul emulator (alpha=%.3f, beta=%.3f)", a, b);
+            hetgpu_tmatmul_gemm(transa != 0, transb != 0, m, n, k, a,
+                               A, CUDA_R_16F, lda, B, CUDA_R_16F, ldb,
+                               b, C, CUDA_R_16F, ldc);
+        }
     }
     return CUBLAS_STATUS_SUCCESS;
 }

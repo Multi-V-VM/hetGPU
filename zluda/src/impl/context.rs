@@ -601,6 +601,129 @@ pub(crate) fn get_primary_tmatmul(
     Ok(dev.primary_context())
 }
 
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) unsafe fn get_limit(pvalue: *mut usize, _limit: c_uint) -> CUresult {
+    if !pvalue.is_null() {
+        unsafe { *pvalue = 0 };
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn set_limit(_limit: c_uint, _value: usize) -> CUresult {
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn synchronize() -> CUresult {
+    super::checkpoint::process_pending_checkpoint();
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_primary(device_id: i32) -> Result<(&'static Context, CUcontext), CUerror> {
+    get_primary_tmatmul(device_id)
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn get_device(device_out: *mut CUdevice) -> CUresult {
+    if device_out.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let device = match peek_current() {
+        Some(ctx) => {
+            let ctx_ref: &Context = FromCuda::from_cuda(&ctx)?;
+            ctx_ref.device_id
+        }
+        None => {
+            let (_, raw_ctx) = get_primary_tmatmul(0)?;
+            set_current(raw_ctx)?;
+            0
+        }
+    };
+    unsafe { *device_out = device };
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn create_v2(pctx: *mut CUcontext, _flags: u32, dev: CUdevice) -> CUresult {
+    if pctx.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let ctx = Context::new(dev);
+    let raw = ctx.wrap();
+    set_current(raw)?;
+    unsafe { *pctx = raw };
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn destroy_v2(ctx: CUcontext) -> CUresult {
+    if ctx.0.is_null() {
+        return Ok(());
+    }
+    super::drop_checked::<Context>(ctx)
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn push_current_v2(ctx: CUcontext) -> CUresult {
+    set_current(ctx)
+}
+
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+pub(crate) fn pop_current_v2(pctx: *mut CUcontext) -> CUresult {
+    let popped = CONTEXT_STACK.with(|stack| stack.borrow_mut().pop().map(|(ctx, _)| ctx));
+    if !pctx.is_null() {
+        unsafe { *pctx = popped.unwrap_or(CUcontext(ptr::null_mut())) };
+    }
+    Ok(())
+}
+
 // Common functions - implemented per backend
 
 // AMD functions
@@ -1239,4 +1362,3 @@ pub(crate) fn pop_current_v2(pctx: *mut CUcontext) -> CUresult {
 
     Ok(())
 }
-

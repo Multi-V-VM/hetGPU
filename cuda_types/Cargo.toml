@@ -6,10 +6,10 @@ edition = "2018"
 
 [features]
 default = ["intel"]
-intel = []
-amd = []
+intel = ["dep:ze_runtime_sys"]
+amd = ["dep:hip_runtime_sys"]
 
 [dependencies]
 cuda_base = { path = "../cuda_base" }
-hip_runtime_sys = { path = "../ext/hip_runtime-sys" }
-ze_runtime_sys = { path = "../ext/ze_runtime-sys" }
+hip_runtime_sys = { path = "../ext/hip_runtime-sys", optional = true }
+ze_runtime_sys = { path = "../ext/ze_runtime-sys", optional = true }

@@ -17,10 +17,10 @@ bitflags = "1.2"
 rustc-hash = "2.0.0"
 strum = "0.26"
 strum_macros = "0.26"
-hip_runtime_sys = { path = "../ext/hip_runtime-sys" }
-ze_runtime_sys = { path = "../ext/ze_runtime-sys" }
-tt_runtime_sys = { path = "../ext/tt_runtime-sys" }
-gemmini_runtime_sys = { path = "../ext/gemmini_runtime-sys" }
+hip_runtime_sys = { path = "../ext/hip_runtime-sys", optional = true }
+ze_runtime_sys = { path = "../ext/ze_runtime-sys", optional = true }
+tt_runtime_sys = { path = "../ext/tt_runtime-sys", optional = true }
+gemmini_runtime_sys = { path = "../ext/gemmini_runtime-sys", optional = true }
 tempfile = "3"
 which = "4.4"
 libc = "0.2"
@@ -74,8 +74,8 @@ name = "gpu_rr"
 path = "src/bin/gpu_rr.rs"
 
 [features]
-intel = ["comgr/intel"]
-amd = ["comgr/amd"]
-tenstorrent = ["comgr/tenstorrent"]
-gemmini = ["comgr/gemmini"]
+intel = ["dep:ze_runtime_sys"]
+amd = ["dep:hip_runtime_sys"]
+tenstorrent = ["dep:tt_runtime_sys"]
+gemmini = ["dep:gemmini_runtime_sys"]
 nvidia = []

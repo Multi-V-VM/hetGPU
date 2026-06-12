@@ -108,6 +108,85 @@ typedef struct {
 // Always log cuBLASLt shim calls for debugging
 #define DEBUG_LOG(fmt, ...) fprintf(stderr, "[hetGPU cublaslt_shim] " fmt "\n", ##__VA_ARGS__)
 
+__attribute__((weak)) int hetgpu_ane_gemm(
+    int transa, int transb,
+    int m, int n, int k,
+    float alpha,
+    const void *A, int Atype, int lda,
+    const void *B, int Btype, int ldb,
+    float beta,
+    void *C, int Ctype, int ldc
+) {
+    (void)transa; (void)transb; (void)m; (void)n; (void)k;
+    (void)alpha; (void)A; (void)Atype; (void)lda;
+    (void)B; (void)Btype; (void)ldb;
+    (void)beta; (void)C; (void)Ctype; (void)ldc;
+    return -1;
+}
+
+typedef int (*hetgpu_ane_gemm_fn)(
+    int transa, int transb,
+    int m, int n, int k,
+    float alpha,
+    const void *A, int Atype, int lda,
+    const void *B, int Btype, int ldb,
+    float beta,
+    void *C, int Ctype, int ldc
+);
+
+static hetgpu_ane_gemm_fn hetgpu_resolve_ane_gemm(void) {
+    static hetgpu_ane_gemm_fn resolved = NULL;
+    static int attempted = 0;
+    if (attempted) {
+        return resolved;
+    }
+    attempted = 1;
+
+    const char *names[] = {
+        "libcuda.so.1",
+        "libcuda.dylib",
+        "libnvcuda.dylib",
+        NULL
+    };
+    for (int i = 0; names[i] != NULL; i++) {
+        void *handle = dlopen(names[i], RTLD_NOW);
+        if (!handle) {
+            continue;
+        }
+        resolved = (hetgpu_ane_gemm_fn)dlsym(handle, "hetgpu_ane_gemm");
+        if (resolved) {
+            return resolved;
+        }
+    }
+    return NULL;
+}
+
+static int hetgpu_try_apple_gemm(
+    int m, int n, int k,
+    float alpha,
+    const void *A, int Atype, int lda,
+    const void *B, int Btype, int ldb,
+    float beta,
+    void *C, int Ctype, int ldc
+) {
+    const char *backend = getenv("HETGPU_APPLE_BACKEND");
+    if (!backend || (strcmp(backend, "ane") != 0 && strcmp(backend, "metal") != 0)) {
+        return -1;
+    }
+    hetgpu_ane_gemm_fn ane_gemm = hetgpu_resolve_ane_gemm();
+    if (!ane_gemm) {
+        DEBUG_LOG("Apple %s cublasLt GEMM unavailable (libcuda hetgpu_ane_gemm not found), falling back", backend);
+        return -1;
+    }
+    int result = ane_gemm(0, 0, m, n, k, alpha, A, Atype, lda, B, Btype, ldb, beta, C, Ctype, ldc);
+    if (result == 0) {
+        DEBUG_LOG("Apple %s cublasLt GEMM completed", backend);
+    } else {
+        DEBUG_LOG("Apple %s cublasLt GEMM unavailable (%d), falling back", backend, result);
+    }
+    return result;
+}
+
 // Handle management
 cublasLtStatus_t cublasLtCreate(cublasLtHandle_t *handle) {
     DEBUG_LOG("cublasLtCreate called");
@@ -127,7 +206,8 @@ cublasLtStatus_t cublasLtMatrixLayoutCreate(cublasLtMatrixLayout_t *matLayout,
                                              uint64_t rows,
                                              uint64_t cols,
                                              int64_t ld) {
-    DEBUG_LOG("cublasLtMatrixLayoutCreate called: type=%d, rows=%lu, cols=%lu, ld=%ld", type, rows, cols, ld);
+    DEBUG_LOG("cublasLtMatrixLayoutCreate called: type=%d, rows=%llu, cols=%llu, ld=%lld",
+              type, (unsigned long long)rows, (unsigned long long)cols, (long long)ld);
     if (!matLayout) return CUBLASLT_STATUS_INVALID_VALUE;
     cublasLtMatrixLayout_s *layout = (cublasLtMatrixLayout_s*)calloc(1, sizeof(cublasLtMatrixLayout_s));
     if (!layout) return CUBLASLT_STATUS_ALLOC_FAILED;
@@ -270,13 +350,31 @@ cublasLtStatus_t cublasLtMatmul(cublasLtHandle_t handle,
                                  size_t workspaceSizeInBytes,
                                  void *stream) {
     DEBUG_LOG("cublasLtMatmul called: D=%p, Ddesc=%p", D, (void*)Ddesc);
+    if (A && B && D && Adesc && Bdesc && Ddesc) {
+        int64_t lda = Adesc->ld > 0 ? Adesc->ld : (int64_t)Adesc->rows;
+        int64_t ldb = Bdesc->ld > 0 ? Bdesc->ld : (int64_t)Bdesc->rows;
+        int64_t ldc = Ddesc->ld > 0 ? Ddesc->ld : (int64_t)Ddesc->rows;
+        int m = (int)Ddesc->rows;
+        int n = (int)Ddesc->cols;
+        int k = (int)Adesc->cols;
+        float a = alpha ? *(const float*)alpha : 1.0f;
+        float b = beta ? *(const float*)beta : 0.0f;
+        if (m > 0 && n > 0 && k > 0 && lda > 0 && ldb > 0 && ldc > 0 &&
+            hetgpu_try_apple_gemm(m, n, k, a, A, Adesc->type, (int)lda,
+                                  B, Bdesc->type, (int)ldb,
+                                  b, D, Ddesc->type, (int)ldc) == 0) {
+            return CUBLASLT_STATUS_SUCCESS;
+        }
+    }
+
     // Zero the output buffer D using layout info from Ddesc
     if (D && Ddesc) {
         size_t elem_size = get_lt_element_size(Ddesc->type);
         int64_t ld = Ddesc->ld > 0 ? Ddesc->ld : (int64_t)Ddesc->rows;
         size_t total_bytes = (size_t)ld * (size_t)Ddesc->cols * elem_size;
-        DEBUG_LOG("cublasLtMatmul fallback: zeroing D=%p, rows=%lu, cols=%lu, ld=%ld, total_bytes=%zu",
-                  D, Ddesc->rows, Ddesc->cols, ld, total_bytes);
+        DEBUG_LOG("cublasLtMatmul fallback: zeroing D=%p, rows=%llu, cols=%llu, ld=%lld, total_bytes=%zu",
+                  D, (unsigned long long)Ddesc->rows, (unsigned long long)Ddesc->cols,
+                  (long long)ld, total_bytes);
         memset(D, 0, total_bytes);
     }
     return CUBLASLT_STATUS_SUCCESS;

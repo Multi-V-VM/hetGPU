@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}"
+DIST_DIR="${HETGPU_ANE_DIST:-$ROOT_DIR/dist/apple-ane}"
+PROFILE="${HETGPU_PROFILE:-release}"
+BACKEND="${HETGPU_APPLE_BACKEND:-ane}"
+CC_BIN="${CC:-cc}"
+CARGO_BIN="${CARGO:-cargo}"
+
+usage() {
+    cat <<'USAGE'
+hetgpu-ane: build and run CUDA binaries through hetGPU's Apple ANE/Metal backend
+
+Usage:
+  scripts/hetgpu-ane build [--debug|--release]
+  scripts/hetgpu-ane compile [--debug|--release] -- <clang args...>
+  scripts/hetgpu-ane run [--backend ane|metal] [--debug|--release] -- <binary> [args...]
+  scripts/hetgpu-ane env
+  scripts/hetgpu-ane doctor
+
+Examples:
+  scripts/hetgpu-ane build
+  scripts/hetgpu-ane compile -- -O2 -o /tmp/infer examples/infer.c
+  scripts/hetgpu-ane run --backend ane -- /tmp/infer model.bin
+  scripts/hetgpu-ane run --backend metal -- ./your_cuda_binary
+
+The compile subcommand links CUDA/cuBLAS shim libraries from dist/apple-ane.
+CUDA kernels still need to be present in the binary as PTX/fatbin for hetGPU's
+CUDA driver path; cuBLAS GEMM calls route to ANE first, then Metal fallback.
+
+Set HETGPU_LIGHTWEIGHT_STUB=1 before build to package the smaller ObjC CUDA
+stub instead of the full ZLUDA CUDA driver surface.
+USAGE
+}
+
+die() {
+    printf 'hetgpu-ane: %s\n' "$*" >&2
+    exit 1
+}
+
+require_macos() {
+    [[ "$(uname -s)" == "Darwin" ]] || die "Apple ANE/Metal backend requires macOS or an Apple app build host"
+}
+
+parse_profile_flag() {
+    case "${1:-}" in
+        --debug)
+            PROFILE="debug"
+            return 0
+            ;;
+        --release)
+            PROFILE="release"
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+profile_args() {
+    if [[ "$PROFILE" == "release" ]]; then
+        printf '%s\n' "--release"
+    fi
+}
+
+profile_dir() {
+    printf '%s/%s\n' "$TARGET_DIR" "$PROFILE"
+}
+
+copy_cuda_driver_names() {
+    local src="$1"
+    mkdir -p "$DIST_DIR"
+    cp "$src" "$DIST_DIR/libnvcuda.dylib"
+    cp "$src" "$DIST_DIR/libcuda.so.1"
+    cp "$src" "$DIST_DIR/libcuda.so"
+    cp "$src" "$DIST_DIR/libcuda.dylib"
+}
+
+build_apple_cuda_stub() {
+    local built="$DIST_DIR/libhetgpu_apple_cuda_stub.dylib"
+    "$CC_BIN" \
+        -dynamiclib \
+        -fobjc-arc \
+        -fPIC \
+        -Wno-unused-parameter \
+        -install_name "@rpath/libcuda.so.1" \
+        -framework Foundation \
+        -framework Metal \
+        -framework IOSurface \
+        -o "$built" \
+        "$ROOT_DIR/zluda/src/apple_cuda_stub.m" \
+        "$ROOT_DIR/zluda/src/apple_metal_runtime.m" \
+        "$ROOT_DIR/zluda/src/ane_bridge.m"
+    copy_cuda_driver_names "$built"
+}
+
+build_rust_cuda_driver() {
+    local cargo_args=(build -p zluda --no-default-features --features ane)
+    local built
+    if [[ "$PROFILE" == "release" ]]; then
+        cargo_args+=(--release)
+    fi
+    "$CARGO_BIN" "${cargo_args[@]}"
+    built="$(profile_dir)/libnvcuda.dylib"
+    [[ -f "$built" ]] || die "full ZLUDA driver did not produce $built"
+    copy_cuda_driver_names "$built"
+}
+
+build_dynamic_shim() {
+    local src="$1"
+    local out_name="$2"
+    local dylib_name="$3"
+    local out="$DIST_DIR/$out_name"
+    "$CC_BIN" \
+        -dynamiclib \
+        -fPIC \
+        -Wno-unused-parameter \
+        -Wno-unused-function \
+        -undefined dynamic_lookup \
+        -install_name "@rpath/$out_name" \
+        -o "$out" \
+        "$ROOT_DIR/zluda/src/$src"
+    cp "$out" "$DIST_DIR/$dylib_name"
+}
+
+build_runtime() {
+    require_macos
+    mkdir -p "$DIST_DIR"
+
+    if [[ "${HETGPU_LIGHTWEIGHT_STUB:-0}" == "1" ]]; then
+        build_apple_cuda_stub
+    else
+        build_rust_cuda_driver
+    fi
+    build_dynamic_shim "cudart_shim.c" "libcudart.so.12" "libcudart.dylib"
+    build_dynamic_shim "cublas_shim.c" "libcublas.so.12" "libcublas.dylib"
+    build_dynamic_shim "cublaslt_shim.c" "libcublasLt.so.12" "libcublasLt.dylib"
+
+    cat > "$DIST_DIR/env.sh" <<EOF
+export HETGPU_APPLE_BACKEND="\${HETGPU_APPLE_BACKEND:-$BACKEND}"
+export DYLD_LIBRARY_PATH="$DIST_DIR:\${DYLD_LIBRARY_PATH:-}"
+export DYLD_FALLBACK_LIBRARY_PATH="$DIST_DIR:\${DYLD_FALLBACK_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="$DIST_DIR:\${LD_LIBRARY_PATH:-}"
+export DYLD_INSERT_LIBRARIES="$DIST_DIR/libcuda.so.1\${DYLD_INSERT_LIBRARIES:+:\$DYLD_INSERT_LIBRARIES}"
+EOF
+
+    printf 'Built hetGPU Apple runtime in %s\n' "$DIST_DIR"
+}
+
+ensure_runtime() {
+    if [[ ! -f "$DIST_DIR/libcuda.so.1" || ! -f "$DIST_DIR/libcublas.so.12" ]]; then
+        build_runtime
+    fi
+}
+
+export_runtime_env() {
+    export HETGPU_APPLE_BACKEND="$BACKEND"
+    export DYLD_LIBRARY_PATH="$DIST_DIR:${DYLD_LIBRARY_PATH:-}"
+    export DYLD_FALLBACK_LIBRARY_PATH="$DIST_DIR:${DYLD_FALLBACK_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="$DIST_DIR:${LD_LIBRARY_PATH:-}"
+    export DYLD_INSERT_LIBRARIES="$DIST_DIR/libcuda.so.1${DYLD_INSERT_LIBRARIES:+:$DYLD_INSERT_LIBRARIES}"
+}
+
+compile_binary() {
+    ensure_runtime
+    [[ "${1:-}" == "--" ]] && shift
+    [[ $# -gt 0 ]] || die "compile needs clang arguments after --"
+    "$CC_BIN" \
+        "$@" \
+        -L"$DIST_DIR" \
+        -Wl,-rpath,"$DIST_DIR" \
+        -lcudart \
+        -lcublas \
+        -lcublasLt \
+        -lcuda
+}
+
+run_binary() {
+    ensure_runtime
+    [[ "${1:-}" == "--" ]] && shift
+    [[ $# -gt 0 ]] || die "run needs a binary after --"
+    export_runtime_env
+    exec "$@"
+}
+
+print_env() {
+    ensure_runtime
+    cat "$DIST_DIR/env.sh"
+}
+
+doctor() {
+    require_macos
+    printf 'root: %s\n' "$ROOT_DIR"
+    printf 'dist: %s\n' "$DIST_DIR"
+    printf 'profile: %s\n' "$PROFILE"
+    printf 'backend: %s\n' "$BACKEND"
+    command -v "$CARGO_BIN" >/dev/null || die "cargo not found"
+    command -v "$CC_BIN" >/dev/null || die "C compiler not found"
+    "$CC_BIN" -fsyntax-only -Wno-unused-parameter "$ROOT_DIR/zluda/src/cudart_shim.c"
+    "$CC_BIN" -fsyntax-only -Wno-unused-parameter "$ROOT_DIR/zluda/src/cublas_shim.c"
+    "$CC_BIN" -fsyntax-only -Wno-unused-parameter "$ROOT_DIR/zluda/src/cublaslt_shim.c"
+    printf 'doctor: ok\n'
+}
+
+cmd="${1:-help}"
+shift || true
+
+while [[ $# -gt 0 ]]; do
+    if parse_profile_flag "$1"; then
+        shift
+        continue
+    fi
+    case "$1" in
+        --backend)
+            shift
+            [[ $# -gt 0 ]] || die "--backend requires ane or metal"
+            BACKEND="$1"
+            [[ "$BACKEND" == "ane" || "$BACKEND" == "metal" ]] || die "--backend must be ane or metal"
+            shift
+            ;;
+        --)
+            break
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+case "$cmd" in
+    build)
+        build_runtime
+        ;;
+    compile|cc)
+        compile_binary "$@"
+        ;;
+    run)
+        run_binary "$@"
+        ;;
+    env)
+        print_env
+        ;;
+    doctor)
+        doctor
+        ;;
+    help|-h|--help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac
