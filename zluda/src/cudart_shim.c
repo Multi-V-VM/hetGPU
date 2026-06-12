@@ -113,7 +113,6 @@ static void hetgpu_cuda_malloc_trace(const char *tag) {
         write(STDERR_FILENO, "\n", 1);
     }
 }
-#endif
 
 #if defined(HETGPU_DEBUG_LOGS)
 #define HETGPU_LOG(...) do { if (hetgpu_cudart_debug_logs_enabled()) fprintf(stderr, __VA_ARGS__); } while (0)

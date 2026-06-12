@@ -10,22 +10,24 @@ crate-type = ["cdylib", "staticlib"]
 
 [features]
 default = ["intel"]
-intel = ["flate2", "dep:ze_runtime_sys", "comgr/intel", "cuda_types/intel", "ptx/intel"]
-amd = ["dep:hip_runtime_sys", "comgr/amd", "cuda_types/amd", "ptx/amd"]
-tenstorrent = ["dep:tt_runtime_sys", "dep:tt_comgr_sys", "comgr/tenstorrent", "ptx/tenstorrent"]
+intel = ["flate2", "dep:ze_runtime_sys", "ptx_backend", "comgr?/intel", "cuda_types/intel", "ptx?/intel"]
+amd = ["dep:hip_runtime_sys", "ptx_backend", "comgr?/amd", "cuda_types/amd", "ptx?/amd"]
+tenstorrent = ["dep:tt_runtime_sys", "dep:tt_comgr_sys", "ptx_backend", "comgr?/tenstorrent", "ptx?/tenstorrent"]
 gemmini = []
 nvidia = ["dep:nvidia_runtime_sys"]
-tmatmul = []
-cutile = ["dep:cutile_comgr_sys", "comgr/cutile"]
+tmatmul = ["ptx_backend"]
+pacc = []
+webgpu = []
+cutile = ["dep:cutile_comgr_sys", "ptx_backend", "comgr?/cutile"]
 ane = ["tmatmul"]
 embed_cudart = []
 flate2 = ["dep:flate2"]
 ptx_backend = ["dep:comgr", "dep:ptx", "dep:ptx_parser"]
 
 [dependencies]
-comgr = { path = "../comgr", default-features = false }
-ptx_parser = { path = "../ptx_parser" }
-ptx = { path = "../ptx", default-features = false }
+comgr = { path = "../comgr", default-features = false, optional = true }
+ptx_parser = { path = "../ptx_parser", optional = true }
+ptx = { path = "../ptx", default-features = false, optional = true }
 cuda_types = { path = "../cuda_types", default-features = false }
 cuda_base = { path = "../cuda_base" }
 lazy_static = "1.4"

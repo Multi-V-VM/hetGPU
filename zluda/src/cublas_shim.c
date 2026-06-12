@@ -1247,13 +1247,7 @@ cublasStatus_t cublasSgemm_v2(cublasHandle_t handle,
                 A, CUDA_R_32F, lda,
                 B, CUDA_R_32F, ldb,
                 b, C, CUDA_R_32F, ldc) != 0) {
-            DEBUG_LOG("cublasSgemm_v2: routing to TMatmul emulator");
-            hetgpu_tmatmul_gemm(
-                transa != 0, transb != 0,
-                m, n, k, a,
-                A, CUDA_R_32F, lda,
-                B, CUDA_R_32F, ldb,
-                b, C, CUDA_R_32F, ldc);
+            DEBUG_LOG("cublasSgemm_v2: Apple GEMM unavailable; trying configured CUDA submit path");
         }
     }
     return submit_pacc_gemm("cublasSgemm_v2", transa, transb, m, n, k,
@@ -1291,15 +1285,12 @@ cublasStatus_t cublasHgemm(cublasHandle_t handle,
     // Half-precision GEMM - route to TMatmul emulator
     if (C && A && B && m > 0 && n > 0 && k > 0) {
         // Alpha/beta are half precision - convert to float
-        float a = alpha ? hetgpu_f16_to_f32(*(const uint16_t*)alpha) : 1.0f;
-        float b = beta ? hetgpu_f16_to_f32(*(const uint16_t*)beta) : 0.0f;
+        float a = alpha ? host_f16_to_float(*(const uint16_t*)alpha) : 1.0f;
+        float b = beta ? host_f16_to_float(*(const uint16_t*)beta) : 0.0f;
         if (hetgpu_try_apple_gemm(transa != 0, transb != 0, m, n, k, a,
                                   A, CUDA_R_16F, lda, B, CUDA_R_16F, ldb,
                                   b, C, CUDA_R_16F, ldc) != 0) {
-            DEBUG_LOG("cublasHgemm: routing to TMatmul emulator (alpha=%.3f, beta=%.3f)", a, b);
-            hetgpu_tmatmul_gemm(transa != 0, transb != 0, m, n, k, a,
-                               A, CUDA_R_16F, lda, B, CUDA_R_16F, ldb,
-                               b, C, CUDA_R_16F, ldc);
+            DEBUG_LOG("cublasHgemm: Apple GEMM unavailable (alpha=%.3f, beta=%.3f)", a, b);
         }
     }
     return CUBLAS_STATUS_SUCCESS;

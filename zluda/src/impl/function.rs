@@ -1,5 +1,12 @@
 #[cfg(any(feature = "tenstorrent", feature = "nvidia", feature = "tmatmul"))]
 use cuda_types::cuda::*;
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+use std::collections::HashMap;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
 #[cfg(all(
@@ -21,6 +28,13 @@ use ze_runtime_sys::*;
 ))]
 use pacc_runtime_sys;
 use std::ptr;
+#[cfg(all(
+    feature = "tmatmul",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+use std::sync::Mutex;
 #[cfg(all(
     feature = "pacc",
     not(feature = "amd"),
