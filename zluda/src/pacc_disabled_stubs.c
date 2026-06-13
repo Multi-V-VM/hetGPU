@@ -128,3 +128,12 @@ int hetgpu_pacc_nccl_reduce_sum_f32(
     (void)nranks;
     return -1;
 }
+
+int hetgpu_lz4_decompress(const char *src, char *dst, int compressedSize, int dstCapacity)
+{
+    (void)src;
+    (void)dst;
+    (void)compressedSize;
+    (void)dstCapacity;
+    return -1;
+}

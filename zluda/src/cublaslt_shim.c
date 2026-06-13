@@ -160,7 +160,8 @@ static hetgpu_ane_gemm_fn hetgpu_resolve_ane_gemm(void) {
             return resolved;
         }
     }
-    return NULL;
+    resolved = hetgpu_ane_gemm;
+    return resolved;
 }
 
 static int hetgpu_try_apple_gemm(
