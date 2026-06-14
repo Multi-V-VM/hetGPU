@@ -74,6 +74,42 @@ int hetgpu_apple_metal_gemm(int transa, int transb,
                             float beta,
                             void *C, int Ctype, int ldc);
 
+enum {
+    HETGPU_METAL_BUFFER_COPY_IN = 1,
+    HETGPU_METAL_BUFFER_COPY_OUT = 2
+};
+
+typedef struct HetGpuMetalBufferBinding {
+    void *host_ptr;
+    size_t size;
+    uint32_t flags;
+} HetGpuMetalBufferBinding;
+
+int hetgpu_apple_metal_compile_msl(const char *source,
+                                   const char *label,
+                                   void **out_module,
+                                   char **out_log);
+
+int hetgpu_apple_metal_get_function(void *module,
+                                    const char *name,
+                                    void **out_function,
+                                    char **out_log);
+
+int hetgpu_apple_metal_launch_raw(void *function,
+                                  const HetGpuMetalBufferBinding *buffers,
+                                  size_t buffer_count,
+                                  uint32_t grid_x,
+                                  uint32_t grid_y,
+                                  uint32_t grid_z,
+                                  uint32_t block_x,
+                                  uint32_t block_y,
+                                  uint32_t block_z,
+                                  char **out_log);
+
+int hetgpu_apple_metal_release_module(void *module);
+int hetgpu_apple_metal_release_function(void *function);
+void hetgpu_apple_metal_free_string(char *value);
+
 #ifdef __cplusplus
 }
 #endif

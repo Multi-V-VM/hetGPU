@@ -940,7 +940,10 @@ pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
                 }
             });
 
-            eprintln!("[WebGPU Backend] exposing {} CUDA-visible device(s)", visible_devices);
+            eprintln!(
+                "[WebGPU Backend] exposing {} CUDA-visible device(s)",
+                visible_devices
+            );
             Ok(GlobalState { devices })
         })
         .as_ref()
@@ -1001,6 +1004,93 @@ pub(crate) fn device_webgpu(dev_id: i32) -> Result<&'static Device, CUerror> {
 ))]
 thread_local! {
     static WEBGPU_DEVICES: RefCell<HashMap<i32, NonNull<Device>>> = RefCell::new(HashMap::new());
+}
+
+// ============================================================================
+// Apple Metal backend driver implementations (iOS/macOS)
+// ============================================================================
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+pub(crate) fn global_state() -> Result<&'static GlobalState, CUerror> {
+    static GLOBAL_STATE: OnceLock<Result<GlobalState, CUerror>> = OnceLock::new();
+
+    GLOBAL_STATE
+        .get_or_init(|| {
+            let comgr_isa = CString::new("apple-metal").map_err(|_| CUerror::UNKNOWN)?;
+            let device = Device {
+                _comgr_isa: comgr_isa,
+                primary_context: LiveCheck::new(context::Context::new(0)),
+            };
+            Ok(GlobalState {
+                devices: vec![device],
+            })
+        })
+        .as_ref()
+        .map_err(|e| *e)
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+pub(crate) fn init(flags: ::core::ffi::c_uint) -> CUresult {
+    let _ = flags;
+    global_state()?;
+    if std::env::var("HETGPU_CHECKPOINT_ENABLED").ok().as_deref() != Some("0") {
+        if let Err(e) = super::checkpoint::install_signal_handler() {
+            eprintln!(
+                "[hetGPU] Warning: Failed to install checkpoint handler: {}",
+                e
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+pub(crate) fn get_version(version: &mut ::core::ffi::c_int) -> CUresult {
+    *version = std::cmp::max(cuda_types::cuda::CUDA_VERSION as i32, 13000);
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+pub(crate) fn device_apple(dev_id: i32) -> Result<&'static Device, CUerror> {
+    if dev_id < 0 {
+        return Err(CUerror::INVALID_DEVICE);
+    }
+    global_state()?
+        .devices
+        .get(dev_id as usize)
+        .ok_or(CUerror::INVALID_DEVICE)
 }
 
 // ============================================================================

@@ -27,7 +27,9 @@ pub fn compile_ptx_to_msl(ptx: &[u8]) -> Result<Vec<u8>, apple_comgr_status_s> {
 }
 
 #[cfg(feature = "apple")]
-pub fn compile_ptx_to_msl_module(ptx: &[u8]) -> Result<AppleCompiledModule, AppleComgrCompileError> {
+pub fn compile_ptx_to_msl_module(
+    ptx: &[u8],
+) -> Result<AppleCompiledModule, AppleComgrCompileError> {
     apple_comgr_compile_ptx_to_msl_module(ptx)
 }
 

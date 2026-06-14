@@ -457,7 +457,7 @@ pub(crate) unsafe fn get_attribute(
 
 // ─── PACC pointer attribute stub ──────────────────────────────────────────────
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -493,7 +493,11 @@ pub(crate) fn get_attribute(
         }
         CUpointer_attribute::CU_POINTER_ATTRIBUTE_HOST_POINTER => {
             unsafe {
-                *(data.cast::<*mut ::core::ffi::c_void>()) = ::std::ptr::null_mut();
+                *(data.cast::<*mut ::core::ffi::c_void>()) = if cfg!(feature = "apple") {
+                    ptr.0.cast()
+                } else {
+                    ::std::ptr::null_mut()
+                };
             }
             Ok(())
         }

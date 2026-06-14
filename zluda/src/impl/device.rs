@@ -2144,7 +2144,7 @@ pub(crate) fn primary_context_get_state(dev: i32, flags: &mut u32, active: &mut 
 // ============================================================================
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2156,7 +2156,7 @@ pub(crate) fn compute_capability(major: &mut i32, minor: &mut i32, _dev: i32) ->
 }
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2171,7 +2171,7 @@ pub(crate) fn get(device: *mut i32, ordinal: i32) -> CUresult {
 }
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2183,7 +2183,7 @@ pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> CUresult {
 }
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2200,7 +2200,13 @@ pub(crate) fn get_name(
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
     }
-    let device_name = b"SiFive Intelligence XM PACC\0";
+    let device_name: &[u8] = if cfg!(feature = "apple") {
+        b"Apple Metal GPU\0"
+    } else if cfg!(feature = "webgpu") {
+        b"WebGPU Adapter\0"
+    } else {
+        b"SiFive Intelligence XM PACC\0"
+    };
     let copy_len = std::cmp::min(device_name.len(), len as usize - 1);
     unsafe {
         std::ptr::copy_nonoverlapping(device_name.as_ptr(), name as *mut u8, copy_len);
@@ -2210,7 +2216,7 @@ pub(crate) fn get_name(
 }
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2225,14 +2231,21 @@ pub(crate) fn get_uuid(uuid: *mut [u8; 16], dev: i32) -> CUresult {
     }
     let mut device_uuid = [0u8; 16];
     device_uuid[0..4].copy_from_slice(&(dev as u32).to_le_bytes());
-    device_uuid[4..8].copy_from_slice(b"PACC");
+    let marker = if cfg!(feature = "apple") {
+        b"APPL"
+    } else if cfg!(feature = "webgpu") {
+        b"WGPU"
+    } else {
+        b"PACC"
+    };
+    device_uuid[4..8].copy_from_slice(marker);
     device_uuid[8..16].copy_from_slice(b"ZLUDA001");
     unsafe { *uuid = device_uuid };
     Ok(())
 }
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2242,7 +2255,7 @@ pub(crate) fn get_uuid_v2(uuid: *mut [u8; 16], dev: i32) -> CUresult {
 }
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2261,7 +2274,14 @@ pub(crate) fn get_luid(
     }
     let mut device_luid = [0u8; 8];
     device_luid[0..4].copy_from_slice(&(dev as u32).to_le_bytes());
-    device_luid[4..8].copy_from_slice(b"PACC");
+    let marker = if cfg!(feature = "apple") {
+        b"APPL"
+    } else if cfg!(feature = "webgpu") {
+        b"WGPU"
+    } else {
+        b"PACC"
+    };
+    device_luid[4..8].copy_from_slice(marker);
     unsafe {
         *luid = device_luid;
         *device_node_mask = 1u32 << (dev as u32 % 32);
@@ -2270,7 +2290,7 @@ pub(crate) fn get_luid(
 }
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2283,12 +2303,18 @@ pub(crate) fn total_mem_v2(bytes: *mut usize, dev: i32) -> CUresult {
     if dev < 0 || dev >= devices.devices.len() as i32 {
         return Err(CUerror::INVALID_DEVICE);
     }
-    unsafe { *bytes = 512 * 1024 * 1024 };
+    unsafe {
+        *bytes = if cfg!(feature = "apple") {
+            4 * 1024 * 1024 * 1024usize
+        } else {
+            512 * 1024 * 1024usize
+        }
+    };
     Ok(())
 }
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2301,7 +2327,11 @@ pub(crate) fn get_properties(prop: &mut CUdevprop, dev: i32) -> CUresult {
     prop.maxThreadsPerBlock = 1024;
     prop.maxThreadsDim = [1024, 1024, 64];
     prop.maxGridSize = [65535, 65535, 65535];
-    prop.sharedMemPerBlock = 65536;
+    prop.sharedMemPerBlock = if cfg!(feature = "apple") {
+        32768
+    } else {
+        65536
+    };
     prop.totalConstantMemory = 65536;
     prop.SIMDWidth = 32;
     prop.memPitch = 2147483647;
@@ -2312,7 +2342,7 @@ pub(crate) fn get_properties(prop: &mut CUdevprop, dev: i32) -> CUresult {
 }
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2328,7 +2358,7 @@ pub(crate) fn primary_context_retain(pctx: *mut CUcontext, dev: i32) -> CUresult
 }
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2343,7 +2373,7 @@ pub(crate) fn primary_context_release(dev: i32) -> CUresult {
 }
 
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
@@ -2375,7 +2405,13 @@ pub(crate) fn get_attribute(
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK => 65536,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_CLOCK_RATE => 1000000,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT => 512,
-        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT => 1,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT => {
+            if cfg!(feature = "apple") {
+                8
+            } else {
+                1
+            }
+        }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_KERNEL_EXEC_TIMEOUT => 0,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_INTEGRATED => 1,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_CAN_MAP_HOST_MEMORY => 1,
@@ -2387,8 +2423,20 @@ pub(crate) fn get_attribute(
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE3D_HEIGHT => 4096,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE3D_DEPTH => 4096,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE => 1000000,
-        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH => 128,
-        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_L2_CACHE_SIZE => 131072,
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH => {
+            if cfg!(feature = "apple") {
+                256
+            } else {
+                128
+            }
+        }
+        CUdevice_attribute::CU_DEVICE_ATTRIBUTE_L2_CACHE_SIZE => {
+            if cfg!(feature = "apple") {
+                4 * 1024 * 1024
+            } else {
+                131072
+            }
+        }
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR => 2048,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT => 1,
         CUdevice_attribute::CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING => 1,
@@ -2409,7 +2457,7 @@ pub(crate) fn get_attribute(
 
 // ─── PACC primary_context_get_state ──────────────────────────────────────────
 #[cfg(all(
-    any(feature = "pacc", feature = "webgpu"),
+    any(feature = "pacc", feature = "webgpu", feature = "apple"),
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")

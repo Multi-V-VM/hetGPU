@@ -1,7 +1,12 @@
 use crate::r#impl::context;
 #[cfg(feature = "intel")]
 use crate::r#impl::ze_to_cuda_result;
-#[cfg(any(feature = "intel", feature = "nvidia", feature = "tmatmul"))]
+#[cfg(any(
+    feature = "intel",
+    feature = "nvidia",
+    feature = "tmatmul",
+    feature = "apple"
+))]
 use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
@@ -19,6 +24,16 @@ use ze_runtime_sys::*;
 
 #[cfg(feature = "intel")]
 use std::collections::HashMap;
+#[cfg(any(
+    feature = "intel",
+    all(
+        feature = "tmatmul",
+        not(feature = "amd"),
+        not(feature = "tenstorrent"),
+        not(feature = "nvidia")
+    )
+))]
+use std::collections::HashMap;
 /// Global allocation tracker for virtual backend.
 /// Maps pointer addresses to their allocation sizes in bytes.
 /// Used by invoke_emulator_bridge to determine safe read sizes.
@@ -32,16 +47,6 @@ use std::collections::HashMap;
     )
 ))]
 use std::sync::Mutex;
-#[cfg(any(
-    feature = "intel",
-    all(
-        feature = "tmatmul",
-        not(feature = "amd"),
-        not(feature = "tenstorrent"),
-        not(feature = "nvidia")
-    )
-))]
-use std::collections::HashMap;
 
 #[cfg(any(
     feature = "intel",
@@ -771,7 +776,8 @@ pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
         return Err(CUerror::INVALID_VALUE);
     }
     let size = bytesize.max(1);
-    let layout = std::alloc::Layout::from_size_align(size, 64).map_err(|_| CUerror::OUT_OF_MEMORY)?;
+    let layout =
+        std::alloc::Layout::from_size_align(size, 64).map_err(|_| CUerror::OUT_OF_MEMORY)?;
     let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
     if ptr.is_null() {
         return Err(CUerror::OUT_OF_MEMORY);
@@ -820,7 +826,9 @@ pub(crate) fn copy_dto_h_v2(
     if dst_host.is_null() || (src_device.0.is_null() && byte_count != 0) {
         return Err(CUerror::INVALID_VALUE);
     }
-    unsafe { std::ptr::copy_nonoverlapping(src_device.0.cast::<u8>(), dst_host.cast::<u8>(), byte_count) };
+    unsafe {
+        std::ptr::copy_nonoverlapping(src_device.0.cast::<u8>(), dst_host.cast::<u8>(), byte_count)
+    };
     Ok(())
 }
 
@@ -839,7 +847,9 @@ pub(crate) fn copy_hto_d_v2(
     if (dst_device.0.is_null() || src_host.is_null()) && byte_count != 0 {
         return Err(CUerror::INVALID_VALUE);
     }
-    unsafe { std::ptr::copy_nonoverlapping(src_host.cast::<u8>(), dst_device.0.cast::<u8>(), byte_count) };
+    unsafe {
+        std::ptr::copy_nonoverlapping(src_host.cast::<u8>(), dst_device.0.cast::<u8>(), byte_count)
+    };
     Ok(())
 }
 
@@ -1074,6 +1084,201 @@ pub(crate) fn set_d32_v2(dst_device: CUdeviceptr, ui: u32, n: usize) -> CUresult
     Ok(())
 }
 
+// Apple Metal backend memory API. Device pointers are host allocations that can
+// be mirrored into Metal shared buffers for each kernel launch.
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+static APPLE_ALLOC_MAP: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<usize, (usize, usize)>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn apple_resolve_allocation(
+    dptr: CUdeviceptr,
+) -> Option<(*mut ::core::ffi::c_void, usize)> {
+    let addr = dptr.0 as usize;
+    let map = APPLE_ALLOC_MAP.lock().ok()?;
+    for (&base, &(size, _)) in map.iter() {
+        let end = base.saturating_add(size);
+        if addr >= base && addr < end {
+            return Some((addr as *mut ::core::ffi::c_void, end - addr));
+        }
+    }
+    None
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
+    if dptr.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let size = bytesize.max(1);
+    let align = 64;
+    let layout =
+        std::alloc::Layout::from_size_align(size, align).map_err(|_| CUerror::OUT_OF_MEMORY)?;
+    let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+    if ptr.is_null() {
+        return Err(CUerror::OUT_OF_MEMORY);
+    }
+    APPLE_ALLOC_MAP
+        .lock()
+        .map_err(|_| CUerror::UNKNOWN)?
+        .insert(ptr as usize, (size, align));
+    unsafe {
+        *dptr = CUdeviceptr_v2(ptr.cast());
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn free_v2(dptr: CUdeviceptr) -> CUresult {
+    if dptr.0.is_null() {
+        return Ok(());
+    }
+    let addr = dptr.0 as usize;
+    let Some((size, align)) = APPLE_ALLOC_MAP
+        .lock()
+        .map_err(|_| CUerror::UNKNOWN)?
+        .remove(&addr)
+    else {
+        return Err(CUerror::INVALID_VALUE);
+    };
+    let layout =
+        std::alloc::Layout::from_size_align(size, align).map_err(|_| CUerror::INVALID_VALUE)?;
+    unsafe {
+        std::alloc::dealloc(dptr.0.cast(), layout);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn copy_dto_h_v2(
+    dst_host: *mut ::core::ffi::c_void,
+    src_device: CUdeviceptr,
+    byte_count: usize,
+) -> CUresult {
+    if (dst_host.is_null() || src_device.0.is_null()) && byte_count != 0 {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    unsafe {
+        std::ptr::copy_nonoverlapping(src_device.0.cast::<u8>(), dst_host.cast::<u8>(), byte_count);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn copy_hto_d_v2(
+    dst_device: CUdeviceptr,
+    src_host: *const ::core::ffi::c_void,
+    byte_count: usize,
+) -> CUresult {
+    if (dst_device.0.is_null() || src_host.is_null()) && byte_count != 0 {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    unsafe {
+        std::ptr::copy_nonoverlapping(src_host.cast::<u8>(), dst_device.0.cast::<u8>(), byte_count);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_address_range_v2(
+    pbase: *mut CUdeviceptr,
+    psize: *mut usize,
+    dptr: CUdeviceptr,
+) -> CUresult {
+    let addr = dptr.0 as usize;
+    let map = APPLE_ALLOC_MAP.lock().map_err(|_| CUerror::UNKNOWN)?;
+    for (&base, &(size, _)) in map.iter() {
+        if addr >= base && addr < base.saturating_add(size) {
+            unsafe {
+                if !pbase.is_null() {
+                    *pbase = CUdeviceptr_v2(base as *mut _);
+                }
+                if !psize.is_null() {
+                    *psize = size;
+                }
+            }
+            return Ok(());
+        }
+    }
+    Err(CUerror::INVALID_VALUE)
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn set_d8_v2(dst_device: CUdeviceptr, uc: u8, n: usize) -> CUresult {
+    if dst_device.0.is_null() && n != 0 {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    unsafe {
+        std::ptr::write_bytes(dst_device.0.cast::<u8>(), uc, n);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn set_d32_v2(dst_device: CUdeviceptr, ui: u32, n: usize) -> CUresult {
+    if dst_device.0.is_null() && n != 0 {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let slice = unsafe { std::slice::from_raw_parts_mut(dst_device.0.cast::<u32>(), n) };
+    slice.fill(ui);
+    Ok(())
+}
+
 // WebGPU backend memory API. Until the JS bridge owns GPUBuffer lifetime
 // directly, expose CUDA device pointers as host-side wasm allocations.
 #[cfg(all(
@@ -1100,7 +1305,8 @@ pub(crate) fn alloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult {
         return Err(CUerror::INVALID_VALUE);
     }
     let size = bytesize.max(1);
-    let layout = std::alloc::Layout::from_size_align(size, 64).map_err(|_| CUerror::OUT_OF_MEMORY)?;
+    let layout =
+        std::alloc::Layout::from_size_align(size, 64).map_err(|_| CUerror::OUT_OF_MEMORY)?;
     let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
     if ptr.is_null() {
         return Err(CUerror::OUT_OF_MEMORY);
@@ -1422,7 +1628,9 @@ fn pacc_shared_ddr_bytes() -> Option<usize> {
         .or_else(|| pacc_read_u64("/sys/kernel/debug/hetgpu_pacc_mbox_ddr/shared_ddr_size"))
         .or_else(|| pacc_read_u64("/sys/kernel/debug/hetgpu_pacc_mbox_full/shared_ddr_size"))
         .or_else(|| pacc_read_u64("/sys/kernel/debug/hetgpu_pacc_mbox/shared_ddr_size"))
-        .or_else(|| pacc_read_u64("/sys/module/hetgpu_pacc_mbox_ddr_coh/parameters/shared_ddr_size"))
+        .or_else(|| {
+            pacc_read_u64("/sys/module/hetgpu_pacc_mbox_ddr_coh/parameters/shared_ddr_size")
+        })
         .or_else(|| pacc_read_u64("/sys/module/hetgpu_pacc_mbox_ddr/parameters/shared_ddr_size"))
         .or_else(|| {
             std::env::var("HETGPU_PACC_SHARED_DDR_BYTES")
@@ -1472,8 +1680,16 @@ fn pacc_alloc_trace(tag: &'static [u8]) {
     };
     if enabled {
         unsafe {
-            let _ = libc::write(libc::STDERR_FILENO, tag.as_ptr() as *const libc::c_void, tag.len());
-            let _ = libc::write(libc::STDERR_FILENO, b"\n".as_ptr() as *const libc::c_void, 1);
+            let _ = libc::write(
+                libc::STDERR_FILENO,
+                tag.as_ptr() as *const libc::c_void,
+                tag.len(),
+            );
+            let _ = libc::write(
+                libc::STDERR_FILENO,
+                b"\n".as_ptr() as *const libc::c_void,
+                1,
+            );
         }
     }
 }
@@ -1531,8 +1747,8 @@ fn pacc_alloc_shared_ddr(bytesize: usize) -> Result<(u64, PaccAlloc), CUerror> {
         pacc_alloc_trace(b"[pacc_alloc] shared base");
         let size = pacc_shared_ddr_bytes().ok_or(CUerror::OUT_OF_MEMORY)?;
         pacc_alloc_trace(b"[pacc_alloc] shared bytes");
-        let heap_offset = pacc_parse_env_usize("HETGPU_PACC_SHARED_DEVICE_MEM_HEAP_OFFSET")
-            .unwrap_or(0);
+        let heap_offset =
+            pacc_parse_env_usize("HETGPU_PACC_SHARED_DEVICE_MEM_HEAP_OFFSET").unwrap_or(0);
         if heap_offset >= size || heap_offset % 4096 != 0 {
             return Err(CUerror::OUT_OF_MEMORY);
         }
@@ -1568,7 +1784,11 @@ fn pacc_alloc_shared_ddr(bytesize: usize) -> Result<(u64, PaccAlloc), CUerror> {
             return Err(CUerror::OUT_OF_MEMORY);
         }
 
-        let control_reserved = if heap_offset == 0 { 4usize * 0x2000usize } else { 0 };
+        let control_reserved = if heap_offset == 0 {
+            4usize * 0x2000usize
+        } else {
+            0
+        };
         let kernel_reserved = pacc_shared_ddr_kernel_reserve(window_bytes);
         let heap_end = window_bytes.saturating_sub(kernel_reserved);
         pacc_alloc_trace(b"[pacc_alloc] shared reserve");
@@ -2290,9 +2510,7 @@ pub unsafe extern "C" fn hetgpu_pacc_ipc_open_mem_handle(
     not(feature = "tenstorrent")
 ))]
 #[no_mangle]
-pub unsafe extern "C" fn hetgpu_pacc_ipc_close_mem_handle(
-    ptr: *mut ::core::ffi::c_void,
-) -> i32 {
+pub unsafe extern "C" fn hetgpu_pacc_ipc_close_mem_handle(ptr: *mut ::core::ffi::c_void) -> i32 {
     if ptr.is_null() {
         return 0;
     }

@@ -1,9 +1,10 @@
 #![allow(non_camel_case_types)]
 
 use ptx_parser::{
-    CvtMode, Directive, Function, ImmediateValue, Instruction, Module, MulDetails, MulIntControl,
-    MultiVariable, ParsedOperand, PredAt, RegOrImmediate, RightShiftKind, ScalarType,
-    SetpCompareFloat, SetpCompareInt, SetpCompareOp, StateSpace, Statement, Type,
+    AtomSemantics, AtomicOp, CvtMode, Directive, Function, FunnelShiftMode, ImmediateValue,
+    Instruction, Module, Mul24Control, MulDetails, MulIntControl, MultiVariable, ParsedOperand,
+    PredAt, RegOrImmediate, RightShiftKind, ScalarType, SetpBoolPostOp, SetpCompareFloat,
+    SetpCompareInt, SetpCompareOp, ShiftDirection, StateSpace, Statement, Type,
 };
 use std::collections::{HashMap, HashSet};
 use std::ffi::{c_char, c_uint, c_void, CStr};
@@ -108,6 +109,72 @@ pub struct AppleKernelParamMetadata {
     pub size: usize,
     pub is_pointer: bool,
 }
+
+const PTX_MSL_HELPERS: &str = r#"static inline uint zluda_bfe_u32(uint value, uint offset, uint width) {
+    if (offset >= 32u || width == 0u) {
+        return uint(0);
+    }
+    uint w = min(width, 32u - offset);
+    uint mask = (w >= 32u) ? ~uint(0) : ((uint(1) << w) - uint(1));
+    return (value >> offset) & mask;
+}
+
+static inline int zluda_bfe_s32(int value, uint offset, uint width) {
+    uint bits = zluda_bfe_u32(uint(value), offset, width);
+    if (width == 0u) {
+        return int(0);
+    }
+    uint w = min(width, 32u);
+    if (w >= 32u) {
+        return int(bits);
+    }
+    uint sign = uint(1) << (w - 1u);
+    return int((bits ^ sign) - sign);
+}
+
+static inline ulong zluda_bfe_u64(ulong value, uint offset, uint width) {
+    if (offset >= 64u || width == 0u) {
+        return ulong(0);
+    }
+    uint w = min(width, 64u - offset);
+    ulong mask = (w >= 64u) ? ~ulong(0) : ((ulong(1) << w) - ulong(1));
+    return (value >> offset) & mask;
+}
+
+static inline long zluda_bfe_s64(long value, uint offset, uint width) {
+    ulong bits = zluda_bfe_u64(ulong(value), offset, width);
+    if (width == 0u) {
+        return long(0);
+    }
+    uint w = min(width, 64u);
+    if (w >= 64u) {
+        return long(bits);
+    }
+    ulong sign = ulong(1) << (w - 1u);
+    return long((bits ^ sign) - sign);
+}
+
+static inline uint zluda_bfi_b32(uint insert, uint base, uint offset, uint width) {
+    if (offset >= 32u || width == 0u) {
+        return base;
+    }
+    uint w = min(width, 32u - offset);
+    uint low_mask = (w >= 32u) ? ~uint(0) : ((uint(1) << w) - uint(1));
+    uint mask = low_mask << offset;
+    return (base & ~mask) | ((insert << offset) & mask);
+}
+
+static inline ulong zluda_bfi_b64(ulong insert, ulong base, uint offset, uint width) {
+    if (offset >= 64u || width == 0u) {
+        return base;
+    }
+    uint w = min(width, 64u - offset);
+    ulong low_mask = (w >= 64u) ? ~ulong(0) : ((ulong(1) << w) - ulong(1));
+    ulong mask = low_mask << offset;
+    return (base & ~mask) | ((insert << offset) & mask);
+}
+
+"#;
 
 #[derive(Clone)]
 struct DataContent {
@@ -484,7 +551,9 @@ pub fn compile_ptx_to_msl_text(ptx: &str) -> Result<String, AppleComgrCompileErr
     compile_ptx_to_msl_module_text(ptx).map(|module| module.msl)
 }
 
-pub fn compile_ptx_to_msl_module_text(ptx: &str) -> Result<AppleCompiledModule, AppleComgrCompileError> {
+pub fn compile_ptx_to_msl_module_text(
+    ptx: &str,
+) -> Result<AppleCompiledModule, AppleComgrCompileError> {
     let mut diagnostics = Vec::new();
     let module = match ptx_parser::parse_module_checked(ptx) {
         Ok(module) => module,
@@ -520,6 +589,7 @@ fn compile_module_to_msl<'input>(
     let mut out = String::new();
     out.push_str("#include <metal_stdlib>\n");
     out.push_str("using namespace metal;\n\n");
+    out.push_str(PTX_MSL_HELPERS);
 
     if module.invalid_directives > 0 {
         out.push_str("// PTX parser skipped unsupported non-kernel directives.\n");
@@ -573,20 +643,42 @@ struct KernelParam {
 enum Def {
     LdParam(String),
     Mov(String),
-    Cvta(String),
+    Cvta(String, MslAddressSpace),
     Add(String, String),
     Sub(String, String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MslAddressSpace {
+    Device,
+    Threadgroup,
+    Thread,
+    Constant,
+}
+
+impl MslAddressSpace {
+    fn keyword(self) -> &'static str {
+        match self {
+            MslAddressSpace::Device => "device",
+            MslAddressSpace::Threadgroup => "threadgroup",
+            MslAddressSpace::Thread => "thread",
+            MslAddressSpace::Constant => "constant",
+        }
+    }
 }
 
 struct KernelLowering<'module, 'input> {
     kernel: &'module Function<'input, &'input str, PtxStatement<'input>>,
     params: Vec<KernelParam>,
     var_types: HashMap<String, Type>,
+    var_spaces: HashMap<String, StateSpace>,
     defs: HashMap<String, Def>,
     pointer_regs: HashSet<String>,
+    pointer_addr_spaces: HashMap<String, MslAddressSpace>,
     pointer_params: HashSet<String>,
     diagnostics: Vec<String>,
     indent: usize,
+    temp_counter: usize,
 }
 
 impl<'module, 'input> KernelLowering<'module, 'input> {
@@ -607,11 +699,14 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
             kernel,
             params,
             var_types: HashMap::new(),
+            var_spaces: HashMap::new(),
             defs: HashMap::new(),
             pointer_regs: HashSet::new(),
+            pointer_addr_spaces: HashMap::new(),
             pointer_params: HashSet::new(),
             diagnostics: Vec::new(),
             indent: 1,
+            temp_counter: 0,
         };
         if let Some(body) = &kernel.body {
             lowering.collect_declarations(body);
@@ -681,7 +776,11 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                 .map(|param| AppleKernelParamMetadata {
                     ptx_name: param.ptx_name.clone(),
                     msl_name: param.msl_name.clone(),
-                    size: if param.is_pointer { 8 } else { type_size(&param.ty) },
+                    size: if param.is_pointer {
+                        8
+                    } else {
+                        type_size(&param.ty)
+                    },
                     is_pointer: param.is_pointer,
                 })
                 .collect(),
@@ -700,13 +799,16 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                             } else {
                                 format!("{name}{idx}")
                             };
-                            self.var_types.insert(raw_name, info.v_type.clone());
+                            self.var_types.insert(raw_name.clone(), info.v_type.clone());
+                            self.var_spaces.insert(raw_name, info.state_space);
                         }
                     }
                     MultiVariable::Names { info, names } => {
                         for name in names {
                             self.var_types
                                 .insert((*name).to_string(), info.v_type.clone());
+                            self.var_spaces
+                                .insert((*name).to_string(), info.state_space);
                         }
                     }
                 },
@@ -729,7 +831,7 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
     fn record_instruction(&mut self, instruction: &Instruction<PtxOperand<'input>>) {
         match instruction {
             Instruction::Ld { data, arguments } => {
-                if data.state_space == StateSpace::Param {
+                if is_param_state_space(data.state_space) {
                     if let (Some(dst), Some(param)) =
                         (operand_reg(&arguments.dst), operand_reg(&arguments.src))
                     {
@@ -737,18 +839,48 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                     }
                 } else if matches!(
                     data.state_space,
-                    StateSpace::Global | StateSpace::Generic | StateSpace::Const
+                    StateSpace::Global
+                        | StateSpace::Generic
+                        | StateSpace::Const
+                        | StateSpace::Shared
+                        | StateSpace::SharedCta
+                        | StateSpace::SharedCluster
+                        | StateSpace::Local
                 ) {
                     if let Some(addr) = operand_reg(&arguments.src) {
-                        self.trace_pointer_from(addr);
+                        self.trace_pointer_from(
+                            addr,
+                            state_space_to_msl_or_device(data.state_space),
+                        );
                     }
                 }
             }
             Instruction::St { data, arguments } => {
-                if data.state_space != StateSpace::Param {
+                if !is_param_state_space(data.state_space) {
                     if let Some(addr) = operand_reg(&arguments.src1) {
-                        self.trace_pointer_from(addr);
+                        self.trace_pointer_from(
+                            addr,
+                            state_space_to_msl_or_device(data.state_space),
+                        );
                     }
+                }
+            }
+            Instruction::Atom { data, arguments } => {
+                if let Some(addr) = operand_reg(&arguments.src1) {
+                    self.trace_pointer_from(addr, state_space_to_msl_or_device(data.space));
+                }
+            }
+            Instruction::AtomCas { data, arguments } => {
+                if let Some(addr) = operand_reg(&arguments.src1) {
+                    self.trace_pointer_from(addr, state_space_to_msl_or_device(data.space));
+                }
+            }
+            Instruction::CpAsync { data, arguments } => {
+                if let Some(dst) = operand_reg(&arguments.src_to) {
+                    self.trace_pointer_from(dst, state_space_to_msl_or_device(data.space));
+                }
+                if let Some(src) = operand_reg(&arguments.src_from) {
+                    self.trace_pointer_from(src, MslAddressSpace::Device);
                 }
             }
             Instruction::Mov { arguments, .. } => {
@@ -758,11 +890,14 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                     self.defs.insert(dst, Def::Mov(src));
                 }
             }
-            Instruction::Cvta { arguments, .. } => {
+            Instruction::Cvta { data, arguments } => {
                 if let (Some(dst), Some(src)) =
                     (operand_reg(&arguments.dst), operand_reg(&arguments.src))
                 {
-                    self.defs.insert(dst, Def::Cvta(src));
+                    self.defs.insert(
+                        dst,
+                        Def::Cvta(src, state_space_to_msl_or_device(data.state_space)),
+                    );
                 }
             }
             Instruction::Add { arguments, .. } => {
@@ -787,16 +922,26 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
         }
     }
 
-    fn trace_pointer_from(&mut self, reg: String) {
+    fn trace_pointer_from(&mut self, reg: String, space: MslAddressSpace) {
         let mut seen = HashSet::new();
-        self.trace_pointer_reg(&reg, &mut seen);
+        self.trace_pointer_reg(&reg, space, &mut seen);
     }
 
-    fn trace_pointer_reg(&mut self, reg: &str, seen: &mut HashSet<String>) {
+    fn trace_pointer_reg(&mut self, reg: &str, space: MslAddressSpace, seen: &mut HashSet<String>) {
         if !seen.insert(reg.to_string()) {
             return;
         }
+        if self
+            .var_spaces
+            .get(reg)
+            .is_some_and(|state_space| *state_space != StateSpace::Reg)
+        {
+            return;
+        }
         self.pointer_regs.insert(reg.to_string());
+        self.pointer_addr_spaces
+            .entry(reg.to_string())
+            .or_insert(space);
         let Some(def) = self.defs.get(reg).cloned() else {
             return;
         };
@@ -804,21 +949,22 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
             Def::LdParam(param) => {
                 self.pointer_params.insert(param);
             }
-            Def::Mov(src) | Def::Cvta(src) => self.trace_pointer_reg(&src, seen),
+            Def::Mov(src) => self.trace_pointer_reg(&src, space, seen),
+            Def::Cvta(src, cvta_space) => self.trace_pointer_reg(&src, cvta_space, seen),
             Def::Add(src1, src2) | Def::Sub(src1, src2) => {
                 let src1_reaches = self.reaches_param(&src1, &mut HashSet::new());
                 let src2_reaches = self.reaches_param(&src2, &mut HashSet::new());
                 match (src1_reaches, src2_reaches) {
-                    (true, false) => self.trace_pointer_reg(&src1, seen),
-                    (false, true) => self.trace_pointer_reg(&src2, seen),
+                    (true, false) => self.trace_pointer_reg(&src1, space, seen),
+                    (false, true) => self.trace_pointer_reg(&src2, space, seen),
                     (true, true) => {
                         if self.prefers_pointer_base(&src1, &src2) {
-                            self.trace_pointer_reg(&src1, seen);
+                            self.trace_pointer_reg(&src1, space, seen);
                         } else {
-                            self.trace_pointer_reg(&src2, seen);
+                            self.trace_pointer_reg(&src2, space, seen);
                         }
                     }
-                    (false, false) => self.trace_pointer_reg(&src1, seen),
+                    (false, false) => self.trace_pointer_reg(&src1, space, seen),
                 }
             }
         }
@@ -830,7 +976,7 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
         }
         match self.defs.get(reg) {
             Some(Def::LdParam(_)) => true,
-            Some(Def::Mov(src)) | Some(Def::Cvta(src)) => self.reaches_param(src, seen),
+            Some(Def::Mov(src)) | Some(Def::Cvta(src, _)) => self.reaches_param(src, seen),
             Some(Def::Add(src1, src2)) | Some(Def::Sub(src1, src2)) => {
                 self.reaches_param(src1, seen) || self.reaches_param(src2, seen)
             }
@@ -854,12 +1000,28 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
             for (dst, def) in &self.defs {
                 let becomes_pointer = match def {
                     Def::LdParam(param) => self.pointer_params.contains(param),
-                    Def::Mov(src) | Def::Cvta(src) => self.pointer_regs.contains(src),
+                    Def::Mov(src) | Def::Cvta(src, _) => self.pointer_regs.contains(src),
                     Def::Add(src1, src2) | Def::Sub(src1, src2) => {
                         self.pointer_regs.contains(src1) || self.pointer_regs.contains(src2)
                     }
                 };
                 if becomes_pointer && self.pointer_regs.insert(dst.clone()) {
+                    let space = match def {
+                        Def::LdParam(_) => MslAddressSpace::Device,
+                        Def::Mov(src) => self
+                            .pointer_addr_spaces
+                            .get(src)
+                            .copied()
+                            .unwrap_or(MslAddressSpace::Device),
+                        Def::Cvta(_, space) => *space,
+                        Def::Add(src1, src2) | Def::Sub(src1, src2) => self
+                            .pointer_addr_spaces
+                            .get(src1)
+                            .or_else(|| self.pointer_addr_spaces.get(src2))
+                            .copied()
+                            .unwrap_or(MslAddressSpace::Device),
+                    };
+                    self.pointer_addr_spaces.insert(dst.clone(), space);
                     changed = true;
                 }
             }
@@ -876,7 +1038,40 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
             let ty = &self.var_types[&name];
             let local = sanitize_ident(&name);
             if self.pointer_regs.contains(&name) {
-                self.line(out, &format!("device uchar* {local} = nullptr;"));
+                let space = self
+                    .pointer_addr_spaces
+                    .get(&name)
+                    .copied()
+                    .unwrap_or(MslAddressSpace::Device);
+                self.line(
+                    out,
+                    &format!("{} uchar* {local} = nullptr;", space.keyword()),
+                );
+            } else if let Some(space) = self.var_spaces.get(&name) {
+                match state_space_to_msl(*space) {
+                    Some(MslAddressSpace::Threadgroup) => {
+                        self.line(out, &format!("threadgroup {};", msl_var_decl(ty, &local)));
+                    }
+                    Some(MslAddressSpace::Thread) => {
+                        self.line(out, &format!("{};", msl_var_decl(ty, &local)));
+                    }
+                    Some(MslAddressSpace::Device | MslAddressSpace::Constant) => {
+                        self.line(
+                            out,
+                            &format!(
+                                "/* unsupported {} declaration {} */",
+                                space,
+                                sanitize_ident(&name)
+                            ),
+                        );
+                    }
+                    None => {
+                        self.line(
+                            out,
+                            &format!("{} {local} = {};", msl_type(ty), zero_value(ty)),
+                        );
+                    }
+                }
             } else {
                 self.line(
                     out,
@@ -936,28 +1131,48 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
         match instruction {
             Instruction::Ld { data, arguments } => {
                 let dst = self.expr(&arguments.dst);
-                let src = self.expr(&arguments.src);
-                if data.state_space == StateSpace::Param {
+                if is_param_state_space(data.state_space) {
+                    let src = self.expr(&arguments.src);
                     self.line(out, &format!("{dst} = {src};"));
                 } else {
+                    let src = self.memory_addr_expr(&arguments.src, data.state_space);
+                    let space = self
+                        .address_space_for_operand(&arguments.src, data.state_space)
+                        .keyword();
                     self.line(
                         out,
                         &format!(
-                            "{dst} = *reinterpret_cast<device {}*>({src});",
+                            "{dst} = *reinterpret_cast<{space} {}*>({src});",
                             msl_type(&data.typ)
                         ),
                     );
                 }
             }
             Instruction::St { data, arguments } => {
-                let dst = self.expr(&arguments.src1);
+                let dst = self.memory_addr_expr(&arguments.src1, data.state_space);
                 let src = self.expr(&arguments.src2);
+                let space = self
+                    .address_space_for_operand(&arguments.src1, data.state_space)
+                    .keyword();
                 self.line(
                     out,
                     &format!(
-                        "*reinterpret_cast<device {}*>({dst}) = {src};",
+                        "*reinterpret_cast<{space} {}*>({dst}) = {src};",
                         msl_type(&data.typ)
                     ),
+                );
+            }
+            Instruction::Atom { data, arguments } => {
+                self.emit_atomic(out, data, &arguments.dst, &arguments.src1, &arguments.src2);
+            }
+            Instruction::AtomCas { data, arguments } => {
+                self.emit_atomic_cas(
+                    out,
+                    data,
+                    &arguments.dst,
+                    &arguments.src1,
+                    &arguments.src2,
+                    &arguments.src3,
                 );
             }
             Instruction::Mov { arguments, .. } => {
@@ -1079,12 +1294,43 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                 let src2 = self.expr(&arguments.src2);
                 self.line(out, &format!("{dst} = max({src1}, {src2});"));
             }
+            Instruction::Set { data, arguments } => {
+                let dst = self.expr(&arguments.dst);
+                let src1 = self.expr(&arguments.src1);
+                let src2 = self.expr(&arguments.src2);
+                let cmp = compare_expr(data.base.cmp_op, &src1, &src2);
+                let value = set_result_expr(data.dtype, &cmp);
+                self.line(out, &format!("{dst} = {value};"));
+            }
+            Instruction::SetBool { data, arguments } => {
+                let dst = self.expr(&arguments.dst);
+                let src1 = self.expr(&arguments.src1);
+                let src2 = self.expr(&arguments.src2);
+                let src3 = self.expr(&arguments.src3);
+                let cmp = compare_expr(data.base.base.cmp_op, &src1, &src2);
+                let pred = bool_post_expr(data.base.bool_op, &cmp, &src3, data.base.negate_src3);
+                let value = set_result_expr(data.dtype, &pred);
+                self.line(out, &format!("{dst} = {value};"));
+            }
             Instruction::Setp { data, arguments } => {
                 let dst1 = self.expr(&arguments.dst1);
                 let src1 = self.expr(&arguments.src1);
                 let src2 = self.expr(&arguments.src2);
                 let cmp = compare_expr(data.cmp_op, &src1, &src2);
                 self.line(out, &format!("{dst1} = {cmp};"));
+                if let Some(dst2) = &arguments.dst2 {
+                    let dst2 = self.expr(dst2);
+                    self.line(out, &format!("{dst2} = !({dst1});"));
+                }
+            }
+            Instruction::SetpBool { data, arguments } => {
+                let dst1 = self.expr(&arguments.dst1);
+                let src1 = self.expr(&arguments.src1);
+                let src2 = self.expr(&arguments.src2);
+                let src3 = self.expr(&arguments.src3);
+                let cmp = compare_expr(data.base.cmp_op, &src1, &src2);
+                let pred = bool_post_expr(data.bool_op, &cmp, &src3, data.negate_src3);
+                self.line(out, &format!("{dst1} = {pred};"));
                 if let Some(dst2) = &arguments.dst2 {
                     let dst2 = self.expr(dst2);
                     self.line(out, &format!("{dst2} = !({dst1});"));
@@ -1113,6 +1359,72 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
             Instruction::Ex2 { arguments, .. } => {
                 self.emit_unary_call(out, &arguments.dst, &arguments.src, "exp2")
             }
+            Instruction::Copysign { arguments, .. } => {
+                let dst = self.expr(&arguments.dst);
+                let src1 = self.expr(&arguments.src1);
+                let src2 = self.expr(&arguments.src2);
+                self.line(out, &format!("{dst} = copysign({src1}, {src2});"));
+            }
+            Instruction::Tanh { arguments, .. } => {
+                self.emit_unary_call(out, &arguments.dst, &arguments.src, "tanh")
+            }
+            Instruction::Clz { arguments, .. } => {
+                self.emit_unary_call(out, &arguments.dst, &arguments.src, "clz")
+            }
+            Instruction::Brev { arguments, .. } => {
+                self.emit_unary_call(out, &arguments.dst, &arguments.src, "reverse_bits")
+            }
+            Instruction::Popc { arguments, .. } => {
+                self.emit_unary_call(out, &arguments.dst, &arguments.src, "popcount")
+            }
+            Instruction::Bfe { data, arguments } => {
+                self.emit_bfe(
+                    out,
+                    *data,
+                    &arguments.dst,
+                    &arguments.src1,
+                    &arguments.src2,
+                    &arguments.src3,
+                );
+            }
+            Instruction::Bfi { data, arguments } => {
+                self.emit_bfi(
+                    out,
+                    *data,
+                    &arguments.dst,
+                    &arguments.src1,
+                    &arguments.src2,
+                    &arguments.src3,
+                    &arguments.src4,
+                );
+            }
+            Instruction::Mul24 { data, arguments } => {
+                self.emit_mul24(out, data, &arguments.dst, &arguments.src1, &arguments.src2);
+            }
+            Instruction::Shf { data, arguments } => {
+                self.emit_shf(
+                    out,
+                    data,
+                    &arguments.dst,
+                    &arguments.src_a,
+                    &arguments.src_b,
+                    &arguments.src_c,
+                );
+            }
+            Instruction::Activemask { arguments } => {
+                let dst = self.expr(&arguments.dst);
+                self.line(out, &format!("{dst} = ~uint(0);"));
+            }
+            Instruction::Nanosleep { .. }
+            | Instruction::CpAsyncCommitGroup {}
+            | Instruction::CpAsyncWaitGroup { .. }
+            | Instruction::CpAsyncWaitAll {} => {
+                self.line(out, "/* PTX async/wait hint lowered to no-op on Metal. */");
+            }
+            Instruction::CpAsync { data, arguments } => {
+                self.emit_cp_async(out, data, &arguments.src_to, &arguments.src_from);
+            }
+            Instruction::Trap {} => self.line(out, "return;"),
             Instruction::Sqrt { arguments, .. } => {
                 self.emit_unary_call(out, &arguments.dst, &arguments.src, "sqrt")
             }
@@ -1132,6 +1444,235 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
             }
             _ => self.unsupported("instruction"),
         }
+    }
+
+    fn emit_atomic(
+        &mut self,
+        out: &mut String,
+        data: &ptx_parser::AtomDetails,
+        dst: &PtxOperand<'input>,
+        addr: &PtxOperand<'input>,
+        value: &PtxOperand<'input>,
+    ) {
+        let Some(atomic_ty) = atomic_msl_type(&data.type_) else {
+            self.unsupported("atomic type");
+            return;
+        };
+        let Some(op) = atomic_fetch_op(data.op) else {
+            self.unsupported("atomic op");
+            return;
+        };
+
+        let dst = self.expr(dst);
+        let addr_expr = self.memory_addr_expr(addr, data.space);
+        let value = self.expr(value);
+        let space = self.address_space_for_operand(addr, data.space);
+        let order = atomic_memory_order(data.semantics);
+        self.line(
+            out,
+            &format!(
+                "{dst} = {op}(reinterpret_cast<{} {atomic_ty}*>({addr_expr}), {value}, {order});",
+                space.keyword()
+            ),
+        );
+    }
+
+    fn emit_atomic_cas(
+        &mut self,
+        out: &mut String,
+        data: &ptx_parser::AtomCasDetails,
+        dst: &PtxOperand<'input>,
+        addr: &PtxOperand<'input>,
+        compare: &PtxOperand<'input>,
+        value: &PtxOperand<'input>,
+    ) {
+        let Some(atomic_ty) = atomic_msl_scalar_type(data.type_) else {
+            self.unsupported("atomic cas type");
+            return;
+        };
+        let scalar_ty = scalar_msl_type(data.type_);
+        let dst_expr = self.expr(dst);
+        let addr_expr = self.memory_addr_expr(addr, data.space);
+        let compare_expr = self.expr(compare);
+        let value_expr = self.expr(value);
+        let space = self.address_space_for_operand(addr, data.space);
+        let order = atomic_memory_order(data.semantics);
+        let temp = self.next_temp("cas_expected");
+
+        self.line(out, "{");
+        self.indent += 1;
+        self.line(out, &format!("{scalar_ty} {temp} = {compare_expr};"));
+        self.line(
+            out,
+            &format!(
+                "atomic_compare_exchange_weak_explicit(reinterpret_cast<{} {atomic_ty}*>({addr_expr}), &{temp}, {value_expr}, {order}, {order});",
+                space.keyword()
+            ),
+        );
+        self.line(out, &format!("{dst_expr} = {temp};"));
+        self.indent -= 1;
+        self.line(out, "}");
+    }
+
+    fn emit_bfe(
+        &self,
+        out: &mut String,
+        data: ScalarType,
+        dst: &PtxOperand<'input>,
+        src1: &PtxOperand<'input>,
+        src2: &PtxOperand<'input>,
+        src3: &PtxOperand<'input>,
+    ) {
+        let dst = self.expr(dst);
+        let src1 = self.expr(src1);
+        let src2 = self.expr(src2);
+        let src3 = self.expr(src3);
+        let helper = match data {
+            ScalarType::U32 => "zluda_bfe_u32",
+            ScalarType::S32 => "zluda_bfe_s32",
+            ScalarType::U64 => "zluda_bfe_u64",
+            ScalarType::S64 => "zluda_bfe_s64",
+            _ => {
+                return;
+            }
+        };
+        self.line(
+            out,
+            &format!("{dst} = {helper}({src1}, uint({src2}), uint({src3}));"),
+        );
+    }
+
+    fn emit_bfi(
+        &self,
+        out: &mut String,
+        data: ScalarType,
+        dst: &PtxOperand<'input>,
+        src1: &PtxOperand<'input>,
+        src2: &PtxOperand<'input>,
+        src3: &PtxOperand<'input>,
+        src4: &PtxOperand<'input>,
+    ) {
+        let dst = self.expr(dst);
+        let src1 = self.expr(src1);
+        let src2 = self.expr(src2);
+        let src3 = self.expr(src3);
+        let src4 = self.expr(src4);
+        let helper = match data {
+            ScalarType::B32 => "zluda_bfi_b32",
+            ScalarType::B64 => "zluda_bfi_b64",
+            _ => {
+                return;
+            }
+        };
+        self.line(
+            out,
+            &format!("{dst} = {helper}({src1}, {src2}, uint({src3}), uint({src4}));"),
+        );
+    }
+
+    fn emit_mul24(
+        &self,
+        out: &mut String,
+        data: &ptx_parser::Mul24Details,
+        dst: &PtxOperand<'input>,
+        src1: &PtxOperand<'input>,
+        src2: &PtxOperand<'input>,
+    ) {
+        let dst = self.expr(dst);
+        let src1 = self.expr(src1);
+        let src2 = self.expr(src2);
+        let product = match data.type_ {
+            ScalarType::U32 => {
+                format!("(ulong(({src1}) & 0x00ffffffu) * ulong(({src2}) & 0x00ffffffu))")
+            }
+            ScalarType::S32 => {
+                let lhs = format!("(long(int(({src1}) << 8)) >> 8)");
+                let rhs = format!("(long(int(({src2}) << 8)) >> 8)");
+                format!("({lhs} * {rhs})")
+            }
+            _ => {
+                return;
+            }
+        };
+        let expr = match (data.type_, data.control) {
+            (ScalarType::U32, Mul24Control::Lo) => format!("uint({product})"),
+            (ScalarType::U32, Mul24Control::Hi) => format!("uint(({product}) >> 16)"),
+            (ScalarType::S32, Mul24Control::Lo) => format!("int({product})"),
+            (ScalarType::S32, Mul24Control::Hi) => format!("int(({product}) >> 16)"),
+            _ => return,
+        };
+        self.line(out, &format!("{dst} = {expr};"));
+    }
+
+    fn emit_shf(
+        &mut self,
+        out: &mut String,
+        data: &ptx_parser::ShfDetails,
+        dst: &PtxOperand<'input>,
+        src_a: &PtxOperand<'input>,
+        src_b: &PtxOperand<'input>,
+        src_c: &PtxOperand<'input>,
+    ) {
+        let dst = self.expr(dst);
+        let src_a = self.expr(src_a);
+        let src_b = self.expr(src_b);
+        let src_c = self.expr(src_c);
+        let a = self.next_temp("shf_a");
+        let b = self.next_temp("shf_b");
+        let shift = self.next_temp("shf_shift");
+        let masked = self.next_temp("shf_masked");
+        let inverse = self.next_temp("shf_inverse");
+        let shifted = self.next_temp("shf_shifted");
+
+        self.line(out, "{");
+        self.indent += 1;
+        self.line(out, &format!("uint {a} = uint({src_a});"));
+        self.line(out, &format!("uint {b} = uint({src_b});"));
+        self.line(out, &format!("uint {shift} = uint({src_c});"));
+        self.line(out, &format!("uint {masked} = {shift} & 31u;"));
+        self.line(out, &format!("uint {inverse} = (32u - {masked}) & 31u;"));
+        let merge = match data.direction {
+            ShiftDirection::L => format!("(({b} << {masked}) | ({a} >> {inverse}))"),
+            ShiftDirection::R => format!("(({a} >> {masked}) | ({b} << {inverse}))"),
+        };
+        self.line(out, &format!("uint {shifted} = {merge};"));
+        let expr = if data.mode == FunnelShiftMode::Clamp {
+            let clamp_value = match data.direction {
+                ShiftDirection::L => &a,
+                ShiftDirection::R => &b,
+            };
+            format!("({shift} >= 32u) ? {clamp_value} : {shifted}")
+        } else {
+            shifted
+        };
+        self.line(out, &format!("{dst} = {expr};"));
+        self.indent -= 1;
+        self.line(out, "}");
+    }
+
+    fn emit_cp_async(
+        &mut self,
+        out: &mut String,
+        data: &ptx_parser::CpAsyncDetails,
+        dst: &PtxOperand<'input>,
+        src: &PtxOperand<'input>,
+    ) {
+        let dst_addr = self.memory_addr_expr(dst, data.space);
+        let src_addr = self.memory_addr_expr(src, StateSpace::Global);
+        let copy_size = data.cp_size.as_u64();
+        let valid_size = data.src_size.unwrap_or(copy_size).min(copy_size);
+
+        self.line(out, "{");
+        self.indent += 1;
+        for idx in 0..copy_size {
+            if idx < valid_size {
+                self.line(out, &format!("{dst_addr}[{idx}] = {src_addr}[{idx}];"));
+            } else {
+                self.line(out, &format!("{dst_addr}[{idx}] = uchar(0);"));
+            }
+        }
+        self.indent -= 1;
+        self.line(out, "}");
     }
 
     fn emit_binary(
@@ -1163,6 +1704,12 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
         self.line(out, &format!("{dst} = {name}({src});"));
     }
 
+    fn next_temp(&mut self, prefix: &str) -> String {
+        let current = self.temp_counter;
+        self.temp_counter += 1;
+        format!("{prefix}_{current}")
+    }
+
     fn expr(&self, operand: &PtxOperand<'input>) -> String {
         match operand {
             ParsedOperand::Reg(id) => special_or_ident(id).unwrap_or_else(|| sanitize_ident(id)),
@@ -1191,6 +1738,70 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
         }
     }
 
+    fn memory_addr_expr(&self, operand: &PtxOperand<'input>, state_space: StateSpace) -> String {
+        match operand {
+            ParsedOperand::Reg(id) => self.memory_reg_addr_expr(id, state_space),
+            ParsedOperand::RegOffset(id, offset) => {
+                let base = self.memory_reg_addr_expr(id, state_space);
+                if *offset >= 0 {
+                    format!("({base} + {offset})")
+                } else {
+                    format!("({base} - {})", offset.unsigned_abs())
+                }
+            }
+            _ => self.expr(operand),
+        }
+    }
+
+    fn memory_reg_addr_expr(&self, id: &str, state_space: StateSpace) -> String {
+        let name = sanitize_ident(id);
+        let space = self.address_space_for_reg(id, state_space).keyword();
+        if self
+            .var_spaces
+            .get(id)
+            .is_some_and(|decl_space| *decl_space != StateSpace::Reg)
+        {
+            let needs_address = self
+                .var_types
+                .get(id)
+                .is_some_and(|ty| !matches!(ty, Type::Array(_, _, _)));
+            if needs_address {
+                format!("reinterpret_cast<{space} uchar*>(&{name})")
+            } else {
+                format!("reinterpret_cast<{space} uchar*>({name})")
+            }
+        } else {
+            special_or_ident(id).unwrap_or_else(|| sanitize_ident(id))
+        }
+    }
+
+    fn address_space_for_operand(
+        &self,
+        operand: &PtxOperand<'input>,
+        state_space: StateSpace,
+    ) -> MslAddressSpace {
+        match operand {
+            ParsedOperand::Reg(id) | ParsedOperand::RegOffset(id, _) => {
+                self.address_space_for_reg(id, state_space)
+            }
+            _ => state_space_to_msl_or_device(state_space),
+        }
+    }
+
+    fn address_space_for_reg(&self, id: &str, state_space: StateSpace) -> MslAddressSpace {
+        if let Some(space) = self.pointer_addr_spaces.get(id).copied() {
+            return space;
+        }
+        if let Some(space) = self
+            .var_spaces
+            .get(id)
+            .and_then(|decl_space| state_space_to_msl(*decl_space))
+        {
+            return space;
+        }
+        state_space_to_msl_or_device(state_space)
+    }
+
     fn line(&self, out: &mut String, text: &str) {
         for _ in 0..self.indent {
             out.push_str("    ");
@@ -1204,6 +1815,93 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
             "kernel {} contains unsupported PTX {name}",
             self.kernel.func_directive.name()
         ));
+    }
+}
+
+fn state_space_to_msl(state_space: StateSpace) -> Option<MslAddressSpace> {
+    match state_space {
+        StateSpace::Global | StateSpace::Generic => Some(MslAddressSpace::Device),
+        StateSpace::Const => Some(MslAddressSpace::Constant),
+        StateSpace::Shared | StateSpace::SharedCta | StateSpace::SharedCluster => {
+            Some(MslAddressSpace::Threadgroup)
+        }
+        StateSpace::Local => Some(MslAddressSpace::Thread),
+        StateSpace::Reg | StateSpace::Param | StateSpace::ParamFunc | StateSpace::ParamEntry => {
+            None
+        }
+    }
+}
+
+fn state_space_to_msl_or_device(state_space: StateSpace) -> MslAddressSpace {
+    state_space_to_msl(state_space).unwrap_or(MslAddressSpace::Device)
+}
+
+fn is_param_state_space(state_space: StateSpace) -> bool {
+    matches!(
+        state_space,
+        StateSpace::Param | StateSpace::ParamFunc | StateSpace::ParamEntry
+    )
+}
+
+fn msl_var_decl(ty: &Type, name: &str) -> String {
+    match ty {
+        Type::Scalar(scalar) => format!("{} {name}", scalar_msl_type(*scalar)),
+        Type::Vector(count, scalar) => format!("{}{} {name}", scalar_msl_type(*scalar), count),
+        Type::Array(vector, scalar, dims) => {
+            let elem_ty = match vector {
+                Some(count) => format!("{}{}", scalar_msl_type(*scalar), count),
+                None => scalar_msl_type(*scalar).to_string(),
+            };
+            let len = dims.iter().copied().reduce(std::ops::Mul::mul).unwrap_or(0);
+            format!("{elem_ty} {name}[{len}]")
+        }
+        Type::Pointer(scalar, space) => {
+            let msl_space = state_space_to_msl_or_device(*space).keyword();
+            format!("{msl_space} {}* {name}", scalar_msl_type(*scalar))
+        }
+    }
+}
+
+fn atomic_msl_type(ty: &Type) -> Option<&'static str> {
+    match ty {
+        Type::Scalar(scalar) => atomic_msl_scalar_type(*scalar),
+        _ => None,
+    }
+}
+
+fn atomic_msl_scalar_type(scalar: ScalarType) -> Option<&'static str> {
+    match scalar {
+        ScalarType::B32 | ScalarType::U32 => Some("atomic_uint"),
+        ScalarType::S32 => Some("atomic_int"),
+        ScalarType::B64 | ScalarType::U64 => Some("atomic_ulong"),
+        ScalarType::S64 => Some("atomic_long"),
+        _ => None,
+    }
+}
+
+fn atomic_fetch_op(op: AtomicOp) -> Option<&'static str> {
+    match op {
+        AtomicOp::And => Some("atomic_fetch_and_explicit"),
+        AtomicOp::Or => Some("atomic_fetch_or_explicit"),
+        AtomicOp::Xor => Some("atomic_fetch_xor_explicit"),
+        AtomicOp::Exchange => Some("atomic_exchange_explicit"),
+        AtomicOp::Add => Some("atomic_fetch_add_explicit"),
+        AtomicOp::SignedMin | AtomicOp::UnsignedMin => Some("atomic_fetch_min_explicit"),
+        AtomicOp::SignedMax | AtomicOp::UnsignedMax => Some("atomic_fetch_max_explicit"),
+        AtomicOp::IncrementWrap
+        | AtomicOp::DecrementWrap
+        | AtomicOp::FloatAdd
+        | AtomicOp::FloatMin
+        | AtomicOp::FloatMax => None,
+    }
+}
+
+fn atomic_memory_order(semantics: AtomSemantics) -> &'static str {
+    match semantics {
+        AtomSemantics::Relaxed => "memory_order_relaxed",
+        AtomSemantics::Acquire => "memory_order_acquire",
+        AtomSemantics::Release => "memory_order_release",
+        AtomSemantics::AcqRel => "memory_order_acq_rel",
     }
 }
 
@@ -1333,6 +2031,30 @@ fn zero_value(ty: &Type) -> String {
     }
 }
 
+fn set_result_expr(dtype: ScalarType, pred: &str) -> String {
+    let ty = scalar_msl_type(dtype);
+    let true_value = if dtype.kind() == ptx_parser::ScalarKind::Float {
+        format!("{ty}(1.0)")
+    } else {
+        format!("{ty}(-1)")
+    };
+    format!("({pred}) ? {true_value} : {ty}(0)")
+}
+
+fn bool_post_expr(op: SetpBoolPostOp, lhs: &str, rhs: &str, negate_rhs: bool) -> String {
+    let rhs = if negate_rhs {
+        format!("!({rhs})")
+    } else {
+        format!("({rhs})")
+    };
+    let op = match op {
+        SetpBoolPostOp::And => "&&",
+        SetpBoolPostOp::Or => "||",
+        SetpBoolPostOp::Xor => "!=",
+    };
+    format!("(({lhs}) {op} {rhs})")
+}
+
 fn compare_expr(cmp: SetpCompareOp, src1: &str, src2: &str) -> String {
     match cmp {
         SetpCompareOp::Integer(op) => match op {
@@ -1376,10 +2098,93 @@ fn compare_expr(cmp: SetpCompareOp, src1: &str, src2: &str) -> String {
 mod tests {
     use super::*;
 
+    fn metal_compiler_candidates() -> Vec<std::path::PathBuf> {
+        let mut candidates = Vec::new();
+        if let Ok(path) = std::env::var("HETGPU_METALC") {
+            candidates.push(std::path::PathBuf::from(path));
+        }
+        if let Ok(output) = std::process::Command::new("xcrun")
+            .args(["-sdk", "iphoneos", "--find", "metal"])
+            .output()
+        {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    candidates.push(std::path::PathBuf::from(path));
+                }
+            }
+        }
+        if let Ok(entries) = std::fs::read_dir("/private/var/run/com.apple.security.cryptexd/mnt") {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                if !name
+                    .to_string_lossy()
+                    .starts_with("com.apple.MobileAsset.MetalToolchain-")
+                {
+                    continue;
+                }
+                candidates.push(entry.path().join("Metal.xctoolchain/usr/bin/metal"));
+            }
+        }
+        candidates.retain(|path| path.is_file());
+        candidates.sort();
+        candidates.dedup();
+        candidates
+    }
+
+    fn compile_msl_with_metal(test_name: &str, source: &str) -> Result<(), String> {
+        let candidates = metal_compiler_candidates();
+        if candidates.is_empty() {
+            return Err("no Metal compiler found".to_string());
+        }
+
+        let temp_dir = std::env::temp_dir().join(format!(
+            "hetgpu_apple_msl_{}_{}",
+            std::process::id(),
+            test_name
+        ));
+        std::fs::create_dir_all(&temp_dir).map_err(|err| err.to_string())?;
+        let source_path = temp_dir.join("module.metal");
+        let air_path = temp_dir.join("module.air");
+        let module_cache = temp_dir.join("ModuleCache");
+        std::fs::create_dir_all(&module_cache).map_err(|err| err.to_string())?;
+        std::fs::write(&source_path, source).map_err(|err| err.to_string())?;
+
+        let mut failures = Vec::new();
+        for compiler in candidates {
+            let output = std::process::Command::new(&compiler)
+                .arg(format!(
+                    "-fmodules-cache-path={}",
+                    module_cache.to_string_lossy()
+                ))
+                .arg("-std=ios-metal2.4")
+                .arg("-c")
+                .arg(&source_path)
+                .arg("-o")
+                .arg(&air_path)
+                .output()
+                .map_err(|err| format!("failed to run {}: {err}", compiler.display()))?;
+            if output.status.success() {
+                let _ = std::fs::remove_dir_all(&temp_dir);
+                return Ok(());
+            }
+            failures.push(format!(
+                "{} failed:\n{}{}",
+                compiler.display(),
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        Err(failures.join("\n"))
+    }
+
     #[test]
     fn compiles_vector_add_to_msl() {
         let ptx = include_str!("../../../ptx/src/test/vectorAdd_kernel64.ptx");
-        let module = compile_ptx_to_msl_module_text(ptx).expect("vector add PTX should lower to MSL");
+        let module =
+            compile_ptx_to_msl_module_text(ptx).expect("vector add PTX should lower to MSL");
         assert!(module.msl.contains("kernel void VecAdd_kernel"));
         assert!(module.msl.contains("device uchar* VecAdd_kernel_param_0"));
         assert!(module.msl.contains("reinterpret_cast<device float*>"));
@@ -1389,6 +2194,273 @@ mod tests {
         assert_eq!(module.kernels[0].params.len(), 4);
         assert!(module.kernels[0].params[0].is_pointer);
         assert_eq!(module.kernels[0].params[3].size, 4);
+    }
+
+    #[test]
+    fn lowers_shared_memory_to_threadgroup() {
+        let ptx = r#"
+.version 7.0
+.target sm_70
+.address_size 64
+
+.visible .entry shared_roundtrip(
+    .param .u64 out
+)
+{
+    .reg .b64 %rd<2>;
+    .reg .b32 %r<3>;
+    .shared .align 4 .b32 scratch[1];
+
+    ld.param.u64 %rd1, [out];
+    mov.u32 %r1, %tid.x;
+    st.shared.u32 [scratch], %r1;
+    bar.sync 0;
+    ld.shared.u32 %r2, [scratch];
+    st.global.u32 [%rd1], %r2;
+    ret;
+}
+"#;
+        let module = compile_ptx_to_msl_module_text(ptx)
+            .expect("shared memory PTX should lower to threadgroup MSL");
+        assert!(module.msl.contains("threadgroup uint scratch[1];"));
+        assert!(module
+            .msl
+            .contains("reinterpret_cast<threadgroup uchar*>(scratch)"));
+        assert!(module.msl.contains("reinterpret_cast<threadgroup uint*>"));
+        assert!(module
+            .msl
+            .contains("threadgroup_barrier(mem_flags::mem_threadgroup);"));
+    }
+
+    #[test]
+    fn lowers_local_memory_to_thread_storage() {
+        let ptx = r#"
+.version 7.0
+.target sm_70
+.address_size 64
+
+.visible .entry local_roundtrip(
+    .param .u64 out
+)
+{
+    .reg .b64 %rd<2>;
+    .reg .b32 %r<3>;
+    .local .align 4 .b32 slot[1];
+
+    ld.param.u64 %rd1, [out];
+    mov.u32 %r1, 7;
+    st.local.u32 [slot], %r1;
+    ld.local.u32 %r2, [slot];
+    st.global.u32 [%rd1], %r2;
+    ret;
+}
+"#;
+        let module =
+            compile_ptx_to_msl_module_text(ptx).expect("local memory PTX should lower to MSL");
+        assert!(module.msl.contains("uint slot[1];"));
+        assert!(module.msl.contains("reinterpret_cast<thread uchar*>(slot)"));
+        assert!(module.msl.contains("reinterpret_cast<thread uint*>"));
+    }
+
+    #[test]
+    fn lowers_integer_atomics_to_msl_atomics() {
+        let ptx = r#"
+.version 7.0
+.target sm_70
+.address_size 64
+
+.visible .entry atomic_ops(
+    .param .u64 out
+)
+{
+    .reg .b64 %rd<2>;
+    .reg .b32 %r<5>;
+    .shared .align 4 .b32 scratch[1];
+
+    ld.param.u64 %rd1, [out];
+    mov.u32 %r1, 1;
+    mov.u32 %r2, 2;
+    atom.global.add.u32 %r3, [%rd1], %r1;
+    atom.shared.add.u32 %r4, [scratch], %r1;
+    atom.global.cas.b32 %r1, [%rd1], %r1, %r2;
+    ret;
+}
+"#;
+        let module =
+            compile_ptx_to_msl_module_text(ptx).expect("integer atomics should lower to MSL");
+        assert!(module.msl.contains("atomic_fetch_add_explicit"));
+        assert!(module.msl.contains("reinterpret_cast<device atomic_uint*>"));
+        assert!(module
+            .msl
+            .contains("reinterpret_cast<threadgroup atomic_uint*>"));
+        assert!(module.msl.contains("atomic_compare_exchange_weak_explicit"));
+    }
+
+    #[test]
+    fn lowers_scalar_predicate_and_bit_ops_to_msl() {
+        let ptx = r#"
+.version 7.0
+.target sm_70
+.address_size 64
+
+.visible .entry scalar_ops(
+    .param .u64 out
+)
+{
+    .reg .b64 %rd<2>;
+    .reg .b32 %r<18>;
+    .reg .pred %p<4>;
+    .reg .f32 %f<4>;
+
+    ld.param.u64 %rd1, [out];
+    mov.u32 %r1, 3;
+    mov.u32 %r2, 5;
+    setp.lt.u32 %p1, %r1, %r2;
+    setp.gt.and.u32 %p2, %r2, %r1, %p1;
+    set.lt.u32.u32 %r3, %r1, %r2;
+    set.lt.and.u32.u32 %r4, %r1, %r2, %p1;
+    clz.b32 %r5, %r1;
+    popc.b32 %r6, %r2;
+    brev.b32 %r7, %r1;
+    bfe.u32 %r8, %r7, 8, 8;
+    bfi.b32 %r9, %r8, %r6, 4, 8;
+    mul24.lo.u32 %r10, %r1, %r2;
+    mul24.hi.u32 %r11, %r1, %r2;
+    shf.l.wrap.b32 %r12, %r9, %r10, 5;
+    activemask.b32 %r13;
+    nanosleep.u32 1;
+    mov.f32 %f1, 0f3f800000;
+    mov.f32 %f2, 0fc0000000;
+    copysign.f32 %f3, %f1, %f2;
+    tanh.approx.f32 %f1, %f3;
+    st.global.u32 [%rd1], %r12;
+    ret;
+}
+"#;
+        let module =
+            compile_ptx_to_msl_module_text(ptx).expect("scalar PTX ops should lower to MSL");
+        assert!(module.msl.contains("p2 = (((r2) > (r1)) && (p1));"));
+        assert!(module
+            .msl
+            .contains("r3 = ((r1) < (r2)) ? uint(-1) : uint(0);"));
+        assert!(module.msl.contains("r5 = clz(r1);"));
+        assert!(module.msl.contains("r6 = popcount(r2);"));
+        assert!(module.msl.contains("r7 = reverse_bits(r1);"));
+        assert!(module
+            .msl
+            .contains("r8 = zluda_bfe_u32(r7, uint(8), uint(8));"));
+        assert!(module
+            .msl
+            .contains("r9 = zluda_bfi_b32(r8, r6, uint(4), uint(8));"));
+        assert!(module.msl.contains("r10 = uint((ulong((r1) & 0x00ffffffu)"));
+        assert!(module.msl.contains("shf_shifted"));
+        assert!(module.msl.contains("r13 = ~uint(0);"));
+        assert!(module.msl.contains("f3 = copysign(f1, f2);"));
+        assert!(module.msl.contains("f1 = tanh(f3);"));
+    }
+
+    #[test]
+    fn lowers_cp_async_to_threadgroup_copy() {
+        let ptx = r#"
+.version 7.0
+.target sm_80
+.address_size 64
+
+.visible .entry cp_async_kernel(
+    .param .u64 out,
+    .param .u64 input
+)
+{
+    .reg .b64 %rd<3>;
+    .reg .b32 %r<2>;
+    .shared .align 16 .b8 scratch[16];
+
+    ld.param.u64 %rd1, [out];
+    ld.param.u64 %rd2, [input];
+    cp.async.ca.shared.global [scratch], [%rd2], 16;
+    cp.async.commit_group;
+    cp.async.wait_all;
+    ld.shared.u32 %r1, [scratch];
+    st.global.u32 [%rd1], %r1;
+    ret;
+}
+"#;
+        let module = compile_ptx_to_msl_module_text(ptx).expect("cp.async PTX should lower to MSL");
+        assert!(module.msl.contains("threadgroup uchar scratch[16];"));
+        assert!(module
+            .msl
+            .contains("reinterpret_cast<threadgroup uchar*>(scratch)[0]"));
+        assert!(module.msl.contains("rd2[0]"));
+        assert!(module
+            .msl
+            .contains("PTX async/wait hint lowered to no-op on Metal"));
+        assert!(module.kernels[0].params[1].is_pointer);
+    }
+
+    #[test]
+    #[ignore = "requires Apple Metal Toolchain; run with --ignored on macOS/Xcode hosts"]
+    fn metal_compiler_accepts_generated_msl() {
+        let ptx = r#"
+.version 7.0
+.target sm_80
+.address_size 64
+
+.visible .entry scalar_ops(
+    .param .u64 out
+)
+{
+    .reg .b64 %rd<2>;
+    .reg .b32 %r<18>;
+    .reg .pred %p<4>;
+    .reg .f32 %f<4>;
+
+    ld.param.u64 %rd1, [out];
+    mov.u32 %r1, 3;
+    mov.u32 %r2, 5;
+    setp.lt.u32 %p1, %r1, %r2;
+    setp.gt.and.u32 %p2, %r2, %r1, %p1;
+    set.lt.u32.u32 %r3, %r1, %r2;
+    set.lt.and.u32.u32 %r4, %r1, %r2, %p1;
+    clz.b32 %r5, %r1;
+    popc.b32 %r6, %r2;
+    brev.b32 %r7, %r1;
+    bfe.u32 %r8, %r7, 8, 8;
+    bfi.b32 %r9, %r8, %r6, 4, 8;
+    mul24.lo.u32 %r10, %r1, %r2;
+    mul24.hi.u32 %r11, %r1, %r2;
+    shf.l.wrap.b32 %r12, %r9, %r10, 5;
+    activemask.b32 %r13;
+    nanosleep.u32 1;
+    mov.f32 %f1, 0f3f800000;
+    mov.f32 %f2, 0fc0000000;
+    copysign.f32 %f3, %f1, %f2;
+    tanh.approx.f32 %f1, %f3;
+    st.global.u32 [%rd1], %r12;
+    ret;
+}
+
+.visible .entry cp_async_kernel(
+    .param .u64 out,
+    .param .u64 input
+)
+{
+    .reg .b64 %rd<3>;
+    .reg .b32 %r<2>;
+    .shared .align 16 .b8 scratch[16];
+
+    ld.param.u64 %rd1, [out];
+    ld.param.u64 %rd2, [input];
+    cp.async.ca.shared.global [scratch], [%rd2], 16;
+    cp.async.commit_group;
+    cp.async.wait_all;
+    ld.shared.u32 %r1, [scratch];
+    st.global.u32 [%rd1], %r1;
+    ret;
+}
+"#;
+        let module = compile_ptx_to_msl_module_text(ptx).expect("PTX fixture should lower to MSL");
+        compile_msl_with_metal("generated", &module.msl)
+            .expect("generated MSL should compile with Apple Metal");
     }
 
     #[test]

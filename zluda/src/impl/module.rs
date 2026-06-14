@@ -19,6 +19,18 @@ use nvidia_runtime_sys;
     not(feature = "tenstorrent")
 ))]
 use pacc_runtime_sys;
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+use std::{
+    collections::HashMap,
+    ffi::{c_void, CString},
+    os::raw::c_char,
+};
 use std::{ffi::CStr, ptr, sync::Arc};
 #[cfg(all(feature = "tenstorrent", not(feature = "amd"), not(feature = "intel")))]
 use tt_runtime_sys;
@@ -61,6 +73,19 @@ pub(crate) struct Module {
     kernels: Vec<(String, u64)>,
 }
 
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) struct Module {
+    metal_module: *mut c_void,
+    kernels: HashMap<String, comgr::AppleKernelMetadata>,
+    msl_source: Arc<String>,
+}
+
 #[cfg(any(feature = "amd", feature = "intel", feature = "tenstorrent"))]
 unsafe impl Send for Module {}
 #[cfg(any(feature = "amd", feature = "intel", feature = "tenstorrent"))]
@@ -75,6 +100,22 @@ unsafe impl Sync for Module {}
 unsafe impl Send for Module {}
 #[cfg(all(
     feature = "webgpu",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Sync for Module {}
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Send for Module {}
+#[cfg(all(
+    feature = "apple",
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent"),
@@ -93,6 +134,27 @@ impl ZludaObject for Module {
     }
 }
 
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl ZludaObject for Module {
+    const COOKIE: usize = 0x40487d4a;
+
+    type CudaHandle = CUmodule;
+
+    fn drop_checked(&mut self) -> CUresult {
+        unsafe {
+            apple_runtime_sys::hetgpu_apple_metal_release_module(self.metal_module);
+        }
+        self.metal_module = ptr::null_mut();
+        Ok(())
+    }
+}
+
 // CUDA: cuModuleGetLoadingMode
 // Report a safe default loading mode so callers don't crash.
 #[cfg(any(
@@ -102,7 +164,8 @@ impl ZludaObject for Module {
     feature = "tmatmul",
     feature = "nvidia",
     feature = "pacc",
-    feature = "webgpu"
+    feature = "webgpu",
+    feature = "apple"
 ))]
 pub(crate) fn get_loading_mode(mode: *mut cuda_types::cuda::CUmoduleLoadingMode) -> CUresult {
     if mode.is_null() {
@@ -176,6 +239,83 @@ impl ZludaObject for Module {
 
         Ok(())
     }
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+fn apple_take_log(log: *mut c_char) -> Option<String> {
+    if log.is_null() {
+        return None;
+    }
+    let message = unsafe { CStr::from_ptr(log) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe {
+        apple_runtime_sys::hetgpu_apple_metal_free_string(log);
+    }
+    Some(message)
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn load_data(module: &mut CUmodule, image: *const std::ffi::c_void) -> CUresult {
+    if image.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+
+    let text = unsafe { CStr::from_ptr(image.cast()) }
+        .to_str()
+        .map_err(|_| CUerror::INVALID_VALUE)?;
+    crate::r#impl::checkpoint::register_module_ptx(image as u64, text);
+
+    let compiled = comgr::compile_ptx_to_msl_module(text.as_bytes()).map_err(|err| {
+        crate::r#impl::hetgpu_debug!("[Apple Backend] PTX-to-MSL failed: {}", err.diagnostics);
+        CUerror::NO_BINARY_FOR_GPU
+    })?;
+
+    let source = CString::new(compiled.msl.as_str()).map_err(|_| CUerror::INVALID_SOURCE)?;
+    let label = CString::new("zluda-apple-ptx").unwrap();
+    let mut metal_module = ptr::null_mut();
+    let mut log = ptr::null_mut();
+    let status = unsafe {
+        apple_runtime_sys::hetgpu_apple_metal_compile_msl(
+            source.as_ptr(),
+            label.as_ptr(),
+            &mut metal_module,
+            &mut log,
+        )
+    };
+    if status != 0 {
+        if let Some(message) = apple_take_log(log) {
+            crate::r#impl::hetgpu_debug!("[Apple Backend] Metal compile failed: {}", message);
+        }
+        return Err(CUerror::INVALID_IMAGE);
+    }
+
+    let mut kernels = HashMap::with_capacity(compiled.kernels.len() * 2);
+    for kernel in compiled.kernels {
+        kernels.insert(kernel.name.clone(), kernel.clone());
+        kernels.insert(kernel.msl_name.clone(), kernel);
+    }
+
+    *module = Module {
+        metal_module,
+        kernels,
+        msl_source: Arc::new(compiled.msl),
+    }
+    .wrap();
+    crate::r#impl::checkpoint::register_module_ptx(module.0 as u64, text);
+    Ok(())
 }
 
 #[cfg(feature = "amd")]
@@ -791,9 +931,64 @@ fn get_current_context_and_device() -> Result<(ze_context_handle_t, ze_device_ha
     Ok((context.context, context.device))
 }
 
-#[cfg(any(feature = "amd", feature = "intel"))]
+#[cfg(any(feature = "amd", feature = "intel", feature = "apple"))]
 pub(crate) fn unload(hmod: CUmodule) -> CUresult {
     super::drop_checked::<Module>(hmod)
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_function(
+    hfunc: &mut CUfunction,
+    hmod: &Module,
+    name: *const ::core::ffi::c_char,
+) -> CUresult {
+    if name.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let name_str = unsafe { CStr::from_ptr(name) }
+        .to_str()
+        .map_err(|_| CUerror::INVALID_VALUE)?;
+    let metadata = hmod
+        .kernels
+        .get(name_str)
+        .cloned()
+        .ok_or(CUerror::NOT_FOUND)?;
+    let metal_name =
+        CString::new(metadata.msl_name.as_str()).map_err(|_| CUerror::INVALID_VALUE)?;
+    let mut metal_function = ptr::null_mut();
+    let mut log = ptr::null_mut();
+    let status = unsafe {
+        apple_runtime_sys::hetgpu_apple_metal_get_function(
+            hmod.metal_module,
+            metal_name.as_ptr(),
+            &mut metal_function,
+            &mut log,
+        )
+    };
+    if status != 0 {
+        if let Some(message) = apple_take_log(log) {
+            crate::r#impl::hetgpu_debug!(
+                "[Apple Backend] Metal function lookup failed for {}: {}",
+                metadata.msl_name,
+                message
+            );
+        }
+        return Err(CUerror::NOT_FOUND);
+    }
+    *hfunc = AppleKernel {
+        metal_function,
+        name: metadata.name.clone(),
+        metadata,
+        module_handle: hmod.metal_module as u64,
+    }
+    .wrap();
+    Ok(())
 }
 
 #[cfg(feature = "amd")]
@@ -892,6 +1087,59 @@ pub(crate) fn get_function(
         }
         ze_result_t::ZE_RESULT_ERROR_INVALID_KERNEL_NAME => CUresult::ERROR_INVALID_IMAGE,
         _ => CUresult::ERROR_INVALID_VALUE,
+    }
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) struct AppleKernel {
+    pub metal_function: *mut c_void,
+    pub name: String,
+    pub metadata: comgr::AppleKernelMetadata,
+    pub module_handle: u64,
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Send for AppleKernel {}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+unsafe impl Sync for AppleKernel {}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+impl ZludaObject for AppleKernel {
+    const COOKIE: usize = 0xb9b2d51c;
+
+    type CudaHandle = CUfunction;
+
+    fn drop_checked(&mut self) -> CUresult {
+        unsafe {
+            apple_runtime_sys::hetgpu_apple_metal_release_function(self.metal_function);
+        }
+        self.metal_function = ptr::null_mut();
+        Ok(())
     }
 }
 
@@ -1189,7 +1437,10 @@ pub(crate) fn load(module: &mut CUmodule, fname: *const ::core::ffi::c_char) -> 
     not(feature = "intel"),
     not(feature = "tenstorrent")
 ))]
-pub(crate) fn load_fat_binary(module: &mut CUmodule, fat_cubin: *const ::core::ffi::c_void) -> CUresult {
+pub(crate) fn load_fat_binary(
+    module: &mut CUmodule,
+    fat_cubin: *const ::core::ffi::c_void,
+) -> CUresult {
     load_data(module, fat_cubin)
 }
 

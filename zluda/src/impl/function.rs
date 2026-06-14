@@ -1,12 +1,10 @@
-#[cfg(any(feature = "tenstorrent", feature = "nvidia", feature = "tmatmul"))]
-use cuda_types::cuda::*;
-#[cfg(all(
+#[cfg(any(
+    feature = "tenstorrent",
+    feature = "nvidia",
     feature = "tmatmul",
-    not(feature = "amd"),
-    not(feature = "intel"),
-    not(feature = "tenstorrent")
+    feature = "apple"
 ))]
-use std::collections::HashMap;
+use cuda_types::cuda::*;
 #[cfg(feature = "amd")]
 use hip_runtime_sys::*;
 #[cfg(all(
@@ -17,6 +15,13 @@ use hip_runtime_sys::*;
     not(feature = "tmatmul")
 ))]
 use nvidia_runtime_sys;
+#[cfg(all(
+    any(feature = "tmatmul", feature = "apple"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+use std::collections::HashMap;
 #[cfg(feature = "intel")]
 use ze_runtime_sys::*;
 
@@ -29,19 +34,19 @@ use ze_runtime_sys::*;
 use pacc_runtime_sys;
 use std::ptr;
 #[cfg(all(
-    feature = "tmatmul",
-    not(feature = "amd"),
-    not(feature = "intel"),
-    not(feature = "tenstorrent")
-))]
-use std::sync::Mutex;
-#[cfg(all(
     feature = "pacc",
     not(feature = "amd"),
     not(feature = "intel"),
     not(feature = "tenstorrent")
 ))]
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+#[cfg(all(
+    any(feature = "tmatmul", feature = "apple"),
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent")
+))]
+use std::sync::Mutex;
 #[cfg(all(
     feature = "pacc",
     not(feature = "amd"),
@@ -818,7 +823,7 @@ pub(crate) unsafe fn launch_kernel(
                 let value = *value_ptr;
 
                 if key_value == 1 { // CU_LAUNCH_PARAM_BUFFER_SHARED_MEMORY
-                    // shared memory is already set via the shared_mem_bytes parameter
+                     // shared memory is already set via the shared_mem_bytes parameter
                 }
 
                 i += 2;
@@ -956,9 +961,12 @@ unsafe fn is_memory_readable(ptr: *const u8, len: usize) -> bool {
 fn is_integer_type_kernel(kernel_name: &str) -> bool {
     // Check demangled-style names first
     let name_lower = kernel_name.to_lowercase();
-    if name_lower.contains("long") || name_lower.contains("int64")
-       || name_lower.contains("uint8") || name_lower.contains("int32")
-       || name_lower.contains("int16") {
+    if name_lower.contains("long")
+        || name_lower.contains("int64")
+        || name_lower.contains("uint8")
+        || name_lower.contains("int32")
+        || name_lower.contains("int16")
+    {
         return true;
     }
 
@@ -1025,11 +1033,13 @@ fn normalize_anon_ns(name: &str) -> String {
     let pattern = b"_GLOBAL__N__";
     let mut i = 0;
     while i < bytes.len() {
-        if i + pattern.len() + 9 <= bytes.len() && &bytes[i..i+pattern.len()] == pattern {
+        if i + pattern.len() + 9 <= bytes.len() && &bytes[i..i + pattern.len()] == pattern {
             // Check if next 8 chars are hex followed by _
             let hash_start = i + pattern.len();
-            let all_hex = bytes[hash_start..hash_start+8].iter().all(|b| b.is_ascii_hexdigit());
-            if all_hex && bytes[hash_start+8] == b'_' {
+            let all_hex = bytes[hash_start..hash_start + 8]
+                .iter()
+                .all(|b| b.is_ascii_hexdigit());
+            if all_hex && bytes[hash_start + 8] == b'_' {
                 result.push_str("_GLOBAL__N__????????_");
                 i = hash_start + 9;
                 continue;
@@ -1059,10 +1069,15 @@ fn extract_function_from_ptx(ptx_source: &str, kernel_name: &str) -> Option<Stri
 
         if !found_function && !in_target_function {
             // Collect header lines (directives before any function)
-            if trimmed.starts_with(".version") || trimmed.starts_with(".target") ||
-               trimmed.starts_with(".address_size") || trimmed.starts_with(".extern") ||
-               trimmed.starts_with(".global") || trimmed.starts_with(".const") ||
-               trimmed.starts_with("//") || trimmed.is_empty() {
+            if trimmed.starts_with(".version")
+                || trimmed.starts_with(".target")
+                || trimmed.starts_with(".address_size")
+                || trimmed.starts_with(".extern")
+                || trimmed.starts_with(".global")
+                || trimmed.starts_with(".const")
+                || trimmed.starts_with("//")
+                || trimmed.is_empty()
+            {
                 header_lines.push(line);
                 continue;
             }
@@ -1118,7 +1133,11 @@ fn extract_function_from_ptx(ptx_source: &str, kernel_name: &str) -> Option<Stri
     }
 
     if !found_function || function_lines.is_empty() {
-        eprintln!("[PTX Extract] Function '{}' not found in PTX ({} bytes)", kernel_name, ptx_source.len());
+        eprintln!(
+            "[PTX Extract] Function '{}' not found in PTX ({} bytes)",
+            kernel_name,
+            ptx_source.len()
+        );
         return None;
     }
 
@@ -1169,17 +1188,23 @@ fn build_ptx_index() -> HashMap<String, String> {
         for part in lib_path.split(':') {
             if let Some(parent) = std::path::Path::new(part.trim()).parent() {
                 // Walk up to find the repo root (where the .ptx files are)
-                for ancestor in [parent, parent.parent().unwrap_or(parent),
-                                 parent.parent().and_then(|p| p.parent()).unwrap_or(parent)] {
+                for ancestor in [
+                    parent,
+                    parent.parent().unwrap_or(parent),
+                    parent.parent().and_then(|p| p.parent()).unwrap_or(parent),
+                ] {
                     let candidate = ancestor.to_string_lossy().to_string();
                     if !ptx_dirs.contains(&candidate) && std::path::Path::new(&candidate).is_dir() {
                         // Check if this directory actually has .ptx files
                         if let Ok(entries) = std::fs::read_dir(&candidate) {
-                            let has_ptx = entries
-                                .filter_map(|e| e.ok())
-                                .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("ptx"));
+                            let has_ptx = entries.filter_map(|e| e.ok()).any(|e| {
+                                e.path().extension().and_then(|x| x.to_str()) == Some("ptx")
+                            });
                             if has_ptx {
-                                eprintln!("[PTX Index] Auto-discovered PTX directory: {}", candidate);
+                                eprintln!(
+                                    "[PTX Index] Auto-discovered PTX directory: {}",
+                                    candidate
+                                );
                                 ptx_dirs.push(candidate);
                             }
                         }
@@ -1248,7 +1273,9 @@ fn build_ptx_index() -> HashMap<String, String> {
                     // Extract kernel name: everything after ".entry " until '(' or whitespace
                     let name_start = entry_pos + 7; // ".entry ".len()
                     let name = &trimmed[name_start..];
-                    let name_end = name.find(|c: char| c == '(' || c.is_whitespace()).unwrap_or(name.len());
+                    let name_end = name
+                        .find(|c: char| c == '(' || c.is_whitespace())
+                        .unwrap_or(name.len());
                     let kernel_name = &name[..name_end];
                     if !kernel_name.is_empty() {
                         let normalized = normalize_anon_ns(kernel_name);
@@ -1258,7 +1285,11 @@ fn build_ptx_index() -> HashMap<String, String> {
             }
         }
     }
-    eprintln!("[PTX Index] Built index with {} kernel entries from {} directories", index.len(), ptx_dirs.len());
+    eprintln!(
+        "[PTX Index] Built index with {} kernel entries from {} directories",
+        index.len(),
+        ptx_dirs.len()
+    );
     index
 }
 
@@ -1360,8 +1391,12 @@ fn search_all_ptx_files_for_kernel(kernel_name: &str) -> Option<String> {
 unsafe fn execute_kernel_via_emulator(
     kernel_name: &str,
     kernel_params: *mut *mut ::core::ffi::c_void,
-    grid_dim_x: u32, grid_dim_y: u32, _grid_dim_z: u32,
-    block_dim_x: u32, _block_dim_y: u32, _block_dim_z: u32,
+    grid_dim_x: u32,
+    grid_dim_y: u32,
+    _grid_dim_z: u32,
+    block_dim_x: u32,
+    _block_dim_y: u32,
+    _block_dim_z: u32,
 ) -> bool {
     if kernel_params.is_null() {
         return false;
@@ -1380,7 +1415,10 @@ unsafe fn execute_kernel_via_emulator(
     let mut numel: usize = 0;
     let mut out_numel: usize = 0; // output may differ from input (reductions)
 
-    if name_lower.contains("vectorized_elementwise_kernel") || name_lower.contains("unrolled_elementwise_kernel") || name_lower.contains("elementwise_kernel") {
+    if name_lower.contains("vectorized_elementwise_kernel")
+        || name_lower.contains("unrolled_elementwise_kernel")
+        || name_lower.contains("elementwise_kernel")
+    {
         // Skip integer-type kernels (long, int, bool) - we only handle float types
         // C++ mangled names use: l=long, i=int, b=bool, j=unsigned int, m=unsigned long
         // Pattern: FunctorIlll = Functor<long,long,long>, FunctorIlE = Functor<long>
@@ -1393,7 +1431,8 @@ unsafe fn execute_kernel_via_emulator(
         // Non-vectorized elementwise_kernel uses a different parameter layout:
         // (int N, func_t f) where data pointers are captured inside the functor.
         // The fallback path handles this with proper dtype-aware execution.
-        let is_vectorized_ew = name_lower.contains("vectorized_elementwise_kernel") || name_lower.contains("unrolled_elementwise_kernel");
+        let is_vectorized_ew = name_lower.contains("vectorized_elementwise_kernel")
+            || name_lower.contains("unrolled_elementwise_kernel");
         if !is_vectorized_ew {
             return false;
         }
@@ -1401,22 +1440,38 @@ unsafe fn execute_kernel_via_emulator(
         // vectorized_elementwise_kernel(int N, Functor f, std::array<char*, K> data)
         // kernel_params[0] = &N, [1] = &functor, [2] = &data_array
         let param0 = *kernel_params.add(0);
-        if param0.is_null() { return false; }
-        if !is_memory_readable(param0 as *const u8, 4) { return false; }
+        if param0.is_null() {
+            return false;
+        }
+        if !is_memory_readable(param0 as *const u8, 4) {
+            return false;
+        }
         let n = (param0 as *const u32).read_unaligned() as usize;
-        if n == 0 || n > 64 * 1024 * 1024 { return false; }
+        if n == 0 || n > 64 * 1024 * 1024 {
+            return false;
+        }
         numel = n;
 
         // Read pointers from data array (param 2)
         let param2 = *kernel_params.add(2);
-        if param2.is_null() { return false; }
+        if param2.is_null() {
+            return false;
+        }
 
         // Data array contains 2-3 pointers (output, input1, optional input2)
-        let num_ptrs = if name_lower.contains("binaryfunctor") || name_lower.contains("binary_internal") { 3 } else { 2 };
+        let num_ptrs =
+            if name_lower.contains("binaryfunctor") || name_lower.contains("binary_internal") {
+                3
+            } else {
+                2
+            };
 
         // Safety check: ensure we can read num_ptrs * 8 bytes from param2
         if !is_memory_readable(param2 as *const u8, num_ptrs * 8) {
-            eprintln!("[TMatmul] param2 not readable for {} pointers in: {}", num_ptrs, kernel_name);
+            eprintln!(
+                "[TMatmul] param2 not readable for {} pointers in: {}",
+                num_ptrs, kernel_name
+            );
             return false;
         }
 
@@ -1444,16 +1499,31 @@ unsafe fn execute_kernel_via_emulator(
                 return false;
             }
 
-            tensor_params.push(TensorParam { ptr: in1_ptr as *mut u8, size: in1_size });
-            tensor_params.push(TensorParam { ptr: in2_ptr as *mut u8, size: in2_size });
-            tensor_params.push(TensorParam { ptr: out_ptr as *mut u8, size: out_size });
+            tensor_params.push(TensorParam {
+                ptr: in1_ptr as *mut u8,
+                size: in1_size,
+            });
+            tensor_params.push(TensorParam {
+                ptr: in2_ptr as *mut u8,
+                size: in2_size,
+            });
+            tensor_params.push(TensorParam {
+                ptr: out_ptr as *mut u8,
+                size: out_size,
+            });
 
             // Determine operation from kernel name
-            let op = if name_lower.contains("addfunctor") || name_lower.contains("add_functor") { "add" }
-                else if name_lower.contains("mulfunctor") || name_lower.contains("mul_functor") { "mul" }
-                else if name_lower.contains("subfunctor") || name_lower.contains("sub_functor") { "sub" }
-                else if name_lower.contains("divfunctor") || name_lower.contains("div_functor") { "div" }
-                else { "mul" }; // default
+            let op = if name_lower.contains("addfunctor") || name_lower.contains("add_functor") {
+                "add"
+            } else if name_lower.contains("mulfunctor") || name_lower.contains("mul_functor") {
+                "mul"
+            } else if name_lower.contains("subfunctor") || name_lower.contains("sub_functor") {
+                "sub"
+            } else if name_lower.contains("divfunctor") || name_lower.contains("div_functor") {
+                "div"
+            } else {
+                "mul"
+            }; // default
 
             assembly = format!(
                 "    ldv    v0,PARAM_0\n    ldv    v1,PARAM_1\n    {} v2,v0,v1\n    sv     v2,PARAM_2\n",
@@ -1473,8 +1543,14 @@ unsafe fn execute_kernel_via_emulator(
                 return false;
             }
 
-            tensor_params.push(TensorParam { ptr: in_ptr as *mut u8, size: in_size });
-            tensor_params.push(TensorParam { ptr: out_ptr as *mut u8, size: out_size });
+            tensor_params.push(TensorParam {
+                ptr: in_ptr as *mut u8,
+                size: in_size,
+            });
+            tensor_params.push(TensorParam {
+                ptr: out_ptr as *mut u8,
+                size: out_size,
+            });
 
             // Handle comparison kernels - parse comparison value from functor struct
             // Functor layout for CompareEqFunctor<T>: { T value; }
@@ -1487,9 +1563,11 @@ unsafe fn execute_kernel_via_emulator(
                 }
 
                 // Determine element size from kernel name (long=8, int=4, etc.)
-                let elem_size = if name_lower.contains("compareeqfunctorile") ||
-                                   name_lower.contains("compareeqfunctor<long>") ||
-                                   name_lower.contains("ileeee") || name_lower.contains("ill") {
+                let elem_size = if name_lower.contains("compareeqfunctorile")
+                    || name_lower.contains("compareeqfunctor<long>")
+                    || name_lower.contains("ileeee")
+                    || name_lower.contains("ill")
+                {
                     8usize // int64/long
                 } else if name_lower.contains("iieee") || name_lower.contains("iii") {
                     4usize // int32
@@ -1521,7 +1599,10 @@ unsafe fn execute_kernel_via_emulator(
                 let is_gt = name_lower.contains("comparegt");
                 let is_ge = name_lower.contains("comparege");
 
-                eprintln!("[TMatmul] Compare kernel: cmp_val={}, elem_size={}, numel={}", cmp_val_i64, elem_size, numel);
+                eprintln!(
+                    "[TMatmul] Compare kernel: cmp_val={}, elem_size={}, numel={}",
+                    cmp_val_i64, elem_size, numel
+                );
 
                 // Perform comparison element-wise
                 let actual_numel = numel.min(in_size / elem_size).min(out_size / elem_size);
@@ -1530,13 +1611,21 @@ unsafe fn execute_kernel_via_emulator(
                     let out = out_ptr as *mut i64;
                     for i in 0..actual_numel {
                         let val = inp.add(i).read_unaligned();
-                        let result = if is_eq { val == cmp_val_i64 }
-                            else if is_ne { val != cmp_val_i64 }
-                            else if is_lt { val < cmp_val_i64 }
-                            else if is_le { val <= cmp_val_i64 }
-                            else if is_gt { val > cmp_val_i64 }
-                            else if is_ge { val >= cmp_val_i64 }
-                            else { val == cmp_val_i64 }; // default to eq
+                        let result = if is_eq {
+                            val == cmp_val_i64
+                        } else if is_ne {
+                            val != cmp_val_i64
+                        } else if is_lt {
+                            val < cmp_val_i64
+                        } else if is_le {
+                            val <= cmp_val_i64
+                        } else if is_gt {
+                            val > cmp_val_i64
+                        } else if is_ge {
+                            val >= cmp_val_i64
+                        } else {
+                            val == cmp_val_i64
+                        }; // default to eq
                         out.add(i).write_unaligned(if result { 1 } else { 0 });
                     }
                 } else {
@@ -1545,58 +1634,99 @@ unsafe fn execute_kernel_via_emulator(
                     let cmp_val_i32 = cmp_val_i64 as i32;
                     for i in 0..actual_numel {
                         let val = inp.add(i).read_unaligned();
-                        let result = if is_eq { val == cmp_val_i32 }
-                            else if is_ne { val != cmp_val_i32 }
-                            else if is_lt { val < cmp_val_i32 }
-                            else if is_le { val <= cmp_val_i32 }
-                            else if is_gt { val > cmp_val_i32 }
-                            else if is_ge { val >= cmp_val_i32 }
-                            else { val == cmp_val_i32 };
+                        let result = if is_eq {
+                            val == cmp_val_i32
+                        } else if is_ne {
+                            val != cmp_val_i32
+                        } else if is_lt {
+                            val < cmp_val_i32
+                        } else if is_le {
+                            val <= cmp_val_i32
+                        } else if is_gt {
+                            val > cmp_val_i32
+                        } else if is_ge {
+                            val >= cmp_val_i32
+                        } else {
+                            val == cmp_val_i32
+                        };
                         out.add(i).write_unaligned(if result { 1 } else { 0 });
                     }
                 }
 
-                eprintln!("[TMatmul] Compare kernel '{}' done ({} elements)", kernel_name, actual_numel);
+                eprintln!(
+                    "[TMatmul] Compare kernel '{}' done ({} elements)",
+                    kernel_name, actual_numel
+                );
                 return true;
             }
 
             // Skip kernels we can't handle correctly (type conversions, casts, etc.)
-            if name_lower.contains("cast") || name_lower.contains("fill") ||
-               name_lower.contains("scatter") || name_lower.contains("gather") ||
-               name_lower.contains("index") || name_lower.contains("where") {
-                eprintln!("[TMatmul] Skipping unsupported kernel type: {}", kernel_name);
+            if name_lower.contains("cast")
+                || name_lower.contains("fill")
+                || name_lower.contains("scatter")
+                || name_lower.contains("gather")
+                || name_lower.contains("index")
+                || name_lower.contains("where")
+            {
+                eprintln!(
+                    "[TMatmul] Skipping unsupported kernel type: {}",
+                    kernel_name
+                );
                 return false;
             }
 
             // Determine operation from kernel name
-            let op = if name_lower.contains("copy") || name_lower.contains("contiguous") { "copy" }
-                else if name_lower.contains("sigmoid") { "sig" }
-                else if name_lower.contains("silu") || name_lower.contains("swish") { "silu" }
-                else if name_lower.contains("relu") { "relu" }
-                else if name_lower.contains("gelu") { "gelu" }
-                else if name_lower.contains("tanh") { "tanh" }
-                else if name_lower.contains("neg") { "neg" }
-                else if name_lower.contains("rsqrt") { "rsqrt" }
-                else if name_lower.contains("reciprocal") { "reciprocal" }
-                else if name_lower.contains("exp") && !name_lower.contains("export") { "exp" }
-                else if name_lower.contains("abs") { "abs" }
-                else if name_lower.contains("sqrt") && !name_lower.contains("rsqrt") { "sqrt" }
-                else if name_lower.contains("log") && !name_lower.contains("log1p") { "log" }
-                else if name_lower.contains("log1p") { "log1p" }
-                else if name_lower.contains("sin") && !name_lower.contains("sinh") { "sin" }
-                else if name_lower.contains("cos") && !name_lower.contains("cosh") { "cos" }
-                else if name_lower.contains("floor") { "floor" }
-                else if name_lower.contains("ceil") { "ceil" }
-                else if name_lower.contains("round") { "round" }
-                else if name_lower.contains("sign") { "sign" }
-                else if name_lower.contains("square") { "square" }
-                else if name_lower.contains("pow") { "pow" }
-                else if name_lower.contains("clamp") { "clamp" }
-                else {
-                    // Unknown operation - don't guess, return false to use fallback
-                    eprintln!("[TMatmul] Unknown unary op in: {}", kernel_name);
-                    return false;
-                };
+            let op = if name_lower.contains("copy") || name_lower.contains("contiguous") {
+                "copy"
+            } else if name_lower.contains("sigmoid") {
+                "sig"
+            } else if name_lower.contains("silu") || name_lower.contains("swish") {
+                "silu"
+            } else if name_lower.contains("relu") {
+                "relu"
+            } else if name_lower.contains("gelu") {
+                "gelu"
+            } else if name_lower.contains("tanh") {
+                "tanh"
+            } else if name_lower.contains("neg") {
+                "neg"
+            } else if name_lower.contains("rsqrt") {
+                "rsqrt"
+            } else if name_lower.contains("reciprocal") {
+                "reciprocal"
+            } else if name_lower.contains("exp") && !name_lower.contains("export") {
+                "exp"
+            } else if name_lower.contains("abs") {
+                "abs"
+            } else if name_lower.contains("sqrt") && !name_lower.contains("rsqrt") {
+                "sqrt"
+            } else if name_lower.contains("log") && !name_lower.contains("log1p") {
+                "log"
+            } else if name_lower.contains("log1p") {
+                "log1p"
+            } else if name_lower.contains("sin") && !name_lower.contains("sinh") {
+                "sin"
+            } else if name_lower.contains("cos") && !name_lower.contains("cosh") {
+                "cos"
+            } else if name_lower.contains("floor") {
+                "floor"
+            } else if name_lower.contains("ceil") {
+                "ceil"
+            } else if name_lower.contains("round") {
+                "round"
+            } else if name_lower.contains("sign") {
+                "sign"
+            } else if name_lower.contains("square") {
+                "square"
+            } else if name_lower.contains("pow") {
+                "pow"
+            } else if name_lower.contains("clamp") {
+                "clamp"
+            } else {
+                // Unknown operation - don't guess, return false to use fallback
+                eprintln!("[TMatmul] Unknown unary op in: {}", kernel_name);
+                return false;
+            };
 
             // DIRECT RUST EMULATION for non-native TMatmul ops
             // These ops are NOT in the original TMatmul ISA, so we execute them directly
@@ -1611,10 +1741,19 @@ unsafe fn execute_kernel_via_emulator(
                 "sig" | "silu" | "copy" => {
                     assembly = match op {
                         "copy" => "    ldv    v0,PARAM_0\n    sv     v0,PARAM_1\n".to_string(),
-                        _ => format!("    ldv    v0,PARAM_0\n    {}    v1,v0\n    sv     v1,PARAM_1\n", op),
+                        _ => format!(
+                            "    ldv    v0,PARAM_0\n    {}    v1,v0\n    sv     v1,PARAM_1\n",
+                            op
+                        ),
                     };
-                    tensor_params.push(TensorParam { ptr: in_ptr as *mut u8, size: in_size });
-                    tensor_params.push(TensorParam { ptr: out_ptr as *mut u8, size: out_size });
+                    tensor_params.push(TensorParam {
+                        ptr: in_ptr as *mut u8,
+                        size: in_size,
+                    });
+                    tensor_params.push(TensorParam {
+                        ptr: out_ptr as *mut u8,
+                        size: out_size,
+                    });
                     out_numel = numel;
                 }
                 // Non-native ops - direct Rust emulation (no assembly)
@@ -1655,7 +1794,8 @@ unsafe fn execute_kernel_via_emulator(
                 "reciprocal" => {
                     for i in 0..actual_numel {
                         let x = src.add(i).read_unaligned();
-                        dst.add(i).write_unaligned(if x != 0.0 { 1.0 / x } else { f32::INFINITY });
+                        dst.add(i)
+                            .write_unaligned(if x != 0.0 { 1.0 / x } else { f32::INFINITY });
                     }
                     eprintln!("[TMatmul Emulate] reciprocal {} elements", actual_numel);
                     return true;
@@ -1663,7 +1803,11 @@ unsafe fn execute_kernel_via_emulator(
                 "rsqrt" => {
                     for i in 0..actual_numel {
                         let x = src.add(i).read_unaligned();
-                        dst.add(i).write_unaligned(if x > 0.0 { 1.0 / x.sqrt() } else { f32::INFINITY });
+                        dst.add(i).write_unaligned(if x > 0.0 {
+                            1.0 / x.sqrt()
+                        } else {
+                            f32::INFINITY
+                        });
                     }
                     eprintln!("[TMatmul Emulate] rsqrt {} elements", actual_numel);
                     return true;
@@ -1751,7 +1895,13 @@ unsafe fn execute_kernel_via_emulator(
                 "sign" => {
                     for i in 0..actual_numel {
                         let x = src.add(i).read_unaligned();
-                        let s = if x > 0.0 { 1.0 } else if x < 0.0 { -1.0 } else { 0.0 };
+                        let s = if x > 0.0 {
+                            1.0
+                        } else if x < 0.0 {
+                            -1.0
+                        } else {
+                            0.0
+                        };
                         dst.add(i).write_unaligned(s);
                     }
                     eprintln!("[TMatmul Emulate] sign {} elements", actual_numel);
@@ -1771,7 +1921,9 @@ unsafe fn execute_kernel_via_emulator(
                     let scalar_param = *kernel_params.add(1);
                     let exp = if !scalar_param.is_null() {
                         (scalar_param as *const f32).read_unaligned()
-                    } else { 2.0 };
+                    } else {
+                        2.0
+                    };
                     for i in 0..actual_numel {
                         let x = src.add(i).read_unaligned();
                         dst.add(i).write_unaligned(x.powf(exp));
@@ -1793,13 +1945,26 @@ unsafe fn execute_kernel_via_emulator(
                     let scalar_param = *kernel_params.add(1);
                     let scalar = if !scalar_param.is_null() {
                         (scalar_param as *const f32).read_unaligned()
-                    } else { if op == "add_inplace" { 0.0 } else { 1.0 } };
+                    } else {
+                        if op == "add_inplace" {
+                            0.0
+                        } else {
+                            1.0
+                        }
+                    };
                     for i in 0..actual_numel {
                         let x = src.add(i).read_unaligned();
-                        let result = if op == "add_inplace" { x + scalar } else { x * scalar };
+                        let result = if op == "add_inplace" {
+                            x + scalar
+                        } else {
+                            x * scalar
+                        };
                         dst.add(i).write_unaligned(result);
                     }
-                    eprintln!("[TMatmul Emulate] {} scalar={} {} elements", op, scalar, actual_numel);
+                    eprintln!(
+                        "[TMatmul Emulate] {} scalar={} {} elements",
+                        op, scalar, actual_numel
+                    );
                     return true;
                 }
                 _ => {
@@ -1811,7 +1976,9 @@ unsafe fn execute_kernel_via_emulator(
     } else if name_lower.contains("reduce_kernel") {
         // reduce_kernel takes a single ReduceOp struct with embedded pointers
         let op_param = *kernel_params.add(0);
-        if op_param.is_null() { return false; }
+        if op_param.is_null() {
+            return false;
+        }
 
         // ArgMax/ArgMin: use GEMM output tracking (handled below)
         // All other reduce kernels: skip emulator, use dedicated fallback
@@ -1821,7 +1988,9 @@ unsafe fn execute_kernel_via_emulator(
         }
 
         let found_ptrs = scan_for_alloc_pointers(op_param as *const u8, 1024);
-        if found_ptrs.len() < 2 { return false; }
+        if found_ptrs.len() < 2 {
+            return false;
+        }
 
         let mut sorted = found_ptrs.clone();
         sorted.sort_by_key(|&(_, ptr, _)| ptr);
@@ -1830,11 +1999,12 @@ unsafe fn execute_kernel_via_emulator(
         // Input is float32, output is int64 index. Handle directly in Rust.
         if name_lower.contains("argmaxops") || name_lower.contains("argminops") {
             // Try to use last GEMM output as the logits tensor
-            let (gemm_ptr, gemm_elems, gemm_dtype) = if let Ok(last) = super::tmatmul_interpreter::LAST_GEMM_OUTPUT.lock() {
-                (last.0, last.1, last.2)
-            } else {
-                (0usize, 0usize, 0i32)
-            };
+            let (gemm_ptr, gemm_elems, gemm_dtype) =
+                if let Ok(last) = super::tmatmul_interpreter::LAST_GEMM_OUTPUT.lock() {
+                    (last.0, last.1, last.2)
+                } else {
+                    (0usize, 0usize, 0i32)
+                };
 
             // Find output pointer from scan - exclude the GEMM output (input) pointer
             // The output is the first found pointer that is NOT in the input tensor range
@@ -1842,13 +2012,17 @@ unsafe fn execute_kernel_via_emulator(
             let mut out_ptr_val: u64 = 0;
             // Log all found pointers for debugging
             for (i, &(offset, ptr, remaining)) in sorted.iter().enumerate() {
-                let in_gemm = gemm_ptr != 0 && (ptr as usize) >= gemm_ptr && (ptr as usize) < gemm_end;
-                eprintln!("[TMatmul ArgMax] sorted[{}]: offset={}, ptr={:#x}, remaining={}, in_gemm={}",
-                         i, offset, ptr, remaining, in_gemm);
+                let in_gemm =
+                    gemm_ptr != 0 && (ptr as usize) >= gemm_ptr && (ptr as usize) < gemm_end;
+                eprintln!(
+                    "[TMatmul ArgMax] sorted[{}]: offset={}, ptr={:#x}, remaining={}, in_gemm={}",
+                    i, offset, ptr, remaining, in_gemm
+                );
             }
             // Pick the first pointer that's NOT in the GEMM output range
             for &(_, ptr, remaining) in sorted.iter() {
-                let in_gemm = gemm_ptr != 0 && (ptr as usize) >= gemm_ptr && (ptr as usize) < gemm_end;
+                let in_gemm =
+                    gemm_ptr != 0 && (ptr as usize) >= gemm_ptr && (ptr as usize) < gemm_end;
                 if !in_gemm && remaining >= 8 {
                     out_ptr_val = ptr;
                     break;
@@ -1869,8 +2043,10 @@ unsafe fn execute_kernel_via_emulator(
                 return false;
             }
             let out_ptr = out_ptr_val as *mut i64;
-            eprintln!("[TMatmul ArgMax] Output ptr: {:#x}, GEMM ptr: {:#x}, GEMM end: {:#x}",
-                     out_ptr_val, gemm_ptr, gemm_end);
+            eprintln!(
+                "[TMatmul ArgMax] Output ptr: {:#x}, GEMM ptr: {:#x}, GEMM end: {:#x}",
+                out_ptr_val, gemm_ptr, gemm_end
+            );
 
             // Determine input pointer and element count
             let (in_ptr, in_elems): (*const f32, usize) = if gemm_ptr != 0 && gemm_elems > 0 {
@@ -1897,8 +2073,10 @@ unsafe fn execute_kernel_via_emulator(
                     out_ptr.write_unaligned(best_idx);
                     let op_name = if is_argmin { "ArgMin" } else { "ArgMax" };
                     let best_f32 = f32::from_bits((best_val as u32) << 16);
-                    eprintln!("[TMatmul Compiler] {} over {} bf16 elements (from GEMM): idx={}, val={}",
-                             op_name, gemm_elems, best_idx, best_f32);
+                    eprintln!(
+                        "[TMatmul Compiler] {} over {} bf16 elements (from GEMM): idx={}, val={}",
+                        op_name, gemm_elems, best_idx, best_f32
+                    );
                     return true;
                 }
                 (gemm_ptr as *const f32, gemm_elems)
@@ -1912,11 +2090,18 @@ unsafe fn execute_kernel_via_emulator(
                         best_in_idx = i;
                     }
                 }
-                (sorted[best_in_idx].1 as *const f32, (best_in_size / 4).min(1_000_000))
+                (
+                    sorted[best_in_idx].1 as *const f32,
+                    (best_in_size / 4).min(1_000_000),
+                )
             };
 
             let is_argmin = name_lower.contains("argminops");
-            let mut best_val = if is_argmin { f32::INFINITY } else { f32::NEG_INFINITY };
+            let mut best_val = if is_argmin {
+                f32::INFINITY
+            } else {
+                f32::NEG_INFINITY
+            };
             let mut best_idx: i64 = 0;
             for i in 0..in_elems {
                 let val = in_ptr.add(i).read_unaligned();
@@ -1927,8 +2112,14 @@ unsafe fn execute_kernel_via_emulator(
             }
             out_ptr.write_unaligned(best_idx);
             let op_name = if is_argmin { "ArgMin" } else { "ArgMax" };
-            eprintln!("[TMatmul Compiler] {} over {} float elements (from {}): idx={}, val={}",
-                     op_name, in_elems, if gemm_ptr != 0 { "GEMM" } else { "scan" }, best_idx, best_val);
+            eprintln!(
+                "[TMatmul Compiler] {} over {} float elements (from {}): idx={}, val={}",
+                op_name,
+                in_elems,
+                if gemm_ptr != 0 { "GEMM" } else { "scan" },
+                best_idx,
+                best_val
+            );
             return true;
         }
 
@@ -1944,7 +2135,9 @@ unsafe fn execute_kernel_via_emulator(
 
         let min_gap = *tensor_sizes.iter().min().unwrap_or(&0);
         let in_elements = min_gap / 4;
-        if in_elements == 0 { return false; }
+        if in_elements == 0 {
+            return false;
+        }
 
         let in_ptr = sorted[sorted.len() - 1].1 as *mut u8;
         let out_ptr = sorted[0].1 as *mut u8;
@@ -1952,14 +2145,26 @@ unsafe fn execute_kernel_via_emulator(
         let out_size = sorted[0].2;
 
         // Determine reduce operation
-        let op = if name_lower.contains("sum_functor") || name_lower.contains("sum") { "reduce_sum" }
-            else if name_lower.contains("meanops") || name_lower.contains("mean") { "reduce_mean" }
-            else if name_lower.contains("maxops") || name_lower.contains("max") { "reduce_max" }
-            else if name_lower.contains("normops") || name_lower.contains("var") { "reduce_var" }
-            else { "reduce_sum" };
+        let op = if name_lower.contains("sum_functor") || name_lower.contains("sum") {
+            "reduce_sum"
+        } else if name_lower.contains("meanops") || name_lower.contains("mean") {
+            "reduce_mean"
+        } else if name_lower.contains("maxops") || name_lower.contains("max") {
+            "reduce_max"
+        } else if name_lower.contains("normops") || name_lower.contains("var") {
+            "reduce_var"
+        } else {
+            "reduce_sum"
+        };
 
-        tensor_params.push(TensorParam { ptr: in_ptr, size: in_size.min(in_elements * 4) });
-        tensor_params.push(TensorParam { ptr: out_ptr, size: out_size });
+        tensor_params.push(TensorParam {
+            ptr: in_ptr,
+            size: in_size.min(in_elements * 4),
+        });
+        tensor_params.push(TensorParam {
+            ptr: out_ptr,
+            size: out_size,
+        });
 
         numel = in_elements;
         // For reduce, output is smaller than input - determine dimensions
@@ -1970,20 +2175,33 @@ unsafe fn execute_kernel_via_emulator(
             if val > 0 && val < in_elements && in_elements % val == 0 {
                 let other = in_elements / val;
                 for j in 0..32usize {
-                    if j == i { continue; }
+                    if j == i {
+                        continue;
+                    }
                     let val2 = (op_param as *const u32).add(j).read_unaligned() as usize;
                     if val2 == other {
-                        if val < other { out_elements = val; reduce_size = other; }
-                        else { out_elements = other; reduce_size = val; }
+                        if val < other {
+                            out_elements = val;
+                            reduce_size = other;
+                        } else {
+                            out_elements = other;
+                            reduce_size = val;
+                        }
                         break;
                     }
                 }
-                if out_elements > 0 { break; }
+                if out_elements > 0 {
+                    break;
+                }
             }
         }
         if out_elements == 0 {
             for rs in [128, 256, 512, 1024, 64, 32].iter() {
-                if in_elements % rs == 0 { reduce_size = *rs; out_elements = in_elements / rs; break; }
+                if in_elements % rs == 0 {
+                    reduce_size = *rs;
+                    out_elements = in_elements / rs;
+                    break;
+                }
             }
         }
         out_numel = out_elements;
@@ -1996,35 +2214,56 @@ unsafe fn execute_kernel_via_emulator(
         // softmax: kernel_params[0]=&dst, [1]=&src, [2]=&batch, [3]=&stride, [4]=&element_count
         let param0 = *kernel_params.add(0);
         let param1 = *kernel_params.add(1);
-        if param0.is_null() || param1.is_null() { return false; }
+        if param0.is_null() || param1.is_null() {
+            return false;
+        }
 
         let dst_ptr = (param0 as *const u64).read_unaligned();
         let src_ptr = (param1 as *const u64).read_unaligned();
 
         let dst_size = super::memory::get_alloc_size(dst_ptr as usize).unwrap_or(0);
         let src_size = super::memory::get_alloc_size(src_ptr as usize).unwrap_or(0);
-        if dst_size == 0 || src_size == 0 { return false; }
+        if dst_size == 0 || src_size == 0 {
+            return false;
+        }
 
         numel = src_size.min(dst_size) / 4;
         out_numel = numel;
 
-        tensor_params.push(TensorParam { ptr: src_ptr as *mut u8, size: src_size });
-        tensor_params.push(TensorParam { ptr: dst_ptr as *mut u8, size: dst_size });
+        tensor_params.push(TensorParam {
+            ptr: src_ptr as *mut u8,
+            size: src_size,
+        });
+        tensor_params.push(TensorParam {
+            ptr: dst_ptr as *mut u8,
+            size: dst_size,
+        });
 
-        assembly = "    ldv    v0,PARAM_0\n    softmax    v1,v0\n    sv     v1,PARAM_1\n".to_string();
-    } else if name_lower.contains("layernorm") || name_lower.contains("layer_norm") ||
-              name_lower.contains("rmsnorm") || name_lower.contains("rms_norm") ||
-              name_lower.contains("welford") {
+        assembly =
+            "    ldv    v0,PARAM_0\n    softmax    v1,v0\n    sv     v1,PARAM_1\n".to_string();
+    } else if name_lower.contains("layernorm")
+        || name_lower.contains("layer_norm")
+        || name_lower.contains("rmsnorm")
+        || name_lower.contains("rms_norm")
+        || name_lower.contains("welford")
+    {
         // norm kernel: params [0]=&N, [1]=&eps, [2]=&X, [3]=&gamma, [4]=&beta, [5]=&Y, ...
         let param0 = *kernel_params.add(0);
-        if param0.is_null() { return false; }
+        if param0.is_null() {
+            return false;
+        }
         let hidden_size = (param0 as *const i32).read_unaligned() as usize;
-        if hidden_size == 0 || hidden_size > 65536 { return false; }
+        if hidden_size == 0 || hidden_size > 65536 {
+            return false;
+        }
 
         let mut ptrs: Vec<(u64, usize)> = Vec::new();
         for pi in 2..8 {
             let p = *kernel_params.add(pi);
-            if p.is_null() { ptrs.push((0, 0)); continue; }
+            if p.is_null() {
+                ptrs.push((0, 0));
+                continue;
+            }
             let ptr_val = (p as *const u64).read_unaligned();
             let size = super::memory::get_alloc_size(ptr_val as usize).unwrap_or(0);
             ptrs.push((ptr_val, size));
@@ -2034,10 +2273,14 @@ unsafe fn execute_kernel_via_emulator(
         let gamma_ptr = ptrs[1].0;
         let y_ptr = ptrs[3].0;
 
-        if x_ptr == 0 || y_ptr == 0 { return false; }
+        if x_ptr == 0 || y_ptr == 0 {
+            return false;
+        }
         let x_size = ptrs[0].1;
         let y_size = ptrs[3].1;
-        if x_size == 0 || y_size == 0 { return false; }
+        if x_size == 0 || y_size == 0 {
+            return false;
+        }
 
         numel = x_size.min(y_size) / 4;
         out_numel = numel;
@@ -2046,14 +2289,26 @@ unsafe fn execute_kernel_via_emulator(
 
         if is_rmsnorm {
             // PARAM_0=X, PARAM_1=gamma, PARAM_2=Y
-            tensor_params.push(TensorParam { ptr: x_ptr as *mut u8, size: x_size });
+            tensor_params.push(TensorParam {
+                ptr: x_ptr as *mut u8,
+                size: x_size,
+            });
             if gamma_ptr != 0 && ptrs[1].1 > 0 {
-                tensor_params.push(TensorParam { ptr: gamma_ptr as *mut u8, size: ptrs[1].1 });
+                tensor_params.push(TensorParam {
+                    ptr: gamma_ptr as *mut u8,
+                    size: ptrs[1].1,
+                });
             } else {
                 // No weight - use ones (handled by bridge CONST_1)
-                tensor_params.push(TensorParam { ptr: std::ptr::null_mut(), size: 0 });
+                tensor_params.push(TensorParam {
+                    ptr: std::ptr::null_mut(),
+                    size: 0,
+                });
             }
-            tensor_params.push(TensorParam { ptr: y_ptr as *mut u8, size: y_size });
+            tensor_params.push(TensorParam {
+                ptr: y_ptr as *mut u8,
+                size: y_size,
+            });
 
             assembly = format!(
                 "    ldv    v0,PARAM_0\n    rms_clear\n    rms_accumulate    v0\n    rms_finish_accumulate    {}\n    rms_norm    v1,v0\n",
@@ -2066,15 +2321,30 @@ unsafe fn execute_kernel_via_emulator(
             assembly.push_str("    sv     v1,PARAM_2\n");
         } else {
             // LayerNorm: PARAM_0=X, PARAM_1=gamma, PARAM_2=beta, PARAM_3=Y
-            tensor_params.push(TensorParam { ptr: x_ptr as *mut u8, size: x_size });
-            tensor_params.push(TensorParam { ptr: gamma_ptr as *mut u8, size: ptrs[1].1 });
+            tensor_params.push(TensorParam {
+                ptr: x_ptr as *mut u8,
+                size: x_size,
+            });
+            tensor_params.push(TensorParam {
+                ptr: gamma_ptr as *mut u8,
+                size: ptrs[1].1,
+            });
             let beta_ptr = ptrs[2].0;
             if beta_ptr != 0 && ptrs[2].1 > 0 {
-                tensor_params.push(TensorParam { ptr: beta_ptr as *mut u8, size: ptrs[2].1 });
+                tensor_params.push(TensorParam {
+                    ptr: beta_ptr as *mut u8,
+                    size: ptrs[2].1,
+                });
             } else {
-                tensor_params.push(TensorParam { ptr: std::ptr::null_mut(), size: 0 });
+                tensor_params.push(TensorParam {
+                    ptr: std::ptr::null_mut(),
+                    size: 0,
+                });
             }
-            tensor_params.push(TensorParam { ptr: y_ptr as *mut u8, size: y_size });
+            tensor_params.push(TensorParam {
+                ptr: y_ptr as *mut u8,
+                size: y_size,
+            });
 
             assembly = "    ldv    v0,PARAM_0\n    ldv    v1,PARAM_1\n    ldv    v2,PARAM_2\n    layernorm    v3,v0,v1,v2\n    sv     v3,PARAM_3\n".to_string();
         }
@@ -2087,7 +2357,12 @@ unsafe fn execute_kernel_via_emulator(
         return false;
     }
 
-    eprintln!("[TMatmul Compiler] '{}' (numel={}, {} params)", kernel_name, numel, tensor_params.len());
+    eprintln!(
+        "[TMatmul Compiler] '{}' (numel={}, {} params)",
+        kernel_name,
+        numel,
+        tensor_params.len()
+    );
 
     // FAST PATH: Execute directly in Rust - no file I/O, no Python
     // This handles common ops (copy, add, mul, sigmoid, relu, etc.) at native speed
@@ -2095,13 +2370,17 @@ unsafe fn execute_kernel_via_emulator(
         let ptrs: Vec<*mut u8> = tensor_params.iter().map(|tp| tp.ptr).collect();
         let sizes: Vec<usize> = tensor_params.iter().map(|tp| tp.size).collect();
 
-        match super::tmatmul_interpreter::execute_with_direct_ptrs(&assembly, &ptrs, &sizes, numel) {
+        match super::tmatmul_interpreter::execute_with_direct_ptrs(&assembly, &ptrs, &sizes, numel)
+        {
             Ok(()) => {
                 // Track the last output for dataflow (last param is typically the output)
                 if let Some(last_tp) = tensor_params.last() {
                     if !last_tp.ptr.is_null() && last_tp.size > 0 {
                         super::tmatmul_interpreter::set_last_output(
-                            last_tp.ptr as usize, last_tp.size, 4);
+                            last_tp.ptr as usize,
+                            last_tp.size,
+                            4,
+                        );
                     }
                 }
                 eprintln!("[TMatmul Fast] '{}' done ({} elements)", kernel_name, numel);
@@ -2117,7 +2396,11 @@ unsafe fn execute_kernel_via_emulator(
     eprintln!("[TMatmul Slow] '{}' using Python bridge", kernel_name);
 
     // Use /dev/shm for RAM-backed file I/O
-    let shm_base = if std::path::Path::new("/dev/shm").exists() { "/dev/shm" } else { "/tmp" };
+    let shm_base = if std::path::Path::new("/dev/shm").exists() {
+        "/dev/shm"
+    } else {
+        "/tmp"
+    };
 
     // Write assembly to shared memory
     let asm_path = format!("{}/hetgpu_asm.S", shm_base);
@@ -2131,10 +2414,16 @@ unsafe fn execute_kernel_via_emulator(
     let mut param_infos: Vec<(*mut u8, String, usize)> = Vec::new();
 
     for (i, tp) in tensor_params.iter().enumerate() {
-        if i > 0 { params_json.push(','); }
+        if i > 0 {
+            params_json.push(',');
+        }
 
         let file_path = format!("{}/hetgpu_p{}.bin", shm_base, i);
-        let count = if tp.size > 0 { (tp.size / 4).min(numel) } else { numel };
+        let count = if tp.size > 0 {
+            (tp.size / 4).min(numel)
+        } else {
+            numel
+        };
 
         if !tp.ptr.is_null() && tp.size > 0 {
             let size_bytes = count * 4;
@@ -2143,7 +2432,11 @@ unsafe fn execute_kernel_via_emulator(
                 if std::fs::write(&file_path, data_slice).is_err() {
                     return false;
                 }
-                let _ = write!(params_json, r#"{{"file":"{}","count":{}}}"#, file_path, count);
+                let _ = write!(
+                    params_json,
+                    r#"{{"file":"{}","count":{}}}"#,
+                    file_path, count
+                );
                 param_infos.push((tp.ptr, file_path.clone(), count));
             } else {
                 let _ = write!(params_json, r#"{{"file":"","count":0}}"#);
@@ -2152,7 +2445,11 @@ unsafe fn execute_kernel_via_emulator(
         } else {
             let zeros = vec![0u8; numel * 4];
             let _ = std::fs::write(&file_path, &zeros);
-            let _ = write!(params_json, r#"{{"file":"{}","count":{}}}"#, file_path, numel);
+            let _ = write!(
+                params_json,
+                r#"{{"file":"{}","count":{}}}"#,
+                file_path, numel
+            );
             param_infos.push((std::ptr::null_mut(), file_path.clone(), numel));
         }
     }
@@ -2183,7 +2480,10 @@ unsafe fn execute_kernel_via_emulator(
                             let _ = std::fs::remove_file(&out_path);
                         }
                     }
-                    eprintln!("[TMatmul Daemon] Kernel '{}' executed ({} elements)", kernel_name, numel);
+                    eprintln!(
+                        "[TMatmul Daemon] Kernel '{}' executed ({} elements)",
+                        kernel_name, numel
+                    );
                     return true;
                 } else {
                     eprintln!("[TMatmul Daemon] Execution failed: {}", response.trim());
@@ -2218,7 +2518,10 @@ unsafe fn execute_kernel_via_emulator(
     {
         Ok(output) => {
             if !output.status.success() {
-                eprintln!("[TMatmul Emulator] Bridge failed: {:?}", output.status.code());
+                eprintln!(
+                    "[TMatmul Emulator] Bridge failed: {:?}",
+                    output.status.code()
+                );
                 return false;
             }
 
@@ -2236,7 +2539,10 @@ unsafe fn execute_kernel_via_emulator(
                 }
             }
 
-            eprintln!("[TMatmul Emulator] Kernel '{}' executed successfully via Python emulator", kernel_name);
+            eprintln!(
+                "[TMatmul Emulator] Kernel '{}' executed successfully via Python emulator",
+                kernel_name
+            );
             true
         }
         Err(e) => {
@@ -4114,6 +4420,207 @@ pub(crate) fn launch_kernel_ex(
 }
 
 // ============================================================================
+// Apple Metal function implementations
+// ============================================================================
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn get_attribute(
+    pi: &mut ::core::ffi::c_int,
+    attrib: cuda_types::cuda::CUfunction_attribute,
+    _hfunc: &super::module::AppleKernel,
+) -> CUresult {
+    *pi = match attrib {
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK => 1024,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES => 0,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_CONST_SIZE_BYTES => 0,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES => 0,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_NUM_REGS => 32,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_PTX_VERSION => 75,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_BINARY_VERSION => 75,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_CACHE_MODE_CA => 0,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES => 32768,
+        CUfunction_attribute::CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT => 0,
+        _ => return Err(CUerror::INVALID_VALUE),
+    };
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+fn apple_launch_dim(grid: u32, block: u32) -> Result<u32, CUerror> {
+    if grid == 0 || block == 0 {
+        return Err(CUerror::INVALID_VALUE);
+    }
+    let total = (grid as u64)
+        .checked_mul(block as u64)
+        .ok_or(CUerror::LAUNCH_OUT_OF_RESOURCES)?;
+    u32::try_from(total).map_err(|_| CUerror::LAUNCH_OUT_OF_RESOURCES)
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+fn apple_take_log(log: *mut std::os::raw::c_char) -> Option<String> {
+    if log.is_null() {
+        return None;
+    }
+    let message = unsafe { std::ffi::CStr::from_ptr(log) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe {
+        apple_runtime_sys::hetgpu_apple_metal_free_string(log);
+    }
+    Some(message)
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn launch_kernel(
+    f: &super::module::AppleKernel,
+    grid_dim_x: ::core::ffi::c_uint,
+    grid_dim_y: ::core::ffi::c_uint,
+    grid_dim_z: ::core::ffi::c_uint,
+    block_dim_x: ::core::ffi::c_uint,
+    block_dim_y: ::core::ffi::c_uint,
+    block_dim_z: ::core::ffi::c_uint,
+    _shared_mem_bytes: ::core::ffi::c_uint,
+    _h_stream: cuda_types::cuda::CUstream,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    extra: *mut *mut ::core::ffi::c_void,
+) -> CUresult {
+    if !extra.is_null() {
+        crate::r#impl::hetgpu_debug!(
+            "[Apple Backend] cuLaunchKernel extra parameter buffer ABI is not implemented"
+        );
+        return Err(CUerror::NOT_SUPPORTED);
+    }
+    if !f.metadata.params.is_empty() && kernel_params.is_null() {
+        return Err(CUerror::INVALID_VALUE);
+    }
+
+    let mut scalar_storage: Vec<Vec<u8>> = Vec::new();
+    let mut bindings = Vec::with_capacity(f.metadata.params.len());
+
+    for (idx, param) in f.metadata.params.iter().enumerate() {
+        let param_slot = unsafe { *kernel_params.add(idx) };
+        if param_slot.is_null() {
+            return Err(CUerror::INVALID_VALUE);
+        }
+        if param.is_pointer {
+            let device_ptr = unsafe { *(param_slot as *const CUdeviceptr) };
+            let Some((host_ptr, size)) = super::memory::apple_resolve_allocation(device_ptr) else {
+                crate::r#impl::hetgpu_debug!(
+                    "[Apple Backend] kernel '{}' parameter {} ({}) is not an Apple allocation: {:?}",
+                    f.name,
+                    idx,
+                    param.ptx_name,
+                    device_ptr
+                );
+                return Err(CUerror::INVALID_VALUE);
+            };
+            bindings.push(apple_runtime_sys::hetgpu_apple_metal_buffer_binding {
+                host_ptr,
+                size: size.max(1),
+                flags: apple_runtime_sys::HETGPU_METAL_BUFFER_COPY_IN
+                    | apple_runtime_sys::HETGPU_METAL_BUFFER_COPY_OUT,
+            });
+        } else {
+            let size = param.size.max(1);
+            let mut bytes = vec![0u8; size];
+            unsafe {
+                std::ptr::copy_nonoverlapping(param_slot.cast::<u8>(), bytes.as_mut_ptr(), size);
+            }
+            let host_ptr = bytes.as_mut_ptr().cast();
+            scalar_storage.push(bytes);
+            bindings.push(apple_runtime_sys::hetgpu_apple_metal_buffer_binding {
+                host_ptr,
+                size,
+                flags: apple_runtime_sys::HETGPU_METAL_BUFFER_COPY_IN,
+            });
+        }
+    }
+
+    let dispatch_x = apple_launch_dim(grid_dim_x, block_dim_x)?;
+    let dispatch_y = apple_launch_dim(grid_dim_y, block_dim_y)?;
+    let dispatch_z = apple_launch_dim(grid_dim_z, block_dim_z)?;
+    let mut log = std::ptr::null_mut();
+    let status = unsafe {
+        apple_runtime_sys::hetgpu_apple_metal_launch_raw(
+            f.metal_function,
+            bindings.as_ptr(),
+            bindings.len(),
+            dispatch_x,
+            dispatch_y,
+            dispatch_z,
+            block_dim_x,
+            block_dim_y,
+            block_dim_z,
+            &mut log,
+        )
+    };
+    drop(scalar_storage);
+    if status != 0 {
+        if let Some(message) = apple_take_log(log) {
+            crate::r#impl::hetgpu_debug!(
+                "[Apple Backend] Metal launch failed for '{}': {}",
+                f.name,
+                message
+            );
+        }
+        return Err(CUerror::LAUNCH_FAILED);
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul")
+))]
+pub(crate) fn launch_kernel_ex(
+    config: &cuda_types::cuda::CUlaunchConfig,
+    f: &super::module::AppleKernel,
+    kernel_params: *mut *mut ::core::ffi::c_void,
+    extra: *mut *mut ::core::ffi::c_void,
+) -> CUresult {
+    launch_kernel(
+        f,
+        config.gridDimX,
+        config.gridDimY,
+        config.gridDimZ,
+        config.blockDimX,
+        config.blockDimY,
+        config.blockDimZ,
+        config.sharedMemBytes,
+        config.hStream,
+        kernel_params,
+        extra,
+    )
+}
+
+// ============================================================================
 // WebGPU function implementations
 // ============================================================================
 
@@ -4363,9 +4870,7 @@ pub(crate) fn launch_kernel(
             .ok()
             .map(|value| value.trim().to_ascii_lowercase())
         {
-            Some(value)
-                if value == "0" || value == "false" || value == "no" || value == "off" =>
-            {
+            Some(value) if value == "0" || value == "false" || value == "no" || value == "off" => {
                 false
             }
             Some(_) => true,
@@ -5429,7 +5934,9 @@ unsafe fn pacc_deepep_layout_binding_metadata(
     let topk_bytes = std::mem::size_of::<i64>() as u64;
     let (bytes, flags) = match index {
         0 => (
-            num_tokens.saturating_mul(num_topk).saturating_mul(topk_bytes),
+            num_tokens
+                .saturating_mul(num_topk)
+                .saturating_mul(topk_bytes),
             pacc_runtime_sys::PACC_KERNEL_ARG_FLAG_BUFFER_INPUT,
         ),
         1 => (
@@ -7694,10 +8201,7 @@ unsafe fn try_offload_mmvf_named_pacc_kernel(
     let x_type = match pacc_mmvf_x_type(kernel_name) {
         Some(value) => value,
         None => {
-            trace_mmvf!(
-                "[PACC Backend] MMVF '{}' x_type parse failed",
-                kernel_name
-            );
+            trace_mmvf!("[PACC Backend] MMVF '{}' x_type parse failed", kernel_name);
             return None;
         }
     };
@@ -7721,7 +8225,10 @@ unsafe fn try_offload_mmvf_named_pacc_kernel(
             kernel_name
         );
         if pacc_named_fail_open_enabled() {
-            return pacc_named_assume_success("MMVF offload disabled after prior failure", kernel_name);
+            return pacc_named_assume_success(
+                "MMVF offload disabled after prior failure",
+                kernel_name,
+            );
         }
         return Some(Err(CUerror::UNKNOWN));
     }
@@ -7729,20 +8236,14 @@ unsafe fn try_offload_mmvf_named_pacc_kernel(
     let x_host = match read_param_u64(kernel_params, 0) {
         Some(value) => value,
         None => {
-            trace_mmvf!(
-                "[PACC Backend] MMVF '{}' missing x param[0]",
-                kernel_name
-            );
+            trace_mmvf!("[PACC Backend] MMVF '{}' missing x param[0]", kernel_name);
             return None;
         }
     };
     let y_host = match read_param_u64(kernel_params, 1) {
         Some(value) => value,
         None => {
-            trace_mmvf!(
-                "[PACC Backend] MMVF '{}' missing y param[1]",
-                kernel_name
-            );
+            trace_mmvf!("[PACC Backend] MMVF '{}' missing y param[1]", kernel_name);
             return None;
         }
     };
@@ -7750,10 +8251,7 @@ unsafe fn try_offload_mmvf_named_pacc_kernel(
     let dst_host = match read_param_u64(kernel_params, 4) {
         Some(value) => value,
         None => {
-            trace_mmvf!(
-                "[PACC Backend] MMVF '{}' missing dst param[4]",
-                kernel_name
-            );
+            trace_mmvf!("[PACC Backend] MMVF '{}' missing dst param[4]", kernel_name);
             return None;
         }
     };
@@ -9831,7 +10329,10 @@ unsafe fn execute_compute_batched_ptrs_fallback(
             "[PACC Backend] compute_batched_ptrs '{}' could not resolve pointer tables",
             kernel_name
         );
-        return pacc_named_assume_success("compute_batched_ptrs pointer tables could not be resolved", kernel_name);
+        return pacc_named_assume_success(
+            "compute_batched_ptrs pointer tables could not be resolved",
+            kernel_name,
+        );
     }
 
     let table_count = ne12.checked_mul(ne13)?;
@@ -9850,7 +10351,10 @@ unsafe fn execute_compute_batched_ptrs_fallback(
             ne13,
             ne23
         );
-        return pacc_named_assume_success("compute_batched_ptrs pointer table range check failed", kernel_name);
+        return pacc_named_assume_success(
+            "compute_batched_ptrs pointer table range check failed",
+            kernel_name,
+        );
     }
 
     for i13 in 0..ne13 {
@@ -10219,7 +10723,10 @@ fn pacc_parse_env_u64_default(name: &str, default_value: u64) -> u64 {
         .ok()
         .and_then(|value| {
             let trimmed = value.trim();
-            if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+            if let Some(hex) = trimmed
+                .strip_prefix("0x")
+                .or_else(|| trimmed.strip_prefix("0X"))
+            {
                 u64::from_str_radix(hex, 16).ok()
             } else {
                 trimmed.parse::<u64>().ok()
@@ -10344,7 +10851,10 @@ fn pacc_log_limited(
     not(feature = "intel"),
     not(feature = "tenstorrent")
 ))]
-fn pacc_named_assume_success(reason: &str, kernel_name: &str) -> Option<cuda_types::cuda::CUresult> {
+fn pacc_named_assume_success(
+    reason: &str,
+    kernel_name: &str,
+) -> Option<cuda_types::cuda::CUresult> {
     if pacc_named_fail_open_enabled() {
         pacc_log_limited(
             &PACC_NAMED_FAILOPEN_LOG_COUNT,
@@ -10401,9 +10911,7 @@ unsafe fn try_offload_named_pacc_kernel(
             return Some(result);
         }
     }
-    if name_lower.contains("mul_mat_vec_q")
-        && pacc_env_truthy("HETGPU_PACC_MMVQ_NAMED_FAIL_OPEN")
-    {
+    if name_lower.contains("mul_mat_vec_q") && pacc_env_truthy("HETGPU_PACC_MMVQ_NAMED_FAIL_OPEN") {
         return pacc_named_assume_success("MMVQ named fail-open requested", kernel_name);
     }
     if name_lower.contains("softmax") || name_lower.contains("soft_max") {
@@ -10466,7 +10974,10 @@ unsafe fn try_offload_named_pacc_kernel(
             == Some("1");
         if PACC_RMSNORM_OFFLOAD_DISABLED_AFTER_FAILURE.load(Ordering::Relaxed) {
             if pacc_named_fail_open_enabled() {
-                return pacc_named_assume_success("RMSNorm offload disabled after prior failure", kernel_name);
+                return pacc_named_assume_success(
+                    "RMSNorm offload disabled after prior failure",
+                    kernel_name,
+                );
             }
             if let Some((x, weight, y, rows, hidden, eps)) = read_rmsnorm_named_offload_args(
                 kernel_name,
@@ -10515,7 +11026,10 @@ unsafe fn try_offload_named_pacc_kernel(
                     );
                 }
                 if pacc_named_fail_open_enabled() {
-                    return pacc_named_assume_success("RMSNorm args could not be parsed", kernel_name);
+                    return pacc_named_assume_success(
+                        "RMSNorm args could not be parsed",
+                        kernel_name,
+                    );
                 }
                 if allow_normal_fallback {
                     return None;

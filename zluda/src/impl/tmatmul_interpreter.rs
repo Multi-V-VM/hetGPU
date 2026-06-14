@@ -59,47 +59,169 @@ pub enum MemRef {
 /// Parsed instruction
 #[derive(Debug, Clone)]
 pub enum Instruction {
-    LoadVector { dst: u8, mem: MemRef },
-    StoreVector { src: u8, mem: MemRef },
-    Add { dst: u8, src1: u8, src2: u8 },
-    Sub { dst: u8, src1: u8, src2: u8 },
-    Mul { dst: u8, src1: u8, src2: u8 },
-    Div { dst: u8, src1: u8, src2: u8 },
-    Sigmoid { dst: u8, src: u8 },
-    ComplementSigmoid { dst: u8, src: u8 },
-    SiLU { dst: u8, src: u8 },
-    ReLU { dst: u8, src: u8 },
-    GeLU { dst: u8, src: u8 },
-    Tanh { dst: u8, src: u8 },
-    Neg { dst: u8, src: u8 },
-    Reciprocal { dst: u8, src: u8 },
-    Rsqrt { dst: u8, src: u8 },
-    Sqrt { dst: u8, src: u8 },
-    Exp { dst: u8, src: u8 },
-    Log { dst: u8, src: u8 },
-    Log1p { dst: u8, src: u8 },
-    Abs { dst: u8, src: u8 },
-    Sin { dst: u8, src: u8 },
-    Cos { dst: u8, src: u8 },
-    Floor { dst: u8, src: u8 },
-    Ceil { dst: u8, src: u8 },
-    Round { dst: u8, src: u8 },
-    Sign { dst: u8, src: u8 },
-    Residual { dst: u8, src1: u8, src2: u8 },
-    Softmax { dst: u8, src: u8 },
-    ReduceSum { dst: u8, src: u8 },
-    ReduceMean { dst: u8, src: u8 },
-    ReduceMax { dst: u8, src: u8 },
-    ReduceVar { dst: u8, src: u8 },
-    LayerNorm { dst: u8, input: u8, weight: u8, bias: Option<u8> },
+    LoadVector {
+        dst: u8,
+        mem: MemRef,
+    },
+    StoreVector {
+        src: u8,
+        mem: MemRef,
+    },
+    Add {
+        dst: u8,
+        src1: u8,
+        src2: u8,
+    },
+    Sub {
+        dst: u8,
+        src1: u8,
+        src2: u8,
+    },
+    Mul {
+        dst: u8,
+        src1: u8,
+        src2: u8,
+    },
+    Div {
+        dst: u8,
+        src1: u8,
+        src2: u8,
+    },
+    Sigmoid {
+        dst: u8,
+        src: u8,
+    },
+    ComplementSigmoid {
+        dst: u8,
+        src: u8,
+    },
+    SiLU {
+        dst: u8,
+        src: u8,
+    },
+    ReLU {
+        dst: u8,
+        src: u8,
+    },
+    GeLU {
+        dst: u8,
+        src: u8,
+    },
+    Tanh {
+        dst: u8,
+        src: u8,
+    },
+    Neg {
+        dst: u8,
+        src: u8,
+    },
+    Reciprocal {
+        dst: u8,
+        src: u8,
+    },
+    Rsqrt {
+        dst: u8,
+        src: u8,
+    },
+    Sqrt {
+        dst: u8,
+        src: u8,
+    },
+    Exp {
+        dst: u8,
+        src: u8,
+    },
+    Log {
+        dst: u8,
+        src: u8,
+    },
+    Log1p {
+        dst: u8,
+        src: u8,
+    },
+    Abs {
+        dst: u8,
+        src: u8,
+    },
+    Sin {
+        dst: u8,
+        src: u8,
+    },
+    Cos {
+        dst: u8,
+        src: u8,
+    },
+    Floor {
+        dst: u8,
+        src: u8,
+    },
+    Ceil {
+        dst: u8,
+        src: u8,
+    },
+    Round {
+        dst: u8,
+        src: u8,
+    },
+    Sign {
+        dst: u8,
+        src: u8,
+    },
+    Residual {
+        dst: u8,
+        src1: u8,
+        src2: u8,
+    },
+    Softmax {
+        dst: u8,
+        src: u8,
+    },
+    ReduceSum {
+        dst: u8,
+        src: u8,
+    },
+    ReduceMean {
+        dst: u8,
+        src: u8,
+    },
+    ReduceMax {
+        dst: u8,
+        src: u8,
+    },
+    ReduceVar {
+        dst: u8,
+        src: u8,
+    },
+    LayerNorm {
+        dst: u8,
+        input: u8,
+        weight: u8,
+        bias: Option<u8>,
+    },
     RmsClear,
-    RmsAccumulate { src: u8 },
-    RmsFinishAccumulate { total_length: MemRef },
-    RmsNorm { dst: u8, src: u8 },
-    Norm { dst: u8, src: u8 },
-    TMatmulImport { src: u8 },
-    TMatmulGo { weights: MemRef },
-    TMatmulExport { dst: u8 },
+    RmsAccumulate {
+        src: u8,
+    },
+    RmsFinishAccumulate {
+        total_length: MemRef,
+    },
+    RmsNorm {
+        dst: u8,
+        src: u8,
+    },
+    Norm {
+        dst: u8,
+        src: u8,
+    },
+    TMatmulImport {
+        src: u8,
+    },
+    TMatmulGo {
+        weights: MemRef,
+    },
+    TMatmulExport {
+        dst: u8,
+    },
     Nop,
 }
 
@@ -484,14 +606,17 @@ fn parse_line(line: &str) -> Option<Instruction> {
                 } else {
                     None
                 };
-                Some(Instruction::LayerNorm { dst, input, weight, bias })
+                Some(Instruction::LayerNorm {
+                    dst,
+                    input,
+                    weight,
+                    bias,
+                })
             } else {
                 None
             }
         }
-        "rms_clear" => {
-            Some(Instruction::RmsClear)
-        }
+        "rms_clear" => Some(Instruction::RmsClear),
         "rms_accumulate" => {
             if operands.len() >= 1 {
                 let src = parse_register(operands[0])?;
@@ -550,9 +675,7 @@ fn parse_line(line: &str) -> Option<Instruction> {
                 None
             }
         }
-        "nop" | "stall" => {
-            Some(Instruction::Nop)
-        }
+        "nop" | "stall" => Some(Instruction::Nop),
         _ => None, // Unknown opcode, skip
     }
 }
@@ -605,12 +728,16 @@ fn detect_execution_mode(instructions: &[Instruction]) -> ExecutionMode {
         match inst {
             Instruction::Softmax { .. } => return ExecutionMode::Softmax,
             Instruction::LayerNorm { .. } => return ExecutionMode::LayerNorm,
-            Instruction::RmsNorm { .. } | Instruction::RmsClear |
-            Instruction::RmsAccumulate { .. } | Instruction::RmsFinishAccumulate { .. } => {
+            Instruction::RmsNorm { .. }
+            | Instruction::RmsClear
+            | Instruction::RmsAccumulate { .. }
+            | Instruction::RmsFinishAccumulate { .. } => {
                 return ExecutionMode::RmsNorm;
             }
-            Instruction::ReduceSum { .. } | Instruction::ReduceMean { .. } |
-            Instruction::ReduceMax { .. } | Instruction::ReduceVar { .. } => {
+            Instruction::ReduceSum { .. }
+            | Instruction::ReduceMean { .. }
+            | Instruction::ReduceMax { .. }
+            | Instruction::ReduceVar { .. } => {
                 return ExecutionMode::Reduce;
             }
             Instruction::Norm { .. } => return ExecutionMode::Norm,
@@ -629,25 +756,35 @@ pub fn count_param_refs(instructions: &[Instruction]) -> usize {
             Instruction::LoadVector { mem, .. } => {
                 if let MemRef::Param(idx) = mem {
                     found_any = true;
-                    if *idx >= max_param { max_param = *idx + 1; }
+                    if *idx >= max_param {
+                        max_param = *idx + 1;
+                    }
                 }
             }
             Instruction::StoreVector { mem, .. } => {
                 if let MemRef::Param(idx) = mem {
                     found_any = true;
-                    if *idx >= max_param { max_param = *idx + 1; }
+                    if *idx >= max_param {
+                        max_param = *idx + 1;
+                    }
                 }
             }
             Instruction::TMatmulGo { weights } => {
                 if let MemRef::Param(idx) = weights {
                     found_any = true;
-                    if *idx >= max_param { max_param = *idx + 1; }
+                    if *idx >= max_param {
+                        max_param = *idx + 1;
+                    }
                 }
             }
             _ => {}
         }
     }
-    if found_any { max_param } else { 0 }
+    if found_any {
+        max_param
+    } else {
+        0
+    }
 }
 
 /// Execute compiled TMatmul assembly on host memory.
@@ -673,9 +810,12 @@ pub unsafe fn execute_assembly(
     }
 
     // Calculate total elements
-    let total_elements = (grid_dims.0 as u64) * (block_dims.0 as u64)
-        * (grid_dims.1 as u64).max(1) * (block_dims.1 as u64).max(1)
-        * (grid_dims.2 as u64).max(1) * (block_dims.2 as u64).max(1);
+    let total_elements = (grid_dims.0 as u64)
+        * (block_dims.0 as u64)
+        * (grid_dims.1 as u64).max(1)
+        * (block_dims.1 as u64).max(1)
+        * (grid_dims.2 as u64).max(1)
+        * (block_dims.2 as u64).max(1);
 
     if total_elements == 0 {
         return Ok(()); // Nothing to do
@@ -733,16 +873,15 @@ pub unsafe fn execute_assembly(
     }
 
     // Check we have at least 2 valid params (need input + output at minimum)
-    let valid_params = param_ptrs.iter()
-        .filter(|ptr| !ptr.is_null())
-        .count();
+    let valid_params = param_ptrs.iter().filter(|ptr| !ptr.is_null()).count();
 
     if valid_params < 2 {
         return Err(format!("Insufficient valid pointer params: found {} (needed at least 2 for input+output, {} PARAM refs total)", valid_params, num_params_needed));
     }
 
     // Determine actual element count: min of total_elements and smallest known allocation
-    let min_alloc_elements = param_sizes.iter()
+    let min_alloc_elements = param_sizes
+        .iter()
         .filter(|s| **s > 0)
         .map(|s| s / 4) // f32 = 4 bytes
         .min()
@@ -761,12 +900,24 @@ pub unsafe fn execute_assembly(
              instructions.len(), actual_elements, valid_params, num_params_needed, mode);
 
     match mode {
-        ExecutionMode::ElementWise => execute_single_pass(&instructions, &param_ptrs, &param_sizes, actual_elements),
-        ExecutionMode::Norm => execute_norm_pass(&instructions, &param_ptrs, &param_sizes, actual_elements),
-        ExecutionMode::RmsNorm => execute_rms_pass(&instructions, &param_ptrs, &param_sizes, actual_elements),
-        ExecutionMode::Reduce => execute_reduce_pass(&instructions, &param_ptrs, &param_sizes, actual_elements),
-        ExecutionMode::Softmax => execute_softmax_pass(&instructions, &param_ptrs, &param_sizes, actual_elements),
-        ExecutionMode::LayerNorm => execute_layernorm_pass(&instructions, &param_ptrs, &param_sizes, actual_elements),
+        ExecutionMode::ElementWise => {
+            execute_single_pass(&instructions, &param_ptrs, &param_sizes, actual_elements)
+        }
+        ExecutionMode::Norm => {
+            execute_norm_pass(&instructions, &param_ptrs, &param_sizes, actual_elements)
+        }
+        ExecutionMode::RmsNorm => {
+            execute_rms_pass(&instructions, &param_ptrs, &param_sizes, actual_elements)
+        }
+        ExecutionMode::Reduce => {
+            execute_reduce_pass(&instructions, &param_ptrs, &param_sizes, actual_elements)
+        }
+        ExecutionMode::Softmax => {
+            execute_softmax_pass(&instructions, &param_ptrs, &param_sizes, actual_elements)
+        }
+        ExecutionMode::LayerNorm => {
+            execute_layernorm_pass(&instructions, &param_ptrs, &param_sizes, actual_elements)
+        }
     }
 }
 
@@ -798,16 +949,25 @@ pub unsafe fn execute_with_direct_ptrs(
     let actual_elements = num_elements.min(64 * 1024 * 1024);
 
     let mode = detect_execution_mode(&instructions);
-    eprintln!("[TMatmul Compiler] Executing {} instructions on {} elements ({} params, mode={:?})",
-             instructions.len(), actual_elements, ptrs.len(), mode);
+    eprintln!(
+        "[TMatmul Compiler] Executing {} instructions on {} elements ({} params, mode={:?})",
+        instructions.len(),
+        actual_elements,
+        ptrs.len(),
+        mode
+    );
 
     match mode {
-        ExecutionMode::ElementWise => execute_single_pass(&instructions, ptrs, sizes, actual_elements),
+        ExecutionMode::ElementWise => {
+            execute_single_pass(&instructions, ptrs, sizes, actual_elements)
+        }
         ExecutionMode::Norm => execute_norm_pass(&instructions, ptrs, sizes, actual_elements),
         ExecutionMode::RmsNorm => execute_rms_pass(&instructions, ptrs, sizes, actual_elements),
         ExecutionMode::Reduce => execute_reduce_pass(&instructions, ptrs, sizes, actual_elements),
         ExecutionMode::Softmax => execute_softmax_pass(&instructions, ptrs, sizes, actual_elements),
-        ExecutionMode::LayerNorm => execute_layernorm_pass(&instructions, ptrs, sizes, actual_elements),
+        ExecutionMode::LayerNorm => {
+            execute_layernorm_pass(&instructions, ptrs, sizes, actual_elements)
+        }
     }
 }
 
@@ -826,15 +986,26 @@ unsafe fn execute_single_pass(
     }
 
     // Fall back to slow element-by-element execution
-    eprintln!("[TMatmul Interpreter] Using slow path ({} elements, {} instructions)", num_elements, instructions.len());
+    eprintln!(
+        "[TMatmul Interpreter] Using slow path ({} elements, {} instructions)",
+        num_elements,
+        instructions.len()
+    );
     let mut registers = [0.0f32; 8];
     let mut spill_memory: HashMap<String, f32> = HashMap::new();
 
     for elem in 0..num_elements {
         let byte_offset = elem * 4;
         for inst in instructions {
-            execute_instruction(inst, &mut registers, &mut spill_memory,
-                              param_ptrs, param_sizes, byte_offset, 0.0);
+            execute_instruction(
+                inst,
+                &mut registers,
+                &mut spill_memory,
+                param_ptrs,
+                param_sizes,
+                byte_offset,
+                0.0,
+            );
         }
     }
 
@@ -867,7 +1038,9 @@ unsafe fn fast_unary_parallel<F: Fn(f32) -> f32 + Sync>(
             for t in 0..NUM_THREADS {
                 let start = t * chunk_size;
                 let end = (start + chunk_size).min(n);
-                if start >= n { break; }
+                if start >= n {
+                    break;
+                }
 
                 let src_off = src_base + start * 4;
                 let dst_off = dst_base + start * 4;
@@ -883,12 +1056,7 @@ unsafe fn fast_unary_parallel<F: Fn(f32) -> f32 + Sync>(
 
 /// Fast single-threaded unary operation with loop unrolling
 #[inline]
-unsafe fn fast_unary_single<F: Fn(f32) -> f32>(
-    src: *const f32,
-    dst: *mut f32,
-    n: usize,
-    op: &F,
-) {
+unsafe fn fast_unary_single<F: Fn(f32) -> f32>(src: *const f32, dst: *mut f32, n: usize, op: &F) {
     let mut i = 0;
     // Unroll by 4 for better pipelining
     while i + 4 <= n {
@@ -929,7 +1097,9 @@ unsafe fn fast_binary_parallel<F: Fn(f32, f32) -> f32 + Sync>(
             for t in 0..NUM_THREADS {
                 let start = t * chunk_size;
                 let end = (start + chunk_size).min(n);
-                if start >= n { break; }
+                if start >= n {
+                    break;
+                }
 
                 let a_off = a_base + start * 4;
                 let b_off = b_base + start * 4;
@@ -937,7 +1107,13 @@ unsafe fn fast_binary_parallel<F: Fn(f32, f32) -> f32 + Sync>(
                 let count = end - start;
                 let op_ref = &op;
                 s.spawn(move || {
-                    fast_binary_single(a_off as *const f32, b_off as *const f32, dst_off as *mut f32, count, op_ref);
+                    fast_binary_single(
+                        a_off as *const f32,
+                        b_off as *const f32,
+                        dst_off as *mut f32,
+                        count,
+                        op_ref,
+                    );
                 });
             }
         });
@@ -978,8 +1154,17 @@ unsafe fn try_fast_path(
 ) -> Option<Result<(), String>> {
     // Pattern: ldv v0,PARAM_0; sv v0,PARAM_1 (copy)
     if instructions.len() == 2 {
-        if let (Instruction::LoadVector { dst: d0, mem: MemRef::Param(src_p) },
-                Instruction::StoreVector { src: s1, mem: MemRef::Param(dst_p) }) = (&instructions[0], &instructions[1]) {
+        if let (
+            Instruction::LoadVector {
+                dst: d0,
+                mem: MemRef::Param(src_p),
+            },
+            Instruction::StoreVector {
+                src: s1,
+                mem: MemRef::Param(dst_p),
+            },
+        ) = (&instructions[0], &instructions[1])
+        {
             if d0 == s1 && *src_p < param_ptrs.len() && *dst_p < param_ptrs.len() {
                 let src = param_ptrs[*src_p];
                 let dst = param_ptrs[*dst_p];
@@ -999,8 +1184,17 @@ unsafe fn try_fast_path(
 
     // Pattern: ldv v0,PARAM_0; OP v1,v0; sv v1,PARAM_1 (unary op)
     if instructions.len() == 3 {
-        if let (Instruction::LoadVector { dst: d0, mem: MemRef::Param(src_p) },
-                Instruction::StoreVector { src: s2, mem: MemRef::Param(dst_p) }) = (&instructions[0], &instructions[2]) {
+        if let (
+            Instruction::LoadVector {
+                dst: d0,
+                mem: MemRef::Param(src_p),
+            },
+            Instruction::StoreVector {
+                src: s2,
+                mem: MemRef::Param(dst_p),
+            },
+        ) = (&instructions[0], &instructions[2])
+        {
             if *src_p < param_ptrs.len() && *dst_p < param_ptrs.len() {
                 let src_ptr = param_ptrs[*src_p];
                 let dst_ptr = param_ptrs[*dst_p];
@@ -1012,18 +1206,30 @@ unsafe fn try_fast_path(
                         let dst = dst_ptr as *mut f32;
 
                         match &instructions[1] {
-                            Instruction::Sigmoid { dst: d1, src: s1 } if *d0 == *s1 && *d1 == *s2 => {
-                                fast_unary_parallel(src, dst, num_elements, |x| 1.0 / (1.0 + (-x).exp()));
+                            Instruction::Sigmoid { dst: d1, src: s1 }
+                                if *d0 == *s1 && *d1 == *s2 =>
+                            {
+                                fast_unary_parallel(src, dst, num_elements, |x| {
+                                    1.0 / (1.0 + (-x).exp())
+                                });
                                 eprintln!("[TMatmul Fast] sigmoid {} elements", num_elements);
                                 return Some(Ok(()));
                             }
                             Instruction::SiLU { dst: d1, src: s1 } if *d0 == *s1 && *d1 == *s2 => {
-                                fast_unary_parallel(src, dst, num_elements, |x| x / (1.0 + (-x).exp()));
+                                fast_unary_parallel(src, dst, num_elements, |x| {
+                                    x / (1.0 + (-x).exp())
+                                });
                                 eprintln!("[TMatmul Fast] silu {} elements", num_elements);
                                 return Some(Ok(()));
                             }
                             Instruction::ReLU { dst: d1, src: s1 } if *d0 == *s1 && *d1 == *s2 => {
-                                fast_unary_parallel(src, dst, num_elements, |x| if x > 0.0 { x } else { 0.0 });
+                                fast_unary_parallel(src, dst, num_elements, |x| {
+                                    if x > 0.0 {
+                                        x
+                                    } else {
+                                        0.0
+                                    }
+                                });
                                 eprintln!("[TMatmul Fast] relu {} elements", num_elements);
                                 return Some(Ok(()));
                             }
@@ -1046,13 +1252,27 @@ unsafe fn try_fast_path(
                                 eprintln!("[TMatmul Fast] neg {} elements", num_elements);
                                 return Some(Ok(()));
                             }
-                            Instruction::Reciprocal { dst: d1, src: s1 } if *d0 == *s1 && *d1 == *s2 => {
-                                fast_unary_parallel(src, dst, num_elements, |x| if x != 0.0 { 1.0 / x } else { f32::INFINITY });
+                            Instruction::Reciprocal { dst: d1, src: s1 }
+                                if *d0 == *s1 && *d1 == *s2 =>
+                            {
+                                fast_unary_parallel(src, dst, num_elements, |x| {
+                                    if x != 0.0 {
+                                        1.0 / x
+                                    } else {
+                                        f32::INFINITY
+                                    }
+                                });
                                 eprintln!("[TMatmul Fast] reciprocal {} elements", num_elements);
                                 return Some(Ok(()));
                             }
                             Instruction::Rsqrt { dst: d1, src: s1 } if *d0 == *s1 && *d1 == *s2 => {
-                                fast_unary_parallel(src, dst, num_elements, |x| if x > 0.0 { 1.0 / x.sqrt() } else { f32::INFINITY });
+                                fast_unary_parallel(src, dst, num_elements, |x| {
+                                    if x > 0.0 {
+                                        1.0 / x.sqrt()
+                                    } else {
+                                        f32::INFINITY
+                                    }
+                                });
                                 eprintln!("[TMatmul Fast] rsqrt {} elements", num_elements);
                                 return Some(Ok(()));
                             }
@@ -1108,7 +1328,13 @@ unsafe fn try_fast_path(
                             }
                             Instruction::Sign { dst: d1, src: s1 } if *d0 == *s1 && *d1 == *s2 => {
                                 fast_unary_parallel(src, dst, num_elements, |x| {
-                                    if x > 0.0 { 1.0 } else if x < 0.0 { -1.0 } else { 0.0 }
+                                    if x > 0.0 {
+                                        1.0
+                                    } else if x < 0.0 {
+                                        -1.0
+                                    } else {
+                                        0.0
+                                    }
                                 });
                                 eprintln!("[TMatmul Fast] sign {} elements", num_elements);
                                 return Some(Ok(()));
@@ -1123,42 +1349,83 @@ unsafe fn try_fast_path(
 
     // Pattern: ldv v0,PARAM_0; ldv v1,PARAM_1; OP v2,v0,v1; sv v2,PARAM_2 (binary op)
     if instructions.len() == 4 {
-        if let (Instruction::LoadVector { dst: d0, mem: MemRef::Param(p0) },
-                Instruction::LoadVector { dst: d1, mem: MemRef::Param(p1) },
-                Instruction::StoreVector { src: s3, mem: MemRef::Param(p2) }) = (&instructions[0], &instructions[1], &instructions[3]) {
+        if let (
+            Instruction::LoadVector {
+                dst: d0,
+                mem: MemRef::Param(p0),
+            },
+            Instruction::LoadVector {
+                dst: d1,
+                mem: MemRef::Param(p1),
+            },
+            Instruction::StoreVector {
+                src: s3,
+                mem: MemRef::Param(p2),
+            },
+        ) = (&instructions[0], &instructions[1], &instructions[3])
+        {
             if *p0 < param_ptrs.len() && *p1 < param_ptrs.len() && *p2 < param_ptrs.len() {
                 let ptr0 = param_ptrs[*p0];
                 let ptr1 = param_ptrs[*p1];
                 let ptr2 = param_ptrs[*p2];
                 if !ptr0.is_null() && !ptr1.is_null() && !ptr2.is_null() {
                     let bytes = num_elements * 4;
-                    if bytes <= param_sizes[*p0] && bytes <= param_sizes[*p1] && bytes <= param_sizes[*p2] {
+                    if bytes <= param_sizes[*p0]
+                        && bytes <= param_sizes[*p1]
+                        && bytes <= param_sizes[*p2]
+                    {
                         let a = ptr0 as *const f32;
                         let b = ptr1 as *const f32;
                         let out = ptr2 as *mut f32;
 
                         match &instructions[2] {
-                            Instruction::Add { dst: d2, src1, src2 } if *d0 == *src1 && *d1 == *src2 && *d2 == *s3 => {
+                            Instruction::Add {
+                                dst: d2,
+                                src1,
+                                src2,
+                            } if *d0 == *src1 && *d1 == *src2 && *d2 == *s3 => {
                                 fast_binary_parallel(a, b, out, num_elements, |x, y| x + y);
                                 eprintln!("[TMatmul Fast] add {} elements", num_elements);
                                 return Some(Ok(()));
                             }
-                            Instruction::Sub { dst: d2, src1, src2 } if *d0 == *src1 && *d1 == *src2 && *d2 == *s3 => {
+                            Instruction::Sub {
+                                dst: d2,
+                                src1,
+                                src2,
+                            } if *d0 == *src1 && *d1 == *src2 && *d2 == *s3 => {
                                 fast_binary_parallel(a, b, out, num_elements, |x, y| x - y);
                                 eprintln!("[TMatmul Fast] sub {} elements", num_elements);
                                 return Some(Ok(()));
                             }
-                            Instruction::Mul { dst: d2, src1, src2 } if *d0 == *src1 && *d1 == *src2 && *d2 == *s3 => {
+                            Instruction::Mul {
+                                dst: d2,
+                                src1,
+                                src2,
+                            } if *d0 == *src1 && *d1 == *src2 && *d2 == *s3 => {
                                 fast_binary_parallel(a, b, out, num_elements, |x, y| x * y);
                                 eprintln!("[TMatmul Fast] mul {} elements", num_elements);
                                 return Some(Ok(()));
                             }
-                            Instruction::Div { dst: d2, src1, src2 } if *d0 == *src1 && *d1 == *src2 && *d2 == *s3 => {
-                                fast_binary_parallel(a, b, out, num_elements, |x, y| if y != 0.0 { x / y } else { 0.0 });
+                            Instruction::Div {
+                                dst: d2,
+                                src1,
+                                src2,
+                            } if *d0 == *src1 && *d1 == *src2 && *d2 == *s3 => {
+                                fast_binary_parallel(a, b, out, num_elements, |x, y| {
+                                    if y != 0.0 {
+                                        x / y
+                                    } else {
+                                        0.0
+                                    }
+                                });
                                 eprintln!("[TMatmul Fast] div {} elements", num_elements);
                                 return Some(Ok(()));
                             }
-                            Instruction::Residual { dst: d2, src1, src2 } if *d0 == *src1 && *d1 == *src2 && *d2 == *s3 => {
+                            Instruction::Residual {
+                                dst: d2,
+                                src1,
+                                src2,
+                            } if *d0 == *src1 && *d1 == *src2 && *d2 == *s3 => {
                                 fast_binary_parallel(a, b, out, num_elements, |x, y| x + y);
                                 eprintln!("[TMatmul Fast] residual {} elements", num_elements);
                                 return Some(Ok(()));
@@ -1279,7 +1546,10 @@ unsafe fn execute_rms_pass(
     // Compute RMS value
     let rms_value = if let Some(param_idx) = rms_src_param {
         if param_idx >= param_ptrs.len() || param_ptrs[param_idx].is_null() {
-            return Err(format!("RMS source PARAM_{} is null or out of range", param_idx));
+            return Err(format!(
+                "RMS source PARAM_{} is null or out of range",
+                param_idx
+            ));
         }
         let ptr = param_ptrs[param_idx];
         let max_elems = param_sizes[param_idx] / 4;
@@ -1307,12 +1577,20 @@ unsafe fn execute_rms_pass(
         for inst in instructions {
             // Skip RMS control instructions in the execution pass
             match inst {
-                Instruction::RmsClear | Instruction::RmsAccumulate { .. } |
-                Instruction::RmsFinishAccumulate { .. } => continue,
+                Instruction::RmsClear
+                | Instruction::RmsAccumulate { .. }
+                | Instruction::RmsFinishAccumulate { .. } => continue,
                 _ => {}
             }
-            execute_instruction(inst, &mut registers, &mut spill_memory,
-                              param_ptrs, param_sizes, byte_offset, rms_value);
+            execute_instruction(
+                inst,
+                &mut registers,
+                &mut spill_memory,
+                param_ptrs,
+                param_sizes,
+                byte_offset,
+                rms_value,
+            );
         }
     }
 
@@ -1387,17 +1665,25 @@ unsafe fn execute_reduce_pass(
     let result: f32 = match r_type {
         "sum" => {
             let mut acc: f64 = 0.0;
-            for &v in src_slice { acc += v as f64; }
+            for &v in src_slice {
+                acc += v as f64;
+            }
             acc as f32
         }
         "mean" => {
             let mut acc: f64 = 0.0;
-            for &v in src_slice { acc += v as f64; }
+            for &v in src_slice {
+                acc += v as f64;
+            }
             (acc / count as f64) as f32
         }
         "max" => {
             let mut m = f32::NEG_INFINITY;
-            for &v in src_slice { if v > m { m = v; } }
+            for &v in src_slice {
+                if v > m {
+                    m = v;
+                }
+            }
             m
         }
         "var" => {
@@ -1411,7 +1697,11 @@ unsafe fn execute_reduce_pass(
             let mean = sum / count as f64;
             let variance = (sum_sq / count as f64) - mean * mean;
             // Bessel's correction for unbiased
-            let unbiased = if count > 1 { variance * (count as f64) / (count as f64 - 1.0) } else { variance };
+            let unbiased = if count > 1 {
+                variance * (count as f64) / (count as f64 - 1.0)
+            } else {
+                variance
+            };
             unbiased as f32
         }
         _ => 0.0,
@@ -1424,7 +1714,10 @@ unsafe fn execute_reduce_pass(
         dst_f32.write_unaligned(result);
     }
 
-    eprintln!("[TMatmul Interpreter] Reduce {} over {} elements = {}", r_type, count, result);
+    eprintln!(
+        "[TMatmul Interpreter] Reduce {} over {} elements = {}",
+        r_type, count, result
+    );
     Ok(())
 }
 
@@ -1482,7 +1775,9 @@ unsafe fn execute_softmax_pass(
     // Pass 1: Find max
     let mut max_val = f32::NEG_INFINITY;
     for &v in src_slice {
-        if v > max_val { max_val = v; }
+        if v > max_val {
+            max_val = v;
+        }
     }
 
     // Pass 2: Compute sum of exp(x - max)
@@ -1498,7 +1793,10 @@ unsafe fn execute_softmax_pass(
         dst_slice[i] = (exp_val / sum_exp) as f32;
     }
 
-    eprintln!("[TMatmul Interpreter] Softmax over {} elements (max={}, sum_exp={})", count, max_val, sum_exp);
+    eprintln!(
+        "[TMatmul Interpreter] Softmax over {} elements (max={}, sum_exp={})",
+        count, max_val, sum_exp
+    );
     Ok(())
 }
 
@@ -1526,7 +1824,12 @@ unsafe fn execute_layernorm_pass(
                     reg_source[*dst as usize] = Some(*idx);
                 }
             }
-            Instruction::LayerNorm { input, weight, bias, .. } => {
+            Instruction::LayerNorm {
+                input,
+                weight,
+                bias,
+                ..
+            } => {
                 input_param = reg_source[*input as usize];
                 weight_param = reg_source[*weight as usize];
                 if let Some(b) = bias {
@@ -1614,7 +1917,10 @@ unsafe fn execute_layernorm_pass(
         dst_slice[i] = result as f32;
     }
 
-    eprintln!("[TMatmul Interpreter] LayerNorm over {} elements (mean={:.6}, var={:.6})", count, mean, variance);
+    eprintln!(
+        "[TMatmul Interpreter] LayerNorm over {} elements (mean={:.6}, var={:.6})",
+        count, mean, variance
+    );
     Ok(())
 }
 
@@ -1692,7 +1998,11 @@ unsafe fn execute_instruction(
         }
         Instruction::Rsqrt { dst, src } => {
             let x = registers[*src as usize];
-            registers[*dst as usize] = if x > 0.0 { 1.0 / x.sqrt() } else { f32::INFINITY };
+            registers[*dst as usize] = if x > 0.0 {
+                1.0 / x.sqrt()
+            } else {
+                f32::INFINITY
+            };
         }
         Instruction::Sqrt { dst, src } => {
             registers[*dst as usize] = registers[*src as usize].sqrt();
@@ -1727,7 +2037,13 @@ unsafe fn execute_instruction(
         }
         Instruction::Sign { dst, src } => {
             let x = registers[*src as usize];
-            registers[*dst as usize] = if x > 0.0 { 1.0 } else if x < 0.0 { -1.0 } else { 0.0 };
+            registers[*dst as usize] = if x > 0.0 {
+                1.0
+            } else if x < 0.0 {
+                -1.0
+            } else {
+                0.0
+            };
         }
         Instruction::Residual { dst, src1, src2 } => {
             // residual connection: output = x + f(x)
@@ -1739,10 +2055,10 @@ unsafe fn execute_instruction(
             // Here we just copy the value as a fallback.
             registers[*dst as usize] = registers[*src as usize];
         }
-        Instruction::ReduceSum { dst, .. } |
-        Instruction::ReduceMean { dst, .. } |
-        Instruction::ReduceMax { dst, .. } |
-        Instruction::ReduceVar { dst, .. } => {
+        Instruction::ReduceSum { dst, .. }
+        | Instruction::ReduceMean { dst, .. }
+        | Instruction::ReduceMax { dst, .. }
+        | Instruction::ReduceVar { dst, .. } => {
             // Reductions are handled by execute_reduce_pass, not per-element.
             // This is a no-op placeholder in per-element mode.
             let _ = dst;
@@ -1752,8 +2068,9 @@ unsafe fn execute_instruction(
             // Placeholder: just copy input.
             registers[*dst as usize] = registers[*input as usize];
         }
-        Instruction::RmsClear | Instruction::RmsAccumulate { .. } |
-        Instruction::RmsFinishAccumulate { .. } => {
+        Instruction::RmsClear
+        | Instruction::RmsAccumulate { .. }
+        | Instruction::RmsFinishAccumulate { .. } => {
             // Handled by execute_rms_pass
         }
         Instruction::RmsNorm { dst, src } => {
@@ -1764,15 +2081,11 @@ unsafe fn execute_instruction(
         Instruction::Norm { dst, src } => {
             // Use pre-computed RMS value
             let x = registers[*src as usize];
-            registers[*dst as usize] = if rms_value != 0.0 {
-                x / rms_value
-            } else {
-                x
-            };
+            registers[*dst as usize] = if rms_value != 0.0 { x / rms_value } else { x };
         }
-        Instruction::TMatmulImport { .. } |
-        Instruction::TMatmulGo { .. } |
-        Instruction::TMatmulExport { .. } => {
+        Instruction::TMatmulImport { .. }
+        | Instruction::TMatmulGo { .. }
+        | Instruction::TMatmulExport { .. } => {
             // Matrix multiply not supported in scalar interpreter mode
             // These would need a full matrix-vector implementation
         }
@@ -1804,9 +2117,7 @@ unsafe fn read_memory(
             let addr = ptr.add(byte_offset) as *const f32;
             addr.read_unaligned()
         }
-        MemRef::Spill(name) => {
-            spill_memory.get(name).copied().unwrap_or(0.0)
-        }
+        MemRef::Spill(name) => spill_memory.get(name).copied().unwrap_or(0.0),
         MemRef::Const(val) => *val,
     }
 }
@@ -1856,7 +2167,9 @@ fn f16_to_f32(h: u16) -> f32 {
     let mant = (h & 0x3ff) as u32;
 
     let f = if exp == 0 {
-        if mant == 0 { sign } else {
+        if mant == 0 {
+            sign
+        } else {
             // Denormalized - simplified handling
             sign | ((127 - 14) << 23) | (mant << 13)
         }
@@ -1889,10 +2202,13 @@ unsafe fn read_typed_elem(ptr: *const u8, idx: usize, dtype: i32) -> f32 {
     match dtype {
         2 => f16_to_f32((ptr as *const u16).add(idx).read_unaligned()), // f16 (CUDA_R_16F)
         14 => bf16_to_f32((ptr as *const u16).add(idx).read_unaligned()), // bf16 (CUDA_R_16BF)
-        0 => (ptr as *const f32).add(idx).read_unaligned(), // f32 (CUDA_R_32F)
-        1 => (ptr as *const f64).add(idx).read_unaligned() as f32, // f64 (CUDA_R_64F)
+        0 => (ptr as *const f32).add(idx).read_unaligned(),             // f32 (CUDA_R_32F)
+        1 => (ptr as *const f64).add(idx).read_unaligned() as f32,      // f64 (CUDA_R_64F)
         _ => {
-            eprintln!("[TMatmul GEMM] WARNING: unknown dtype {} in read_typed_elem, treating as f32", dtype);
+            eprintln!(
+                "[TMatmul GEMM] WARNING: unknown dtype {} in read_typed_elem, treating as f32",
+                dtype
+            );
             (ptr as *const f32).add(idx).read_unaligned()
         }
     }
@@ -1915,10 +2231,13 @@ unsafe fn write_typed_elem(ptr: *mut u8, idx: usize, dtype: i32, val: f32) {
     match dtype {
         2 => (ptr as *mut u16).add(idx).write_unaligned(f32_to_f16(val)), // f16 (CUDA_R_16F)
         14 => (ptr as *mut u16).add(idx).write_unaligned(f32_to_bf16(val)), // bf16 (CUDA_R_16BF)
-        0 => (ptr as *mut f32).add(idx).write_unaligned(val), // f32 (CUDA_R_32F)
-        1 => (ptr as *mut f64).add(idx).write_unaligned(val as f64), // f64 (CUDA_R_64F)
+        0 => (ptr as *mut f32).add(idx).write_unaligned(val),             // f32 (CUDA_R_32F)
+        1 => (ptr as *mut f64).add(idx).write_unaligned(val as f64),      // f64 (CUDA_R_64F)
         _ => {
-            eprintln!("[TMatmul GEMM] WARNING: unknown dtype {} in write_typed_elem, treating as f32", dtype);
+            eprintln!(
+                "[TMatmul GEMM] WARNING: unknown dtype {} in write_typed_elem, treating as f32",
+                dtype
+            );
             (ptr as *mut f32).add(idx).write_unaligned(val);
         }
     }
@@ -1952,21 +2271,30 @@ pub unsafe fn execute_gemm_tmatmul(
         return 0;
     }
 
-    eprintln!("[TMatmul GEMM] m={}, n={}, k={}, alpha={}, beta={}, transa={}, transb={}",
-              m, n, k, alpha, beta, transa, transb);
+    eprintln!(
+        "[TMatmul GEMM] m={}, n={}, k={}, alpha={}, beta={}, transa={}, transb={}",
+        m, n, k, alpha, beta, transa, transb
+    );
 
     // Generate TMatmul assembly for this GEMM
     // For column-major: C[i,j] = sum_p A[i,p] * B[p,j]
     // With transposition handling
 
-    let assembly = format!(r#"
+    let assembly = format!(
+        r#"
 ; TMatmul GEMM: C = alpha * op(A) * op(B) + beta * C
 ; m={m}, n={n}, k={k}, alpha={alpha}, beta={beta}
 ; PARAM_0 = A, PARAM_1 = B, PARAM_2 = C
     tmatmul_gemm PARAM_0,PARAM_1,PARAM_2,{m},{n},{k},{alpha},{beta},{transa},{transb}
-"#, m=m, n=n, k=k, alpha=alpha, beta=beta,
-    transa=if transa { 1 } else { 0 },
-    transb=if transb { 1 } else { 0 });
+"#,
+        m = m,
+        n = n,
+        k = k,
+        alpha = alpha,
+        beta = beta,
+        transa = if transa { 1 } else { 0 },
+        transb = if transb { 1 } else { 0 }
+    );
 
     eprintln!("[TMatmul GEMM] Generated assembly:\n{}", assembly);
 
@@ -1987,13 +2315,20 @@ pub unsafe fn execute_gemm_tmatmul(
             }
 
             let c_idx = j * ldc + i;
-            let c_old = if beta != 0.0 { read_typed_elem(c_ptr, c_idx, c_dtype) } else { 0.0 };
+            let c_old = if beta != 0.0 {
+                read_typed_elem(c_ptr, c_idx, c_dtype)
+            } else {
+                0.0
+            };
             let c_new = alpha * sum + beta * c_old;
             write_typed_elem(c_ptr, c_idx, c_dtype, c_new);
         }
     }
 
-    eprintln!("[TMatmul GEMM] Completed: {} multiply-accumulate operations", m * n * k);
+    eprintln!(
+        "[TMatmul GEMM] Completed: {} multiply-accumulate operations",
+        m * n * k
+    );
     0
 }
 

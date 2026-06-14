@@ -475,7 +475,8 @@ impl<'a> FromCuda<'a, CUdeviceptr_v2> for () {
     feature = "tmatmul",
     feature = "nvidia",
     feature = "pacc",
-    feature = "webgpu"
+    feature = "webgpu",
+    feature = "apple"
 ))]
 from_cuda_object!(module::Module);
 
@@ -514,6 +515,19 @@ from_cuda_object!(module::PaccKernel);
     not(feature = "nvidia")
 ))]
 from_cuda_object!(module::WebGpuKernel);
+
+// Apple Metal kernel is only for the Apple backend.
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+from_cuda_object!(module::AppleKernel);
 
 #[cfg(feature = "amd")]
 impl<'a> FromCuda<'a, CUlimit> for hipLimit_t {
@@ -734,6 +748,153 @@ impl<'a> FromCuda<'a, *const CUlaunchConfig> for &'a CUlaunchConfig {
 impl<'a> FromCuda<'a, CUdeviceptr> for CUdeviceptr {
     fn from_cuda(ptr: &'a CUdeviceptr) -> Result<Self, CUerror> {
         Ok(*ptr)
+    }
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+impl<'a> FromCuda<'a, CUlimit> for CUlimit {
+    fn from_cuda(limit: &'a CUlimit) -> Result<Self, CUerror> {
+        Ok(*limit)
+    }
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+impl<'a> FromCuda<'a, CUfunction_attribute> for CUfunction_attribute {
+    fn from_cuda(attr: &'a CUfunction_attribute) -> Result<Self, CUerror> {
+        Ok(*attr)
+    }
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+impl<'a> FromCuda<'a, CUpointer_attribute> for CUpointer_attribute {
+    fn from_cuda(attr: &'a CUpointer_attribute) -> Result<Self, CUerror> {
+        Ok(*attr)
+    }
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+impl<'a> FromCuda<'a, CUstream> for CUstream {
+    fn from_cuda(stream: &'a CUstream) -> Result<Self, CUerror> {
+        Ok(*stream)
+    }
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+impl<'a> FromCuda<'a, *mut CUuuid> for *mut CUuuid {
+    fn from_cuda(uuid: &'a *mut CUuuid) -> Result<Self, CUerror> {
+        Ok(*uuid)
+    }
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+impl<'a> FromCuda<'a, *const CUlaunchConfig> for &'a CUlaunchConfig {
+    fn from_cuda(config: &'a *const CUlaunchConfig) -> Result<Self, CUerror> {
+        if config.is_null() {
+            return Err(CUerror::INVALID_VALUE);
+        }
+        Ok(unsafe { &**config })
+    }
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+impl<'a> FromCuda<'a, CUdeviceptr> for CUdeviceptr {
+    fn from_cuda(ptr: &'a CUdeviceptr) -> Result<Self, CUerror> {
+        Ok(*ptr)
+    }
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+impl<'a> FromCuda<'a, *mut CUuuid_st> for *mut [u8; 16] {
+    fn from_cuda(x: &'a *mut CUuuid_st) -> Result<Self, CUerror> {
+        Ok(x.cast::<[u8; 16]>())
+    }
+}
+
+#[cfg(all(
+    feature = "apple",
+    not(feature = "amd"),
+    not(feature = "intel"),
+    not(feature = "tenstorrent"),
+    not(feature = "tmatmul"),
+    not(feature = "nvidia"),
+    not(feature = "pacc"),
+    not(feature = "webgpu")
+))]
+impl<'a> FromCuda<'a, *mut i8> for *mut [u8; 8] {
+    fn from_cuda(x: &'a *mut i8) -> Result<Self, CUerror> {
+        Ok(x.cast::<[u8; 8]>())
     }
 }
 
