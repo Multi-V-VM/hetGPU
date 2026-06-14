@@ -676,6 +676,9 @@ struct KernelLowering<'module, 'input> {
     pointer_regs: HashSet<String>,
     pointer_addr_spaces: HashMap<String, MslAddressSpace>,
     pointer_params: HashSet<String>,
+    terminal_return_labels: HashSet<String>,
+    scalar_aliases: HashMap<String, String>,
+    next_label: Option<String>,
     diagnostics: Vec<String>,
     indent: usize,
     temp_counter: usize,
@@ -704,6 +707,9 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
             pointer_regs: HashSet::new(),
             pointer_addr_spaces: HashMap::new(),
             pointer_params: HashSet::new(),
+            terminal_return_labels: HashSet::new(),
+            scalar_aliases: HashMap::new(),
+            next_label: None,
             diagnostics: Vec::new(),
             indent: 1,
             temp_counter: 0,
@@ -712,6 +718,7 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
             lowering.collect_declarations(body);
             lowering.collect_defs_and_memory_uses(body);
             lowering.infer_pointers();
+            lowering.terminal_return_labels = collect_terminal_return_labels(body);
         }
         lowering
     }
@@ -754,9 +761,7 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
         out.push_str("\n) {\n");
 
         self.emit_local_declarations(&mut out);
-        for statement in body {
-            self.emit_statement(statement, &mut out);
-        }
+        self.emit_statements(body, &mut out);
         out.push_str("}\n");
 
         if self.diagnostics.is_empty() {
@@ -1087,18 +1092,25 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
     fn emit_statement(&mut self, statement: &PtxStatement<'input>, out: &mut String) {
         match statement {
             Statement::Label(label) => {
-                out.push_str(&format!("{}:\n", sanitize_label(label)));
+                self.line(out, &format!("/* PTX label {} */", sanitize_label(label)));
             }
             Statement::Instruction(pred, instruction) => {
                 self.emit_instruction(pred, instruction, out)
             }
             Statement::Block(inner) => {
-                for statement in inner {
-                    self.emit_statement(statement, out);
-                }
+                self.emit_statements(inner, out);
             }
             Statement::Variable(_) => {}
         }
+    }
+
+    fn emit_statements(&mut self, body: &[PtxStatement<'input>], out: &mut String) {
+        let saved_next_label = self.next_label.clone();
+        for (idx, statement) in body.iter().enumerate() {
+            self.next_label = next_label_after(&body[idx + 1..]);
+            self.emit_statement(statement, out);
+        }
+        self.next_label = saved_next_label;
     }
 
     fn emit_instruction(
@@ -1107,6 +1119,11 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
         instruction: &Instruction<PtxOperand<'input>>,
         out: &mut String,
     ) {
+        if let Instruction::Bra { arguments } = instruction {
+            self.emit_branch(pred, arguments.src, out);
+            return;
+        }
+
         if let Some(pred) = pred {
             let pred_expr = if pred.not {
                 format!("!{}", sanitize_ident(pred.label))
@@ -1176,18 +1193,13 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                 );
             }
             Instruction::Mov { arguments, .. } => {
-                let dst = self.expr(&arguments.dst);
-                let src = self.expr(&arguments.src);
-                self.line(out, &format!("{dst} = {src};"));
+                self.emit_move_like(out, &arguments.dst, &arguments.src);
             }
             Instruction::Cvta { arguments, .. } => {
-                let dst = self.expr(&arguments.dst);
-                let src = self.expr(&arguments.src);
-                self.line(out, &format!("{dst} = {src};"));
+                self.emit_move_like(out, &arguments.dst, &arguments.src);
             }
             Instruction::Cvt { data, arguments } => {
-                let dst = self.expr(&arguments.dst);
-                let src = self.expr(&arguments.src);
+                let src = self.scalar_expr(&arguments.src);
                 let to = scalar_msl_type(data.to);
                 let expr = match data.mode {
                     CvtMode::Bitcast if data.to.size_of() == data.from.size_of() => {
@@ -1195,7 +1207,7 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                     }
                     _ => format!("{to}({src})"),
                 };
-                self.line(out, &format!("{dst} = {expr};"));
+                self.emit_scalar_result(out, &arguments.dst, expr);
             }
             Instruction::Add { arguments, .. } => {
                 self.emit_binary(out, &arguments.dst, &arguments.src1, &arguments.src2, "+");
@@ -1204,9 +1216,8 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                 self.emit_binary(out, &arguments.dst, &arguments.src1, &arguments.src2, "-");
             }
             Instruction::Mul { data, arguments } => {
-                let dst = self.expr(&arguments.dst);
-                let src1 = self.expr(&arguments.src1);
-                let src2 = self.expr(&arguments.src2);
+                let src1 = self.scalar_expr(&arguments.src1);
+                let src2 = self.scalar_expr(&arguments.src2);
                 let expr = match data {
                     MulDetails::Integer {
                         control: MulIntControl::High,
@@ -1214,13 +1225,12 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                     } => format!("(({src1}) * ({src2})) >> 32"),
                     _ => format!("({src1}) * ({src2})"),
                 };
-                self.line(out, &format!("{dst} = {expr};"));
+                self.emit_scalar_result(out, &arguments.dst, expr);
             }
             Instruction::Mad { data, arguments } => {
-                let dst = self.expr(&arguments.dst);
-                let src1 = self.expr(&arguments.src1);
-                let src2 = self.expr(&arguments.src2);
-                let src3 = self.expr(&arguments.src3);
+                let src1 = self.scalar_expr(&arguments.src1);
+                let src2 = self.scalar_expr(&arguments.src2);
+                let src3 = self.scalar_expr(&arguments.src3);
                 let expr = match data {
                     ptx_parser::MadDetails::Integer {
                         control: MulIntControl::High,
@@ -1228,7 +1238,7 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                     } => format!("((({src1}) * ({src2})) >> 32) + ({src3})"),
                     _ => format!("(({src1}) * ({src2})) + ({src3})"),
                 };
-                self.line(out, &format!("{dst} = {expr};"));
+                self.emit_scalar_result(out, &arguments.dst, expr);
             }
             Instruction::Fma { arguments, .. } => {
                 let dst = self.expr(&arguments.dst);
@@ -1344,7 +1354,7 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                 self.line(out, &format!("{dst} = {pred} ? {src1} : {src2};"));
             }
             Instruction::Bra { arguments } => {
-                self.line(out, &format!("goto {};", sanitize_label(arguments.src)));
+                self.emit_branch(&None, arguments.src, out);
             }
             Instruction::Ret { .. } => self.line(out, "return;"),
             Instruction::Sin { arguments, .. } => {
@@ -1676,20 +1686,168 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
     }
 
     fn emit_binary(
-        &self,
+        &mut self,
         out: &mut String,
         dst: &PtxOperand<'input>,
         src1: &PtxOperand<'input>,
         src2: &PtxOperand<'input>,
         op: &str,
     ) {
+        if self.is_pointer_destination(dst) {
+            let src1_is_pointer = self.is_pointer_operand(src1);
+            let src2_is_pointer = self.is_pointer_operand(src2);
+            match (op, src1_is_pointer, src2_is_pointer) {
+                ("+", true, false) | ("-", true, false) => {
+                    let dst_expr = self.expr(dst);
+                    let src1_expr = self.expr(src1);
+                    let src2_expr = self.scalar_expr(src2);
+                    if let Some(reg) = operand_reg(dst) {
+                        self.scalar_aliases.remove(&reg);
+                    }
+                    self.line(
+                        out,
+                        &format!("{dst_expr} = ({src1_expr}) {op} ({src2_expr});"),
+                    );
+                    return;
+                }
+                ("+", false, true) => {
+                    let dst_expr = self.expr(dst);
+                    let src1_expr = self.scalar_expr(src1);
+                    let src2_expr = self.expr(src2);
+                    if let Some(reg) = operand_reg(dst) {
+                        self.scalar_aliases.remove(&reg);
+                    }
+                    self.line(out, &format!("{dst_expr} = ({src2_expr}) + ({src1_expr});"));
+                    return;
+                }
+                ("+" | "-" | "&" | "|" | "^" | "<<" | ">>" | "*" | "/" | "%", false, false) => {
+                    let expr = format!(
+                        "({}) {op} ({})",
+                        self.scalar_expr(src1),
+                        self.scalar_expr(src2)
+                    );
+                    self.emit_scalar_result(out, dst, expr);
+                    return;
+                }
+                _ => {
+                    self.diagnostics.push(format!(
+                        "kernel {} contains unsupported PTX pointer arithmetic",
+                        self.kernel.func_directive.name()
+                    ));
+                    self.line(out, "/* unsupported PTX pointer arithmetic */");
+                    return;
+                }
+            }
+        }
+
         let dst_expr = self.expr(dst);
-        let src1_expr = self.expr(src1);
-        let src2_expr = self.expr(src2);
+        let src1_expr = self.scalar_expr(src1);
+        let src2_expr = self.scalar_expr(src2);
+        if let Some(reg) = operand_reg(dst) {
+            self.scalar_aliases.remove(&reg);
+        }
         self.line(
             out,
             &format!("{dst_expr} = ({src1_expr}) {op} ({src2_expr});"),
         );
+    }
+
+    fn emit_move_like(
+        &mut self,
+        out: &mut String,
+        dst: &PtxOperand<'input>,
+        src: &PtxOperand<'input>,
+    ) {
+        if self.is_pointer_destination(dst) && !self.is_pointer_operand(src) {
+            self.emit_scalar_result(out, dst, self.scalar_expr(src));
+            return;
+        }
+
+        if let Some(reg) = operand_reg(dst) {
+            self.scalar_aliases.remove(&reg);
+        }
+        let dst = self.expr(dst);
+        let src = self.expr(src);
+        self.line(out, &format!("{dst} = {src};"));
+    }
+
+    fn emit_scalar_result(&mut self, out: &mut String, dst: &PtxOperand<'input>, expr: String) {
+        if self.is_pointer_destination(dst) {
+            if let Some(reg) = operand_reg(dst) {
+                self.scalar_aliases.insert(reg, expr);
+            }
+            return;
+        }
+
+        if let Some(reg) = operand_reg(dst) {
+            self.scalar_aliases.remove(&reg);
+        }
+        let dst = self.expr(dst);
+        self.line(out, &format!("{dst} = {expr};"));
+    }
+
+    fn emit_branch(
+        &mut self,
+        pred: &Option<PredAt<&'input str>>,
+        target: &'input str,
+        out: &mut String,
+    ) {
+        if self.next_label.as_deref() == Some(target) {
+            self.line(
+                out,
+                &format!(
+                    "/* PTX branch to next label {} lowered to fallthrough. */",
+                    sanitize_label(target)
+                ),
+            );
+            return;
+        }
+
+        if !self.terminal_return_labels.contains(target) {
+            self.diagnostics.push(format!(
+                "kernel {} contains unsupported PTX branch to non-terminal label {}",
+                self.kernel.func_directive.name(),
+                sanitize_label(target)
+            ));
+            self.line(
+                out,
+                &format!("/* unsupported PTX branch to {} */", sanitize_label(target)),
+            );
+            return;
+        }
+
+        if let Some(pred) = pred {
+            let pred_expr = if pred.not {
+                format!("!{}", sanitize_ident(pred.label))
+            } else {
+                sanitize_ident(pred.label)
+            };
+            self.line(out, &format!("if ({pred_expr}) {{"));
+            self.indent += 1;
+            self.line(out, "return;");
+            self.indent -= 1;
+            self.line(out, "}");
+        } else {
+            self.line(out, "return;");
+        }
+    }
+
+    fn is_pointer_operand(&self, operand: &PtxOperand<'input>) -> bool {
+        match operand {
+            ParsedOperand::Reg(id) | ParsedOperand::RegOffset(id, _) => {
+                self.pointer_regs.contains(*id) && !self.scalar_aliases.contains_key(*id)
+            }
+            _ => false,
+        }
+    }
+
+    fn is_pointer_destination(&self, operand: &PtxOperand<'input>) -> bool {
+        match operand {
+            ParsedOperand::Reg(id) | ParsedOperand::RegOffset(id, _) => {
+                self.pointer_regs.contains(*id)
+            }
+            _ => false,
+        }
     }
 
     fn emit_unary_call(
@@ -1735,6 +1893,29 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
                     .collect::<Vec<_>>();
                 format!("{{{}}}", values.join(", "))
             }
+        }
+    }
+
+    fn scalar_expr(&self, operand: &PtxOperand<'input>) -> String {
+        match operand {
+            ParsedOperand::Reg(id) => self
+                .scalar_aliases
+                .get(*id)
+                .cloned()
+                .unwrap_or_else(|| self.expr(operand)),
+            ParsedOperand::RegOffset(id, offset) => {
+                let base = self
+                    .scalar_aliases
+                    .get(*id)
+                    .cloned()
+                    .unwrap_or_else(|| self.expr(&ParsedOperand::Reg(*id)));
+                if *offset >= 0 {
+                    format!("({base} + {offset})")
+                } else {
+                    format!("({base} - {})", offset.unsigned_abs())
+                }
+            }
+            _ => self.expr(operand),
         }
     }
 
@@ -1816,6 +1997,52 @@ impl<'module, 'input> KernelLowering<'module, 'input> {
             self.kernel.func_directive.name()
         ));
     }
+}
+
+fn collect_terminal_return_labels<'input>(body: &[PtxStatement<'input>]) -> HashSet<String> {
+    let mut labels = HashSet::new();
+    collect_terminal_return_labels_in_block(body, &mut labels);
+    labels
+}
+
+fn collect_terminal_return_labels_in_block<'input>(
+    body: &[PtxStatement<'input>],
+    labels: &mut HashSet<String>,
+) {
+    for (idx, statement) in body.iter().enumerate() {
+        match statement {
+            Statement::Label(label) => {
+                if next_statement_is_unconditional_return(&body[idx + 1..]) {
+                    labels.insert((*label).to_string());
+                }
+            }
+            Statement::Block(inner) => collect_terminal_return_labels_in_block(inner, labels),
+            _ => {}
+        }
+    }
+}
+
+fn next_statement_is_unconditional_return<'input>(body: &[PtxStatement<'input>]) -> bool {
+    for statement in body {
+        match statement {
+            Statement::Variable(_) => continue,
+            Statement::Instruction(None, Instruction::Ret { .. }) => return true,
+            Statement::Block(inner) => return next_statement_is_unconditional_return(inner),
+            _ => return false,
+        }
+    }
+    false
+}
+
+fn next_label_after<'input>(body: &[PtxStatement<'input>]) -> Option<String> {
+    for statement in body {
+        match statement {
+            Statement::Variable(_) => continue,
+            Statement::Label(label) => return Some((*label).to_string()),
+            _ => return None,
+        }
+    }
+    None
 }
 
 fn state_space_to_msl(state_space: StateSpace) -> Option<MslAddressSpace> {
@@ -2188,7 +2415,9 @@ mod tests {
         assert!(module.msl.contains("kernel void VecAdd_kernel"));
         assert!(module.msl.contains("device uchar* VecAdd_kernel_param_0"));
         assert!(module.msl.contains("reinterpret_cast<device float*>"));
-        assert!(module.msl.contains("goto BB0_2"));
+        assert!(!module.msl.contains("goto "));
+        assert!(module.msl.contains("if (p2)"));
+        assert!(module.msl.contains("return;"));
         assert_eq!(module.kernels.len(), 1);
         assert_eq!(module.kernels[0].name, "VecAdd_kernel");
         assert_eq!(module.kernels[0].params.len(), 4);
