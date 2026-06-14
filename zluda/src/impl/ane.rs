@@ -1,49 +1,7 @@
 use std::ffi::c_void;
 use std::os::raw::c_int;
 
-const CUDA_R_32F: c_int = 0;
-const CUDA_R_16F: c_int = 2;
-
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-extern "C" {
-    fn hetgpu_apple_ane_gemm(
-        transa: c_int,
-        transb: c_int,
-        m: c_int,
-        n: c_int,
-        k: c_int,
-        alpha: f32,
-        a: *const c_void,
-        atype: c_int,
-        lda: c_int,
-        b: *const c_void,
-        btype: c_int,
-        ldb: c_int,
-        beta: f32,
-        c: *mut c_void,
-        ctype: c_int,
-        ldc: c_int,
-    ) -> c_int;
-
-    fn hetgpu_apple_metal_gemm(
-        transa: c_int,
-        transb: c_int,
-        m: c_int,
-        n: c_int,
-        k: c_int,
-        alpha: f32,
-        a: *const c_void,
-        atype: c_int,
-        lda: c_int,
-        b: *const c_void,
-        btype: c_int,
-        ldb: c_int,
-        beta: f32,
-        c: *mut c_void,
-        ctype: c_int,
-        ldc: c_int,
-    ) -> c_int;
-}
+use apple_runtime_sys::{HETGPU_CUDA_R_16F as CUDA_R_16F, HETGPU_CUDA_R_32F as CUDA_R_32F};
 
 /// cuBLAS-compatible GEMM entry used by the C shim for Apple inference.
 ///
@@ -86,14 +44,14 @@ pub unsafe extern "C" fn hetgpu_ane_gemm(
             .map(|backend| backend.eq_ignore_ascii_case("metal"))
             .unwrap_or(false);
         if !metal_only {
-            let ane_result = hetgpu_apple_ane_gemm(
+            let ane_result = apple_runtime_sys::hetgpu_apple_ane_gemm(
                 transa, transb, m, n, k, alpha, a, atype, lda, b, btype, ldb, beta, c, ctype, ldc,
             );
             if ane_result == 0 {
                 return 0;
             }
         }
-        return hetgpu_apple_metal_gemm(
+        return apple_runtime_sys::hetgpu_apple_metal_gemm(
             transa, transb, m, n, k, alpha, a, atype, lda, b, btype, ldb, beta, c, ctype, ldc,
         );
     }

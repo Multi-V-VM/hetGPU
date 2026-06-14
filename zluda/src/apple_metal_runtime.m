@@ -11,6 +11,17 @@ enum {
     HETGPU_CUDA_R_16F = 2,
 };
 
+enum {
+    HETGPU_METAL_BUFFER_COPY_IN = 1,
+    HETGPU_METAL_BUFFER_COPY_OUT = 2,
+};
+
+typedef struct {
+    void *host_ptr;
+    size_t size;
+    uint32_t flags;
+} HetGpuMetalBufferBinding;
+
 typedef struct {
     uint32_t m;
     uint32_t n;
@@ -30,6 +41,15 @@ typedef struct {
     id<MTLComputePipelineState> gemm_f32;
     id<MTLComputePipelineState> gemm_f16;
 } HetGpuMetalRuntime;
+
+typedef struct {
+    void *device;
+    void *library;
+} HetGpuMetalModule;
+
+typedef struct {
+    void *pipeline;
+} HetGpuMetalFunction;
 
 static NSString *hetgpu_metal_source(void) {
     return @"#include <metal_stdlib>\n"
@@ -71,6 +91,29 @@ static id<MTLComputePipelineState> hetgpu_make_pipeline(id<MTLDevice> device, id
     return pipeline;
 }
 
+static char *hetgpu_copy_c_string(NSString *message) {
+    if (!message) {
+        return NULL;
+    }
+    const char *utf8 = [message UTF8String];
+    if (!utf8) {
+        return NULL;
+    }
+    size_t len = strlen(utf8);
+    char *copy = (char *)malloc(len + 1);
+    if (!copy) {
+        return NULL;
+    }
+    memcpy(copy, utf8, len + 1);
+    return copy;
+}
+
+static void hetgpu_set_log(char **out_log, NSString *message) {
+    if (out_log) {
+        *out_log = hetgpu_copy_c_string(message);
+    }
+}
+
 static HetGpuMetalRuntime *hetgpu_runtime(void) {
     static HetGpuMetalRuntime *runtime = NULL;
     static dispatch_once_t once;
@@ -104,6 +147,243 @@ static HetGpuMetalRuntime *hetgpu_runtime(void) {
         }
     });
     return runtime;
+}
+
+void hetgpu_apple_metal_free_string(char *value) {
+    free(value);
+}
+
+int hetgpu_apple_metal_compile_msl(
+    const char *source,
+    const char *label,
+    void **out_module,
+    char **out_log
+) {
+    if (out_log) {
+        *out_log = NULL;
+    }
+    if (!source || !out_module) {
+        hetgpu_set_log(out_log, @"invalid argument");
+        return -1;
+    }
+    *out_module = NULL;
+
+    HetGpuMetalRuntime *runtime = hetgpu_runtime();
+    if (!runtime || !runtime->device) {
+        hetgpu_set_log(out_log, @"no Metal device available");
+        return -2;
+    }
+
+    @autoreleasepool {
+        NSString *source_string = [NSString stringWithUTF8String:source];
+        if (!source_string) {
+            hetgpu_set_log(out_log, @"MSL source is not valid UTF-8");
+            return -3;
+        }
+
+        NSError *error = nil;
+        id<MTLLibrary> library = [runtime->device newLibraryWithSource:source_string options:nil error:&error];
+        if (!library) {
+            hetgpu_set_log(out_log, error ? [error localizedDescription] : @"Metal library compilation failed");
+            return -4;
+        }
+        if (label) {
+            NSString *label_string = [NSString stringWithUTF8String:label];
+            if (label_string) {
+                library.label = label_string;
+            }
+        }
+
+        HetGpuMetalModule *module = (HetGpuMetalModule *)calloc(1, sizeof(HetGpuMetalModule));
+        if (!module) {
+            hetgpu_set_log(out_log, @"out of memory");
+            return -5;
+        }
+        module->device = (void *)CFBridgingRetain(runtime->device);
+        module->library = (void *)CFBridgingRetain(library);
+        *out_module = module;
+        return 0;
+    }
+}
+
+int hetgpu_apple_metal_get_function(
+    void *module_ptr,
+    const char *name,
+    void **out_function,
+    char **out_log
+) {
+    if (out_log) {
+        *out_log = NULL;
+    }
+    if (!module_ptr || !name || !out_function) {
+        hetgpu_set_log(out_log, @"invalid argument");
+        return -1;
+    }
+    *out_function = NULL;
+
+    HetGpuMetalModule *module = (HetGpuMetalModule *)module_ptr;
+    id<MTLDevice> device = (__bridge id<MTLDevice>)module->device;
+    id<MTLLibrary> library = (__bridge id<MTLLibrary>)module->library;
+    if (!device || !library) {
+        hetgpu_set_log(out_log, @"invalid Metal module");
+        return -2;
+    }
+
+    @autoreleasepool {
+        NSString *function_name = [NSString stringWithUTF8String:name];
+        if (!function_name) {
+            hetgpu_set_log(out_log, @"function name is not valid UTF-8");
+            return -3;
+        }
+
+        id<MTLFunction> fn = [library newFunctionWithName:function_name];
+        if (!fn) {
+            hetgpu_set_log(out_log, [NSString stringWithFormat:@"missing Metal kernel '%@'", function_name]);
+            return -4;
+        }
+
+        NSError *error = nil;
+        id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:fn error:&error];
+        if (!pipeline) {
+            hetgpu_set_log(out_log, error ? [error localizedDescription] : @"Metal pipeline creation failed");
+            return -5;
+        }
+
+        HetGpuMetalFunction *function = (HetGpuMetalFunction *)calloc(1, sizeof(HetGpuMetalFunction));
+        if (!function) {
+            hetgpu_set_log(out_log, @"out of memory");
+            return -6;
+        }
+        function->pipeline = (void *)CFBridgingRetain(pipeline);
+        *out_function = function;
+        return 0;
+    }
+}
+
+int hetgpu_apple_metal_launch_raw(
+    void *function_ptr,
+    const HetGpuMetalBufferBinding *buffers,
+    size_t buffer_count,
+    uint32_t grid_x,
+    uint32_t grid_y,
+    uint32_t grid_z,
+    uint32_t block_x,
+    uint32_t block_y,
+    uint32_t block_z,
+    char **out_log
+) {
+    if (out_log) {
+        *out_log = NULL;
+    }
+    if (!function_ptr || (!buffers && buffer_count > 0) || grid_x == 0 || grid_y == 0 || grid_z == 0) {
+        hetgpu_set_log(out_log, @"invalid argument");
+        return -1;
+    }
+
+    HetGpuMetalRuntime *runtime = hetgpu_runtime();
+    if (!runtime || !runtime->device || !runtime->queue) {
+        hetgpu_set_log(out_log, @"no Metal runtime available");
+        return -2;
+    }
+
+    HetGpuMetalFunction *function = (HetGpuMetalFunction *)function_ptr;
+    id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)function->pipeline;
+    if (!pipeline) {
+        hetgpu_set_log(out_log, @"invalid Metal function");
+        return -3;
+    }
+
+    @autoreleasepool {
+        NSMutableArray<id<MTLBuffer>> *metal_buffers = [NSMutableArray arrayWithCapacity:buffer_count];
+        for (size_t i = 0; i < buffer_count; ++i) {
+            HetGpuMetalBufferBinding binding = buffers[i];
+            if (binding.size == 0 || ((binding.flags & HETGPU_METAL_BUFFER_COPY_OUT) && !binding.host_ptr)) {
+                hetgpu_set_log(out_log, @"invalid Metal buffer binding");
+                return -4;
+            }
+            id<MTLBuffer> buffer = nil;
+            if ((binding.flags & HETGPU_METAL_BUFFER_COPY_IN) && binding.host_ptr) {
+                buffer = [runtime->device newBufferWithBytes:binding.host_ptr length:binding.size options:MTLResourceStorageModeShared];
+            } else {
+                buffer = [runtime->device newBufferWithLength:binding.size options:MTLResourceStorageModeShared];
+            }
+            if (!buffer) {
+                hetgpu_set_log(out_log, @"failed to allocate Metal buffer");
+                return -5;
+            }
+            [metal_buffers addObject:buffer];
+        }
+
+        id<MTLCommandBuffer> command_buffer = [runtime->queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+        if (!command_buffer || !encoder) {
+            hetgpu_set_log(out_log, @"failed to create Metal command encoder");
+            return -6;
+        }
+
+        [encoder setComputePipelineState:pipeline];
+        for (NSUInteger i = 0; i < [metal_buffers count]; ++i) {
+            [encoder setBuffer:[metal_buffers objectAtIndex:i] offset:0 atIndex:i];
+        }
+
+        if (block_x == 0) {
+            block_x = (uint32_t)MAX((NSUInteger)1, pipeline.threadExecutionWidth);
+        }
+        if (block_y == 0) {
+            block_y = 1;
+        }
+        if (block_z == 0) {
+            block_z = 1;
+        }
+
+        MTLSize threads = MTLSizeMake((NSUInteger)grid_x, (NSUInteger)grid_y, (NSUInteger)grid_z);
+        MTLSize threads_per_group = MTLSizeMake((NSUInteger)block_x, (NSUInteger)block_y, (NSUInteger)block_z);
+        [encoder dispatchThreads:threads threadsPerThreadgroup:threads_per_group];
+        [encoder endEncoding];
+        [command_buffer commit];
+        [command_buffer waitUntilCompleted];
+
+        if ([command_buffer status] == MTLCommandBufferStatusError) {
+            hetgpu_set_log(out_log, command_buffer.error ? [command_buffer.error localizedDescription] : @"Metal command failed");
+            return -7;
+        }
+
+        for (size_t i = 0; i < buffer_count; ++i) {
+            HetGpuMetalBufferBinding binding = buffers[i];
+            if (binding.flags & HETGPU_METAL_BUFFER_COPY_OUT) {
+                id<MTLBuffer> buffer = [metal_buffers objectAtIndex:(NSUInteger)i];
+                memcpy(binding.host_ptr, [buffer contents], binding.size);
+            }
+        }
+        return 0;
+    }
+}
+
+int hetgpu_apple_metal_release_module(void *module_ptr) {
+    if (!module_ptr) {
+        return 0;
+    }
+    HetGpuMetalModule *module = (HetGpuMetalModule *)module_ptr;
+    if (module->library) {
+        CFRelease(module->library);
+    }
+    if (module->device) {
+        CFRelease(module->device);
+    }
+    free(module);
+    return 0;
+}
+
+int hetgpu_apple_metal_release_function(void *function_ptr) {
+    if (!function_ptr) {
+        return 0;
+    }
+    HetGpuMetalFunction *function = (HetGpuMetalFunction *)function_ptr;
+    if (function->pipeline) {
+        CFRelease(function->pipeline);
+    }
+    free(function);
+    return 0;
 }
 
 static size_t hetgpu_matrix_elements(int rows, int cols, int leading_dim, int transposed) {

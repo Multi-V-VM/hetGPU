@@ -1,5 +1,11 @@
 #[cfg(feature = "amd")]
 use amd_comgr_sys::*;
+#[cfg(feature = "apple")]
+use apple_comgr_sys::*;
+#[cfg(feature = "apple")]
+pub use apple_comgr_sys::{
+    AppleComgrCompileError, AppleCompiledModule, AppleKernelMetadata, AppleKernelParamMetadata,
+};
 #[cfg(feature = "cutile")]
 use cutile_comgr_sys::*;
 #[cfg(feature = "gemmini")]
@@ -14,6 +20,16 @@ use std::{
 };
 #[cfg(feature = "tenstorrent")]
 use tt_comgr_sys::*;
+
+#[cfg(feature = "apple")]
+pub fn compile_ptx_to_msl(ptx: &[u8]) -> Result<Vec<u8>, apple_comgr_status_s> {
+    apple_comgr_compile_ptx_to_msl(ptx)
+}
+
+#[cfg(feature = "apple")]
+pub fn compile_ptx_to_msl_module(ptx: &[u8]) -> Result<AppleCompiledModule, AppleComgrCompileError> {
+    apple_comgr_compile_ptx_to_msl_module(ptx)
+}
 
 #[cfg(feature = "amd")]
 struct Data(amd_comgr_data_t);

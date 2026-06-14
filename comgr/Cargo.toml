@@ -11,6 +11,7 @@ intel = ["dep:intel_comgr_sys", "dep:ze_runtime_sys"]
 tenstorrent = ["dep:tt_comgr_sys"]
 gemmini = ["dep:gemmini_comgr_sys"]
 cutile = ["dep:cutile_comgr_sys"]
+apple = ["dep:apple_comgr_sys"]
 
 [lib]
 crate-type = ["rlib", "cdylib"]
@@ -21,5 +22,6 @@ intel_comgr_sys = { path = "../ext/intel_comgr-sys", optional = true }
 tt_comgr_sys = { path = "../ext/tt_comgr-sys", optional = true }
 gemmini_comgr_sys = { path = "../ext/gemmini_comgr-sys", optional = true }
 cutile_comgr_sys = { path = "../ext/cutile_comgr-sys", optional = true }
+apple_comgr_sys = { path = "../ext/apple_comgr-sys", optional = true }
 hip_runtime_sys = { path = "../ext/hip_runtime-sys", optional = true }
 ze_runtime_sys = { path = "../ext/ze_runtime-sys", optional = true }

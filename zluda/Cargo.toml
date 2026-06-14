@@ -19,7 +19,8 @@ tmatmul = ["ptx_backend"]
 pacc = []
 webgpu = []
 cutile = ["dep:cutile_comgr_sys", "ptx_backend", "comgr?/cutile"]
-ane = ["tmatmul"]
+apple = ["dep:apple_runtime_sys", "ptx_backend", "comgr?/apple"]
+ane = ["apple"]
 embed_cudart = []
 flate2 = ["dep:flate2"]
 ptx_backend = ["dep:comgr", "dep:ptx", "dep:ptx_parser"]
@@ -42,6 +43,7 @@ tt_runtime_sys = { path = "../ext/tt_runtime-sys", optional = true }
 tt_comgr_sys = { path = "../ext/tt_comgr-sys", optional = true }
 cutile_comgr_sys = { path = "../ext/cutile_comgr-sys", optional = true }
 nvidia_runtime_sys = { path = "../ext/nvidia_runtime-sys", optional = true }
+apple_runtime_sys = { path = "../ext/apple_runtime-sys", optional = true }
 libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

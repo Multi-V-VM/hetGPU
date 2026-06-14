@@ -1,0 +1,15 @@
+[package]
+name = "apple_runtime_sys"
+version = "0.1.0"
+edition = "2021"
+description = "Raw Apple Metal and ANE runtime bridge for hetGPU"
+license = "MIT OR Apache-2.0"
+build = "build.rs"
+links = "hetgpu_apple_runtime"
+
+[lib]
+name = "apple_runtime_sys"
+path = "src/lib.rs"
+
+[build-dependencies]
+cc = "1"

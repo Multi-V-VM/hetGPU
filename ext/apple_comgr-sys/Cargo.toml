@@ -1,0 +1,14 @@
+[package]
+name = "apple_comgr_sys"
+version = "0.1.0"
+edition = "2021"
+description = "Apple PTX-to-MSL compiler interface with COMGR-like handles"
+license = "MIT OR Apache-2.0"
+authors = ["ZLUDA Team"]
+
+[dependencies]
+ptx_parser = { path = "../../ptx_parser" }
+
+[lib]
+name = "apple_comgr_sys"
+path = "src/lib.rs"

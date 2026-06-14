@@ -25,6 +25,8 @@ members = [
     "ext/tt_comgr-sys",
     "ext/tt_runtime-sys",
     "ext/cutile_comgr-sys",
+    "ext/apple_comgr-sys",
+    "ext/apple_runtime-sys",
     "nvidia_sass",
     "ptxas",
     "ext/aie_comgr-sys",
