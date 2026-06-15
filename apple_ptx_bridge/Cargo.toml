@@ -1,0 +1,11 @@
+[package]
+name = "apple_ptx_bridge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "hetgpu_apple_ptx_bridge"
+crate-type = ["staticlib"]
+
+[dependencies]
+comgr = { path = "../comgr", default-features = false, features = ["apple"] }

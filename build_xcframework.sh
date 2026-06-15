@@ -10,6 +10,8 @@ HEADERS_DIR="$BUILD_DIR/Headers"
 COMPAT_INCLUDE_DIR="$BUILD_DIR/SDKCompat"
 IOS_MIN_VERSION="${HETGPU_IOS_MIN_VERSION:-15.0}"
 LIB_NAME="libhetgpu_apple_runtime.a"
+RUST_TARGET_DIR="${HETGPU_RUST_TARGET_DIR:-$BUILD_DIR/rust-target}"
+SKIP_RUST_PTX="${HETGPU_SKIP_RUST_PTX:-0}"
 
 SOURCES=(
     "$ROOT_DIR/zluda/src/apple_cuda_stub.m"
@@ -32,6 +34,35 @@ die() {
 
 require_tool() {
     command -v "$1" >/dev/null || die "$1 not found"
+}
+
+find_cargo() {
+    local candidate
+
+    if [[ -n "${CARGO:-}" && -x "${CARGO:-}" ]]; then
+        printf '%s' "$CARGO"
+        return 0
+    fi
+
+    if command -v cargo >/dev/null; then
+        command -v cargo
+        return 0
+    fi
+
+    for candidate in \
+        /opt/homebrew/bin/cargo \
+        /usr/local/bin/cargo \
+        /opt/homebrew/opt/rustup/bin/cargo \
+        /opt/homebrew/Cellar/rustup/*/bin/cargo \
+        /opt/homebrew/Cellar/rustup/*/libexec/bin/cargo
+    do
+        if [[ -x "$candidate" ]]; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
 }
 
 prepare_headers() {
@@ -129,6 +160,26 @@ CUresult cuLaunchKernel(CUfunction function,
                         CUstream stream,
                         void **kernel_params,
                         void **extra);
+
+CUresult hetgpu_apple_ptx_register_allocation(void *ptr, size_t size);
+CUresult hetgpu_apple_ptx_unregister_allocation(void *ptr);
+CUresult hetgpu_apple_ptx_module_load_data(CUmodule *module, const void *image);
+CUresult hetgpu_apple_ptx_module_unload(CUmodule module);
+CUresult hetgpu_apple_ptx_module_get_function(CUfunction *function,
+                                              CUmodule module,
+                                              const char *name);
+CUresult hetgpu_apple_ptx_function_release(CUfunction function);
+CUresult hetgpu_apple_ptx_launch_kernel(CUfunction function,
+                                        unsigned int grid_dim_x,
+                                        unsigned int grid_dim_y,
+                                        unsigned int grid_dim_z,
+                                        unsigned int block_dim_x,
+                                        unsigned int block_dim_y,
+                                        unsigned int block_dim_z,
+                                        unsigned int shared_mem_bytes,
+                                        CUstream stream,
+                                        void **kernel_params,
+                                        void **extra);
 
 int hetgpu_apple_metal_compile_msl(const char *source,
                                    const char *label,
@@ -235,11 +286,38 @@ compile_source() {
     "$clang_path" "${flags[@]}"
 }
 
+build_rust_ptx_bridge() {
+    local cargo_target="$1"
+    local slice_dir="$2"
+    local output
+    local cargo_bin
+
+    if [[ "$SKIP_RUST_PTX" == "1" ]]; then
+        printf 'Skipping Rust PTX bridge for %s because HETGPU_SKIP_RUST_PTX=1\n' "$cargo_target" >&2
+        return 0
+    fi
+
+    cargo_bin="$(find_cargo)" || die "cargo not found; install Rust or set CARGO=/path/to/cargo"
+    printf 'Building Rust PTX bridge (%s)...\n' "$cargo_target" >&2
+    output="$RUST_TARGET_DIR/$cargo_target/release/libhetgpu_apple_ptx_bridge.a"
+    rm -f "$output"
+    (
+        cd "$ROOT_DIR"
+        PATH="$(dirname "$cargo_bin"):$PATH" \
+        CARGO_TARGET_DIR="$RUST_TARGET_DIR" \
+            "$cargo_bin" build -p apple_ptx_bridge --release --target "$cargo_target" --no-default-features
+    ) || die "Rust PTX bridge build failed for $cargo_target"
+
+    [[ -f "$output" ]] || die "missing Rust PTX bridge archive: $output"
+    printf '%s' "$output"
+}
+
 build_static_lib() {
     local sdk_name="$1"
     local target="$2"
     local name="$3"
     local min_flag="$4"
+    local cargo_target="$5"
     local sdk_path
     local clang_path
     local libtool_path
@@ -266,6 +344,11 @@ build_static_lib() {
         compile_source "$clang_path" "$sdk_path" "$target" "$min_flag" "$source" "$object"
         objects+=("$object")
     done
+    local rust_ptx_lib
+    rust_ptx_lib="$(build_rust_ptx_bridge "$cargo_target" "$slice_dir")"
+    if [[ -n "$rust_ptx_lib" ]]; then
+        objects+=("$rust_ptx_lib")
+    fi
 
     "$libtool_path" -static -o "$slice_dir/$LIB_NAME" "${objects[@]}"
 }
@@ -277,8 +360,8 @@ prepare_sdk_compat_headers
 
 rm -rf "$OUT_DIR"
 
-build_static_lib iphoneos arm64-apple-ios iphoneos-arm64 "-mios-version-min=$IOS_MIN_VERSION"
-build_static_lib iphonesimulator arm64-apple-ios-simulator iphonesimulator-arm64 "-mios-simulator-version-min=$IOS_MIN_VERSION"
+build_static_lib iphoneos arm64-apple-ios iphoneos-arm64 "-mios-version-min=$IOS_MIN_VERSION" aarch64-apple-ios
+build_static_lib iphonesimulator arm64-apple-ios-simulator iphonesimulator-arm64 "-mios-simulator-version-min=$IOS_MIN_VERSION" aarch64-apple-ios-sim
 
 xcodebuild -create-xcframework \
     -library "$BUILD_DIR/iphoneos-arm64/$LIB_NAME" \
