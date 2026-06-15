@@ -35,6 +35,26 @@ enum {
     CUDA_ERROR_NOT_SUPPORTED = 801,
 };
 
+typedef CUresult (*HetGpuPtxModuleLoadDataFn)(CUmodule *module, const void *image);
+typedef CUresult (*HetGpuPtxModuleGetFunctionFn)(CUfunction *hfunc, CUmodule hmod, const char *name);
+typedef CUresult (*HetGpuPtxModuleUnloadFn)(CUmodule module);
+typedef CUresult (*HetGpuPtxLaunchKernelFn)(CUfunction f,
+                                            unsigned int gridDimX, unsigned int gridDimY, unsigned int gridDimZ,
+                                            unsigned int blockDimX, unsigned int blockDimY, unsigned int blockDimZ,
+                                            unsigned int sharedMemBytes,
+                                            CUstream hStream,
+                                            void **kernelParams,
+                                            void **extra);
+
+static void *hetgpu_resolve_optional_symbol(const char *name) {
+    return dlsym(RTLD_DEFAULT, name);
+}
+
+static int hetgpu_allow_fake_ptx(void) {
+    const char *value = getenv("HETGPU_ALLOW_FAKE_PTX");
+    return value && strcmp(value, "1") == 0;
+}
+
 int hetgpu_ane_gemm(int transa, int transb,
                     int m, int n, int k,
                     float alpha,
@@ -217,9 +237,16 @@ CUresult cuMemsetD32_v2(CUdeviceptr dstDevice, unsigned int ui, size_t n) {
 }
 
 CUresult cuModuleLoadData(CUmodule *module, const void *image) {
-    (void)image;
-    if (!module) {
+    if (!module || !image) {
         return CUDA_ERROR_INVALID_VALUE;
+    }
+    HetGpuPtxModuleLoadDataFn load_data =
+        (HetGpuPtxModuleLoadDataFn)hetgpu_resolve_optional_symbol("hetgpu_apple_ptx_module_load_data");
+    if (load_data) {
+        return load_data(module, image);
+    }
+    if (!hetgpu_allow_fake_ptx()) {
+        return CUDA_ERROR_NOT_SUPPORTED;
     }
     *module = (CUmodule)0x2;
     return CUDA_SUCCESS;
@@ -234,15 +261,25 @@ CUresult cuModuleLoadDataEx(CUmodule *module, const void *image,
 }
 
 CUresult cuModuleUnload(CUmodule module) {
-    (void)module;
+    HetGpuPtxModuleUnloadFn unload =
+        (HetGpuPtxModuleUnloadFn)hetgpu_resolve_optional_symbol("hetgpu_apple_ptx_module_unload");
+    if (unload) {
+        return unload(module);
+    }
     return CUDA_SUCCESS;
 }
 
 CUresult cuModuleGetFunction(CUfunction *hfunc, CUmodule hmod, const char *name) {
-    (void)hmod;
-    (void)name;
-    if (!hfunc) {
+    if (!hfunc || !hmod || !name) {
         return CUDA_ERROR_INVALID_VALUE;
+    }
+    HetGpuPtxModuleGetFunctionFn get_function =
+        (HetGpuPtxModuleGetFunctionFn)hetgpu_resolve_optional_symbol("hetgpu_apple_ptx_module_get_function");
+    if (get_function) {
+        return get_function(hfunc, hmod, name);
+    }
+    if (!hetgpu_allow_fake_ptx()) {
+        return CUDA_ERROR_NOT_SUPPORTED;
     }
     *hfunc = (CUfunction)0x3;
     return CUDA_SUCCESS;
@@ -255,17 +292,19 @@ CUresult cuLaunchKernel(CUfunction f,
                         CUstream hStream,
                         void **kernelParams,
                         void **extra) {
-    (void)f;
-    (void)gridDimX;
-    (void)gridDimY;
-    (void)gridDimZ;
-    (void)blockDimX;
-    (void)blockDimY;
-    (void)blockDimZ;
-    (void)sharedMemBytes;
-    (void)hStream;
-    (void)kernelParams;
-    (void)extra;
+    if (!f) {
+        return CUDA_ERROR_INVALID_VALUE;
+    }
+    HetGpuPtxLaunchKernelFn launch =
+        (HetGpuPtxLaunchKernelFn)hetgpu_resolve_optional_symbol("hetgpu_apple_ptx_launch_kernel");
+    if (launch) {
+        return launch(f, gridDimX, gridDimY, gridDimZ,
+                      blockDimX, blockDimY, blockDimZ,
+                      sharedMemBytes, hStream, kernelParams, extra);
+    }
+    if (!hetgpu_allow_fake_ptx()) {
+        return CUDA_ERROR_NOT_SUPPORTED;
+    }
     return CUDA_SUCCESS;
 }
 
