@@ -1,0 +1,4 @@
+0: blank
+2: /root/.cache/tt-metal-cache/9596419641822314402/kernels/writer_interleaved_rm_no_bcast/13607121306546024499//brisc/brisc.elf
+1: /root/.cache/tt-metal-cache/9596419641822314402/kernels/reader_interleaved_rm_no_bcast/4543040472718479725//ncrisc/ncrisc.elf
+3: /root/.cache/tt-metal-cache/9596419641822314402/kernels/eltwise_binary_sfpu_no_bcast/18424771258985378501//trisc0/trisc0.elf:/root/.cache/tt-metal-cache/9596419641822314402/kernels/eltwise_binary_sfpu_no_bcast/18424771258985378501//trisc1/trisc1.elf:/root/.cache/tt-metal-cache/9596419641822314402/kernels/eltwise_binary_sfpu_no_bcast/18424771258985378501//trisc2/trisc2.elf

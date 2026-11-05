@@ -1,0 +1,18 @@
+{
+ "mode": "baseline",
+ "kernel": "vecadd",
+ "rep": 1,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.147,
+ "build_s": 0.1521,
+ "first_batch_s": 0.0084,
+ "checksum": -19456.0,
+ "final_file": "results/final_baseline_vecadd_1.pt",
+ "close_device_s": 0.0005,
+ "timings": {
+  "batch_exec": 17.1418,
+  "final_capture": 1.2082
+ },
+ "total_s": 18.35
+}

@@ -1,0 +1,16 @@
+{
+ "n_instr": 45,
+ "labels": {
+  "LOOP_TILE": 10,
+  "LASTTILE": 16,
+  "WIDTH_DONE": 17,
+  "EXIT": 42
+ },
+ "params": {
+  "pA": 0,
+  "pB": 1,
+  "pC": 2,
+  "pTILES": 3,
+  "pTAILW": 4
+ }
+}

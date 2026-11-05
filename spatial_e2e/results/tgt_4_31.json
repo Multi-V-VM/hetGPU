@@ -1,0 +1,17 @@
+{
+  "mode": "resume",
+  "rom": "rom_mm.hex",
+  "tiles": 4,
+  "tailw": 31,
+  "cycles_before": 180,
+  "cycles_after": 531,
+  "cycles_total": 711,
+  "mem_events": 292,
+  "token_waits": 4,
+  "wall_s": 0.0002,
+  "migrated": true,
+  "checkpoint_pc": 0,
+  "final_c0": -2306831,
+  "sentinel": 4
+,
+  "note": "target phase"}

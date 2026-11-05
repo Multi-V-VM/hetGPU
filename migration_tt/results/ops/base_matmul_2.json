@@ -1,0 +1,18 @@
+{
+ "mode": "baseline",
+ "kernel": "matmul",
+ "rep": 2,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.1605,
+ "build_s": 0.0317,
+ "first_batch_s": 0.009,
+ "checksum": -9.160756290711814e+29,
+ "final_file": "results/final_baseline_matmul_2.pt",
+ "close_device_s": 0.0034,
+ "timings": {
+  "batch_exec": 21.9647,
+  "final_capture": 1.1555
+ },
+ "total_s": 23.1203
+}

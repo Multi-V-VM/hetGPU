@@ -1,0 +1,23 @@
+{
+ "mode": "target",
+ "kernel": "vecadd",
+ "rep": 0,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.1519,
+ "build_s": 0.159,
+ "state_bytes": 1050330,
+ "first_resume_done_ns": 1793912219076892946,
+ "first_resume_batch_s": 0.0083,
+ "capture_start_ns": 1793912216411072827,
+ "checksum": -19456.0,
+ "final_file": "results/final_target_vecadd_0.pt",
+ "close_device_s": 0.0005,
+ "timings": {
+  "deserialize": 0.0029,
+  "restore": 0.0644,
+  "batch_exec": 0.0317,
+  "capture": 11.986
+ },
+ "total_s": 12.085
+}

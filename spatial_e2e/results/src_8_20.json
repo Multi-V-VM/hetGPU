@@ -1,0 +1,17 @@
+{
+  "mode": "migrate",
+  "rom": "rom_mm.hex",
+  "tiles": 8,
+  "tailw": 20,
+  "cycles_before": 0,
+  "cycles_after": 180,
+  "cycles_total": 180,
+  "mem_events": 65,
+  "token_waits": 1,
+  "wall_s": 0.0001,
+  "migrated": false,
+  "checkpoint_pc": 41,
+  "final_c0": 483309,
+  "sentinel": 0
+,
+  "note": "source phase"}

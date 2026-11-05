@@ -1,0 +1,18 @@
+{
+ "mode": "instrumented",
+ "kernel": "matmul",
+ "rep": 2,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.1464,
+ "build_s": 0.0365,
+ "first_batch_s": 0.0102,
+ "checksum": -9.160756290711814e+29,
+ "final_file": "results/final_instrumented_matmul_2.pt",
+ "close_device_s": 0.0004,
+ "timings": {
+  "batch_exec": 0.0506,
+  "capture": 23.1153
+ },
+ "total_s": 23.1659
+}

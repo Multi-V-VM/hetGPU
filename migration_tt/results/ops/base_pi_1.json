@@ -1,0 +1,20 @@
+{
+ "mode": "baseline",
+ "kernel": "pi",
+ "rep": 1,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.1455,
+ "build_s": 0.001,
+ "first_batch_s": 0.3888,
+ "hits": 32251.0,
+ "pi_est": 3.149512,
+ "final_file": "results/final_baseline_pi_1.pt",
+ "point_upload_s": 0.3061,
+ "close_device_s": 0.0005,
+ "timings": {
+  "batch_exec": 5.8723,
+  "final_capture": 0.0165
+ },
+ "total_s": 5.8888
+}

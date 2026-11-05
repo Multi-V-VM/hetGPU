@@ -1,0 +1,20 @@
+{
+ "mode": "instrumented",
+ "kernel": "pi",
+ "rep": 1,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.1487,
+ "build_s": 0.001,
+ "first_batch_s": 0.3894,
+ "hits": 32251.0,
+ "pi_est": 3.149512,
+ "final_file": "results/final_instrumented_pi_1.pt",
+ "point_upload_s": 0.007,
+ "close_device_s": 0.0005,
+ "timings": {
+  "batch_exec": 5.725,
+  "capture": 0.3348
+ },
+ "total_s": 6.0598
+}

@@ -1,0 +1,20 @@
+{
+ "mode": "source",
+ "kernel": "pi",
+ "rep": 2,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.1467,
+ "build_s": 0.001,
+ "capture_start_ns": 1793912875986943004,
+ "state_file": "results/ops/state_pi_2.pt",
+ "state_bytes": 7292,
+ "point_upload_s": 0.004,
+ "close_device_s": 0.0006,
+ "timings": {
+  "batch_exec": 2.8979,
+  "capture": 0.164,
+  "serialize": 0.0024
+ },
+ "total_s": 3.0644
+}

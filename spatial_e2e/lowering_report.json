@@ -1,0 +1,53 @@
+{
+ "regions": [
+  {
+   "kind": "static",
+   "muops": [
+    "bra EXIT (uniform control)",
+    "split (if-convert two-arm diamond)",
+    "merge (region join)",
+    "ld.global -> stream[12]",
+    "ld.global -> stream[13]",
+    "shfl.down (permuter use, validity -> %p0)",
+    "shfl.down (permuter use, validity -> %p0)",
+    "shfl.down (permuter use, validity -> %p0)",
+    "shfl.down (permuter use, validity -> %p0)",
+    "shfl.down (permuter use, validity -> %p0)",
+    "atom.add -> token island",
+    "bar.sync (epoch boundary, safe point)",
+    "bra LOOP_TILE (uniform control)",
+    "st.global -> stream[19]"
+   ],
+   "note": "identity schedule; token islands and stream plans embedded"
+  }
+ ],
+ "stream_plans": [
+  {
+   "base_reg": 12,
+   "kind": "static_affine_stream",
+   "width": 32,
+   "events_per_use": 32
+  },
+  {
+   "base_reg": 13,
+   "kind": "static_affine_stream",
+   "width": 32,
+   "events_per_use": 32
+  }
+ ],
+ "token_islands": [
+  {
+   "rom_index": 36,
+   "kind": "serialized RMW",
+   "events_per_active_lane": 1
+  }
+ ],
+ "safe_points": [
+  {
+   "rom_index": 38,
+   "kind": "bar.sync"
+  }
+ ],
+ "schedule": "identity",
+ "n_instr": 43
+}

@@ -1,0 +1,322 @@
+{
+ "muops": [
+  {
+   "pc": 0,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 0,
+   "src": "mov.u32  %r1, %laneid",
+   "op": "sreg.laneid",
+   "dst": "%r1",
+   "imm": "laneid"
+  },
+  {
+   "pc": 1,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 1,
+   "src": "ld.param.u32 %r25, pC",
+   "op": "ld.param",
+   "dst": "%r25",
+   "param": "pC",
+   "param_idx": 0
+  },
+  {
+   "pc": 2,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 2,
+   "src": "ld.param.u32 %r26, pA",
+   "op": "ld.param",
+   "dst": "%r26",
+   "param": "pA",
+   "param_idx": 1
+  },
+  {
+   "pc": 3,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 3,
+   "src": "ld.param.u32 %r27, pNB",
+   "op": "ld.param",
+   "dst": "%r27",
+   "param": "pNB",
+   "param_idx": 2
+  },
+  {
+   "pc": 4,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 4,
+   "src": "mov.u32  %r22, 1",
+   "op": "mov",
+   "dst": "%r22",
+   "imm": "1"
+  },
+  {
+   "pc": 5,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 5,
+   "src": "mov.u32  %r23, 128",
+   "op": "mov",
+   "dst": "%r23",
+   "imm": "128"
+  },
+  {
+   "pc": 6,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 6,
+   "src": "mov.u32  %r24, 32",
+   "op": "mov",
+   "dst": "%r24",
+   "imm": "32"
+  },
+  {
+   "pc": 7,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 7,
+   "src": "mov.u32  %r9, 0",
+   "op": "mov",
+   "dst": "%r9",
+   "imm": "0"
+  },
+  {
+   "pc": 8,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 8,
+   "src": "setp.lt.s32 %p5, %r9, %r27",
+   "op": "setp.lt",
+   "dst": "%p5",
+   "a": "%r9",
+   "b": "%r27"
+  },
+  {
+   "op": "bra",
+   "guard": 1,
+   "preg": 5,
+   "neg": true,
+   "target": "EXIT",
+   "ptx": 9,
+   "src": "ptx:9",
+   "pc": -1
+  },
+  {
+   "pc": 10,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 10,
+   "src": "mov.u32  %r10, 0",
+   "op": "mov",
+   "dst": "%r10",
+   "imm": "0"
+  },
+  {
+   "pc": 11,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 11,
+   "src": "setp.lt.s32 %p1, %r10, %r23",
+   "op": "setp.lt",
+   "dst": "%p1",
+   "a": "%r10",
+   "b": "%r23"
+  },
+  {
+   "op": "bra",
+   "guard": 1,
+   "preg": 1,
+   "neg": true,
+   "target": "JDONE",
+   "ptx": 12,
+   "src": "ptx:12",
+   "pc": -1
+  },
+  {
+   "pc": 13,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 13,
+   "src": "mad.lo.s32 %r11, %r10, %r24, %r1",
+   "op": "mad",
+   "dst": "%r11",
+   "a": "%r10",
+   "b": "%r24",
+   "c": "%r1"
+  },
+  {
+   "pc": 14,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 14,
+   "src": "add.s32 %r12, %r25, %r11",
+   "op": "add",
+   "dst": "%r12",
+   "a": "%r25",
+   "b": "%r11"
+  },
+  {
+   "pc": 15,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 15,
+   "src": "ld.global.s32 %r14, [%r12]",
+   "op": "ld.global",
+   "space": "global",
+   "order": "weak",
+   "scope": "none",
+   "dst": "%r14",
+   "addr": "[%r12]"
+  },
+  {
+   "pc": 16,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 16,
+   "src": "add.s32 %r13, %r26, %r11",
+   "op": "add",
+   "dst": "%r13",
+   "a": "%r26",
+   "b": "%r11"
+  },
+  {
+   "pc": 17,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 17,
+   "src": "ld.global.s32 %r15, [%r13]",
+   "op": "ld.global",
+   "space": "global",
+   "order": "weak",
+   "scope": "none",
+   "dst": "%r15",
+   "addr": "[%r13]"
+  },
+  {
+   "pc": 18,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 18,
+   "src": "add.s32 %r14, %r14, %r15",
+   "op": "add",
+   "dst": "%r14",
+   "a": "%r14",
+   "b": "%r15"
+  },
+  {
+   "pc": 19,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 19,
+   "src": "st.global.s32 [%r12], %r14",
+   "op": "st.global",
+   "space": "global",
+   "order": "weak",
+   "scope": "none",
+   "addr": "[%r12]",
+   "val": "%r14"
+  },
+  {
+   "pc": 20,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 20,
+   "src": "add.s32 %r10, %r10, %r22",
+   "op": "add",
+   "dst": "%r10",
+   "a": "%r10",
+   "b": "%r22"
+  },
+  {
+   "pc": 21,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 21,
+   "src": "bra LOOP_J",
+   "op": "bra",
+   "target": "LOOP_J"
+  },
+  {
+   "pc": 22,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 22,
+   "src": "bar.sync 0",
+   "op": "bar.sync"
+  },
+  {
+   "pc": 23,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 23,
+   "src": "add.s32 %r9, %r9, %r22",
+   "op": "add",
+   "dst": "%r9",
+   "a": "%r9",
+   "b": "%r22"
+  },
+  {
+   "pc": 24,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 24,
+   "src": "bra LOOP_B",
+   "op": "bra",
+   "target": "LOOP_B"
+  },
+  {
+   "pc": 25,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 25,
+   "src": "ret",
+   "op": "exit"
+  }
+ ],
+ "labels": {
+  "LOOP_B": 8,
+  "LOOP_J": 11,
+  "JDONE": 22,
+  "EXIT": 25
+ },
+ "params": {
+  "pC": 0,
+  "pA": 1,
+  "pNB": 2
+ },
+ "safepoints": [
+  {
+   "pc": 22,
+   "kind": "bar.sync",
+   "label": "SP0"
+  }
+ ],
+ "n_muops": 26
+}

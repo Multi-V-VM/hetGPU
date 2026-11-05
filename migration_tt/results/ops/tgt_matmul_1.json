@@ -1,0 +1,23 @@
+{
+ "mode": "target",
+ "kernel": "matmul",
+ "rep": 1,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.1462,
+ "build_s": 0.0205,
+ "state_bytes": 526042,
+ "first_resume_done_ns": 1793912326416670503,
+ "first_resume_batch_s": 0.0083,
+ "capture_start_ns": 1793912324005119098,
+ "checksum": -9.160756290711814e+29,
+ "final_file": "results/final_target_matmul_1.pt",
+ "close_device_s": 0.0005,
+ "timings": {
+  "deserialize": 0.0017,
+  "restore": 0.0004,
+  "batch_exec": 0.0276,
+  "capture": 11.5608
+ },
+ "total_s": 11.5905
+}

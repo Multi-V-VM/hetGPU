@@ -1,0 +1,19 @@
+{
+ "mode": "source",
+ "kernel": "vecadd",
+ "rep": 1,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.1481,
+ "build_s": 0.156,
+ "capture_start_ns": 1793912399899018677,
+ "state_file": "results/ops/state_vecadd_1.pt",
+ "state_bytes": 1050330,
+ "close_device_s": 0.0006,
+ "timings": {
+  "batch_exec": 0.0319,
+  "capture": 11.9952,
+  "serialize": 0.0031
+ },
+ "total_s": 12.0303
+}

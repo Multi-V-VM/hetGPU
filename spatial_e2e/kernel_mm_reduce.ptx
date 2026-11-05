@@ -1,0 +1,73 @@
+// End-to-end spatial kernel #1: mm_reduce (real PTX, CUDA warp idiom).
+//
+// One warp computes a TILES-long strip of a quantized matvec-scatter:
+// each lane owns element k = laneid, so per tile t the lane computes
+// acc = A[t*32 + laneid] * B[laneid]; the warp reduces the 32 partials
+// with 5 shfl.down steps; lane 0 atomically accumulates the total into
+// C[t]. The last tile is ragged: lanes with laneid >= tail width are
+// predicated off (no load events, acc stays 0), so the reduction still
+// sums exactly while exercising a partial-participation shuffle.
+//
+// Loop branches are warp-uniform (counters and bounds are uniform). All
+// per-lane divergence is expressed by predication -- the if-converted
+// form the spatial path assigns to short guarded regions.
+
+.version 7.0
+.target sm_70
+.visible .entry mm_reduce(.param .u64 pA, .param .u64 pB, .param .u64 pC, .param .u32 pTILES, .param .u32 pTAILW)
+{
+    .reg .s32 %r<24>;
+    .reg .pred %p<8>;
+
+    mov.u32  %r1, %laneid;
+    ld.param.u32 %r2, pTILES;
+    ld.param.u32 %r3, pTAILW;
+    ld.param.u32 %r4, pA;          // element-index bases
+    ld.param.u32 %r5, pB;
+    ld.param.u32 %r6, pC;
+    mov.u32  %r7, %r21;            // t = 0
+    mov.u32  %r20, 32;             // warp width constant
+    mov.u32  %r21, 0;              // constant zero
+    mov.u32  %r22, 1;              // constant one
+
+LOOP_TILE:
+    setp.lt.s32 %p1, %r7, %r2;     // uniform
+    @!%p1 bra EXIT;
+    // active width: 32 everywhere except the last tile
+    setp.eq.s32 %p2, %r7, %r2;
+    @%p2 bra LASTTILE;
+    mov.u32 %r8, %r20;
+    bra WIDTH_DONE;
+LASTTILE:
+    mov.u32 %r8, %r3;
+WIDTH_DONE:
+    setp.lt.s32 %p3, %r1, %r8;     // per-lane active predicate (ragged tail)
+    mov.u32 %r14, %r21;
+    mov.u32 %r15, %r21;
+    mov.u32 %r9, %r21;             // per-lane acc
+    mad.lo.s32 %r11, %r7, %r20, %r1; // A element = t*32 + laneid
+    add.s32 %r12, %r4, %r11;
+    @%p3 ld.global.s32 %r14, [%r12];
+    add.s32 %r13, %r5, %r1;        // B element = laneid
+    @%p3 ld.global.s32 %r15, [%r13];
+    @%p3 mad.lo.s32 %r9, %r14, %r15, %r9;
+    shfl.down.b32 %r16, %r9, 16, 31, 0xffffffff;
+    add.s32 %r9, %r9, %r16;
+    shfl.down.b32 %r16, %r9, 8, 31, 0xffffffff;
+    add.s32 %r9, %r9, %r16;
+    shfl.down.b32 %r16, %r9, 4, 31, 0xffffffff;
+    add.s32 %r9, %r9, %r16;
+    shfl.down.b32 %r16, %r9, 2, 31, 0xffffffff;
+    add.s32 %r9, %r9, %r16;
+    shfl.down.b32 %r16, %r9, 1, 31, 0xffffffff;
+    add.s32 %r9, %r9, %r16;
+    setp.eq.s32 %p4, %r1, %r21;    // lane 0 only
+    @%p4 atom.global.add.s32 %r17, [%r6+%r7], %r9;
+    add.s32 %r7, %r7, %r22;
+    bar.sync 0;                    // phase boundary = safe point
+    bra LOOP_TILE;
+EXIT:
+    add.s32 %r19, %r6, %r2;        // C + TILES
+    st.global.s32 [%r19], %r7;     // completion marker: final t
+    ret;
+}

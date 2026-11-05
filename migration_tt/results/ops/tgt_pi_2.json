@@ -1,0 +1,25 @@
+{
+ "mode": "target",
+ "kernel": "pi",
+ "rep": 2,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.1469,
+ "build_s": 0.001,
+ "state_bytes": 7292,
+ "first_resume_done_ns": 1793912878861420239,
+ "first_resume_batch_s": 0.3975,
+ "capture_start_ns": 1793912875986943004,
+ "hits": 32251.0,
+ "pi_est": 3.149512,
+ "final_file": "results/final_target_pi_2.pt",
+ "point_upload_s": 0.0037,
+ "close_device_s": 0.0005,
+ "timings": {
+  "deserialize": 0.0024,
+  "restore": 0.0002,
+  "batch_exec": 2.9135,
+  "capture": 0.1619
+ },
+ "total_s": 3.0778
+}

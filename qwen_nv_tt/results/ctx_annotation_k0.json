@@ -1,0 +1,93 @@
+{
+ "format": "device-neutral/ctx-state-v1",
+ "kind": "dwarf-recovered-value-map",
+ "kernel": "fusedbitnet.py",
+ "producer": "triton",
+ "compilation_unit": {
+  "file": "fusedbitnet.py",
+  "dir": "/home/eabban/eddy_matmulfreellm/mmfreelm/ops"
+ },
+ "line_program": {
+  "version": 2,
+  "file": "fusedbitnet.py",
+  "rows_first16": [
+   {
+    "addr": 0,
+    "line": 66
+   },
+   {
+    "addr": 240,
+    "line": 89
+   },
+   {
+    "addr": 320,
+    "line": 90
+   },
+   {
+    "addr": 528,
+    "line": 97
+   },
+   {
+    "addr": 928,
+    "line": 98
+   },
+   {
+    "addr": 14432,
+    "line": 111
+   },
+   {
+    "addr": 16816,
+    "line": 112
+   },
+   {
+    "addr": 23232,
+    "line": 263
+   },
+   {
+    "addr": 25280,
+    "line": 293
+   },
+   {
+    "addr": 25424,
+    "line": 263
+   },
+   {
+    "addr": 25456,
+    "line": 293
+   },
+   {
+    "addr": 25600,
+    "line": 263
+   },
+   {
+    "addr": 25632,
+    "line": 293
+   },
+   {
+    "addr": 25776,
+    "line": 263
+   },
+   {
+    "addr": 25808,
+    "line": 293
+   },
+   {
+    "addr": 25952,
+    "line": 263
+   }
+  ]
+ },
+ "value_map": [],
+ "kernel_pc_ranges": [
+  {
+   "name": "_layer_norm_fwd_quant_kernel"
+  },
+  {
+   "name": null,
+   "low_pc": 0,
+   "high_pc": 155712
+  }
+ ],
+ "safe_point": "kernel entry (resume mapping: pc 0)",
+ "target": "sm_120a"
+}

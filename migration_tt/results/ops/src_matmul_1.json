@@ -1,0 +1,19 @@
+{
+ "mode": "source",
+ "kernel": "matmul",
+ "rep": 1,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.1473,
+ "build_s": 0.0298,
+ "capture_start_ns": 1793912324005119098,
+ "state_file": "results/ops/state_matmul_1.pt",
+ "state_bytes": 526042,
+ "close_device_s": 0.0006,
+ "timings": {
+  "batch_exec": 0.0302,
+  "capture": 11.5433,
+  "serialize": 0.0026
+ },
+ "total_s": 11.5761
+}

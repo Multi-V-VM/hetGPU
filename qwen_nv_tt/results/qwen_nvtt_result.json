@@ -1,0 +1,8 @@
+{
+ "bit_exact_state": true,
+ "max_abs_diff": 0.1875,
+ "rel_diff": 0.012658228166401386,
+ "cosine": 0.9999740056366649,
+ "nv_steps": 12,
+ "k": 6
+}

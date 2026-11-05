@@ -1,0 +1,10 @@
+%Error: Cannot find file containing module: 'spatial_core.sv'
+%Error: This may be because there's no search path specified with -I<dir>.
+        ... Looked in:
+             spatial_core.sv
+             spatial_core.sv.v
+             spatial_core.sv.sv
+             obj_dir/spatial_core.sv
+             obj_dir/spatial_core.sv.v
+             obj_dir/spatial_core.sv.sv
+%Error: Exiting due to 2 error(s)

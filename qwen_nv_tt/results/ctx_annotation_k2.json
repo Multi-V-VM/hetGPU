@@ -1,0 +1,93 @@
+{
+ "format": "device-neutral/ctx-state-v1",
+ "kind": "dwarf-recovered-value-map",
+ "kernel": "fused_norm_gate.py",
+ "producer": "triton",
+ "compilation_unit": {
+  "file": "fused_norm_gate.py",
+  "dir": "/home/eabban/eddy_matmulfreellm/mmfreelm/modules"
+ },
+ "line_program": {
+  "version": 2,
+  "file": "fused_norm_gate.py",
+  "rows_first16": [
+   {
+    "addr": 0,
+    "line": 68
+   },
+   {
+    "addr": 160,
+    "line": 91
+   },
+   {
+    "addr": 240,
+    "line": 92
+   },
+   {
+    "addr": 432,
+    "line": 100
+   },
+   {
+    "addr": 576,
+    "line": 101
+   },
+   {
+    "addr": 1088,
+    "line": 114
+   },
+   {
+    "addr": 1104,
+    "line": 115
+   },
+   {
+    "addr": 1168,
+    "line": 291
+   },
+   {
+    "addr": 1312,
+    "line": 261
+   },
+   {
+    "addr": 1328,
+    "line": 291
+   },
+   {
+    "addr": 1488,
+    "line": 261
+   },
+   {
+    "addr": 1504,
+    "line": 291
+   },
+   {
+    "addr": 1664,
+    "line": 261
+   },
+   {
+    "addr": 1680,
+    "line": 291
+   },
+   {
+    "addr": 1840,
+    "line": 261
+   },
+   {
+    "addr": 1856,
+    "line": 291
+   }
+  ]
+ },
+ "value_map": [],
+ "kernel_pc_ranges": [
+  {
+   "name": "_layer_norm_fwd_1pass_kernel"
+  },
+  {
+   "name": null,
+   "low_pc": 0,
+   "high_pc": 6976
+  }
+ ],
+ "safe_point": "kernel entry (resume mapping: pc 0)",
+ "target": "sm_120a"
+}

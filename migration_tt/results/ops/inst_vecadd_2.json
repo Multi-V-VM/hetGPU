@@ -1,0 +1,18 @@
+{
+ "mode": "instrumented",
+ "kernel": "vecadd",
+ "rep": 2,
+ "n_batches": 20,
+ "k": 10,
+ "create_device_s": 0.1465,
+ "build_s": 0.1603,
+ "first_batch_s": 0.0084,
+ "checksum": -19456.0,
+ "final_file": "results/final_instrumented_vecadd_2.pt",
+ "close_device_s": 0.0025,
+ "timings": {
+  "batch_exec": 0.0588,
+  "capture": 24.0412
+ },
+ "total_s": 24.1001
+}

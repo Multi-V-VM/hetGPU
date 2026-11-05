@@ -1,0 +1,48 @@
+; CTX: lane-packed mask-SSA muops lifted from PTX
+; W = 32 lanes; guards are active-lane masks; memory muops carry
+; state space, order, and scope; bar.sync muops are safe points.
+  sreg.laneid ptx=0, dst=%r1, imm=laneid   ; mov.u32  %r1, %laneid
+  ld.param   ptx=1, dst=%r2, param=pTILES, param_idx=3   ; ld.param.u32 %r2, pTILES
+  ld.param   ptx=2, dst=%r3, param=pTAILW, param_idx=4   ; ld.param.u32 %r3, pTAILW
+  ld.param   ptx=3, dst=%r4, param=pA, param_idx=0   ; ld.param.u32 %r4, pA
+  ld.param   ptx=4, dst=%r5, param=pB, param_idx=1   ; ld.param.u32 %r5, pB
+  ld.param   ptx=5, dst=%r6, param=pC, param_idx=2   ; ld.param.u32 %r6, pC
+  mov        ptx=6, dst=%r7, imm=%r21   ; mov.u32  %r7, %r21
+  mov        ptx=7, dst=%r20, imm=32   ; mov.u32  %r20, 32
+  mov        ptx=8, dst=%r21, imm=0   ; mov.u32  %r21, 0
+  mov        ptx=9, dst=%r22, imm=1   ; mov.u32  %r22, 1
+  setp.lt    ptx=10, dst=%p1, a=%r7, b=%r2   ; setp.lt.s32 %p1, %r7, %r2
+  @!%p1 bra        EXIT   ; ptx:11
+  setp.eq    ptx=12, dst=%p2, a=%r7, b=%r2   ; setp.eq.s32 %p2, %r7, %r2
+  split.mask  %p2   ; ptx:13
+  @!%p2 [fall] mov        ptx=None, dst=%r8, imm=%r20, arm=fall   ; mov.u32 %r8, %r20
+  @%p2 [taken] mov        ptx=None, dst=%r8, imm=%r3, arm=taken   ; mov.u32 %r8, %r3
+  merge.mask                ; ptx:17
+  setp.lt    ptx=17, dst=%p3, a=%r1, b=%r8   ; setp.lt.s32 %p3, %r1, %r8
+  mov        ptx=18, dst=%r14, imm=%r21   ; mov.u32 %r14, %r21
+  mov        ptx=19, dst=%r15, imm=%r21   ; mov.u32 %r15, %r21
+  mov        ptx=20, dst=%r9, imm=%r21   ; mov.u32 %r9, %r21
+  mad        ptx=21, dst=%r11, a=%r7, b=%r20, c=%r1   ; mad.lo.s32 %r11, %r7, %r20, %r1
+  add        ptx=22, dst=%r12, a=%r4, b=%r11   ; add.s32 %r12, %r4, %r11
+  @%p3 ld.global  %r14, [[%r12]]  space=global order=weak   ; ld.global.s32 %r14, [%r12]
+  add        ptx=24, dst=%r13, a=%r5, b=%r1   ; add.s32 %r13, %r5, %r1
+  @%p3 ld.global  %r15, [[%r13]]  space=global order=weak   ; ld.global.s32 %r15, [%r13]
+  @%p3 mad        ptx=26, dst=%r9, a=%r14, b=%r15, c=%r9   ; mad.lo.s32 %r9, %r14, %r15, %r9
+  shfl.down  %r16, %r9, 16, 31, 0xffffffff   ; %r9
+  add        ptx=28, dst=%r9, a=%r9, b=%r16   ; add.s32 %r9, %r9, %r16
+  shfl.down  %r16, %r9, 8, 31, 0xffffffff   ; %r9
+  add        ptx=30, dst=%r9, a=%r9, b=%r16   ; add.s32 %r9, %r9, %r16
+  shfl.down  %r16, %r9, 4, 31, 0xffffffff   ; %r9
+  add        ptx=32, dst=%r9, a=%r9, b=%r16   ; add.s32 %r9, %r9, %r16
+  shfl.down  %r16, %r9, 2, 31, 0xffffffff   ; %r9
+  add        ptx=34, dst=%r9, a=%r9, b=%r16   ; add.s32 %r9, %r9, %r16
+  shfl.down  %r16, %r9, 1, 31, 0xffffffff   ; %r9
+  add        ptx=36, dst=%r9, a=%r9, b=%r16   ; add.s32 %r9, %r9, %r16
+  setp.eq    ptx=37, dst=%p4, a=%r1, b=%r21   ; setp.eq.s32 %p4, %r1, %r21
+  @%p4 atom.add   %r17, [%r6+%r7], %r9  space=global order=relaxed scope=gpu   ; atom.global.add.s32 %r17, [%r6+%r7], %r9
+  add        ptx=39, dst=%r7, a=%r7, b=%r22   ; add.s32 %r7, %r7, %r22
+  bar.sync   0     ; SAFE POINT sp:SP0
+  bra        LOOP_TILE   ; bra LOOP_TILE
+  add        ptx=42, dst=%r19, a=%r6, b=%r2   ; add.s32 %r19, %r6, %r2
+  st.global  [[%r19]], %r7  space=global order=weak   ; st.global.s32 [%r19], %r7
+  exit       ptx=44   ; ret

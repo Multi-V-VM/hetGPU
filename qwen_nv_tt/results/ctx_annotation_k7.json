@@ -1,0 +1,84 @@
+{
+ "format": "device-neutral/ctx-state-v1",
+ "kind": "dwarf-recovered-value-map",
+ "kernel": "recurrent_fuse.py",
+ "producer": "triton",
+ "compilation_unit": {
+  "file": "recurrent_fuse.py",
+  "dir": "/home/eabban/matmulfreellm/mmfreelm/ops/hgrn"
+ },
+ "line_program": {
+  "version": 2,
+  "file": "recurrent_fuse.py",
+  "rows_first16": [
+   {
+    "addr": 0,
+    "line": 32
+   },
+   {
+    "addr": 272,
+    "line": 44
+   },
+   {
+    "addr": 432,
+    "line": 45
+   },
+   {
+    "addr": 704,
+    "line": 46
+   },
+   {
+    "addr": 720,
+    "line": 48
+   },
+   {
+    "addr": 896,
+    "line": 49
+   },
+   {
+    "addr": 960,
+    "line": 50
+   },
+   {
+    "addr": 1024,
+    "line": 54
+   },
+   {
+    "addr": 1168,
+    "line": 55
+   },
+   {
+    "addr": 1632,
+    "line": 57
+   },
+   {
+    "addr": 1840,
+    "line": 58
+   },
+   {
+    "addr": 2048,
+    "line": 59
+   },
+   {
+    "addr": 2064,
+    "line": 60
+   },
+   {
+    "addr": 2240,
+    "line": 62
+   },
+   {
+    "addr": 2272,
+    "line": 63
+   },
+   {
+    "addr": 2304,
+    "line": 64
+   }
+  ]
+ },
+ "value_map": [],
+ "kernel_pc_ranges": [],
+ "safe_point": "kernel entry (resume mapping: pc 0)",
+ "target": "sm_90a"
+}

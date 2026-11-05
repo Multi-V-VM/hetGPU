@@ -1,0 +1,13 @@
+{
+ "format": "device-neutral/ctx-state-v1",
+ "source_device": "nvidia-rtx-pro-6000-blackwell (sm_120, CUDA 13.2)",
+ "workload": "Qwen3-0.6B decoder layer 0, bf16, eager attention",
+ "safe_point": "token-step boundary after step 6",
+ "live_values": [
+  "hidden[1,1,1024]",
+  "K_cache",
+  "V_cache",
+  "step"
+ ],
+ "kernels_captured": "torch-inductor PTX, DWARF-recovered (see ctx_annotation.json)"
+}
