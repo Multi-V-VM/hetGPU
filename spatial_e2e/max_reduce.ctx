@@ -1,0 +1,28 @@
+; CTX: lane-packed mask-SSA muops lifted from PTX
+; W = 32 lanes; guards are active-lane masks; memory muops carry
+; state space, order, and scope; bar.sync muops are safe points.
+  sreg.laneid ptx=0, dst=%r1, imm=laneid   ; mov.u32  %r1, %laneid
+  ld.param   ptx=1, dst=%r4, param=pA, param_idx=0   ; ld.param.u32 %r4, pA
+  ld.param   ptx=2, dst=%r6, param=pC, param_idx=1   ; ld.param.u32 %r6, pC
+  mov        ptx=3, dst=%r21, imm=0   ; mov.u32  %r21, 0
+  mov        ptx=4, dst=%r22, imm=1   ; mov.u32  %r22, 1
+  add        ptx=5, dst=%r12, a=%r4, b=%r1   ; add.s32 %r12, %r4, %r1
+  ld.global  %r9, [[%r12]]  space=global order=weak   ; ld.global.s32 %r9, [%r12]
+  shfl.down  %r16, %r9, 16, 31, 0xffffffff   ; %r9
+  setp.lt    ptx=8, dst=%p1, a=%r16, b=%r9   ; setp.lt.s32 %p1, %r16, %r9
+  selp       %r9, %r9, %r16, %p1   ; selp.b32 %r9, %r9, %r16, %p1
+  shfl.down  %r16, %r9, 8, 31, 0xffffffff   ; %r9
+  setp.lt    ptx=11, dst=%p1, a=%r16, b=%r9   ; setp.lt.s32 %p1, %r16, %r9
+  selp       %r9, %r9, %r16, %p1   ; selp.b32 %r9, %r9, %r16, %p1
+  shfl.down  %r16, %r9, 4, 31, 0xffffffff   ; %r9
+  setp.lt    ptx=14, dst=%p1, a=%r16, b=%r9   ; setp.lt.s32 %p1, %r16, %r9
+  selp       %r9, %r9, %r16, %p1   ; selp.b32 %r9, %r9, %r16, %p1
+  shfl.down  %r16, %r9, 2, 31, 0xffffffff   ; %r9
+  setp.lt    ptx=17, dst=%p1, a=%r16, b=%r9   ; setp.lt.s32 %p1, %r16, %r9
+  selp       %r9, %r9, %r16, %p1   ; selp.b32 %r9, %r9, %r16, %p1
+  shfl.down  %r16, %r9, 1, 31, 0xffffffff   ; %r9
+  setp.lt    ptx=20, dst=%p1, a=%r16, b=%r9   ; setp.lt.s32 %p1, %r16, %r9
+  selp       %r9, %r9, %r16, %p1   ; selp.b32 %r9, %r9, %r16, %p1
+  setp.eq    ptx=22, dst=%p4, a=%r1, b=%r21   ; setp.eq.s32 %p4, %r1, %r21
+  @%p4 st.global  [[%r6]], %r9  space=global order=weak   ; st.global.s32 [%r6], %r9
+  exit       ptx=24   ; ret

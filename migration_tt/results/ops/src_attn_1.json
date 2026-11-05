@@ -1,0 +1,19 @@
+{
+ "mode": "source",
+ "kernel": "attn",
+ "rep": 1,
+ "n_batches": 12,
+ "k": 6,
+ "create_device_s": 0.8681,
+ "build_s": 0.0063,
+ "capture_start_ns": 1793919485727101795,
+ "state_file": "results/ops/state_attn_1.pt",
+ "state_bytes": 23501,
+ "close_device_s": 0.0005,
+ "timings": {
+  "batch_exec": 0.9697,
+  "capture": 0.0966,
+  "serialize": 0.0025
+ },
+ "total_s": 1.0688
+}

@@ -190,6 +190,20 @@ module spatial_core #(
                             pc_r <= pc_r + 1;
                             state <= S_FETCH;
                         end
+                        8'd16: begin                                              // SELP d, a, b, p
+                            for (int l = 0; l < LANES; l++)
+                                regs[l][dst[4:0]] <= preds[l][preg] ?
+                                    regs[l][srca[4:0]] : regs[l][srcb[4:0]];
+                            pc_r <= pc_r + 1;
+                            state <= S_FETCH;
+                        end
+                        8'd17: begin                                              // AND
+                            for (int l = 0; l < LANES; l++)
+                                if (lane_en(l[4:0]))
+                                    regs[l][dst[4:0]] <= regs[l][srca[4:0]] & regs[l][srcb[4:0]];
+                            pc_r <= pc_r + 1;
+                            state <= S_FETCH;
+                        end
                         default: done_r <= 1'b1;
                     endcase
                 end

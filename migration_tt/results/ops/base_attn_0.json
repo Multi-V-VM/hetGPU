@@ -1,0 +1,18 @@
+{
+ "mode": "baseline",
+ "kernel": "attn",
+ "rep": 0,
+ "n_batches": 12,
+ "k": 10,
+ "create_device_s": 0.4326,
+ "build_s": 0.0052,
+ "first_batch_s": 0.1811,
+ "checksum": -12.7134,
+ "final_file": "results/final_baseline_attn_0.pt",
+ "close_device_s": 0.0005,
+ "timings": {
+  "batch_exec": 2.0581,
+  "final_capture": 0.0159
+ },
+ "total_s": 2.0741
+}

@@ -24,6 +24,8 @@ import ttnn
 from safetensors import safe_open
 
 SEED = 0xC0FFEE
+DTYPE = torch.bfloat16          # switched to float32 by --dtype fp32
+TT_DTYPE = ttnn.bfloat16
 SNAP = os.environ.get("QWEN_SNAP", os.path.expanduser(
     "~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots"))
 NH_Q, NH_KV, HD, HID, INTER = 16, 8, 128, 1024, 3072
@@ -43,7 +45,7 @@ def load_weights():
     # pack qkv for one linear; ttnn.linear wants [in, out] weights
     w["qkv"] = torch.cat([w["self_attn.q_proj.weight"],
                           w["self_attn.k_proj.weight"],
-                          w["self_attn.v_proj.weight"]], dim=0).t().contiguous().to(torch.bfloat16)
+                          w["self_attn.v_proj.weight"]], dim=0).t().contiguous().to(DTYPE)
     for k in list(w):
         if k != "qkv":
             w[k] = w[k].t().contiguous().to(torch.bfloat16)
@@ -59,7 +61,7 @@ def rope_cs(pos, device_cpu=True):
 
 
 def to_tt(dev, t):
-    return ttnn.from_torch(t.contiguous(), dtype=ttnn.bfloat16,
+    return ttnn.from_torch(t.contiguous(), dtype=TT_DTYPE,
                            layout=ttnn.TILE_LAYOUT,
                            device=dev, memory_config=ttnn.DRAM_MEMORY_CONFIG)
 
@@ -80,7 +82,7 @@ def fp32_rms_norm(dev, x_tt, w_tt_bf, eps=1e-6):
     w32 = ttnn.typecast(w_tt_bf, ttnn.float32)
     y = ttnn.multiply(ttnn.multiply(x, inv, memory_config=ttnn.DRAM_MEMORY_CONFIG),
                       w32, memory_config=ttnn.DRAM_MEMORY_CONFIG)
-    return ttnn.typecast(y, ttnn.bfloat16)
+    return ttnn.typecast(y, TT_DTYPE)
 
 
 def step_tt(dev, W, h_tt, cos_q, sin_q, cos_k, sin_k, k_host, v_host, step_idx):
@@ -175,24 +177,33 @@ def vh(dev, v):
 def rope_tables(step):
     cos, sin = rope_cs(step)
     # expand: q [16,1,128] tables, k [8,1,128]
-    cq = cos.reshape(1, 1, HD).expand(NH_Q, 1, HD).to(torch.bfloat16)
-    sq = sin.reshape(1, 1, HD).expand(NH_Q, 1, HD).to(torch.bfloat16)
-    ck = cos.reshape(1, 1, HD).expand(NH_KV, 1, HD).to(torch.bfloat16)
-    sk = sin.reshape(1, 1, HD).expand(NH_KV, 1, HD).to(torch.bfloat16)
+    cq = cos.reshape(1, 1, HD).expand(NH_Q, 1, HD).to(DTYPE)
+    sq = sin.reshape(1, 1, HD).expand(NH_Q, 1, HD).to(DTYPE)
+    ck = cos.reshape(1, 1, HD).expand(NH_KV, 1, HD).to(DTYPE)
+    sk = sin.reshape(1, 1, HD).expand(NH_KV, 1, HD).to(DTYPE)
     return cq, sq, ck, sk
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["ttfull", "target"])
+    ap.add_argument("mode", choices=["ttfull", "target", "model_target"])
     ap.add_argument("--steps", type=int, default=12)
     ap.add_argument("--state", default="results/qwen_state.npz")
+    ap.add_argument("--dtype", default="bf16", choices=["bf16", "fp32"])
     args = ap.parse_args()
+    global DTYPE, TT_DTYPE
+    if args.dtype == "fp32":
+        DTYPE, TT_DTYPE = torch.float32, ttnn.float32
 
     W = load_weights()
     dev = ttnn.CreateDevice(device_id=0)
     Wt = {k: to_tt(dev, v) for k, v in W.items()}
     Wt["qkv_tt"] = Wt.pop("qkv")
+
+    if args.mode == "model_target":
+        run_model_target(dev, args)
+        ttnn.CloseDevice(dev)
+        return
 
     if args.mode == "ttfull":
         g = torch.Generator().manual_seed(SEED)
@@ -254,6 +265,106 @@ def main():
           f"max abs diff {d.max():.4f} | rel {res['rel_diff']:.4f} | "
           f"cos {cos:.6f}")
     ttnn.CloseDevice(dev)
+
+
+def load_model_weights():
+    """All 28 layers as per-layer weight dicts (ttnn.linear wants [in,out]),
+    plus the final norm weight, the embedding table and lm_head kept on the
+    host (token selection is runtime logic)."""
+    f = SNAP if SNAP.endswith(".safetensors") else \
+        sorted(glob.glob(os.path.join(SNAP, "*.safetensors")))[0]
+    layers, embed, lm_head, final_norm = [], None, None, None
+    with safe_open(f, framework="pt") as sf:
+        emb_w = sf.get_tensor("model.embed_tokens.weight").float()
+        lm = sf.get_tensor("lm_head.weight").float()
+        final_norm = sf.get_tensor("model.norm.weight").to(DTYPE)
+        n_layers = 28
+        per = [dict() for _ in range(n_layers)]
+        for k in sf.keys():
+            if ".layers." not in k:
+                continue
+            parts = k.split(".")
+            li = int(parts[2])
+            name = ".".join(parts[3:])
+            t = sf.get_tensor(k)
+            t = t.t().contiguous() if t.dim() == 2 else t
+            per[li][name] = t.to(torch.bfloat16)
+        for li in range(n_layers):
+            d = per[li]
+            d["qkv"] = torch.cat([d.pop("self_attn.q_proj.weight"),
+                                  d.pop("self_attn.k_proj.weight"),
+                                  d.pop("self_attn.v_proj.weight")], dim=1)
+            layers.append(d)
+        embed = emb_w
+        lm_head = lm
+    return layers, embed, lm_head, final_norm
+
+
+def run_model_target(dev, args):
+    st = np.load(args.state)
+    ann = json.load(open(args.state + ".ctx.json"))
+    hh = hashlib.sha256(st["keys_u16"].tobytes() + st["values_u16"].tobytes()
+                        + np.array(int(st["last_token"]),
+                                   dtype=np.int64).tobytes()).hexdigest()[:16]
+    bit_exact = (hh == st["state_sha"])
+    print(f"restored 28-layer state sha {hh} vs captured {st['state_sha']} "
+          f"-> bit_exact={bit_exact}")
+
+    layers_w, embed, lm_head, final_norm = load_model_weights()
+    print("weights loaded:", len(layers_w), "layers")
+
+    # host-side KV caches: per layer, list of [8,1,128] fp32 arrays
+    k_host = [[None] * 0 for _ in layers_w]
+    v_host = [[None] * 0 for _ in layers_w]
+    ku = torch.from_numpy(st["keys_u16"]).view(torch.bfloat16)   # [L,1,8,S,128]
+    vu = torch.from_numpy(st["values_u16"]).view(torch.bfloat16)
+    S = ku.shape[-2]
+    for li in range(len(layers_w)):
+        kl = ku[li, 0].contiguous()
+        vl = vu[li, 0].contiguous()
+        for i in range(S):
+            k_host[li].append(kl[:, i:i + 1, :].float().numpy())
+            v_host[li].append(vl[:, i:i + 1, :].float().numpy())
+
+    cur = int(st["last_token"])
+    toks = [cur]
+    h = None
+    step0 = int(st["step"])
+    Wt_layers = [{k: to_tt(dev, v) for k, v in L.items()} for L in layers_w]
+    for Lw in Wt_layers:
+        Lw["qkv_tt"] = Lw.pop("qkv")
+    print("weights uploaded to device")
+    for s in range(step0, args.steps):
+        h = embed[torch.tensor(cur)].to(DTYPE).reshape(1, 1, HID)
+        h_tt = to_tt(dev, h)
+        for li in range(len(layers_w)):
+            h_tt = step_tt(dev, Wt_layers[li], h_tt,
+                           *_rope_for(dev, s), k_host[li], v_host[li], s)
+        # final norm (fp32) + host lm_head argmax
+        ln = fp32_rms_norm(dev, h_tt, to_tt(dev, final_norm.reshape(1, HID)))
+        hn = from_tt(ln).reshape(HID)
+        logits = lm_head @ hn
+        cur = int(np.argmax(logits))
+        toks.append(cur)
+        print(f"  step {s}: token {cur}")
+
+    ref = np.load("results/qwen_model_full.npz")
+    ref_toks = ref["tokens"].tolist()
+    match = sum(1 for a, b in zip(toks, ref_toks) if a == b)
+    hd = np.abs(hf_last if False else from_tt(h_tt).numpy() - ref["final_hidden"])
+    res = {"bit_exact_state": bool(bit_exact), "tokens": toks,
+           "ref_tokens": ref_toks, "token_match": f"{match}/{len(ref_toks)}",
+           "final_hidden_max_diff": float(hd.max())}
+    json.dump(res, open("results/qwen_model_nvtt_result.json", "w"), indent=1)
+    print(f"model migration: tokens TT {toks}")
+    print(f"                 NV  {ref_toks}")
+    print(f"token match {match}/{len(ref_toks)}; "
+          f"final hidden max diff {hd.max():.4f}")
+
+
+def _rope_for(dev, s):
+    cq, sq, ck, sk = rope_tables(s)
+    return to_tt(dev, cq), to_tt(dev, sq), to_tt(dev, ck), to_tt(dev, sk)
 
 
 if __name__ == "__main__":

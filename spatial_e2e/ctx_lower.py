@@ -18,7 +18,8 @@ import sys
 
 OP = {"NOP": 0, "EXIT": 1, "LDG": 2, "STG": 3, "ADD": 4, "SHFL": 5,
       "BAR": 6, "ATOM": 7, "SETP_LT": 8, "SETP_EQ": 9, "MAD": 10,
-      "MOVI": 11, "MOVR": 12, "LDP": 13, "BRA": 14, "SREG": 15}
+      "MOVI": 11, "MOVR": 12, "LDP": 13, "BRA": 14, "SREG": 15,
+      "SELP": 16, "AND": 17}
 
 
 def rnum(tok):
@@ -117,6 +118,13 @@ def lower(muops, labels):
                                             "kind": "serialized RMW",
                                             "events_per_active_lane": 1})
             region["muops"].append("atom.add -> token island")
+        elif op == "selp":
+            opcode = OP["SELP"]
+            dst, a, b = rnum(mu["dst"]), rnum(mu["a"]), rnum(mu["b"])
+            guard, neg, preg = 0, 0, int(mu["pred"][2:])
+        elif op == "and":
+            opcode = OP["AND"]
+            dst, a, b = rnum(mu["dst"]), rnum(mu["a"]), rnum(mu["b"])
         elif op == "setp.lt":
             opcode = OP["SETP_LT"]
             dst, a, b = 32 + int(mu["dst"][2:]), rnum(mu["a"]), rnum(mu["b"])

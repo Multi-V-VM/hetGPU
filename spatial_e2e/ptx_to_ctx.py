@@ -172,6 +172,13 @@ def lift_stmt(line, pc, ptx_idx=None, params=None):
     elif head == "setp":
         mu["op"] = "setp.lt" if ".lt" in opfull else "setp.eq"
         mu["dst"], mu["a"], mu["b"] = parts[1], parts[2], parts[3]
+    elif head == "selp":
+        mu["op"] = "selp"
+        mu["dst"], mu["a"], mu["b"] = parts[1], parts[2], parts[3]
+        mu["pred"] = parts[4]
+    elif head == "and":
+        mu["op"] = "and"
+        mu["dst"], mu["a"], mu["b"] = parts[1], parts[2], parts[3]
     elif head == "bra":
         mu["op"] = "bra"
         mu["target"] = parts[1]
@@ -212,6 +219,10 @@ def render(muops, labels, safepoints):
             out.append(f"  {g}{mu['op']:<10s} [{mu['addr']}], {mu['val']}  space=global order={mu['order']}   ; {src}")
         elif mu["op"] == "atom.add":
             out.append(f"  {g}{mu['op']:<10s} {mu['dst']}, {mu['addr']}, {mu['val']}  space=global order={mu['order']} scope={mu['scope']}   ; {src}")
+        elif mu["op"] == "selp":
+            out.append(f"  {mu['op']:<10s} {mu['dst']}, {mu['a']}, {mu['b']}, {mu['pred']}   ; {src}")
+        elif mu["op"] == "and":
+            out.append(f"  {mu['op']:<10s} {mu['dst']}, {mu['a']}, {mu['b']}   ; {src}")
         elif mu["op"] == "shfl.down":
             out.append(f"  {g}{mu['op']:<10s} {mu['dst']}, {mu['src']}, {mu['delta']}, {mu['clamp']}, {mu['membermask']}   ; {src}")
         elif mu["op"] == "bar.sync":

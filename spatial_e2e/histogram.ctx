@@ -1,0 +1,15 @@
+; CTX: lane-packed mask-SSA muops lifted from PTX
+; W = 32 lanes; guards are active-lane masks; memory muops carry
+; state space, order, and scope; bar.sync muops are safe points.
+  sreg.laneid ptx=0, dst=%r1, imm=laneid   ; mov.u32  %r1, %laneid
+  ld.param   ptx=1, dst=%r4, param=pA, param_idx=0   ; ld.param.u32 %r4, pA
+  ld.param   ptx=2, dst=%r6, param=pC, param_idx=1   ; ld.param.u32 %r6, pC
+  mov        ptx=3, dst=%r21, imm=7   ; mov.u32  %r21, 7
+  mov        ptx=4, dst=%r22, imm=1   ; mov.u32  %r22, 1
+  mov        ptx=5, dst=%r23, imm=0   ; mov.u32  %r23, 0
+  add        ptx=6, dst=%r12, a=%r4, b=%r1   ; add.s32 %r12, %r4, %r1
+  ld.global  %r9, [[%r12]]  space=global order=weak   ; ld.global.s32 %r9, [%r12]
+  and        %r10, %r9, %r21   ; and.b32 %r10, %r9, %r21
+  add        ptx=9, dst=%r13, a=%r6, b=%r10   ; add.s32 %r13, %r6, %r10
+  atom.add   %r14, [%r13+%r23], %r22  space=global order=relaxed scope=gpu   ; atom.global.add.s32 %r14, [%r13+%r23], %r22
+  exit       ptx=11   ; ret

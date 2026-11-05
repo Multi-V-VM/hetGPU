@@ -1,0 +1,12 @@
+{
+ "format": "device-neutral/ctx-state-v1",
+ "source_device": "nvidia-rtx-pro-6000-blackwell (sm_120, CUDA 13.2)",
+ "workload": "Qwen3-0.6B full-model greedy decode (28 layers)",
+ "safe_point": "token-step boundary after step 4",
+ "live_values": [
+  "KV_cache x28 layers",
+  "last_token",
+  "step"
+ ],
+ "state_sha": "daebae628eb2715b"
+}

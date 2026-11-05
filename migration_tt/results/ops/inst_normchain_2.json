@@ -1,0 +1,18 @@
+{
+ "mode": "instrumented",
+ "kernel": "normchain",
+ "rep": 2,
+ "n_batches": 12,
+ "k": 10,
+ "create_device_s": 0.1465,
+ "build_s": 0.0063,
+ "first_batch_s": 0.3434,
+ "checksum": -35.811,
+ "final_file": "results/final_instrumented_normchain_2.pt",
+ "close_device_s": 0.0005,
+ "timings": {
+  "batch_exec": 3.5393,
+  "capture": 0.9821
+ },
+ "total_s": 4.5214
+}

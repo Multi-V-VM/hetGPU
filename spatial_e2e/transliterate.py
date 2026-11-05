@@ -21,7 +21,8 @@ import sys
 
 OP = {"NOP": 0, "EXIT": 1, "LDG": 2, "STG": 3, "ADD": 4, "SHFL": 5,
       "BAR": 6, "ATOM": 7, "SETP_LT": 8, "SETP_EQ": 9, "MAD": 10,
-      "MOVI": 11, "MOVR": 12, "LDP": 13, "BRA": 14, "SREG": 15}
+      "MOVI": 11, "MOVR": 12, "LDP": 13, "BRA": 14, "SREG": 15,
+      "SELP": 16, "AND": 17}
 
 
 def parse_lines(path):
@@ -128,6 +129,13 @@ def translit(body, labels, params):
             op = OP["SETP_LT"] if ".lt" in opfull else OP["SETP_EQ"]
             dst = 32 + pnum(parts[1])
             a, b = rnum(parts[2]), rnum(parts[3])
+        elif head == "selp":
+            op = OP["SELP"]
+            dst, a, b = rnum(parts[1]), rnum(parts[2]), rnum(parts[3])
+            guard, neg, preg = 0, 0, pnum(parts[4])   # select reads its own pred
+        elif head == "and":
+            op = OP["AND"]
+            dst, a, b = rnum(parts[1]), rnum(parts[2]), rnum(parts[3])
         elif head == "bra":
             op = OP["BRA"]
             branch_patches.append((len(rom), parts[1]))

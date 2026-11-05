@@ -1,0 +1,18 @@
+{
+ "mode": "instrumented",
+ "kernel": "attn",
+ "rep": 1,
+ "n_batches": 12,
+ "k": 10,
+ "create_device_s": 0.6692,
+ "build_s": 0.0062,
+ "first_batch_s": 0.1902,
+ "checksum": -12.7134,
+ "final_file": "results/final_instrumented_attn_1.pt",
+ "close_device_s": 0.0005,
+ "timings": {
+  "batch_exec": 1.903,
+  "capture": 0.1872
+ },
+ "total_s": 2.0902
+}

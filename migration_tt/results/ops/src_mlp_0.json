@@ -1,0 +1,19 @@
+{
+ "mode": "source",
+ "kernel": "mlp",
+ "rep": 0,
+ "n_batches": 12,
+ "k": 6,
+ "create_device_s": 1.1715,
+ "build_s": 0.1618,
+ "capture_start_ns": 1793919425532706349,
+ "state_file": "results/ops/state_mlp_0.pt",
+ "state_bytes": 9093,
+ "close_device_s": 0.0004,
+ "timings": {
+  "batch_exec": 10.9797,
+  "capture": 0.0942,
+  "serialize": 0.002
+ },
+ "total_s": 11.0758
+}

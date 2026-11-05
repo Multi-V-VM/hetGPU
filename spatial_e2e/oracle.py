@@ -132,6 +132,15 @@ def run(rom, tiles, tailw, seed, base_a=0, base_b=4096, base_c=8192,
                 if en(l, guard, neg, preg):
                     preds[l][dst - 32] = regs[l][srca] == regs[l][srcb]
             pc += 1
+        elif op == 16:  # SELP d, a, b, p  (predicate reg in preg field)
+            for l in range(32):
+                regs[l][dst] = regs[l][srca] if preds[l][preg] else regs[l][srcb]
+            pc += 1
+        elif op == 17:  # AND
+            for l in range(32):
+                if en(l, guard, neg, preg):
+                    regs[l][dst] = u32(regs[l][srca] & regs[l][srcb])
+            pc += 1
         elif op == 5:  # SHFL_DOWN
             for l in range(32):
                 src = l + imm

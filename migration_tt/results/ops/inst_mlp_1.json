@@ -1,0 +1,18 @@
+{
+ "mode": "instrumented",
+ "kernel": "mlp",
+ "rep": 1,
+ "n_batches": 12,
+ "k": 10,
+ "create_device_s": 1.127,
+ "build_s": 0.2781,
+ "first_batch_s": 1.8876,
+ "checksum": 40395736088576.0,
+ "final_file": "results/final_instrumented_mlp_1.pt",
+ "close_device_s": 0.0004,
+ "timings": {
+  "batch_exec": 21.8321,
+  "capture": 0.1863
+ },
+ "total_s": 22.0184
+}

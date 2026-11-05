@@ -1,0 +1,23 @@
+{
+ "mode": "target",
+ "kernel": "normchain",
+ "rep": 2,
+ "n_batches": 12,
+ "k": 6,
+ "create_device_s": 0.1522,
+ "build_s": 0.0061,
+ "state_bytes": 23541,
+ "first_resume_done_ns": 1793919708113550353,
+ "first_resume_batch_s": 0.3453,
+ "capture_start_ns": 1793919705464937330,
+ "checksum": -35.811,
+ "final_file": "results/final_target_normchain_2.pt",
+ "close_device_s": 0.0005,
+ "timings": {
+  "deserialize": 0.0022,
+  "restore": 0.0005,
+  "batch_exec": 1.7882,
+  "capture": 0.4844
+ },
+ "total_s": 2.2753
+}

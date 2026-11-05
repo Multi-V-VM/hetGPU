@@ -1,0 +1,16 @@
+{
+  "mode": "run",
+  "rom": "rom_max_reduce.hex",
+  "tiles": 1,
+  "tailw": 1,
+  "cycles_before": 0,
+  "cycles_after": 116,
+  "cycles_total": 116,
+  "mem_events": 33,
+  "token_waits": 0,
+  "wall_s": 0.0001,
+  "migrated": false,
+  "checkpoint_pc": 0,
+  "final_c0": 0,
+  "sentinel": 0
+}

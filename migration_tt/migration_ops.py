@@ -222,7 +222,159 @@ class Pi(Workload):
         return {"hits": h, "pi_est": round(4.0 * h / max(self.count, 1), 6)}
 
 
-WORKLOADS = {w.name: w for w in (Matmul, VecAdd, Pi)}
+class Attn(Workload):
+    """Attention-scores block: per batch acc += softmax(QK^T/sqrt(d))V over
+    [64-token queries, 256-token keys], bf16. State = running accumulator."""
+    name = "attn"
+
+    def build(self):
+        g = self._g
+        self.q = torch.randn(1, 64, 128, generator=g).to(torch.bfloat16)
+        self.k = torch.randn(1, 256, 128, generator=g).to(torch.bfloat16)
+        self.v = torch.randn(1, 256, 128, generator=g).to(torch.bfloat16)
+        self.acc = torch.zeros(1, 64, 128).to(torch.bfloat16)
+        self.tq = self._d(self.q)
+        self.tk = self._d(self.k.transpose(1, 2))
+        self.tv = self._d(self.v)
+        self.tacc = self._d(self.acc)
+
+    def _d(self, t):
+        t0 = ns()
+        r = ttnn.from_torch(t.contiguous(), dtype=ttnn.bfloat16,
+                            layout=ttnn.TILE_LAYOUT, device=self.dev,
+                            memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        return r
+
+    def batch(self):
+        t0 = ns()
+        s = ttnn.matmul(self.tq, self.tk,
+                        memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        s = ttnn.multiply(s, 128 ** -0.5,
+                          memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        p = ttnn.softmax(s, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        o = ttnn.matmul(p, self.tv, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        self.tacc = ttnn.add(self.tacc, o,
+                             memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        self.batch_s = (ns() - t0) / 1e9
+
+    def capture(self):
+        cpu, dt = to_host(self.tacc)
+        return {"acc": cpu}, dt
+
+    def restore(self, snap):
+        t0 = ns()
+        self.tacc = ttnn.from_torch(snap["acc"].contiguous(),
+                                    dtype=ttnn.bfloat16,
+                                    layout=ttnn.TILE_LAYOUT, device=self.dev,
+                                    memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        return (ns() - t0) / 1e9
+
+    def save_final(self, snap, path):
+        torch.save({"acc": snap["acc"]}, path)
+
+    def verify_output(self, snap):
+        return {"checksum": round(float(snap["acc"].float().sum().item()), 4)}
+
+
+class Mlp(Workload):
+    """Transformer FFN block per batch: h = h + down(silu(gate(h)) * up(h)),
+    [1,1024] -> [1,3072] -> [1,1024], bf16. State = h."""
+    name = "mlp"
+
+    def build(self):
+        g = self._g
+        self.wg = torch.randn(1024, 3072, generator=g).to(torch.bfloat16) * 0.02
+        self.wu = torch.randn(1024, 3072, generator=g).to(torch.bfloat16) * 0.02
+        self.wd = torch.randn(3072, 1024, generator=g).to(torch.bfloat16) * 0.02
+        self.h = torch.randn(1, 1024, generator=g).to(torch.bfloat16)
+        self.twg = self._d(self.wg)
+        self.twu = self._d(self.wu)
+        self.twd = self._d(self.wd)
+        self.th = self._d(self.h)
+
+    def _d(self, t):
+        return ttnn.from_torch(t.contiguous(), dtype=ttnn.bfloat16,
+                               layout=ttnn.TILE_LAYOUT, device=self.dev,
+                               memory_config=ttnn.DRAM_MEMORY_CONFIG)
+
+    def batch(self):
+        t0 = ns()
+        gate = ttnn.linear(self.th, self.twg,
+                           memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        up = ttnn.linear(self.th, self.twu,
+                         memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        mid = ttnn.multiply(ttnn.silu(gate, memory_config=ttnn.DRAM_MEMORY_CONFIG),
+                            up, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        down = ttnn.linear(mid, self.twd,
+                           memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        self.th = ttnn.add(self.th, down,
+                           memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        self.batch_s = (ns() - t0) / 1e9
+
+    def capture(self):
+        cpu, dt = to_host(self.th)
+        return {"h": cpu}, dt
+
+    def restore(self, snap):
+        self.th = ttnn.from_torch(snap["h"].contiguous(),
+                                  dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT,
+                                  device=self.dev,
+                                  memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        return 0.0
+
+    def save_final(self, snap, path):
+        torch.save({"h": snap["h"]}, path)
+
+    def verify_output(self, snap):
+        return {"checksum": round(float(snap["h"].float().sum().item()), 4)}
+
+
+class NormChain(Workload):
+    """Normalization chain per batch in fp32: h = layernorm(h + A).
+    State = h [1,4096] fp32 on device."""
+    name = "normchain"
+
+    def build(self):
+        g = self._g
+        self.a = torch.randn(1, 4096, generator=g).to(torch.float32) * 0.05
+        self.h = torch.randn(1, 4096, generator=g).to(torch.float32)
+        self.ta = ttnn.from_torch(self.a, dtype=ttnn.float32,
+                                  layout=ttnn.TILE_LAYOUT, device=self.dev,
+                                  memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        self.th = ttnn.from_torch(self.h, dtype=ttnn.float32,
+                                  layout=ttnn.TILE_LAYOUT, device=self.dev,
+                                  memory_config=ttnn.DRAM_MEMORY_CONFIG)
+
+    def batch(self):
+        t0 = ns()
+        h1 = ttnn.add(self.th, self.ta, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        ms = ttnn.mean(ttnn.multiply(h1, h1, memory_config=ttnn.DRAM_MEMORY_CONFIG),
+                       dim=-1, keepdim=True,
+                       memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        inv = ttnn.rsqrt(ttnn.add(ms, 1e-5, memory_config=ttnn.DRAM_MEMORY_CONFIG),
+                         memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        self.th = ttnn.multiply(h1, inv, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        self.batch_s = (ns() - t0) / 1e9
+
+    def capture(self):
+        cpu, dt = to_host(self.th)
+        return {"h": cpu}, dt
+
+    def restore(self, snap):
+        t0 = ns()
+        self.th = ttnn.from_torch(snap["h"].contiguous(), dtype=ttnn.float32,
+                                  layout=ttnn.TILE_LAYOUT, device=self.dev,
+                                  memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        return (ns() - t0) / 1e9
+
+    def save_final(self, snap, path):
+        torch.save({"h": snap["h"]}, path)
+
+    def verify_output(self, snap):
+        return {"checksum": round(float(snap["h"].sum().item()), 4)}
+
+
+WORKLOADS = {w.name: w for w in (Matmul, VecAdd, Pi, Attn, Mlp, NormChain)}
 
 
 def main():

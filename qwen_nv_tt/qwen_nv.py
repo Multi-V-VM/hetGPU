@@ -22,6 +22,8 @@ import shutil
 import numpy as np
 import torch
 from transformers import AutoModelForCausalLM
+
+TORCH_DTYPE = torch.bfloat16
 from transformers.cache_utils import DynamicCache
 
 MODEL = "Qwen/Qwen3-0.6B"
@@ -31,8 +33,9 @@ HID = 1024
 
 def load_layer():
     m = AutoModelForCausalLM.from_pretrained(
-        MODEL, torch_dtype=torch.bfloat16, attn_implementation="eager",
-        device_map="cuda")
+        MODEL, torch_dtype=getattr(__import__("__main__"), "TORCH_DTYPE",
+                                   torch.bfloat16),
+        attn_implementation="eager", device_map="cuda")
     m.eval()
     return m.model.layers[LAYER], m.model.rotary_emb
 
@@ -57,13 +60,21 @@ def step(layer, rot, hidden, cache, pos):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["full", "source", "harvest"])
+    ap.add_argument("mode", choices=["full", "source", "harvest",
+                                     "model_full", "model_source"])
     ap.add_argument("--steps", type=int, default=12)
     ap.add_argument("--k", type=int, default=6)
     ap.add_argument("--out", default="results/qwen_state.npz")
+    ap.add_argument("--dtype", default="bf16", choices=["bf16", "fp32"])
     args = ap.parse_args()
+    global TORCH_DTYPE
+    TORCH_DTYPE = torch.float32 if args.dtype == "fp32" else torch.bfloat16
     os.makedirs("results", exist_ok=True)
     torch.manual_seed(0xC0FFEE)
+
+    if args.mode in ("model_full", "model_source"):
+        run_model(args)
+        return
 
     layer, rot = load_layer()
 
@@ -132,6 +143,65 @@ def main():
     json.dump(ann, open(args.out + ".ctx.json", "w"), indent=1)
     print(f"NV source: {args.k}/{args.steps} steps, state sha {state_hash}, "
           f"{os.path.getsize(args.out)} B")
+
+
+def run_model(args):
+    """Full-model greedy decode: the whole Qwen3-0.6B (28 layers), a real
+    autoregressive token chain. `model_full` = uninterrupted reference;
+    `model_source` = checkpoint at step K (all-layer KV cache, last token,
+    step counter)."""
+    from transformers.cache_utils import DynamicCache
+    m = AutoModelForCausalLM.from_pretrained(
+        MODEL, torch_dtype=TORCH_DTYPE, attn_implementation="eager",
+        device_map="cuda")
+    m.eval()
+    tok = torch.tensor([[9707]])   # fixed prompt token
+    n_layers = m.config.num_hidden_layers
+
+    def step_model(cache, cur, pos):
+        out = m(cur, position_ids=torch.tensor([[pos]], device="cuda"),
+                past_key_values=cache, use_cache=True, output_hidden_states=True)
+        return out.logits[0, -1].argmax().view(1, 1), out.hidden_states[-1]
+
+    if args.mode == "model_full":
+        cache = DynamicCache()
+        cur, toks, hlast = tok.cuda(), [], None
+        for s in range(args.steps):
+            cur, hlast = step_model(cache, cur, s)
+            toks.append(int(cur))
+        hf = hlast.float().detach().cpu().numpy()
+        np.savez("results/qwen_model_full.npz",
+                 tokens=np.array(toks), final_hidden=hf,
+                 steps=np.array(args.steps))
+        print(f"NV model full: {args.steps} steps, tokens {toks}")
+        return
+
+    cache = DynamicCache()
+    cur, toks = tok.cuda(), []
+    for s in range(args.steps):
+        cur, _ = step_model(cache, cur, s)
+        toks.append(int(cur))
+    keys_u16 = torch.stack([c.keys.contiguous().view(torch.uint16)
+                            for c in cache.layers]).cpu().numpy()   # [L,1,8,S,128]
+    values_u16 = torch.stack([c.values.contiguous().view(torch.uint16)
+                              for c in cache.layers]).cpu().numpy()
+    state_hash = hashlib.sha256(keys_u16.tobytes() + values_u16.tobytes()
+                                + np.array(toks[-1], dtype=np.int64).tobytes()
+                                ).hexdigest()[:16]
+    np.savez(args.out, keys_u16=keys_u16, values_u16=values_u16,
+             last_token=np.array(toks[-1]), tokens=np.array(toks),
+             step=np.array(args.k), state_sha=state_hash)
+    ann = {
+        "format": "device-neutral/ctx-state-v1",
+        "source_device": "nvidia-rtx-pro-6000-blackwell (sm_120, CUDA 13.2)",
+        "workload": f"Qwen3-0.6B full-model greedy decode ({n_layers} layers)",
+        "safe_point": f"token-step boundary after step {args.k}",
+        "live_values": ["KV_cache x28 layers", "last_token", "step"],
+        "state_sha": state_hash,
+    }
+    json.dump(ann, open(args.out + ".ctx.json", "w"), indent=1)
+    print(f"NV model source: {args.k}/{args.steps} steps, tokens {toks}, "
+          f"sha {state_hash}")
 
 
 if __name__ == "__main__":

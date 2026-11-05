@@ -1,0 +1,19 @@
+{
+ "mode": "source",
+ "kernel": "normchain",
+ "rep": 1,
+ "n_batches": 12,
+ "k": 6,
+ "create_device_s": 0.1478,
+ "build_s": 0.006,
+ "capture_start_ns": 1793919590634630325,
+ "state_file": "results/ops/state_normchain_1.pt",
+ "state_bytes": 23541,
+ "close_device_s": 0.0006,
+ "timings": {
+  "batch_exec": 1.8172,
+  "capture": 0.4859,
+  "serialize": 0.0024
+ },
+ "total_s": 2.3055
+}

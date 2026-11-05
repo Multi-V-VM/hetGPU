@@ -1,0 +1,29 @@
+{
+ "regions": [
+  {
+   "kind": "static",
+   "muops": [
+    "ld.global -> stream[12]",
+    "shfl.down (permuter use, validity -> %p0)",
+    "shfl.down (permuter use, validity -> %p0)",
+    "shfl.down (permuter use, validity -> %p0)",
+    "shfl.down (permuter use, validity -> %p0)",
+    "shfl.down (permuter use, validity -> %p0)",
+    "st.global -> stream[6]"
+   ],
+   "note": "identity schedule; token islands and stream plans embedded"
+  }
+ ],
+ "stream_plans": [
+  {
+   "base_reg": 12,
+   "kind": "static_affine_stream",
+   "width": 32,
+   "events_per_use": 32
+  }
+ ],
+ "token_islands": [],
+ "safe_points": [],
+ "schedule": "identity",
+ "n_instr": 25
+}

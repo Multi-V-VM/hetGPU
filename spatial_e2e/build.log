@@ -4,4 +4,4 @@ g++    tb_main.o verilated.o verilated_dpi.o verilated_threads.o Vspatial_core__
 make: Leaving directory '/root/tt-eval/spatial_e2e/obj_dir'
 - V e r i l a t i o n   R e p o r t: Verilator 5.028 2024-08-21 rev v5.028
 - Verilator: Built from 0.000 MB sources in 0 modules, into 0.000 MB in 0 C++ files needing 0.000 MB
-- Verilator: Walltime 1.437 s (elab=0.000, cvt=0.000, bld=1.436); cpu 0.001 s on 1 threads; alloced 8.047 MB
+- Verilator: Walltime 1.295 s (elab=0.000, cvt=0.000, bld=1.295); cpu 0.001 s on 1 threads; alloced 8.047 MB

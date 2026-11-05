@@ -1,0 +1,23 @@
+{
+ "mode": "target",
+ "kernel": "mlp",
+ "rep": 2,
+ "n_batches": 12,
+ "k": 6,
+ "create_device_s": 0.1462,
+ "build_s": 0.1291,
+ "state_bytes": 9093,
+ "first_resume_done_ns": 1793919677674326829,
+ "first_resume_batch_s": 1.8719,
+ "capture_start_ns": 1793919673299995232,
+ "checksum": 40395736088576.0,
+ "final_file": "results/final_target_mlp_2.pt",
+ "close_device_s": 0.0005,
+ "timings": {
+  "deserialize": 0.002,
+  "restore": 0.0,
+  "batch_exec": 11.0975,
+  "capture": 0.0974
+ },
+ "total_s": 11.1968
+}

@@ -1,0 +1,26 @@
+// Spatial kernel: atomic histogram over data-dependent indices.
+// Each lane loads A[laneid], reduces it to a bin with AND 7 (8 bins), and
+// atomically increments C[bin] -- a warp-wide atomic island whose
+// addresses are data-dependent (the indexed/tokenized memory route).
+// All 32 lanes issue their RMW serialized behind the island's tokens.
+
+.version 7.0
+.target sm_70
+.visible .entry histogram(.param .u32 pA, .param .u32 pC)
+{
+    .reg .s32 %r<16>;
+    .reg .pred %p<8>;
+
+    mov.u32  %r1, %laneid;
+    ld.param.u32 %r4, pA;
+    ld.param.u32 %r6, pC;
+    mov.u32  %r21, 7;
+    mov.u32  %r22, 1;                // increment
+    mov.u32  %r23, 0;                // zero offset register
+    add.s32 %r12, %r4, %r1;
+    ld.global.s32 %r9, [%r12];
+    and.b32 %r10, %r9, %r21;         // bin = A[laneid] & 7
+    add.s32 %r13, %r6, %r10;         // addr = C + bin (data-dependent)
+    atom.global.add.s32 %r14, [%r13+%r23], %r22;
+    ret;
+}

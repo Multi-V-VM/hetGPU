@@ -1,0 +1,18 @@
+{
+ "mode": "baseline",
+ "kernel": "mlp",
+ "rep": 1,
+ "n_batches": 12,
+ "k": 10,
+ "create_device_s": 0.9203,
+ "build_s": 0.1512,
+ "first_batch_s": 1.8521,
+ "checksum": 40395736088576.0,
+ "final_file": "results/final_baseline_mlp_1.pt",
+ "close_device_s": 0.0004,
+ "timings": {
+  "batch_exec": 21.9299,
+  "final_capture": 0.0157
+ },
+ "total_s": 21.9456
+}

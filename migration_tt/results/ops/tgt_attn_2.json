@@ -1,0 +1,23 @@
+{
+ "mode": "target",
+ "kernel": "attn",
+ "rep": 2,
+ "n_batches": 12,
+ "k": 6,
+ "create_device_s": 0.1431,
+ "build_s": 0.006,
+ "state_bytes": 23501,
+ "first_resume_done_ns": 1793919609987017135,
+ "first_resume_batch_s": 0.1859,
+ "capture_start_ns": 1793919607507495115,
+ "checksum": -12.7134,
+ "final_file": "results/final_target_attn_2.pt",
+ "close_device_s": 0.0005,
+ "timings": {
+  "deserialize": 0.0021,
+  "restore": 0.0002,
+  "batch_exec": 0.9705,
+  "capture": 0.0965
+ },
+ "total_s": 1.0693
+}

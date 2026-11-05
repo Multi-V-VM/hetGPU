@@ -118,6 +118,8 @@ struct Clockwork {
     void service_mem() {
         if (top->mem_req) {
             uint32_t addr = top->mem_addr;
+            if (getenv("TRACE_MEM") && top->mem_we)
+                printf("  WRITE addr=%u data=%u\n", addr, top->mem_wdata);
             if (top->mem_we) mem[addr & (MEM_WORDS - 1)] = top->mem_wdata;
             top->mem_rdata = mem[addr & (MEM_WORDS - 1)];
         }

@@ -1,0 +1,18 @@
+{
+ "mode": "baseline",
+ "kernel": "normchain",
+ "rep": 0,
+ "n_batches": 12,
+ "k": 10,
+ "create_device_s": 0.497,
+ "build_s": 0.0049,
+ "first_batch_s": 0.3476,
+ "checksum": -35.811,
+ "final_file": "results/final_baseline_normchain_0.pt",
+ "close_device_s": 0.0004,
+ "timings": {
+  "batch_exec": 4.4028,
+  "final_capture": 0.0792
+ },
+ "total_s": 4.482
+}

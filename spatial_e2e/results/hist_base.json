@@ -1,0 +1,16 @@
+{
+  "mode": "run",
+  "rom": "rom_histogram.hex",
+  "tiles": 1,
+  "tailw": 1,
+  "cycles_before": 0,
+  "cycles_after": 122,
+  "cycles_total": 122,
+  "mem_events": 64,
+  "token_waits": 32,
+  "wall_s": 0.0001,
+  "migrated": false,
+  "checkpoint_pc": 0,
+  "final_c0": 1,
+  "sentinel": 3
+}
