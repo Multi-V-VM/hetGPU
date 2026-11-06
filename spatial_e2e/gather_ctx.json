@@ -1,0 +1,180 @@
+{
+ "muops": [
+  {
+   "pc": 0,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 0,
+   "src": "mov.u32  %r1, %laneid",
+   "op": "sreg.laneid",
+   "dst": "%r1",
+   "imm": "laneid"
+  },
+  {
+   "pc": 1,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 1,
+   "src": "ld.param.u32 %r4, pA",
+   "op": "ld.param",
+   "dst": "%r4",
+   "param": "pA",
+   "param_idx": 0
+  },
+  {
+   "pc": 2,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 2,
+   "src": "ld.param.u32 %r5, pB",
+   "op": "ld.param",
+   "dst": "%r5",
+   "param": "pB",
+   "param_idx": 1
+  },
+  {
+   "pc": 3,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 3,
+   "src": "ld.param.u32 %r6, pC",
+   "op": "ld.param",
+   "dst": "%r6",
+   "param": "pC",
+   "param_idx": 2
+  },
+  {
+   "pc": 4,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 4,
+   "src": "mov.u32  %r21, 63",
+   "op": "mov",
+   "dst": "%r21",
+   "imm": "63"
+  },
+  {
+   "pc": 5,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 5,
+   "src": "mov.u32  %r23, 0",
+   "op": "mov",
+   "dst": "%r23",
+   "imm": "0"
+  },
+  {
+   "pc": 6,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 6,
+   "src": "add.s32  %r12, %r4, %r1",
+   "op": "add",
+   "dst": "%r12",
+   "a": "%r4",
+   "b": "%r1"
+  },
+  {
+   "pc": 7,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 7,
+   "src": "ld.global.s32 %r9, [%r12]",
+   "op": "ld.global",
+   "space": "global",
+   "order": "weak",
+   "scope": "none",
+   "dst": "%r9",
+   "addr": "[%r12]"
+  },
+  {
+   "pc": 8,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 8,
+   "src": "and.b32  %r10, %r9, %r21",
+   "op": "and",
+   "dst": "%r10",
+   "a": "%r9",
+   "b": "%r21"
+  },
+  {
+   "pc": 9,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 9,
+   "src": "add.s32  %r13, %r5, %r10",
+   "op": "add",
+   "dst": "%r13",
+   "a": "%r5",
+   "b": "%r10"
+  },
+  {
+   "pc": 10,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 10,
+   "src": "ld.global.s32 %r14, [%r13+%r23]",
+   "op": "ld.global",
+   "space": "global",
+   "order": "weak",
+   "scope": "none",
+   "dst": "%r14",
+   "addr": "[%r13+%r23]"
+  },
+  {
+   "pc": 11,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 11,
+   "src": "add.s32  %r15, %r6, %r1",
+   "op": "add",
+   "dst": "%r15",
+   "a": "%r6",
+   "b": "%r1"
+  },
+  {
+   "pc": 12,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 12,
+   "src": "st.global.s32 [%r15], %r14",
+   "op": "st.global",
+   "space": "global",
+   "order": "weak",
+   "scope": "none",
+   "addr": "[%r15]",
+   "val": "%r14"
+  },
+  {
+   "pc": 13,
+   "guard": 0,
+   "neg": 0,
+   "preg": 0,
+   "ptx": 13,
+   "src": "ret",
+   "op": "exit"
+  }
+ ],
+ "labels": {},
+ "params": {
+  "pA": 0,
+  "pB": 1,
+  "pC": 2
+ },
+ "safepoints": [],
+ "n_muops": 14
+}

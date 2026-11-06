@@ -24,6 +24,7 @@ import torch
 from transformers import AutoModelForCausalLM
 
 TORCH_DTYPE = torch.bfloat16
+SEED = 0xC0FFEE
 from transformers.cache_utils import DynamicCache
 
 MODEL = "Qwen/Qwen3-0.6B"
@@ -61,7 +62,8 @@ def step(layer, rot, hidden, cache, pos):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", choices=["full", "source", "harvest",
-                                     "model_full", "model_source"])
+                                     "model_full", "model_source",
+                                     "prefill_full", "prefill_source"])
     ap.add_argument("--steps", type=int, default=12)
     ap.add_argument("--k", type=int, default=6)
     ap.add_argument("--out", default="results/qwen_state.npz")
@@ -71,6 +73,10 @@ def main():
     TORCH_DTYPE = torch.float32 if args.dtype == "fp32" else torch.bfloat16
     os.makedirs("results", exist_ok=True)
     torch.manual_seed(0xC0FFEE)
+
+    if args.mode in ("prefill_full", "prefill_source"):
+        run_prefill(args)
+        return
 
     if args.mode in ("model_full", "model_source"):
         run_model(args)
@@ -202,6 +208,75 @@ def run_model(args):
     json.dump(ann, open(args.out + ".ctx.json", "w"), indent=1)
     print(f"NV model source: {args.k}/{args.steps} steps, tokens {toks}, "
           f"sha {state_hash}")
+
+
+def run_prefill(args):
+    """Chunked prefill of a Qwen3-0.6B layer: CHUNK_LEN-token chunks with
+    causal attention over a growing KV cache (the serving-shaped workload).
+    prefill_full = all chunks uninterrupted; prefill_source = checkpoint
+    after K chunks (KV cache + processed tokens)."""
+    CHUNK = 64
+    n_chunks = 4
+    m = AutoModelForCausalLM.from_pretrained(
+        MODEL, torch_dtype=TORCH_DTYPE, attn_implementation="eager",
+        device_map="cuda")
+    m.eval()
+    layer, rot = m.model.layers[LAYER], m.model.rotary_emb
+    emb = m.model.embed_tokens
+    g = torch.Generator().manual_seed(SEED)
+    ids = torch.randint(1000, 5000, (1, CHUNK * n_chunks), generator=g).to("cuda")
+    cache = DynamicCache()
+    outs = []
+    for c in range(n_chunks):
+        chunk = ids[:, c * CHUNK:(c + 1) * CHUNK]
+        h = emb(chunk)
+        pos = torch.arange(c * CHUNK, (c + 1) * CHUNK,
+                           device="cuda").unsqueeze(0)
+        cos, sin = rot(h.float(), pos)
+        h = layer(h, position_ids=pos, past_key_values=cache, use_cache=True,
+                  position_embeddings=(cos.to(h.dtype), sin.to(h.dtype)))
+        outs.append(h)
+    final = torch.cat(outs, dim=1).float().detach().cpu().numpy()  # [1,256,1024]
+    toks = ids.cpu().numpy()
+
+    if args.mode == "prefill_full":
+        chunks_np = {f"C{c}": o.float().detach().cpu().numpy()
+                     for c, o in enumerate(outs)}
+        np.savez("results/qwen_prefill_full.npz", final=final, tokens=toks,
+                 chunks=np.array(n_chunks), chunk_len=np.array(CHUNK),
+                 **chunks_np)
+        print(f"NV prefill full: {n_chunks}x{CHUNK} tokens, "
+              f"final |h|={np.abs(final).mean():.4f}")
+        return
+
+    # source: rerun, capture after K chunks
+    cache = DynamicCache()
+    outs = []
+    for c in range(args.k):
+        chunk = ids[:, c * CHUNK:(c + 1) * CHUNK]
+        h = emb(chunk)
+        pos = torch.arange(c * CHUNK, (c + 1) * CHUNK,
+                           device="cuda").unsqueeze(0)
+        cos, sin = rot(h.float(), pos)
+        h = layer(h, position_ids=pos, past_key_values=cache, use_cache=True,
+                  position_embeddings=(cos.to(h.dtype), sin.to(h.dtype)))
+        outs.append(h)
+    keys_u16 = cache.layers[0].keys.contiguous().view(torch.uint16).cpu().numpy()
+    values_u16 = cache.layers[0].values.contiguous().view(torch.uint16).cpu().numpy()
+    hnp = h.contiguous().view(torch.uint16).cpu().numpy()
+    state_hash = hashlib.sha256(keys_u16.tobytes() + values_u16.tobytes()
+                                + hnp.tobytes()).hexdigest()[:16]
+    np.savez(args.out, keys_u16=keys_u16, values_u16=values_u16,
+             hidden_u16=hnp, tokens=toks, chunk_len=np.array(CHUNK),
+             k=np.array(args.k), n=np.array(n_chunks), state_sha=state_hash)
+    ann = {"format": "device-neutral/ctx-state-v1",
+           "source_device": "nvidia-rtx-pro-6000-blackwell (sm_120, CUDA 13.2)",
+           "workload": f"Qwen3-0.6B layer 0 chunked prefill ({CHUNK}-token chunks)",
+           "safe_point": f"chunk boundary after chunk {args.k}",
+           "live_values": ["KV_cache", "chunk_hidden", "chunk_index"],
+           "state_sha": state_hash}
+    json.dump(ann, open(args.out + ".ctx.json", "w"), indent=1)
+    print(f"NV prefill source: {args.k}/{n_chunks} chunks, sha {state_hash}")
 
 
 if __name__ == "__main__":

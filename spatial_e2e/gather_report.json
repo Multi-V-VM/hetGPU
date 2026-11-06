@@ -1,0 +1,31 @@
+{
+ "regions": [
+  {
+   "kind": "static",
+   "muops": [
+    "ld.global -> stream[12]",
+    "ld.global -> stream[13]",
+    "st.global -> stream[15]"
+   ],
+   "note": "identity schedule; token islands and stream plans embedded"
+  }
+ ],
+ "stream_plans": [
+  {
+   "base_reg": 12,
+   "kind": "static_affine_stream",
+   "width": 32,
+   "events_per_use": 32
+  },
+  {
+   "base_reg": 13,
+   "kind": "static_affine_stream",
+   "width": 32,
+   "events_per_use": 32
+  }
+ ],
+ "token_islands": [],
+ "safe_points": [],
+ "schedule": "identity",
+ "n_instr": 14
+}

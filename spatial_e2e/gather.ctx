@@ -1,0 +1,17 @@
+; CTX: lane-packed mask-SSA muops lifted from PTX
+; W = 32 lanes; guards are active-lane masks; memory muops carry
+; state space, order, and scope; bar.sync muops are safe points.
+  sreg.laneid ptx=0, dst=%r1, imm=laneid   ; mov.u32  %r1, %laneid
+  ld.param   ptx=1, dst=%r4, param=pA, param_idx=0   ; ld.param.u32 %r4, pA
+  ld.param   ptx=2, dst=%r5, param=pB, param_idx=1   ; ld.param.u32 %r5, pB
+  ld.param   ptx=3, dst=%r6, param=pC, param_idx=2   ; ld.param.u32 %r6, pC
+  mov        ptx=4, dst=%r21, imm=63   ; mov.u32  %r21, 63
+  mov        ptx=5, dst=%r23, imm=0   ; mov.u32  %r23, 0
+  add        ptx=6, dst=%r12, a=%r4, b=%r1   ; add.s32  %r12, %r4, %r1
+  ld.global  %r9, [[%r12]]  space=global order=weak   ; ld.global.s32 %r9, [%r12]
+  and        %r10, %r9, %r21   ; and.b32  %r10, %r9, %r21
+  add        ptx=9, dst=%r13, a=%r5, b=%r10   ; add.s32  %r13, %r5, %r10
+  ld.global  %r14, [[%r13+%r23]]  space=global order=weak   ; ld.global.s32 %r14, [%r13+%r23]
+  add        ptx=11, dst=%r15, a=%r6, b=%r1   ; add.s32  %r15, %r6, %r1
+  st.global  [[%r15]], %r14  space=global order=weak   ; st.global.s32 [%r15], %r14
+  exit       ptx=13   ; ret

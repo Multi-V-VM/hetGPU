@@ -1,13 +1,12 @@
 {
  "format": "device-neutral/ctx-state-v1",
  "source_device": "nvidia-rtx-pro-6000-blackwell (sm_120, CUDA 13.2)",
- "workload": "Qwen3-0.6B decoder layer 0, bf16, eager attention",
- "safe_point": "token-step boundary after step 6",
+ "workload": "Qwen3-0.6B layer 0 chunked prefill (64-token chunks)",
+ "safe_point": "chunk boundary after chunk 2",
  "live_values": [
-  "hidden[1,1,1024]",
-  "K_cache",
-  "V_cache",
-  "step"
+  "KV_cache",
+  "chunk_hidden",
+  "chunk_index"
  ],
- "kernels_captured": "torch-inductor PTX, DWARF-recovered (see ctx_annotation.json)"
+ "state_sha": "e0c976aa70077c36"
 }

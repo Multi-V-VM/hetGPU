@@ -186,7 +186,8 @@ def rope_tables(step):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["ttfull", "target", "model_target"])
+    ap.add_argument("mode", choices=["ttfull", "target", "model_target",
+                                     "prefill_target"])
     ap.add_argument("--steps", type=int, default=12)
     ap.add_argument("--state", default="results/qwen_state.npz")
     ap.add_argument("--dtype", default="bf16", choices=["bf16", "fp32"])
@@ -199,6 +200,11 @@ def main():
     dev = ttnn.CreateDevice(device_id=0)
     Wt = {k: to_tt(dev, v) for k, v in W.items()}
     Wt["qkv_tt"] = Wt.pop("qkv")
+
+    if args.mode == "prefill_target":
+        run_prefill_target(dev, args)
+        ttnn.CloseDevice(dev)
+        return
 
     if args.mode == "model_target":
         run_model_target(dev, args)
@@ -365,6 +371,194 @@ def run_model_target(dev, args):
 def _rope_for(dev, s):
     cq, sq, ck, sk = rope_tables(s)
     return to_tt(dev, cq), to_tt(dev, sq), to_tt(dev, ck), to_tt(dev, sk)
+
+
+def rope_chunk_tables(c0, chunk_len):
+    cos_all, sin_all = [], []
+    for p in range(c0, c0 + chunk_len):
+        cos, sin = rope_cs(p)
+        cos_all.append(cos)
+        sin_all.append(sin)
+    cos = torch.stack(cos_all).to(DTYPE)   # [chunk_len, 128]
+    sin = torch.stack(sin_all).to(DTYPE)
+    cq = cos.reshape(chunk_len, 1, HD).expand(chunk_len, NH_Q, HD).permute(1, 0, 2).contiguous()
+    sq = sin.reshape(chunk_len, 1, HD).expand(chunk_len, NH_Q, HD).permute(1, 0, 2).contiguous()
+    ck = cos.reshape(chunk_len, 1, HD).expand(chunk_len, NH_KV, HD).permute(1, 0, 2).contiguous()
+    sk = sin.reshape(chunk_len, 1, HD).expand(chunk_len, NH_KV, HD).permute(1, 0, 2).contiguous()
+    return cq, sq, ck, sk
+
+
+def prefill_chunk_tt(dev, W, h_chunk, cos_q, sin_q, cos_k, sin_k,
+                     k_cache, v_cache, c0, chunk_len):
+    """One chunk of PREFILL: causal attention over the grown cache with
+    parallel [chunk_len, 128] queries per head."""
+    S_prev = len(k_cache)
+    ln = fp32_rms_norm(dev, h_chunk, W["input_layernorm.weight"])
+    qkv = ttnn.reshape(ttnn.linear(ln, W["qkv_tt"],
+                       memory_config=ttnn.DRAM_MEMORY_CONFIG),
+                       ttnn.Shape([chunk_len, (NH_Q + 2 * NH_KV) * HD]))
+    q = ttnn.reshape(ttnn.slice(qkv, ttnn.Shape([0, 0]),
+                    ttnn.Shape([chunk_len, NH_Q * HD]),
+                    memory_config=ttnn.DRAM_MEMORY_CONFIG),
+                    ttnn.Shape([chunk_len, NH_Q, HD]))
+    k = ttnn.reshape(ttnn.slice(qkv, ttnn.Shape([0, NH_Q * HD]),
+                    ttnn.Shape([chunk_len, (NH_Q + NH_KV) * HD]),
+                    memory_config=ttnn.DRAM_MEMORY_CONFIG),
+                    ttnn.Shape([chunk_len, NH_KV, HD]))
+    v = ttnn.slice(qkv, ttnn.Shape([0, (NH_Q + NH_KV) * HD]),
+                   ttnn.Shape([chunk_len, (NH_Q + 2 * NH_KV) * HD]),
+                   memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    q = ttnn.transpose(q, dim1=0, dim2=1)   # [16, 64, 128]
+    k = ttnn.transpose(k, dim1=0, dim2=1)   # [8, 64, 128]
+    v = ttnn.transpose(v, dim1=0, dim2=1)   # [8, 64, 128]
+    q = fp32_rms_norm(dev, q, W["self_attn.q_norm.weight"])
+    k = fp32_rms_norm(dev, k, W["self_attn.k_norm.weight"])
+    qe = ttnn.add(
+        ttnn.multiply(q, cos_q, memory_config=ttnn.DRAM_MEMORY_CONFIG),
+        ttnn.multiply(
+            ttnn.concat([neg(dev, ttnn.slice(q, ttnn.Shape([0, 0, HD // 2]),
+                         ttnn.Shape([NH_Q, chunk_len, HD]),
+                         memory_config=ttnn.DRAM_MEMORY_CONFIG)),
+                         ttnn.slice(q, ttnn.Shape([0, 0, 0]),
+                         ttnn.Shape([NH_Q, chunk_len, HD // 2]),
+                         memory_config=ttnn.DRAM_MEMORY_CONFIG)],
+                         dim=-1, memory_config=ttnn.DRAM_MEMORY_CONFIG),
+            sin_q, memory_config=ttnn.DRAM_MEMORY_CONFIG),
+        memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    ke = ttnn.add(
+        ttnn.multiply(k, cos_k, memory_config=ttnn.DRAM_MEMORY_CONFIG),
+        ttnn.multiply(
+            ttnn.concat([neg(dev, ttnn.slice(k, ttnn.Shape([0, 0, HD // 2]),
+                         ttnn.Shape([NH_KV, chunk_len, HD]),
+                         memory_config=ttnn.DRAM_MEMORY_CONFIG)),
+                         ttnn.slice(k, ttnn.Shape([0, 0, 0]),
+                         ttnn.Shape([NH_KV, chunk_len, HD // 2]),
+                         memory_config=ttnn.DRAM_MEMORY_CONFIG)],
+                         dim=-1, memory_config=ttnn.DRAM_MEMORY_CONFIG),
+            sin_k, memory_config=ttnn.DRAM_MEMORY_CONFIG),
+        memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    # cache assembly on host (KV cache = the migrated state)
+    ke_h = from_tt(ke).reshape(NH_KV, chunk_len, HD)
+    v_h = from_tt(v).reshape(NH_KV, chunk_len, HD)
+    k_cache.append(ke_h)
+    v_cache.append(v_h)
+    K_all = np.concatenate(k_cache, axis=1)   # [8, S_total, 128]
+    V_all = np.concatenate(v_cache, axis=1)
+    S_total = K_all.shape[1]
+    K_pair = np.concatenate([K_all, K_all], axis=1).reshape(NH_KV * 2, S_total, HD)
+    V_pair = np.concatenate([V_all, V_all], axis=1).reshape(NH_KV * 2, S_total, HD)
+    K_t = to_tt(dev, torch.from_numpy(np.ascontiguousarray(
+        np.transpose(K_pair, (0, 2, 1)))))    # [16, 128, S_total]
+    V_t = to_tt(dev, torch.from_numpy(np.ascontiguousarray(V_pair)))
+    # causal additive mask for this chunk's queries
+    mask = np.zeros((NH_Q, chunk_len, S_total), dtype=np.float32)
+    for qi in range(chunk_len):
+        pos = c0 + qi
+        mask[:, qi, pos + 1:] = -1e4
+    mask_t = to_tt(dev, torch.from_numpy(mask))
+    # attention arithmetic in fp32: the bf16 matmul accumulates in bf16,
+    # and softmax exponentially amplifies the ~1-3% error into collapsed
+    # distributions (measured on the simulator; see paper text)
+    qe32 = ttnn.typecast(qe, ttnn.float32)
+    kt32 = ttnn.typecast(K_t, ttnn.float32)
+    scores = ttnn.matmul(qe32, kt32, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    scores = ttnn.multiply(scores, 128 ** -0.5,
+                           memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    scores = ttnn.add(scores, mask_t, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    scores32 = ttnn.typecast(scores, ttnn.float32)
+    mx = ttnn.max(scores32, dim=-1, keepdim=True,
+                  memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    e = ttnn.exp(ttnn.subtract(scores32, mx, memory_config=ttnn.DRAM_MEMORY_CONFIG),
+                 memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    den = ttnn.sum(e, dim=-1, keepdim=True, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    probs32 = ttnn.divide(e, den, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    vt32 = ttnn.typecast(V_t, ttnn.float32)
+    attn = ttnn.matmul(probs32, vt32, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    attn = ttnn.typecast(attn, ttnn.bfloat16)
+    attn = ttnn.transpose(attn, dim1=0, dim2=1)         # [64, 16, 128]
+    attn = ttnn.reshape(attn, ttnn.Shape([1, chunk_len, NH_Q * HD]))
+    o = ttnn.linear(attn, W["self_attn.o_proj.weight"],
+                    memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    h1 = ttnn.add(h_chunk, o, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    ln2 = fp32_rms_norm(dev, h1, W["post_attention_layernorm.weight"])
+    gate = ttnn.linear(ln2, W["mlp.gate_proj.weight"],
+                       memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    up = ttnn.linear(ln2, W["mlp.up_proj.weight"],
+                     memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    mid = ttnn.multiply(ttnn.silu(gate, memory_config=ttnn.DRAM_MEMORY_CONFIG),
+                        up, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    down = ttnn.linear(mid, W["mlp.down_proj.weight"],
+                       memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    return ttnn.add(h1, down, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+
+
+def run_prefill_target(dev, args):
+    st = np.load(args.state)
+    hh = hashlib.sha256(st["keys_u16"].tobytes()
+                        + st["values_u16"].tobytes()
+                        + st["hidden_u16"].tobytes()).hexdigest()[:16]
+    bit_exact = (hh == st["state_sha"])
+    print(f"restored prefill state sha {hh} vs captured {st['state_sha']} "
+          f"-> bit_exact={bit_exact}")
+
+    W = load_weights()
+    Wt = {k: to_tt(dev, v) for k, v in W.items()}
+    Wt["qkv_tt"] = Wt.pop("qkv")
+
+    from safetensors import safe_open as _sopen
+    with _sopen(SNAP if SNAP.endswith(".safetensors") else
+                sorted(glob.glob(os.path.join(SNAP, "*.safetensors")))[0],
+                framework="pt") as _sf:
+        embed_t = _sf.get_tensor("model.embed_tokens.weight").to(torch.bfloat16)
+
+    chunk_len = int(st["chunk_len"])
+    k0 = torch.from_numpy(st["keys_u16"]).view(torch.bfloat16)[0]  # [8,S,128]
+    v0 = torch.from_numpy(st["values_u16"]).view(torch.bfloat16)[0]
+    S = k0.shape[1]
+    k_cache = [k0.float().numpy()]   # [8, S, 128], heads-first like new chunks
+    v_cache = [v0.float().numpy()]
+    h_tt = to_tt(dev, torch.from_numpy(
+        st["hidden_u16"]).view(torch.bfloat16))
+
+    # Sequential-decode continuation (causal-equivalent to chunked prefill:
+    # each token attends exactly its prefix). The NV side computes chunks in
+    # parallel; the TT backend executes the remaining tokens one at a time,
+    # growing the same KV cache -- the strategy small-model TT serving
+    # stacks use.
+    tokens_all = st["tokens"].reshape(-1)
+    k_host, v_host = [], []
+    for i in range(S):
+        k_host.append(k0[:, i:i + 1, :].float().numpy())
+        v_host.append(v0[:, i:i + 1, :].float().numpy())
+    chunk_outs = []
+    total_tokens = int(st["n"]) * int(st["chunk_len"])
+    c0 = S
+    for s in range(S, total_tokens):
+        tok = int(tokens_all[s])
+        h_tok = embed_t[tok].reshape(1, 1, HID)
+        h_tt = step_tt(dev, Wt, to_tt(dev, h_tok),
+                       *_rope_for(dev, s), k_host, v_host, s)
+        c0 += 1
+        if (s + 1) % int(st["chunk_len"]) == 0:
+            chunk_outs.append(from_tt(h_tt).numpy())
+    ref = np.load("results/qwen_prefill_full.npz")
+    np.savez("results/prefill_tt_chunks.npz", **{
+        f"C{int(st['k']) + c}": o for c, o in enumerate(chunk_outs)})
+    # verify every continued chunk boundary against the NV reference
+    k0_chunk = int(st["k"])
+    max_d, min_cos = 0.0, 1.0
+    for c, o in enumerate(chunk_outs):
+        r = ref[f"C{k0_chunk + c}"].reshape(-1)
+        d = np.abs(o.reshape(-1) - r)
+        cos = float(o.reshape(-1) @ r / (np.linalg.norm(o) * np.linalg.norm(r) + 1e-9))
+        max_d = max(max_d, float(d.max())); min_cos = min(min_cos, cos)
+        print(f"  chunk {k0_chunk + c}: maxdiff {d.max():.4f} cos {cos:.6f}")
+    res = {"bit_exact_state": bool(bit_exact),
+           "max_abs_diff": max_d,
+           "min_cosine": min_cos}
+    json.dump(res, open("results/qwen_prefill_nvtt_result.json", "w"), indent=1)
+    print(f"prefill resumed on TT: max abs diff {max_d:.4f} | "
+          f"min cos {min_cos:.6f}")
 
 
 if __name__ == "__main__":

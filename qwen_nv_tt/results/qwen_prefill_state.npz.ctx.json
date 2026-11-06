@@ -1,0 +1,12 @@
+{
+ "format": "device-neutral/ctx-state-v1",
+ "source_device": "nvidia-rtx-pro-6000-blackwell (sm_120, CUDA 13.2)",
+ "workload": "Qwen3-0.6B layer 0 chunked prefill (64-token chunks)",
+ "safe_point": "chunk boundary after chunk 2",
+ "live_values": [
+  "KV_cache",
+  "chunk_hidden",
+  "chunk_index"
+ ],
+ "state_sha": "e0c976aa70077c36"
+}
