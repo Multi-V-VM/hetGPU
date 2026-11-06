@@ -1,0 +1,48 @@
+{
+ "regions": [
+  {
+   "kind": "static",
+   "muops": [
+    "bra EXIT (uniform control)",
+    "bra JDONE (uniform control)",
+    "ld.global -> stream[12]",
+    "ld.global -> stream[19]",
+    "ld.global -> stream[17]",
+    "st.global -> stream[12]",
+    "bra LOOP_J (uniform control)",
+    "bar.sync (epoch boundary, safe point)",
+    "bra LOOP_B (uniform control)"
+   ],
+   "note": "identity schedule; token islands and stream plans embedded"
+  }
+ ],
+ "stream_plans": [
+  {
+   "base_reg": 12,
+   "kind": "static_affine_stream",
+   "width": 32,
+   "events_per_use": 32
+  },
+  {
+   "base_reg": 19,
+   "kind": "static_affine_stream",
+   "width": 32,
+   "events_per_use": 32
+  },
+  {
+   "base_reg": 17,
+   "kind": "static_affine_stream",
+   "width": 32,
+   "events_per_use": 32
+  }
+ ],
+ "token_islands": [],
+ "safe_points": [
+  {
+   "rom_index": 27,
+   "kind": "bar.sync"
+  }
+ ],
+ "schedule": "identity",
+ "n_instr": 31
+}

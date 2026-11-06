@@ -1,0 +1,52 @@
+// NV -> TT -> spatial chain kernel: max-gated accumulate.
+// Per batch: C[e] = max(C[e] + A[e], B[e]) for 4096 int32 elements
+// (32 lanes x 128 elements each). bar.sync bounds each batch -- the safe
+// point every migration stage checkpoints at. NB is a launch parameter:
+// a continuation stage executes exactly the batches it receives.
+//
+// Memory layout (int32 words): C at 0, A at 8192, B at 12288.
+
+.version 7.0
+.target sm_70
+.visible .entry vecmaxacc(.param .u32 pC, .param .u32 pA, .param .u32 pB, .param .u32 pNB)
+{
+    .reg .s32 %r<28>;
+    .reg .pred %p<8>;
+
+    mov.u32  %r1, %laneid;
+    ld.param.u32 %r25, pC;
+    ld.param.u32 %r26, pA;
+    ld.param.u32 %r27, pB;
+    ld.param.u32 %r28, pNB;
+    mov.u32  %r22, 1;
+    mov.u32  %r23, 128;
+    mov.u32  %r24, 32;
+    mov.u32  %r9, 0;                 // batch counter
+
+LOOP_B:
+    setp.lt.s32 %p5, %r9, %r28;
+    @!%p5 bra EXIT;
+    mov.u32  %r10, 0;                // j
+LOOP_J:
+    setp.lt.s32 %p1, %r10, %r23;
+    @!%p1 bra JDONE;
+    mad.lo.s32 %r11, %r10, %r24, %r1;  // elem = j*32 + laneid
+    add.s32    %r12, %r25, %r11;
+    ld.global.s32 %r14, [%r12];        // C[e]
+    add.s32    %r19, %r26, %r11;
+    ld.global.s32 %r15, [%r19];        // A[e]
+    add.s32    %r16, %r14, %r15;       // C + A
+    add.s32    %r17, %r27, %r11;
+    ld.global.s32 %r18, [%r17];        // B[e]
+    setp.lt.s32 %p2, %r18, %r16;       // B < C+A ?
+    selp.b32   %r16, %r16, %r18, %p2;  // max(C+A, B)
+    st.global.s32 [%r12], %r16;
+    add.s32    %r10, %r10, %r22;
+    bra LOOP_J;
+JDONE:
+    bar.sync 0;                        // safe point per batch
+    add.s32 %r9, %r9, %r22;
+    bra LOOP_B;
+EXIT:
+    ret;
+}

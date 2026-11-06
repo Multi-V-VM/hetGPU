@@ -1,0 +1,14 @@
+{
+ "format": "device-neutral/ctx-state-v1",
+ "source_device": "tenstorrent-blackhole (tt-sim v1.16.0)",
+ "workload": "vecmaxacc: C = max(C+A, B), int32, 4096 elements",
+ "safe_point": "batch boundary",
+ "batches_done": 20,
+ "state_sha": "10a465885184ec52",
+ "live_values": [
+  "C",
+  "A",
+  "B",
+  "batch_counter"
+ ]
+}

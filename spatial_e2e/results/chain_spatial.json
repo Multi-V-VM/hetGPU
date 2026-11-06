@@ -1,0 +1,16 @@
+{
+  "mode": "run",
+  "rom": "rom_vecmaxacc.hex",
+  "tiles": 8,
+  "tailw": 20,
+  "cycles_before": 0,
+  "cycles_after": 207544,
+  "cycles_total": 207544,
+  "mem_events": 163840,
+  "token_waits": 0,
+  "wall_s": 0.0816,
+  "migrated": false,
+  "checkpoint_pc": 0,
+  "final_c0": 168,
+  "sentinel": 138
+}

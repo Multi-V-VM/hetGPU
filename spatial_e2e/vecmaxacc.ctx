@@ -1,0 +1,34 @@
+; CTX: lane-packed mask-SSA muops lifted from PTX
+; W = 32 lanes; guards are active-lane masks; memory muops carry
+; state space, order, and scope; bar.sync muops are safe points.
+  sreg.laneid ptx=0, dst=%r1, imm=laneid   ; mov.u32  %r1, %laneid
+  ld.param   ptx=1, dst=%r25, param=pC, param_idx=0   ; ld.param.u32 %r25, pC
+  ld.param   ptx=2, dst=%r26, param=pA, param_idx=1   ; ld.param.u32 %r26, pA
+  ld.param   ptx=3, dst=%r27, param=pB, param_idx=2   ; ld.param.u32 %r27, pB
+  ld.param   ptx=4, dst=%r28, param=pNB, param_idx=3   ; ld.param.u32 %r28, pNB
+  mov        ptx=5, dst=%r22, imm=1   ; mov.u32  %r22, 1
+  mov        ptx=6, dst=%r23, imm=128   ; mov.u32  %r23, 128
+  mov        ptx=7, dst=%r24, imm=32   ; mov.u32  %r24, 32
+  mov        ptx=8, dst=%r9, imm=0   ; mov.u32  %r9, 0
+  setp.lt    ptx=9, dst=%p5, a=%r9, b=%r28   ; setp.lt.s32 %p5, %r9, %r28
+  @!%p5 bra        EXIT   ; ptx:10
+  mov        ptx=11, dst=%r10, imm=0   ; mov.u32  %r10, 0
+  setp.lt    ptx=12, dst=%p1, a=%r10, b=%r23   ; setp.lt.s32 %p1, %r10, %r23
+  @!%p1 bra        JDONE   ; ptx:13
+  mad        ptx=14, dst=%r11, a=%r10, b=%r24, c=%r1   ; mad.lo.s32 %r11, %r10, %r24, %r1
+  add        ptx=15, dst=%r12, a=%r25, b=%r11   ; add.s32    %r12, %r25, %r11
+  ld.global  %r14, [[%r12]]  space=global order=weak   ; ld.global.s32 %r14, [%r12]
+  add        ptx=17, dst=%r19, a=%r26, b=%r11   ; add.s32    %r19, %r26, %r11
+  ld.global  %r15, [[%r19]]  space=global order=weak   ; ld.global.s32 %r15, [%r19]
+  add        ptx=19, dst=%r16, a=%r14, b=%r15   ; add.s32    %r16, %r14, %r15
+  add        ptx=20, dst=%r17, a=%r27, b=%r11   ; add.s32    %r17, %r27, %r11
+  ld.global  %r18, [[%r17]]  space=global order=weak   ; ld.global.s32 %r18, [%r17]
+  setp.lt    ptx=22, dst=%p2, a=%r18, b=%r16   ; setp.lt.s32 %p2, %r18, %r16
+  selp       %r16, %r16, %r18, %p2   ; selp.b32   %r16, %r16, %r18, %p2
+  st.global  [[%r12]], %r16  space=global order=weak   ; st.global.s32 [%r12], %r16
+  add        ptx=25, dst=%r10, a=%r10, b=%r22   ; add.s32    %r10, %r10, %r22
+  bra        LOOP_J   ; bra LOOP_J
+  bar.sync   0     ; SAFE POINT sp:SP0
+  add        ptx=28, dst=%r9, a=%r9, b=%r22   ; add.s32 %r9, %r9, %r22
+  bra        LOOP_B   ; bra LOOP_B
+  exit       ptx=30   ; ret

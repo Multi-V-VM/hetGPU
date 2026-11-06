@@ -1,0 +1,14 @@
+{
+ "format": "device-neutral/ctx-state-v1",
+ "source_device": "nvidia-rtx-pro-6000-blackwell (sm_120, CUDA 13.2)",
+ "workload": "vecmaxacc: C = max(C+A, B), int32, 4096 elements",
+ "safe_point": "batch boundary",
+ "batches_done": 10,
+ "state_sha": "0ebe0ded30c7b71c",
+ "live_values": [
+  "C",
+  "A",
+  "B",
+  "batch_counter"
+ ]
+}
